@@ -95,6 +95,7 @@ if ! diff -u <(jq -S '.files' "$fixture") <(jq -S '.files' "$candidate") >"$evid
 		"$(jq -r '.owners.compilerRevision' "$fixture")" >&2
 	printf 'candidate manifest: build/evidence/generated-drift/candidate.json\n' >&2
 	printf 'byte diff: build/evidence/generated-drift/diff.txt\n' >&2
+	cat "$evidence_root/diff.txt" >&2
 	exit 1
 fi
 
