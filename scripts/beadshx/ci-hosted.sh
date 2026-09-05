@@ -53,6 +53,10 @@ case "$lane" in
                         "$evidence_root/generated-drift/$evidence"
                 fi
             done
+            if [[ -d "$repository_root/build/evidence/generated-drift/files" ]]; then
+                cp -R "$repository_root/build/evidence/generated-drift/files" \
+                    "$evidence_root/generated-drift/files"
+            fi
         fi
         if [[ -d "$repository_root/LICENSES" ]]; then
             mkdir -p "$evidence_root/LICENSES"

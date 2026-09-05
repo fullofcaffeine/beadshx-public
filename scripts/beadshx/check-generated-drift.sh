@@ -87,6 +87,19 @@ while IFS=$'\t' read -r input expected; do
 done < <(jq -r '.owners.haxeSources[] | [.path, .sha256] | @tsv' "$fixture")
 
 if ! diff -u <(jq -S '.files' "$fixture") <(jq -S '.files' "$candidate") >"$evidence_root/diff.txt"; then
+	drifted_files="$evidence_root/files"
+	find "$drifted_files" -mindepth 1 -delete 2>/dev/null || true
+	while IFS= read -r relative; do
+		if [[ -f "$generated_root/$relative" ]]; then
+			mkdir -p "$drifted_files/$(dirname "$relative")"
+			cp "$generated_root/$relative" "$drifted_files/$relative"
+		fi
+	done < <(jq -r --slurpfile expected "$fixture" '
+		.files[] as $actual
+		| ($expected[0].files[] | select(.path == $actual.path)) as $reviewed
+		| select($reviewed.sha256 != $actual.sha256)
+		| $actual.path
+	' "$candidate")
 	printf 'generated Go drift detected\n' >&2
 	printf 'authored Haxe owners:\n' >&2
 	jq -r '.owners.haxeSources[].path | "  " + .' "$fixture" >&2
@@ -95,6 +108,7 @@ if ! diff -u <(jq -S '.files' "$fixture") <(jq -S '.files' "$candidate") >"$evid
 		"$(jq -r '.owners.compilerRevision' "$fixture")" >&2
 	printf 'candidate manifest: build/evidence/generated-drift/candidate.json\n' >&2
 	printf 'byte diff: build/evidence/generated-drift/diff.txt\n' >&2
+	printf 'drifted files: build/evidence/generated-drift/files/\n' >&2
 	cat "$evidence_root/diff.txt" >&2
 	exit 1
 fi
