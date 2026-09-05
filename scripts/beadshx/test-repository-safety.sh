@@ -46,6 +46,20 @@ jq -e --slurpfile tools "$locks" '
 ' "$source_locks" >/dev/null
 
 grep -Fq 'formatter=1.18.0' "$repository_root/haxe_libraries/formatter.hxml"
+for classpath in \
+    '.toolchains/haxe.go/src/' \
+    '.toolchains/haxe.go/std/' \
+    '.toolchains/haxe.go/std/go/_std/' \
+    '.toolchains/haxe.go/vendor/reflaxe/src/'; do
+    if ! grep -Fq -- "-cp $classpath" "$repository_root"/haxe_libraries/reflaxe*.hxml; then
+        printf 'haxe.go classpath is not repository-relative: %s\n' "$classpath" >&2
+        exit 1
+    fi
+done
+if grep -Fq '\${SCOPE_DIR}' "$repository_root"/haxe_libraries/reflaxe*.hxml; then
+    printf 'haxe.go classpaths must not expand to machine-local paths\n' >&2
+    exit 1
+fi
 grep -Fq 'run-pre-commit.sh" run' "$repository_root/.githooks/pre-commit"
 grep -Fq -- '--hook-stage pre-commit' "$repository_root/.githooks/pre-commit"
 

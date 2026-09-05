@@ -617,7 +617,7 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "6bfa5cdf0a7776a6c3b11189393c003abfeb0e8ad3a144f7066a2980e3c185bf"
+      "sha256": "affdcc0c26ca74400b77f5c38298d5255301737e89cf3091e8e2141a8e6c04af"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -985,11 +985,11 @@
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_io_input.go",
-      "sha256": "a41b222e3068e06ad182f9ab558a0fd68c260d756c65aa1e1a4bfe646ea2285f"
+      "sha256": "309bc85ad9adebe779acedca0f619a5d4622032c3e162c600f7e28846ca835eb"
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_io_output.go",
-      "sha256": "ebbb43104a715c5d133d3396f72ce882c1f2d216665a6dba282ac1e37787a9e1"
+      "sha256": "f93ecb4a98eb6d90eb8b6f1eb78a53ef5ec352c1732d6fce422604d5610fc3fa"
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_io_path.go",
