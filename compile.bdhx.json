@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "mode": "existing-module",
+  "moduleRoot": ".",
+  "packageDir": "generated/go/bdhx",
+  "packageName": "main",
+  "runtimeDir": "generated/go/hxrt",
+  "entrypoint": {
+    "kind": "compiler-main"
+  },
+  "build": {
+    "kind": "none"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "fixture": {
+    "id": "small-v1",
+    "generatorRevision": 1,
+    "seed": 20260820,
+    "issueCount": 32,
+    "dependencyCount": 12,
+    "labelCount": 16,
+    "commentCount": 8,
+    "graphShape": "four interleaved deterministic chains sharing one root",
+    "textDistributionBytes": [
+      64,
+      256,
+      1024
+    ],
+    "schemaVersion": 65,
+    "storageProfile": "darwin-arm64-embedded"
+  },
+  "contentFile": "small-v1.jsonl",
+  "contentSha256": "4f3a8de1546aa49c1d7b1e2bca0f87ca52d52f126a22fd5ce69c78c72733bcf2",
+  "contentBytes": 24544,
+  "generatedIssueIds": [
+    "perf-s-00001",
+    "perf-s-00017",
+    "perf-s-00032"
+  ]
+}

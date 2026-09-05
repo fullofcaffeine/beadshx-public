@@ -1,0 +1,8 @@
+-cp test/native-pressure/simple_facade
+-lib reflaxe.go
+-D go_output=build/evidence/native-pressure/simple-facade
+-D go_module=github.com/fullofcaffeine/beadshx/native-pressure-tracer
+-D reflaxe_go_profile=portable
+-D reflaxe_go_hxrt_features=
+-D reflaxe.disallow_build_cache_check
+-main Main

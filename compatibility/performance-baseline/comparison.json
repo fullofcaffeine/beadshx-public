@@ -1,0 +1,934 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "machine": {
+    "goos": "darwin",
+    "goarch": "arm64",
+    "operatingSystem": "macOS 15.4",
+    "operatingSystemBuild": "24E248",
+    "kernelRelease": "24.4.0",
+    "machineModel": "Mac14,9",
+    "cpu": "Apple M2 Pro",
+    "logicalCpuCount": 12,
+    "memoryBytes": 34359738368,
+    "filesystem": "APFS",
+    "storageMedium": "solid-state",
+    "powerSource": "ac",
+    "goVersion": "go1.26.5",
+    "memoryObserver": "wait4 rusage.ru_maxrss (Darwin bytes)",
+    "filesystemCacheNote": "host filesystem cache is uncontrolled; fixture copies use APFS clone-on-write outside timed regions"
+  },
+  "runs": [
+    {
+      "runId": "darwin-arm64-20260820-a",
+      "binarySha256": "9bb3afc2c7edc39ea1527863b531b36fa7482f860e25415ddfcb92df0633d5c0"
+    },
+    {
+      "runId": "darwin-arm64-20260820-b",
+      "binarySha256": "53cd7d50111daba7c82a1be9fedf485c9009ef1b980eb5fff59315faa8f9f044"
+    }
+  ],
+  "workloads": [
+    {
+      "id": "build-clean",
+      "category": "build",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 63522220291.7,
+          "medianNanoseconds": 63016148562.5,
+          "p95Nanoseconds": 66295551826.6,
+          "coefficientOfVariation": 0.024370056209178474,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 66132320345.6,
+          "medianNanoseconds": 66108880187,
+          "p95Nanoseconds": 67582011893.6,
+          "coefficientOfVariation": 0.013839960186052006,
+          "meanRelativeToFirst": 1.0410895595574932
+        }
+      ]
+    },
+    {
+      "id": "build-warm",
+      "category": "build",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 19143429125.2,
+          "medianNanoseconds": 17921495229.5,
+          "p95Nanoseconds": 25236406206.399998,
+          "coefficientOfVariation": 0.1699367783467654,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 21484376216.7,
+          "medianNanoseconds": 21165952937.5,
+          "p95Nanoseconds": 23572902779.5,
+          "coefficientOfVariation": 0.06424636329000362,
+          "meanRelativeToFirst": 1.122284627074385
+        }
+      ]
+    },
+    {
+      "id": "build-no-change",
+      "category": "build",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 1198794383.3,
+          "medianNanoseconds": 1170741375,
+          "p95Nanoseconds": 1319701051.9,
+          "coefficientOfVariation": 0.06185952735327121,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 1199668916.6,
+          "medianNanoseconds": 1215323229,
+          "p95Nanoseconds": 1299973281.25,
+          "coefficientOfVariation": 0.07002718450118277,
+          "meanRelativeToFirst": 1.0007295106752108
+        }
+      ]
+    },
+    {
+      "id": "startup-version",
+      "category": "startup",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 86031629.3,
+          "medianNanoseconds": 81570520.5,
+          "p95Nanoseconds": 101406835.6,
+          "coefficientOfVariation": 0.09873617453335252,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 96435820.8,
+          "medianNanoseconds": 94382312.5,
+          "p95Nanoseconds": 110482499.85,
+          "coefficientOfVariation": 0.08705977863725993,
+          "meanRelativeToFirst": 1.1209344933329073
+        }
+      ]
+    },
+    {
+      "id": "startup-help",
+      "category": "startup",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 40139270.7,
+          "medianNanoseconds": 40286083,
+          "p95Nanoseconds": 41696043.599999994,
+          "coefficientOfVariation": 0.029103855784897,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 47120437.6,
+          "medianNanoseconds": 46961313,
+          "p95Nanoseconds": 50619054.35,
+          "coefficientOfVariation": 0.05420199757156186,
+          "meanRelativeToFirst": 1.173923610924002
+        }
+      ]
+    },
+    {
+      "id": "startup-workspace-info",
+      "category": "startup",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 237718475,
+          "medianNanoseconds": 238048791.5,
+          "p95Nanoseconds": 246593933.14999998,
+          "coefficientOfVariation": 0.024711302148797604,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 258390187.6,
+          "medianNanoseconds": 249569438,
+          "p95Nanoseconds": 303485920.65000004,
+          "coefficientOfVariation": 0.09806219778407138,
+          "meanRelativeToFirst": 1.0869587969550958
+        }
+      ]
+    },
+    {
+      "id": "read-show-small",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 397251233.1,
+          "medianNanoseconds": 385857728.5,
+          "p95Nanoseconds": 455284356.25,
+          "coefficientOfVariation": 0.094550054757387,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 416155550.1,
+          "medianNanoseconds": 382625104,
+          "p95Nanoseconds": 557972483.3,
+          "coefficientOfVariation": 0.1932857517487987,
+          "meanRelativeToFirst": 1.0475878120062152
+        }
+      ]
+    },
+    {
+      "id": "read-list-small",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 414075587.6,
+          "medianNanoseconds": 416827271,
+          "p95Nanoseconds": 434912329.5,
+          "coefficientOfVariation": 0.033235718735356835,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 411440033.5,
+          "medianNanoseconds": 407408562.5,
+          "p95Nanoseconds": 430022396.35,
+          "coefficientOfVariation": 0.026707141178905987,
+          "meanRelativeToFirst": 0.9936350893920701
+        }
+      ]
+    },
+    {
+      "id": "read-ready-small",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 195396941.5,
+          "medianNanoseconds": 192963145.5,
+          "p95Nanoseconds": 208971281.25,
+          "coefficientOfVariation": 0.04469220408308913,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 205942783.4,
+          "medianNanoseconds": 203589021,
+          "p95Nanoseconds": 226427964.54999998,
+          "coefficientOfVariation": 0.06243207598258833,
+          "meanRelativeToFirst": 1.0539713765171703
+        }
+      ]
+    },
+    {
+      "id": "read-search-small",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 237807041.6,
+          "medianNanoseconds": 238536541.5,
+          "p95Nanoseconds": 245235645.5,
+          "coefficientOfVariation": 0.02406764812882824,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 248145458.2,
+          "medianNanoseconds": 247389354,
+          "p95Nanoseconds": 260193118.6,
+          "coefficientOfVariation": 0.0346383223047223,
+          "meanRelativeToFirst": 1.043473971714385
+        }
+      ]
+    },
+    {
+      "id": "read-count-small",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 131722829,
+          "medianNanoseconds": 131752125,
+          "p95Nanoseconds": 136068547.25,
+          "coefficientOfVariation": 0.02641887420485577,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 148535945.8,
+          "medianNanoseconds": 142987208.5,
+          "p95Nanoseconds": 177517495.89999998,
+          "coefficientOfVariation": 0.1256147321366042,
+          "meanRelativeToFirst": 1.1276401131651979
+        }
+      ]
+    },
+    {
+      "id": "read-dependencies-small",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 215993770.7,
+          "medianNanoseconds": 211701375,
+          "p95Nanoseconds": 239834675.3,
+          "coefficientOfVariation": 0.060505066365231355,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 216618983.3,
+          "medianNanoseconds": 216306104,
+          "p95Nanoseconds": 224704756.1,
+          "coefficientOfVariation": 0.02511375889770631,
+          "meanRelativeToFirst": 1.0028945862557694
+        }
+      ]
+    },
+    {
+      "id": "read-show-large",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 651471646,
+          "medianNanoseconds": 651534167,
+          "p95Nanoseconds": 669402300,
+          "coefficientOfVariation": 0.02028329972844156,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 721537796,
+          "medianNanoseconds": 704449250,
+          "p95Nanoseconds": 785169535.75,
+          "coefficientOfVariation": 0.054665581244943334,
+          "meanRelativeToFirst": 1.1075505748104346
+        }
+      ]
+    },
+    {
+      "id": "read-list-large",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 1170102745.8,
+          "medianNanoseconds": 1161854625,
+          "p95Nanoseconds": 1237835047.8,
+          "coefficientOfVariation": 0.038055700755092306,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 1311843466.6,
+          "medianNanoseconds": 1302656749.5,
+          "p95Nanoseconds": 1364298810.6,
+          "coefficientOfVariation": 0.025602511120850987,
+          "meanRelativeToFirst": 1.1211352774863304
+        }
+      ]
+    },
+    {
+      "id": "read-ready-large",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 646148887.4,
+          "medianNanoseconds": 616390666.5,
+          "p95Nanoseconds": 782062172.9499999,
+          "coefficientOfVariation": 0.1339326318575307,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 666229774.9,
+          "medianNanoseconds": 669305979,
+          "p95Nanoseconds": 724630216.45,
+          "coefficientOfVariation": 0.06820491739353089,
+          "meanRelativeToFirst": 1.0310778024872909
+        }
+      ]
+    },
+    {
+      "id": "read-search-large",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 463703412.7,
+          "medianNanoseconds": 456395563,
+          "p95Nanoseconds": 494994889.55,
+          "coefficientOfVariation": 0.040641897522227126,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 467526200.1,
+          "medianNanoseconds": 456818667,
+          "p95Nanoseconds": 503044745.8,
+          "coefficientOfVariation": 0.04979561460871665,
+          "meanRelativeToFirst": 1.0082440355091224
+        }
+      ]
+    },
+    {
+      "id": "read-count-large",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 229344596.1,
+          "medianNanoseconds": 226613250,
+          "p95Nanoseconds": 253116134,
+          "coefficientOfVariation": 0.06710143774788994,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 234083620.8,
+          "medianNanoseconds": 221542250,
+          "p95Nanoseconds": 281324995.65,
+          "coefficientOfVariation": 0.12850613411957065,
+          "meanRelativeToFirst": 1.0206633370944291
+        }
+      ]
+    },
+    {
+      "id": "read-dependencies-large",
+      "category": "read",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 411991737.6,
+          "medianNanoseconds": 382466229,
+          "p95Nanoseconds": 539426777.1999999,
+          "coefficientOfVariation": 0.189690438150411,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 384082071,
+          "medianNanoseconds": 373885750.5,
+          "p95Nanoseconds": 439971608.54999995,
+          "coefficientOfVariation": 0.09739405553402788,
+          "meanRelativeToFirst": 0.9322567322282144
+        }
+      ]
+    },
+    {
+      "id": "write-create",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 631728675.1,
+          "medianNanoseconds": 628364416.5,
+          "p95Nanoseconds": 653890410.9,
+          "coefficientOfVariation": 0.02286509696152768,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 712021350.3,
+          "medianNanoseconds": 669756979.5,
+          "p95Nanoseconds": 844656671.3499999,
+          "coefficientOfVariation": 0.11753169036612313,
+          "meanRelativeToFirst": 1.127099937623205
+        }
+      ]
+    },
+    {
+      "id": "write-update",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 378932529.1,
+          "medianNanoseconds": 374971958.5,
+          "p95Nanoseconds": 403406747.95,
+          "coefficientOfVariation": 0.03692293849353215,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 411249516.7,
+          "medianNanoseconds": 393063396,
+          "p95Nanoseconds": 482550751.75,
+          "coefficientOfVariation": 0.10409981781772769,
+          "meanRelativeToFirst": 1.0852842791743316
+        }
+      ]
+    },
+    {
+      "id": "write-close",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 513618541.8,
+          "medianNanoseconds": 508166729,
+          "p95Nanoseconds": 552861810.75,
+          "coefficientOfVariation": 0.05582687983470068,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 542262591.7,
+          "medianNanoseconds": 525643375,
+          "p95Nanoseconds": 601005598.0999999,
+          "coefficientOfVariation": 0.06755240362039353,
+          "meanRelativeToFirst": 1.0557691118385555
+        }
+      ]
+    },
+    {
+      "id": "write-reopen",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 429103241.7,
+          "medianNanoseconds": 430832646,
+          "p95Nanoseconds": 439811162.8,
+          "coefficientOfVariation": 0.018829468040214646,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 449231754.3,
+          "medianNanoseconds": 437375812.5,
+          "p95Nanoseconds": 485482433.7,
+          "coefficientOfVariation": 0.05551625183142763,
+          "meanRelativeToFirst": 1.0469083209911347
+        }
+      ]
+    },
+    {
+      "id": "write-dependency",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 566700600.1,
+          "medianNanoseconds": 567613291.5,
+          "p95Nanoseconds": 628173421.05,
+          "coefficientOfVariation": 0.06952350735768324,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 598046279.1,
+          "medianNanoseconds": 593832583,
+          "p95Nanoseconds": 642256206.25,
+          "coefficientOfVariation": 0.04487170167075489,
+          "meanRelativeToFirst": 1.0553125918597381
+        }
+      ]
+    },
+    {
+      "id": "write-label",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 352827229.1,
+          "medianNanoseconds": 349468708.5,
+          "p95Nanoseconds": 380432464.7,
+          "coefficientOfVariation": 0.055148092083591525,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 366937804,
+          "medianNanoseconds": 363403604,
+          "p95Nanoseconds": 392597714.4,
+          "coefficientOfVariation": 0.04220952164504135,
+          "meanRelativeToFirst": 1.0399928739513489
+        }
+      ]
+    },
+    {
+      "id": "write-comment",
+      "category": "write",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 412045537.3,
+          "medianNanoseconds": 409757583,
+          "p95Nanoseconds": 434140676.75,
+          "coefficientOfVariation": 0.03823515545641349,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 422475741.6,
+          "medianNanoseconds": 419608895.5,
+          "p95Nanoseconds": 443086185.2,
+          "coefficientOfVariation": 0.03009635879329806,
+          "meanRelativeToFirst": 1.025313232047957
+        }
+      ]
+    },
+    {
+      "id": "sync-no-change",
+      "category": "sync",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 582403670.7,
+          "medianNanoseconds": 576926270.5,
+          "p95Nanoseconds": 623394400.15,
+          "coefficientOfVariation": 0.039331982084798385,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 619243904.2,
+          "medianNanoseconds": 623509708.5,
+          "p95Nanoseconds": 657941216.3,
+          "coefficientOfVariation": 0.04750709275489283,
+          "meanRelativeToFirst": 1.0632554967514563
+        }
+      ]
+    },
+    {
+      "id": "sync-push-only",
+      "category": "sync",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 615167599.9,
+          "medianNanoseconds": 613266166.5,
+          "p95Nanoseconds": 656803445.5,
+          "coefficientOfVariation": 0.04297176963055941,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 673207966.6,
+          "medianNanoseconds": 639718167,
+          "p95Nanoseconds": 762982310.0500001,
+          "coefficientOfVariation": 0.0930247203324339,
+          "meanRelativeToFirst": 1.094348868031143
+        }
+      ]
+    },
+    {
+      "id": "sync-pull-only",
+      "category": "sync",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 665603000,
+          "medianNanoseconds": 660402458,
+          "p95Nanoseconds": 704602406.25,
+          "coefficientOfVariation": 0.03595881538550957,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 722509362.4,
+          "medianNanoseconds": 702131229.5,
+          "p95Nanoseconds": 813551318.5999999,
+          "coefficientOfVariation": 0.07861547449285604,
+          "meanRelativeToFirst": 1.0854959523920416
+        }
+      ]
+    },
+    {
+      "id": "sync-clean-merge",
+      "category": "sync",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 742746125,
+          "medianNanoseconds": 743614792,
+          "p95Nanoseconds": 773999075,
+          "coefficientOfVariation": 0.02966466464683689,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 765232787.4,
+          "medianNanoseconds": 763108104,
+          "p95Nanoseconds": 809761920.5,
+          "coefficientOfVariation": 0.04552648322787081,
+          "meanRelativeToFirst": 1.0302750315930629
+        }
+      ]
+    },
+    {
+      "id": "sync-conflict",
+      "category": "sync",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 396218108.3,
+          "medianNanoseconds": 398209666.5,
+          "p95Nanoseconds": 417388443.75,
+          "coefficientOfVariation": 0.042322990439407245,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 414455062.5,
+          "medianNanoseconds": 411594291.5,
+          "p95Nanoseconds": 456543089.25,
+          "coefficientOfVariation": 0.06006064113574567,
+          "meanRelativeToFirst": 1.0460275636523704
+        }
+      ]
+    },
+    {
+      "id": "backup-small",
+      "category": "backup",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 256992037.4,
+          "medianNanoseconds": 253456104,
+          "p95Nanoseconds": 271926051.9,
+          "coefficientOfVariation": 0.03711120491673819,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 302933166.9,
+          "medianNanoseconds": 285512521,
+          "p95Nanoseconds": 386302010.9,
+          "coefficientOfVariation": 0.15941669989454443,
+          "meanRelativeToFirst": 1.1787647974030186
+        }
+      ]
+    },
+    {
+      "id": "backup-large",
+      "category": "backup",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 719661900,
+          "medianNanoseconds": 710489708.5,
+          "p95Nanoseconds": 811662053.8,
+          "coefficientOfVariation": 0.07686005712005721,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 812613783,
+          "medianNanoseconds": 815437791.5,
+          "p95Nanoseconds": 858597082.85,
+          "coefficientOfVariation": 0.04556819593699477,
+          "meanRelativeToFirst": 1.1291604891130127
+        }
+      ]
+    },
+    {
+      "id": "migration-current-noop",
+      "category": "migration",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 293029695.9,
+          "medianNanoseconds": 274754021,
+          "p95Nanoseconds": 370211162.8,
+          "coefficientOfVariation": 0.1453601542727258,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 291045608.5,
+          "medianNanoseconds": 287426812.5,
+          "p95Nanoseconds": 312168914.55,
+          "coefficientOfVariation": 0.04408466998315729,
+          "meanRelativeToFirst": 0.9932290568916364
+        }
+      ]
+    },
+    {
+      "id": "large-list-json",
+      "category": "large-list",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 1175080975,
+          "medianNanoseconds": 1172357687.5,
+          "p95Nanoseconds": 1270392098.1,
+          "coefficientOfVariation": 0.05352243099030276,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 1258824154.3,
+          "medianNanoseconds": 1273527416.5,
+          "p95Nanoseconds": 1322419485.8999999,
+          "coefficientOfVariation": 0.040892189114919084,
+          "meanRelativeToFirst": 1.071265879613105
+        }
+      ]
+    },
+    {
+      "id": "large-list-text",
+      "category": "large-list",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 1138214900,
+          "medianNanoseconds": 1141694187.5,
+          "p95Nanoseconds": 1159227035.6,
+          "coefficientOfVariation": 0.01615330213214183,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 1275337241.7,
+          "medianNanoseconds": 1275219604,
+          "p95Nanoseconds": 1340016908.3,
+          "coefficientOfVariation": 0.03633142117379776,
+          "meanRelativeToFirst": 1.1204713992937538
+        }
+      ]
+    },
+    {
+      "id": "microbenchmarks-discovery",
+      "category": "microbenchmark",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 8503858720.9,
+          "medianNanoseconds": 8336553312.5,
+          "p95Nanoseconds": 9350179037.5,
+          "coefficientOfVariation": 0.062332867192146556,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 10302402841.8,
+          "medianNanoseconds": 10192578083.5,
+          "p95Nanoseconds": 11364743015.099998,
+          "coefficientOfVariation": 0.06656251687865743,
+          "meanRelativeToFirst": 1.2114974131072642
+        }
+      ]
+    },
+    {
+      "id": "microbenchmarks-selected",
+      "category": "microbenchmark",
+      "runs": [
+        {
+          "runId": "darwin-arm64-20260820-a",
+          "sampleCount": 10,
+          "meanNanoseconds": 85349006225,
+          "medianNanoseconds": 85735127833,
+          "p95Nanoseconds": 89133196485.6,
+          "coefficientOfVariation": 0.040569227282100224,
+          "meanRelativeToFirst": 1
+        },
+        {
+          "runId": "darwin-arm64-20260820-b",
+          "sampleCount": 10,
+          "meanNanoseconds": 86694437608.5,
+          "medianNanoseconds": 86517978271,
+          "p95Nanoseconds": 91694263754.5,
+          "coefficientOfVariation": 0.046361314237199414,
+          "meanRelativeToFirst": 1.015763878725818
+        }
+      ]
+    }
+  ],
+  "unavailable": [
+    {
+      "id": "migration-v1.1.2",
+      "category": "migration",
+      "profile": "linux-amd64-native",
+      "status": "unsupported-on-darwin-requires-native-linux-amd64",
+      "sampleCount": 0
+    }
+  ]
+}

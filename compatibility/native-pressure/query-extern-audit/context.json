@@ -1,0 +1,54 @@
+{
+	"schemaVersion": 1,
+	"fallbacks": [
+		{
+			"package": "context",
+			"symbol": "AfterFunc",
+			"position": "param:f",
+			"goType": "func()",
+			"reason": "callback_signature"
+		},
+		{
+			"package": "context",
+			"symbol": "AfterFunc",
+			"position": "result:stop",
+			"goType": "func() bool",
+			"reason": "callback_signature"
+		},
+		{
+			"package": "context",
+			"symbol": "Context.Done",
+			"position": "result:1",
+			"goType": "\u003c-chan struct{}",
+			"reason": "channel"
+		},
+		{
+			"package": "context",
+			"symbol": "Context.Value",
+			"position": "param:key",
+			"goType": "any",
+			"reason": "empty_interface"
+		},
+		{
+			"package": "context",
+			"symbol": "Context.Value",
+			"position": "result:1",
+			"goType": "any",
+			"reason": "empty_interface"
+		},
+		{
+			"package": "context",
+			"symbol": "WithValue",
+			"position": "param:key",
+			"goType": "any",
+			"reason": "empty_interface"
+		},
+		{
+			"package": "context",
+			"symbol": "WithValue",
+			"position": "param:val",
+			"goType": "any",
+			"reason": "empty_interface"
+		}
+	]
+}

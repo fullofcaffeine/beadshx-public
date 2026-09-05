@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "name": "BeadsHX",
+    "developmentVersion": "0.0.0-development",
+    "releaseVersionFormat": "SemVer 2.0.0",
+    "firstPublicMajor": 1
+  },
+  "binaries": {
+    "development": "bdhx",
+    "upstreamOracle": "bd-upstream",
+    "developmentIdentity": "BeadsHX 0.0.0-development (compatible with Beads v1.2.1 at 634cbbc4bc580fa5124f63fdf65d137a46d5b4ff)",
+    "upstreamIdentityPrefix": "bd version 1.2.1",
+    "forbiddenDevelopmentNames": ["bd", "beads"]
+  },
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "goModules": {
+    "earlyInheritedModule": "github.com/steveyegge/beads",
+    "generatedPackage": "generated/go/bdhx",
+    "publicLibraryCandidate": "github.com/fullofcaffeine/beadshx",
+    "finalDecisionRequiredBefore": "BHX-M21-06",
+    "migrationPolicy": {
+      "isolatedChange": true,
+      "behaviorChangesAllowed": false,
+      "atomicImportMigration": true
+    }
+  },
+  "buildMetadata": {
+    "requiredReleaseFields": [
+      "productVersion",
+      "beadshxCommit",
+      "upstreamCompatibilityVersion",
+      "upstreamCompatibilityCommit",
+      "haxeGoCommit",
+      "haxeVersion",
+      "goVersion",
+      "dirty"
+    ],
+    "upstreamCompatibilityCommitRequired": true
+  },
+  "userAgent": {
+    "status": "reserved-not-emitted",
+    "productPrefix": "BeadsHX/",
+    "compatibilityToken": "compat/Beads-v1.2.1+634cbbc4bc58",
+    "forbiddenPrefixes": ["bd/", "Beads/", "beads/"]
+  },
+  "bdAlias": {
+    "status": "forbidden-before-post-soak-task",
+    "authorizingTask": "BHX-M21-07",
+    "requiredCompletedTasks": ["BHX-M21-03", "BHX-M21-04", "BHX-M21-05", "BHX-M21-06"],
+    "requirements": {
+      "explicitInstallOption": true,
+      "reversible": true,
+      "reportsBeadsHXIdentity": true,
+      "preservesDirectUpstreamFallback": "bd-upstream"
+    }
+  }
+}

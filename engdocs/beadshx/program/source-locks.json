@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff",
+    "remote": "https://github.com/gastownhall/beads.git"
+  },
+  "compiler": {
+    "project": "haxe.go",
+    "referenceVersion": "v0.54.0",
+    "referenceCommit": "92d458e760a30bcb57f2cefb6202f0996fe1ac71",
+    "liveStartingCommit": "990d78bcf7a8641ef589cd230b7d69d59beadb84",
+    "requiredCommit": "c1e3333d2ce358b451e69b2b1530030bc4083dd5",
+    "liveCheckoutWasDirty": true
+  },
+  "cafetera": {
+    "liveStartingCommit": "c9723630b45bc0ed422fcfbab6b05ddf246d3bc0",
+    "liveCheckoutWasDirty": true
+  },
+  "toolchains": {
+    "haxe": "4.3.7",
+    "haxeFormatter": "1.18.0",
+    "go": "1.26.5",
+    "golangciLint": "v2.10.1",
+    "preCommit": "4.3.0",
+    "node": "24.18.1",
+    "npm": "11.16.0",
+    "lix": "17.0.4-alpha.0",
+    "policy": "engdocs/beadshx/program/toolchain-locks.json"
+  },
+  "specification": {
+    "prdSha256": "4064e293c5669ef67946d00f6c23b5799b365c6e7c0f5677620a08d69f556ffb",
+    "backlogSha256": "15ff178f96a7439b265298a2bec307bfb9ba800c404db8e230ffad6a4be6d1be"
+  }
+}

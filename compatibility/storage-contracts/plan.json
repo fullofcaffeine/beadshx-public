@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "status": "planned",
+  "ownershipRule": "Commands depend on the smallest semantic application capability that owns their behavior. SQL, staging, publication, and retry mechanics belong to a registered backend leg, not to command code.",
+  "commandResolution": "Each pinned command ID inherits the one profile whose roots contain its first path segment. A profile lists more than one capability only when the command family composes them. Conditional profiles must be narrowed when that command becomes a vertical port slice.",
+  "haxeBoundary": "Authored Haxe owns typed application capabilities and transaction intent. Narrow target adapters own unavoidable host storage mechanics. Legacy Go interfaces and direct SQL are evidence, not the desired Haxe API.",
+  "authorities": {
+    "commandTree": "compatibility/upstream-v1.2.1-command-inventory.json.gz",
+    "storageInterface": "internal/storage/storage.go",
+    "contractLegRegistry": "internal/storage/contract_leg_registry_test.go",
+    "contractLegWiring": "internal/storage/leg_contract_wiring_test.go",
+    "hookBoundary": "internal/storage/hook_decorator.go",
+    "transactionSources": [
+      "internal/storage/dolt/transaction.go",
+      "internal/storage/embeddeddolt/transaction.go",
+      "internal/storage/uow/tx.go",
+      "internal/storage/uow/uow.go"
+    ]
+  },
+  "capabilities": {
+    "noStorage": "CLI help, discovery, setup, or local context behavior that opens no Beads store.",
+    "issueReader": "Read and filter issue state without changing it.",
+    "issueLifecycle": "Create, update, claim, transition, rename, or delete issue state.",
+    "graphRelations": "Read or mutate dependency edges and derived graph state.",
+    "commentsAndLabels": "Read or mutate issue comments, labels, and tags.",
+    "workspaceState": "Read or mutate repository-scoped configuration, memory, notes, and workflow metadata.",
+    "batchPlan": "Coordinate more than one semantic operation under an explicit batch policy.",
+    "versionControl": "Inspect or publish Dolt working-set, branch, history, remote, or conflict state.",
+    "backupAndMigration": "Initialize, validate, repair, import, export, back up, restore, or migrate stored state.",
+    "integrationSync": "Exchange issue state with a named external integration.",
+    "eventsJournal": "Read, prune, or serve the ordered mutation journal and provenance state.",
+    "rawSqlAdmin": "Run an explicitly administrative or user-supplied SQL operation.",
+    "serverRuntime": "Own a long-lived storage service, proxy, health, or metrics boundary.",
+    "externalProcess": "Delegate behavior to a child process or external tool."
+  },
+  "transactionRequirements": {
+    "none": "No Beads storage session is required.",
+    "readSession": "A consistent read session is sufficient; no mutation commits.",
+    "singleOperation": "One semantic storage operation owns its mutation boundary.",
+    "requestTransaction": "Several semantic operations must commit or roll back as one request.",
+    "unitOfWorkAttempt": "A fresh unit of work owns one complete attempt and may replay only under its declared conflict policy.",
+    "directSql": "The command or administrative capability issues SQL at an explicit boundary.",
+    "externalProcess": "A child process or remote system owns the transaction outcome.",
+    "conditional": "Flags, selected subcommands, or runtime routing choose among the other listed requirements."
+  },
+  "commandProfiles": [
+    {
+      "id": "cli-without-store",
+      "roots": ["<root>", "__complete", "completion", "context", "help", "init-safety", "lint", "onboard", "preflight", "prime", "quickstart", "setup", "version", "where"],
+      "capabilities": ["noStorage"],
+      "transactionRequirements": ["none"]
+    },
+    {
+      "id": "process-adapters",
+      "roots": ["codex-hook", "cursor-hook", "hooks", "mail", "send-metrics"],
+      "capabilities": ["externalProcess"],
+      "transactionRequirements": ["none", "externalProcess", "conditional"]
+    },
+    {
+      "id": "issue-queries",
+      "roots": ["audit", "blocked", "children", "count", "duplicate", "duplicates", "find-duplicates", "graph", "history", "info", "list", "orphans", "q", "query", "ready", "search", "show", "stale", "status", "statuses", "types"],
+      "capabilities": ["issueReader", "graphRelations"],
+      "transactionRequirements": ["readSession", "requestTransaction", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "issue-lifecycle",
+      "roots": ["assign", "close", "create", "create-form", "defer", "delete", "edit", "heartbeat", "priority", "promote", "purge", "reclaim", "rename", "rename-prefix", "reopen", "set-state", "state", "supersede", "unclaim", "undefer", "update"],
+      "capabilities": ["issueLifecycle"],
+      "transactionRequirements": ["singleOperation", "requestTransaction", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "issue-annotations",
+      "roots": ["comment", "comments", "label", "tag"],
+      "capabilities": ["issueReader", "commentsAndLabels"],
+      "transactionRequirements": ["readSession", "singleOperation", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "dependency-mutations",
+      "roots": ["dep", "link", "recompute-blocked"],
+      "capabilities": ["graphRelations"],
+      "transactionRequirements": ["readSession", "singleOperation", "requestTransaction", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "composed-workflows",
+      "roots": ["batch", "cook", "epic", "flatten", "formula", "gate", "human", "merge-slot", "mol", "ship", "swarm", "todo"],
+      "capabilities": ["batchPlan", "issueLifecycle", "graphRelations", "workspaceState"],
+      "transactionRequirements": ["none", "readSession", "requestTransaction", "unitOfWorkAttempt", "externalProcess", "conditional"]
+    },
+    {
+      "id": "workspace-metadata",
+      "roots": ["config", "forget", "kv", "memories", "note", "recall", "remember", "rules"],
+      "capabilities": ["workspaceState"],
+      "transactionRequirements": ["none", "readSession", "singleOperation", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "repository-lifecycle",
+      "roots": ["backup", "bootstrap", "branch", "compact", "conflicts", "diff", "dolt", "export", "gc", "import", "init", "migrate", "migrate-issues", "migrate-personal", "prune", "repo", "restore", "schema", "sync", "upgrade", "vc", "worktree"],
+      "capabilities": ["backupAndMigration", "versionControl"],
+      "transactionRequirements": ["none", "readSession", "singleOperation", "requestTransaction", "unitOfWorkAttempt", "directSql", "externalProcess", "conditional"]
+    },
+    {
+      "id": "external-integrations",
+      "roots": ["ado", "federation", "github", "gitlab", "jira", "linear", "notion"],
+      "capabilities": ["integrationSync", "issueReader", "issueLifecycle"],
+      "transactionRequirements": ["none", "readSession", "requestTransaction", "unitOfWorkAttempt", "externalProcess", "conditional"]
+    },
+    {
+      "id": "journal-and-provenance",
+      "roots": ["events", "provenance"],
+      "capabilities": ["eventsJournal", "versionControl"],
+      "transactionRequirements": ["readSession", "singleOperation", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "server-runtime",
+      "roots": ["db-proxy-child", "metrics", "ping", "serve"],
+      "capabilities": ["serverRuntime"],
+      "transactionRequirements": ["none", "readSession", "unitOfWorkAttempt", "conditional"]
+    },
+    {
+      "id": "storage-administration",
+      "roots": ["admin", "doctor", "sql"],
+      "capabilities": ["rawSqlAdmin", "backupAndMigration"],
+      "transactionRequirements": ["readSession", "requestTransaction", "unitOfWorkAttempt", "directSql", "conditional"]
+    }
+  ],
+  "backendLegs": [
+    {
+      "id": "dolt",
+      "sourceRoot": "internal/storage/dolt",
+      "callbackPolicy": "Setup failures may retry before the callback begins. After callback entry, the callback is invoked at most once and an indeterminate commit is never blindly replayed.",
+      "publication": "By default, a pinned regular SQL transaction commits, selected dirty tables publish to Dolt history, and a separate ignored-table transaction commits. A later failure is an indeterminate durable outcome. Journal mode pins regular, ignored, and journal rows to one SQL transaction before optional history publication.",
+      "journal": "Enabled journal rows and the mutations they describe share the regular SQL transaction.",
+      "hooks": "Tracked hooks run only after the complete transaction succeeds and cannot roll it back.",
+      "sourceEvidence": ["internal/storage/dolt/transaction.go", "internal/storage/hook_decorator.go"]
+    },
+    {
+      "id": "embeddeddolt",
+      "sourceRoot": "internal/storage/embeddeddolt",
+      "callbackPolicy": "The callback runs once inside one embedded SQL transaction. Callers must not blindly replay an indeterminate history publication.",
+      "publication": "One SQL transaction commits all table classes, then selected dirty tables publish to Dolt history. A failure after SQL commit is an indeterminate durable outcome.",
+      "journal": "Journal activation is scoped to the same embedded SQL transaction as the mutation.",
+      "hooks": "Tracked hooks run only after the complete transaction succeeds and cannot roll it back.",
+      "sourceEvidence": ["internal/storage/embeddeddolt/transaction.go", "internal/storage/embeddeddolt/store.go", "internal/storage/hook_decorator.go"]
+    },
+    {
+      "id": "uow",
+      "sourceRoot": "internal/storage/uow",
+      "callbackPolicy": "Serialization failures can replay the complete callback against a fresh unit of work within a bounded retry budget. Other callback and commit failures are permanent for that run.",
+      "publication": "Each unit of work owns and commits its attempt. An empty message commits ephemeral SQL state without Dolt history; a non-empty message publishes versioned state.",
+      "journal": "The provider scopes journal activation to the unit of work's pinned transaction.",
+      "hooks": "Hook completion remains an after-commit application concern; it is not part of the unit-of-work commit.",
+      "sourceEvidence": ["internal/storage/uow/tx.go", "internal/storage/uow/uow.go", "internal/storage/uow/dolt_sql_provider.go"]
+    }
+  ],
+  "batchSemantics": [
+    {
+      "id": "batch-create",
+      "capability": "batchPlan",
+      "requirement": "All requested creates and their creation-time relations use one request transaction when the command promises all-or-nothing behavior.",
+      "sourceEvidence": ["internal/storage/storage.go"]
+    },
+    {
+      "id": "batch-close",
+      "capability": "batchPlan",
+      "requirement": "Validation can reject individual inputs before the surviving close set commits together; the external partial-result policy remains command-owned.",
+      "sourceEvidence": ["internal/storage/storage.go", "cmd/bd/close.go"]
+    },
+    {
+      "id": "batch-apply",
+      "capability": "batchPlan",
+      "requirement": "A heterogeneous mutation plan requires one atomic application boundary.",
+      "sourceEvidence": ["internal/storage/storage.go"]
+    }
+  ],
+  "directSqlCensus": {
+    "searchPattern": "\"database/sql\"|UnderlyingDB\\(|RawSQL\\(",
+    "sourceGlob": "*.go",
+    "excludedGlob": "**/*_test.go",
+    "expectedTotal": 209,
+    "policy": "Every matching production source is an explicit port obligation. Command-direct matches require semantic reassignment or a narrow raw-SQL justification; no match is automatically approved.",
+    "scopes": [
+      {"id": "command-direct", "pathRegex": "^cmd/bd/", "expectedCount": 34, "disposition": "review-required"},
+      {"id": "backend-leg", "pathRegex": "^internal/storage/(dolt|embeddeddolt|uow|domain/db)/", "expectedCount": 100, "disposition": "target-adapter"},
+      {"id": "semantic-operation", "pathRegex": "^internal/storage/issueops/", "expectedCount": 49, "disposition": "semantic-extraction"},
+      {"id": "shared-storage", "pathRegex": "^internal/storage/(versioncontrolops|schema|memoryops|rowid|dberrors)/|^internal/storage/storage\\.go$", "expectedCount": 15, "disposition": "review-required"},
+      {"id": "runtime-infrastructure", "pathRegex": "^internal/(doltserver|httpapi|migration|workapi)/|^internal/storage/dbproxy/|^schema/schema\\.go$", "expectedCount": 6, "disposition": "target-adapter"},
+      {"id": "non-production", "pathRegex": "^(examples|scripts|internal/testutil)/", "expectedCount": 5, "disposition": "evidence-only"}
+    ]
+  },
+  "ratifiedLegDifferences": [
+    "Importer has a semantic UOW accessor; both store legs still use the legacy raw import seam.",
+    "Bootstrap history is recorded outside the role on store legs and inside the role on UOW.",
+    "UOW has no caller-held working set or separate staging contract because every unit of work commits itself."
+  ],
+  "gaps": [
+    {"id": "command-direct-sql", "status": "pending", "owner": "BHX-M02-11", "need": "Classify all 34 command-direct SQL sources as semantic capability calls or justified administrative SQL boundaries."},
+    {"id": "fault-boundary-evidence", "status": "pending", "owner": "BHX-M06", "need": "Execute pre-callback, callback, SQL commit, history publication, and after-commit hook failures per admitted backend leg."},
+    {"id": "mutating-sql-shape", "status": "pending", "owner": "BHX-M02-11", "need": "Preserve the bd sql mutating-query and common-table-expression policy without treating arbitrary text as read-only."},
+    {"id": "journal-and-hook-switches", "status": "pending", "owner": "BHX-M02-11", "need": "Inventory command and runtime switches that enable journal recording and hook execution."},
+    {"id": "doctor-history-repair", "status": "pending", "owner": "BHX-M02-11", "need": "Record best-effort repair and history publication behavior for doctor operations."}
+  ]
+}

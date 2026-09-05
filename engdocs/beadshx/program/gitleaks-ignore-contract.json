@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "fingerprint": "cmd/bd/linear_test.go:generic-api-key:906",
+      "lineSha256": "487611a5dd454962288972acbbde764baecb13dfc033f1b857596b496bef0414"
+    },
+    {
+      "fingerprint": "engdocs/design/otel/otel-data-model.md:generic-api-key:418",
+      "lineSha256": "532e0255595a9c74370522923fcfddf5688d3cf5ec830b602fd12cf287cd1040"
+    },
+    {
+      "fingerprint": "internal/linear/oauth_test.go:generic-api-key:359",
+      "lineSha256": "7be8c69da089e8b53ecb347fa91f7bb923728ac70080d2c58d25aecfc114797a"
+    },
+    {
+      "fingerprint": "internal/storage/dbproxy/identity/identity_test.go:generic-api-key:47",
+      "lineSha256": "7c02625d9712319df4d8f0a41346ffac8b158a1c1d3f252c5bf6c7069e80e79f"
+    },
+    {
+      "fingerprint": "internal/storage/dbproxy/identity/identity_test.go:generic-api-key:78",
+      "lineSha256": "7c02625d9712319df4d8f0a41346ffac8b158a1c1d3f252c5bf6c7069e80e79f"
+    },
+    {
+      "fingerprint": "internal/storage/dbproxy/identity/identity_test.go:generic-api-key:85",
+      "lineSha256": "7c02625d9712319df4d8f0a41346ffac8b158a1c1d3f252c5bf6c7069e80e79f"
+    }
+  ]
+}

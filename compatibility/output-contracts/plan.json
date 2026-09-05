@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "status": "planned",
+  "authorities": {
+    "commandTree": {
+      "path": "compatibility/upstream-v1.2.1-command-inventory.json.gz",
+      "sha256": "076907a38a87011daecec59dae8d34cee987a62c45b24a710b612c5b6893279f",
+      "role": "complete command and output-channel inventory"
+    },
+    "jsonCorpus": {
+      "manifestPath": "cmd/bd/protocol/testdata/corpus/manifest.json",
+      "catalogPath": "cmd/bd/protocol/CATALOG.md",
+      "sha256": "ef53ba086ca1c486e5297cd25923b0b570ad047b80d8272e15210e7a3cb6352f",
+      "role": "canonical flat and envelope JSON examples"
+    },
+    "differentialRunner": {
+      "path": "tests/oracle-a/run-oracle-a.sh",
+      "catalogPath": "tests/oracle-a/harness/scenarios/enumerated.json",
+      "role": "reference-versus-candidate process comparison"
+    }
+  },
+  "fieldClasses": {
+    "stable": "Must compare equal after JSON parsing or as exact text, as the owning case specifies.",
+    "volatile": "May change only through a named, narrowly scoped normalizer in the differential runner.",
+    "presentationOnly": "Remains observable in terminal cases but is not a semantic data field."
+  },
+  "presentationCases": [
+    {
+      "id": "plain-human-list",
+      "commandId": "cmd:bd/list",
+      "args": ["list", "--all", "--no-pager"],
+      "endpoints": {"stdin": "pipe", "stdout": "pipe", "stderr": "pipe"},
+      "covers": ["plain-text", "non-terminal-output"],
+      "fieldClasses": ["stable", "volatile"],
+      "sourceEvidence": ["cmd/bd/list.go", "internal/ui/pager.go"],
+      "executionOwner": "BHX-M06",
+      "status": "pending"
+    },
+    {
+      "id": "styled-human-show",
+      "commandId": "cmd:bd/show",
+      "args": ["show", "fixture-issue"],
+      "endpoints": {"stdin": "pipe", "stdout": "terminal", "stderr": "pipe"},
+      "covers": ["ansi-color", "osc8-hyperlinks", "stdout-terminal-detection"],
+      "fieldClasses": ["stable", "volatile", "presentationOnly"],
+      "sourceEvidence": ["cmd/bd/show.go", "internal/ui/terminal.go", "internal/uimd/markdown.go"],
+      "executionOwner": "BHX-M06",
+      "status": "pending"
+    },
+    {
+      "id": "paged-human-list",
+      "commandId": "cmd:bd/list",
+      "args": ["list", "--all"],
+      "endpoints": {"stdin": "pipe", "stdout": "terminal", "stderr": "pipe"},
+      "covers": ["pager-selection", "terminal-height"],
+      "fieldClasses": ["stable", "presentationOnly"],
+      "sourceEvidence": ["cmd/bd/list.go", "internal/ui/pager.go"],
+      "executionOwner": "BHX-M06",
+      "status": "pending"
+    },
+    {
+      "id": "legacy-json-stderr-notice",
+      "commandId": "cmd:bd/version",
+      "args": ["version", "--json"],
+      "endpoints": {"stdin": "pipe", "stdout": "pipe", "stderr": "terminal"},
+      "covers": ["stderr-terminal-detection", "mixed-endpoints"],
+      "fieldClasses": ["stable", "presentationOnly"],
+      "sourceEvidence": ["cmd/bd/output.go", "internal/ui/terminal.go"],
+      "executionOwner": "BHX-M06",
+      "status": "complete",
+      "evidence": ["scripts/beadshx/test-parity-smoke.sh"]
+    },
+    {
+      "id": "interactive-init-cancel",
+      "commandId": "cmd:bd/init",
+      "args": ["init", "--reinit-local"],
+      "endpoints": {"stdin": "terminal", "stdout": "terminal", "stderr": "terminal"},
+      "covers": ["prompt", "stdin-terminal-detection", "cancellation"],
+      "fieldClasses": ["stable", "presentationOnly"],
+      "sourceEvidence": ["cmd/bd/init.go", "cmd/bd/protocol/exit_codes_init_test.go"],
+      "executionOwner": "BHX-M06",
+      "status": "pending"
+    },
+    {
+      "id": "completion-protocol",
+      "commandId": "cmd:bd/__complete",
+      "args": ["__complete", "show", ""],
+      "endpoints": {"stdin": "pipe", "stdout": "pipe", "stderr": "pipe"},
+      "covers": ["hidden-protocol", "candidate-order", "directive"],
+      "fieldClasses": ["stable"],
+      "sourceEvidence": ["cmd/bd/completions.go", "cmd/bd/completions_test.go"],
+      "executionOwner": "BHX-M06",
+      "status": "pending"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "human-text-and-terminal",
+      "status": "pending",
+      "owner": "BHX-M06",
+      "need": "Run the six planned presentation cases against the pinned binary and each implementing Haxe slice."
+    },
+    {
+      "id": "mixed-stream-and-non-json-errors",
+      "status": "pending",
+      "owner": "BHX-M02-03",
+      "need": "Exit, stdout, and stderr cases that the JSON corpus intentionally does not cover."
+    },
+    {
+      "id": "server-and-external-services",
+      "status": "pending",
+      "owner": "BHX-M06",
+      "need": "Controlled fixtures for behavior unavailable in embedded mode."
+    },
+    {
+      "id": "signals-and-post-state",
+      "status": "pending",
+      "owner": "BHX-M06",
+      "need": "Differential signal handling and logical persistent-state comparison."
+    }
+  ]
+}

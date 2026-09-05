@@ -19,9 +19,17 @@ type IssueReaderSource interface {
 	IssueReader() (publicops.Reader, error)
 }
 
+// InspectionIssueReaderSource exposes the same query role without advisory
+// write-side maintenance. Read-only commands use this accessor so a query
+// cannot wake expired defers as a hidden side effect.
+type InspectionIssueReaderSource interface {
+	InspectionIssueReader() (publicops.Reader, error)
+}
+
 // issueReader runs public issue queries through a unit of work.
 type issueReader struct {
-	provider UnitOfWorkProvider
+	provider          UnitOfWorkProvider
+	wakeExpiredDefers bool
 }
 
 // IssueReader returns the guarded issue-query surface for this provider. A
@@ -31,10 +39,25 @@ func (p *doltSQLProvider) IssueReader() (publicops.Reader, error) {
 	return NewIssueReader(p)
 }
 
+// InspectionIssueReader returns the query role with advisory defer waking
+// disabled. The underlying read transactions retain the ordinary query path.
+func (p *doltSQLProvider) InspectionIssueReader() (publicops.Reader, error) {
+	return NewInspectionIssueReader(p)
+}
+
 // NewIssueReader constructs public issue queries backed by provider.
 func NewIssueReader(provider UnitOfWorkProvider) (publicops.Reader, error) {
 	if isNilUnitOfWorkProvider(provider) {
 		return nil, fmt.Errorf("new issue reader: unit-of-work provider must not be nil")
+	}
+	return &issueReader{provider: provider, wakeExpiredDefers: true}, nil
+}
+
+// NewInspectionIssueReader constructs public issue queries that never perform
+// advisory write-side maintenance.
+func NewInspectionIssueReader(provider UnitOfWorkProvider) (publicops.Reader, error) {
+	if isNilUnitOfWorkProvider(provider) {
+		return nil, fmt.Errorf("new inspection issue reader: unit-of-work provider must not be nil")
 	}
 	return &issueReader{provider: provider}, nil
 }
@@ -53,7 +76,9 @@ func (r *issueReader) Ready(ctx context.Context, req publicops.ReadyRequest) (pu
 	// Wake expired dated defers before reading, in a write UOW of its own —
 	// this read's span never commits (see the doc comment above), so the
 	// sweep cannot live inside it.
-	WakeExpiredDefersAdvisory(ctx, r.provider)
+	if r.wakeExpiredDefers {
+		WakeExpiredDefersAdvisory(ctx, r.provider)
+	}
 	return RunTxRead(ctx, r.provider, func(ctx context.Context, uw UnitOfWork) (publicops.IssuePage, error) {
 		filter, err := workapi.BuildReadyFilter(req)
 		if err != nil {
@@ -83,7 +108,7 @@ func (r *issueReader) List(ctx context.Context, req publicops.ListRequest) (publ
 	// A --ready listing is the ready front by another door, so it wakes
 	// expired dated defers the same way Ready does — before the read span,
 	// which never commits.
-	if req.ReadyFlag {
+	if req.ReadyFlag && r.wakeExpiredDefers {
 		WakeExpiredDefersAdvisory(ctx, r.provider)
 	}
 	return RunTxRead(ctx, r.provider, func(ctx context.Context, uw UnitOfWork) (publicops.IssuePage, error) {

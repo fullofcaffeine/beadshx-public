@@ -291,6 +291,33 @@ func GetCreateDatabaseProxyServerEndpoint(rootDir string, opts OpenOpts) (Endpoi
 	}
 }
 
+// GetExistingDatabaseProxyServerEndpoint attaches to a running proxy without
+// taking its lifecycle lock or repairing any state. It is the read-only
+// counterpart to GetCreateDatabaseProxyServerEndpoint: missing, stale, legacy,
+// malformed, or unverifiable records fail in place and are never quarantined
+// or replaced.
+func GetExistingDatabaseProxyServerEndpoint(rootDir string, opts OpenOpts) (Endpoint, error) {
+	if err := opts.Backend.Validate(); err != nil {
+		return Endpoint{}, fmt.Errorf("OpenOpts.Backend: %w", err)
+	}
+	if opts.Backend == BackendExternal {
+		if err := opts.External.Validate(); err != nil {
+			return Endpoint{}, fmt.Errorf("OpenOpts.External: %w", err)
+		}
+	}
+
+	discovery := readAndDial(rootDir)
+	if discovery.status == adoptionAdopted {
+		return adoptedEndpoint(rootDir, intendedUpstreamID(opts), discovery)
+	}
+
+	recordPath := pidfile.Path(rootDir, PIDFileName)
+	if discovery.err != nil {
+		return Endpoint{}, fmt.Errorf("attach existing proxy from %s: %s: %w", recordPath, discovery.status, discovery.err)
+	}
+	return Endpoint{}, fmt.Errorf("attach existing proxy from %s: %s", recordPath, discovery.status)
+}
+
 func adoptedEndpoint(rootDir, want string, discovery adoptionResult) (Endpoint, error) {
 	if want != "" && discovery.pidfile.UpstreamID != "" && discovery.pidfile.UpstreamID != want {
 		return Endpoint{}, &ErrUpstreamMismatch{

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff",
+  "sourceTag": "v1.2.1",
+  "command": "make build",
+  "profile": {
+    "go": "1.26.5",
+    "cgoEnabled": true,
+    "buildTags": ["gms_pure_go"],
+    "goos": "darwin",
+    "goarch": "arm64"
+  },
+  "binary": {
+    "developmentName": "bd-upstream",
+    "builtPath": "./bd",
+    "sha256": "553b53e70d4009f906607222ffe54a2f3eabfee37f0af98c1aa60d35d8731d52",
+    "identity": "bd version 1.2.1 (634cbbc4b: 634cbbc4bc58)",
+    "schema": 65
+  },
+  "result": "pass",
+  "evidenceManifest": "engdocs/beadshx/evidence/upstream-v1.2.1/manifest.json",
+  "tests": {
+    "status": "pass",
+    "lastCommand": "PATH=\"$PWD:$PATH\" make test",
+    "lastAttempt": "2026-08-14",
+    "coveragePercent": 38.0,
+    "wallClockSeconds": 349.3,
+    "environmentNote": "The repository binary must precede the globally installed bd-toolchain dispatcher on PATH because an upstream hook test invokes bd inside an intentionally unpinned temporary worktree.",
+    "note": "The canonical build and full unit suite pass. The smoke, migration, differential, policy, package, and published-release checks also pass. The evidence manifest records all failures, skips, measurements, checksums, and platform limits required by BHX-M00-10."
+  }
+}

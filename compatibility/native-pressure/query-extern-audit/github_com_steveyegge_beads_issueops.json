@@ -1,0 +1,1160 @@
+{
+	"schemaVersion": 1,
+	"fallbacks": [
+		{
+			"package": "context",
+			"symbol": "Context.Done",
+			"position": "result:1",
+			"goType": "\u003c-chan struct{}",
+			"reason": "channel"
+		},
+		{
+			"package": "context",
+			"symbol": "Context.Value",
+			"position": "param:key",
+			"goType": "any",
+			"reason": "empty_interface"
+		},
+		{
+			"package": "context",
+			"symbol": "Context.Value",
+			"position": "result:1",
+			"goType": "any",
+			"reason": "empty_interface"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Comment.CreatedAt",
+			"position": "field:CreatedAt",
+			"goType": "time.Time",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "CustomStatus.Category",
+			"position": "field:Category",
+			"goType": "github.com/steveyegge/beads/internal/types.StatusCategory",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Dependency.CreatedAt",
+			"position": "field:CreatedAt",
+			"goType": "time.Time",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Dependency.Type",
+			"position": "field:Type",
+			"goType": "github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.BondedFrom",
+			"position": "field:BondedFrom",
+			"goType": "[]github.com/steveyegge/beads/internal/types.BondRef",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.CompactedAtCommit",
+			"position": "field:CompactedAtCommit",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.CreatedAt",
+			"position": "field:CreatedAt",
+			"goType": "time.Time",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.EstimatedMinutes",
+			"position": "field:EstimatedMinutes",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.ExternalRef",
+			"position": "field:ExternalRef",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.IssueType",
+			"position": "field:IssueType",
+			"goType": "github.com/steveyegge/beads/internal/types.IssueType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.Labels",
+			"position": "field:Labels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.Metadata",
+			"position": "field:Metadata",
+			"goType": "encoding/json.RawMessage",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.MolType",
+			"position": "field:MolType",
+			"goType": "github.com/steveyegge/beads/internal/types.MolType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.RowVersion",
+			"position": "field:RowVersion",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.Status",
+			"position": "field:Status",
+			"goType": "github.com/steveyegge/beads/internal/types.Status",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.StorageClass",
+			"position": "field:StorageClass",
+			"goType": "github.com/steveyegge/beads/internal/types.StorageClass",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.Timeout",
+			"position": "field:Timeout",
+			"goType": "time.Duration",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.UpdatedAt",
+			"position": "field:UpdatedAt",
+			"goType": "time.Time",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.Waiters",
+			"position": "field:Waiters",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.WispPlaneOverride",
+			"position": "field:WispPlaneOverride",
+			"goType": "*bool",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.WispType",
+			"position": "field:WispType",
+			"goType": "github.com/steveyegge/beads/internal/types.WispType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "Issue.WorkType",
+			"position": "field:WorkType",
+			"goType": "github.com/steveyegge/beads/internal/types.WorkType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.CommentCount",
+			"position": "field:CommentCount",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.CommentsOmitted",
+			"position": "field:CommentsOmitted",
+			"goType": "*bool",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.DependencyCount",
+			"position": "field:DependencyCount",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.DependentCount",
+			"position": "field:DependentCount",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.EpicCloseable",
+			"position": "field:EpicCloseable",
+			"goType": "*bool",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.EpicClosedChildren",
+			"position": "field:EpicClosedChildren",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.EpicTotalChildren",
+			"position": "field:EpicTotalChildren",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.Issue",
+			"position": "field:Issue",
+			"goType": "github.com/steveyegge/beads/internal/types.Issue",
+			"reason": "embedded_field"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.Labels",
+			"position": "field:Labels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.Parent",
+			"position": "field:Parent",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueDetails.Revision",
+			"position": "field:Revision",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueWithCounts.Issue",
+			"position": "field:Issue",
+			"goType": "*github.com/steveyegge/beads/internal/types.Issue",
+			"reason": "embedded_field"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueWithCounts.Parent",
+			"position": "field:Parent",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueWithDependencyMetadata.DependencyType",
+			"position": "field:DependencyType",
+			"goType": "github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "IssueWithDependencyMetadata.Issue",
+			"position": "field:Issue",
+			"goType": "github.com/steveyegge/beads/internal/types.Issue",
+			"reason": "embedded_field"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "TreeNode.EdgeFromParent",
+			"position": "field:EdgeFromParent",
+			"goType": "github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/internal/types",
+			"symbol": "TreeNode.Issue",
+			"position": "field:Issue",
+			"goType": "github.com/steveyegge/beads/internal/types.Issue",
+			"reason": "embedded_field"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "AddDependenciesRequest.Edges",
+			"position": "field:Edges",
+			"goType": "[]github.com/steveyegge/beads/issueops.DependencyEdge",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "AddDependenciesResult.Added",
+			"position": "field:Added",
+			"goType": "[]github.com/steveyegge/beads/issueops.DependencyEdge",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "AnchorEdgeCount.Count",
+			"position": "field:Count",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ApplyBatchRequest.Items",
+			"position": "field:Items",
+			"goType": "[]github.com/steveyegge/beads/issueops.ApplyItem",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ApplyBatchResult.Items",
+			"position": "field:Items",
+			"goType": "[]github.com/steveyegge/beads/issueops.ItemResult",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ApplyBatchResult.Keys",
+			"position": "field:Keys",
+			"goType": "map[string]string",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ApplyItem.Kind",
+			"position": "field:Kind",
+			"goType": "github.com/steveyegge/beads/issueops.ItemKind",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "BatchCreateItem.Dependencies",
+			"position": "field:Dependencies",
+			"goType": "[]github.com/steveyegge/beads/issueops.CreateDependency",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "BlockingRequest.IDs",
+			"position": "field:IDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "BlockingResult.Items",
+			"position": "field:Items",
+			"goType": "[]github.com/steveyegge/beads/issueops.IssueBlocking",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ClaimConflictError.Status",
+			"position": "field:Status",
+			"goType": "github.com/steveyegge/beads/internal/types.Status",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ClaimNextRequest.Filter",
+			"position": "field:Filter",
+			"goType": "github.com/steveyegge/beads/issueops.ReadyRequest",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CloseBatchRequest.Items",
+			"position": "field:Items",
+			"goType": "[]github.com/steveyegge/beads/issueops.BatchCloseItem",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CloseBatchResult.Outcomes",
+			"position": "field:Outcomes",
+			"goType": "[]github.com/steveyegge/beads/issueops.CloseOutcome",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CloseItem.ExpectedVersion",
+			"position": "field:ExpectedVersion",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CloseItem.Target",
+			"position": "field:Target",
+			"goType": "github.com/steveyegge/beads/issueops.Ref",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CloseRequest.ExpectedVersion",
+			"position": "field:ExpectedVersion",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountByGroupRequest.Filter",
+			"position": "field:Filter",
+			"goType": "github.com/steveyegge/beads/issueops.CountRequest",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountByGroupRequest.GroupBy",
+			"position": "field:GroupBy",
+			"goType": "github.com/steveyegge/beads/issueops.CountGroup",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountByGroupResult.Groups",
+			"position": "field:Groups",
+			"goType": "map[string]int",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountByGroupResult.Total",
+			"position": "field:Total",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountRequest.Labels",
+			"position": "field:Labels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountRequest.LabelsAny",
+			"position": "field:LabelsAny",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountRequest.Priority",
+			"position": "field:Priority",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountRequest.PriorityMax",
+			"position": "field:PriorityMax",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountRequest.PriorityMin",
+			"position": "field:PriorityMin",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CountResult.Total",
+			"position": "field:Total",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CreateBatchRequest.Items",
+			"position": "field:Items",
+			"goType": "[]github.com/steveyegge/beads/issueops.BatchCreateItem",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CreateDependency.Type",
+			"position": "field:Type",
+			"goType": "github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CreateItem.MetadataRefs",
+			"position": "field:MetadataRefs",
+			"goType": "map[string]github.com/steveyegge/beads/issueops.Ref",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CreateRequest.Dependencies",
+			"position": "field:Dependencies",
+			"goType": "[]github.com/steveyegge/beads/issueops.CreateDependency",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "Cycle.Members",
+			"position": "field:Members",
+			"goType": "[]github.com/steveyegge/beads/issueops.CycleMember",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "CycleReport.Cycles",
+			"position": "field:Cycles",
+			"goType": "[]github.com/steveyegge/beads/issueops.Cycle",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DeleteRequest.ExpectedVersion",
+			"position": "field:ExpectedVersion",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DeleteRequest.IDs",
+			"position": "field:IDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DeleteResult.Orphaned",
+			"position": "field:Orphaned",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DepAddItem.Source",
+			"position": "field:Source",
+			"goType": "github.com/steveyegge/beads/issueops.Ref",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DepAddItem.Target",
+			"position": "field:Target",
+			"goType": "github.com/steveyegge/beads/issueops.Ref",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DepAddItem.Type",
+			"position": "field:Type",
+			"goType": "github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DependencyEdge.Type",
+			"position": "field:Type",
+			"goType": "github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "DependentsOutsideRequestError.Dependents",
+			"position": "field:Dependents",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeCountRequest.Direction",
+			"position": "field:Direction",
+			"goType": "github.com/steveyegge/beads/issueops.EdgeDirection",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeCountRequest.IDs",
+			"position": "field:IDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeCountRequest.Types",
+			"position": "field:Types",
+			"goType": "[]github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeCountResult.Anchors",
+			"position": "field:Anchors",
+			"goType": "[]github.com/steveyegge/beads/issueops.AnchorEdgeCount",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeReadRequest.IDs",
+			"position": "field:IDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeReadRequest.Types",
+			"position": "field:Types",
+			"goType": "[]github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "EdgeReadResult.Anchors",
+			"position": "field:Anchors",
+			"goType": "[]github.com/steveyegge/beads/issueops.AnchorEdges",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "Field",
+			"position": "type",
+			"goType": "github.com/steveyegge/beads/issueops.Field[T any]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ImportBatchRequest.Memories",
+			"position": "field:Memories",
+			"goType": "[]github.com/steveyegge/beads/issueops.ImportMemory",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ImportBatchResult.SkippedDependencies",
+			"position": "field:SkippedDependencies",
+			"goType": "[]github.com/steveyegge/beads/issueops.SkippedDependency",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ImportBatchResult.StaleRejectedIDs",
+			"position": "field:StaleRejectedIDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssueBlocking.BlockedBy",
+			"position": "field:BlockedBy",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssueBlocking.Blocks",
+			"position": "field:Blocks",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.AcceptanceCriteria",
+			"position": "field:AcceptanceCriteria",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.AppendNotes",
+			"position": "field:AppendNotes",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Assignee",
+			"position": "field:Assignee",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.AwaitID",
+			"position": "field:AwaitID",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.ClosedBySession",
+			"position": "field:ClosedBySession",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.DeferUntil",
+			"position": "field:DeferUntil",
+			"goType": "github.com/steveyegge/beads/issueops.Field[*time.Time]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Description",
+			"position": "field:Description",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Design",
+			"position": "field:Design",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.DueAt",
+			"position": "field:DueAt",
+			"goType": "github.com/steveyegge/beads/issueops.Field[*time.Time]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.EstimatedMinutes",
+			"position": "field:EstimatedMinutes",
+			"goType": "github.com/steveyegge/beads/issueops.Field[*int]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.ExternalRef",
+			"position": "field:ExternalRef",
+			"goType": "github.com/steveyegge/beads/issueops.Field[*string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.IssueType",
+			"position": "field:IssueType",
+			"goType": "github.com/steveyegge/beads/issueops.Field[github.com/steveyegge/beads/internal/types.IssueType]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Labels",
+			"position": "field:Labels",
+			"goType": "github.com/steveyegge/beads/issueops.LabelPatch",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Metadata",
+			"position": "field:Metadata",
+			"goType": "github.com/steveyegge/beads/issueops.MetadataPatch",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Notes",
+			"position": "field:Notes",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Owner",
+			"position": "field:Owner",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.ParentID",
+			"position": "field:ParentID",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Persistence",
+			"position": "field:Persistence",
+			"goType": "github.com/steveyegge/beads/issueops.Field[github.com/steveyegge/beads/internal/types.PersistenceMode]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Priority",
+			"position": "field:Priority",
+			"goType": "github.com/steveyegge/beads/issueops.Field[int]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.SpecID",
+			"position": "field:SpecID",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Status",
+			"position": "field:Status",
+			"goType": "github.com/steveyegge/beads/issueops.Field[github.com/steveyegge/beads/internal/types.Status]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "IssuePatch.Title",
+			"position": "field:Title",
+			"goType": "github.com/steveyegge/beads/issueops.Field[string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ItemError.Kind",
+			"position": "field:Kind",
+			"goType": "github.com/steveyegge/beads/issueops.ItemKind",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ItemResult.Kind",
+			"position": "field:Kind",
+			"goType": "github.com/steveyegge/beads/issueops.ItemKind",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ItemResult.RowVersion",
+			"position": "field:RowVersion",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "LabelPatch.Add",
+			"position": "field:Add",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "LabelPatch.Remove",
+			"position": "field:Remove",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "LabelPatch.Replace",
+			"position": "field:Replace",
+			"goType": "github.com/steveyegge/beads/issueops.Field[[]string]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.ExcludeLabels",
+			"position": "field:ExcludeLabels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.ExcludeTypes",
+			"position": "field:ExcludeTypes",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.Labels",
+			"position": "field:Labels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.LabelsAny",
+			"position": "field:LabelsAny",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.Limit",
+			"position": "field:Limit",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.MetadataFields",
+			"position": "field:MetadataFields",
+			"goType": "map[string]string",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.Priority",
+			"position": "field:Priority",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.PriorityMax",
+			"position": "field:PriorityMax",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListRequest.PriorityMin",
+			"position": "field:PriorityMin",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ListSettingsResult.Settings",
+			"position": "field:Settings",
+			"goType": "map[string]string",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "MetadataPatch.Merge",
+			"position": "field:Merge",
+			"goType": "github.com/steveyegge/beads/issueops.Field[encoding/json.RawMessage]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "MetadataPatch.Replace",
+			"position": "field:Replace",
+			"goType": "github.com/steveyegge/beads/issueops.Field[encoding/json.RawMessage]",
+			"reason": "generic_named_type"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "MetadataPatch.Set",
+			"position": "field:Set",
+			"goType": "map[string]encoding/json.RawMessage",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "MetadataPatch.Unset",
+			"position": "field:Unset",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "NotFoundError.IDs",
+			"position": "field:IDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "QueryRequest.Limit",
+			"position": "field:Limit",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyCountResult.Total",
+			"position": "field:Total",
+			"goType": "int64",
+			"reason": "scalar_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.ExcludeLabels",
+			"position": "field:ExcludeLabels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.ExcludeTypes",
+			"position": "field:ExcludeTypes",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.Labels",
+			"position": "field:Labels",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.LabelsAny",
+			"position": "field:LabelsAny",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.Limit",
+			"position": "field:Limit",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.MetadataFields",
+			"position": "field:MetadataFields",
+			"goType": "map[string]string",
+			"reason": "map_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReadyRequest.Priority",
+			"position": "field:Priority",
+			"goType": "*int",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "RelatedRequest.Direction",
+			"position": "field:Direction",
+			"goType": "github.com/steveyegge/beads/issueops.RelationDirection",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "RelatedRequest.Types",
+			"position": "field:Types",
+			"goType": "[]github.com/steveyegge/beads/internal/types.DependencyType",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReleaseRequest.ExpectedAssignee",
+			"position": "field:ExpectedAssignee",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "ReopenRequest.ExpectedVersion",
+			"position": "field:ExpectedVersion",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "StatsResult.Summary",
+			"position": "field:Summary",
+			"goType": "github.com/steveyegge/beads/internal/types.Statistics",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "SweepRequest.Tier",
+			"position": "field:Tier",
+			"goType": "github.com/steveyegge/beads/issueops.SweepTier",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "SweepResult.ReferencedIDs",
+			"position": "field:ReferencedIDs",
+			"goType": "[]string",
+			"reason": "slice_element_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "SweepResult.Skipped",
+			"position": "field:Skipped",
+			"goType": "github.com/steveyegge/beads/issueops.SweepSkips",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateItem.ExpectedAssignee",
+			"position": "field:ExpectedAssignee",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateItem.ExpectedVersion",
+			"position": "field:ExpectedVersion",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateItem.Patch",
+			"position": "field:Patch",
+			"goType": "github.com/steveyegge/beads/issueops.IssuePatch",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateItem.Target",
+			"position": "field:Target",
+			"goType": "github.com/steveyegge/beads/issueops.Ref",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateRequest.ExpectedAssignee",
+			"position": "field:ExpectedAssignee",
+			"goType": "*string",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateRequest.ExpectedVersion",
+			"position": "field:ExpectedVersion",
+			"goType": "*int64",
+			"reason": "pointer_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "UpdateRequest.Patch",
+			"position": "field:Patch",
+			"goType": "github.com/steveyegge/beads/issueops.IssuePatch",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "WalkTreeRequest.Direction",
+			"position": "field:Direction",
+			"goType": "github.com/steveyegge/beads/issueops.TreeDirection",
+			"reason": "named_value_field_abi"
+		},
+		{
+			"package": "github.com/steveyegge/beads/issueops",
+			"symbol": "WalkTreeRequest.Status",
+			"position": "field:Status",
+			"goType": "github.com/steveyegge/beads/internal/types.Status",
+			"reason": "named_value_field_abi"
+		}
+	]
+}

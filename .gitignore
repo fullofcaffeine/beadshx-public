@@ -139,6 +139,10 @@ bd_test
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
 /build/
+/generated/go/*
+!/generated/go/.gitignore
+/LICENSES/
+/.toolchains/
 node_modules/
 tmp/build/cli-docs/admin.md
 tmp/build/cli-docs/ado.md

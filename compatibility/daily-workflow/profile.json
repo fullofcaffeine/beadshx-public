@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "authorities": {
+    "commandInventory": "compatibility/upstream-v1.2.1-command-inventory.json.gz",
+    "outputContracts": "compatibility/output-contracts/plan.json",
+    "errorContracts": "compatibility/error-contracts/plan.json",
+    "storageContracts": "compatibility/storage-contracts/plan.json",
+    "effectContracts": "compatibility/effect-contracts/plan.json"
+  },
+  "scope": {
+    "purpose": "Order the first compatibility work around commands used in normal repository maintenance.",
+    "d0IsFullCompatibility": false,
+    "unassignedInventoryCommandsRemainRequired": true,
+    "writeStagePrerequisite": "Create and verify a recoverable backup before dogfood writes."
+  },
+  "privacySafeEvidence": {
+    "sourceClass": "requester-provided reduced shell-usage summary",
+    "collectionDate": "2026-08-15",
+    "coarseWindow": "2025-12 through 2026-08",
+    "candidateInvocationCount": 51,
+    "ambiguousRootInvocationCount": 12,
+    "recognizedCommandCounts": {
+      "doctor": 2,
+      "init": 10,
+      "list": 1,
+      "migrate": 2,
+      "prime": 4,
+      "ready": 1,
+      "setup": 4,
+      "show": 1,
+      "upgrade": 3
+    },
+    "rankingDecision": "Combine reduced frequency evidence with the repository's documented maintenance workflow; never retain raw invocations or unmatched input."
+  },
+  "daily": {
+    "id": "D0",
+    "priority": "automation-first",
+    "commands": [
+      "cmd:bd/prime",
+      "cmd:bd/ready",
+      "cmd:bd/list",
+      "cmd:bd/show",
+      "cmd:bd/search",
+      "cmd:bd/blocked",
+      "cmd:bd/count",
+      "cmd:bd/status",
+      "cmd:bd/create",
+      "cmd:bd/update",
+      "cmd:bd/heartbeat",
+      "cmd:bd/comments/add",
+      "cmd:bd/comments/list",
+      "cmd:bd/dep/add",
+      "cmd:bd/dep/list",
+      "cmd:bd/dep/remove",
+      "cmd:bd/children",
+      "cmd:bd/label/add",
+      "cmd:bd/label/list",
+      "cmd:bd/label/remove",
+      "cmd:bd/close",
+      "cmd:bd/reopen",
+      "cmd:bd/info",
+      "cmd:bd/context"
+    ],
+    "flags": [
+      "flag:cmd:bd/--directory",
+      "flag:cmd:bd/--json",
+      "flag:cmd:bd/--quiet",
+      "flag:cmd:bd/--readonly",
+      "flag:cmd:bd/--sandbox",
+      "flag:cmd:bd/create/--assignee",
+      "flag:cmd:bd/create/--parent",
+      "flag:cmd:bd/create/--priority",
+      "flag:cmd:bd/create/--type",
+      "flag:cmd:bd/list/--assignee",
+      "flag:cmd:bd/list/--label",
+      "flag:cmd:bd/list/--limit",
+      "flag:cmd:bd/list/--parent",
+      "flag:cmd:bd/list/--priority",
+      "flag:cmd:bd/list/--status",
+      "flag:cmd:bd/list/--type",
+      "flag:cmd:bd/update/--append-notes",
+      "flag:cmd:bd/update/--assignee",
+      "flag:cmd:bd/update/--claim",
+      "flag:cmd:bd/update/--if-assignee",
+      "flag:cmd:bd/update/--if-status",
+      "flag:cmd:bd/update/--status",
+      "flag:cmd:bd/close/--reason",
+      "flag:cmd:bd/reopen/--reason"
+    ],
+    "outputCaseIds": [
+      "plain-human-list",
+      "styled-human-show",
+      "paged-human-list"
+    ],
+    "errorCaseIds": [
+      "invalid-status",
+      "missing-show-json",
+      "claim-held-by-other-actor",
+      "close-partial-success",
+      "update-partial-failure"
+    ],
+    "storageProfileIds": [
+      "cli-without-store",
+      "issue-queries",
+      "issue-lifecycle",
+      "issue-annotations",
+      "dependency-mutations"
+    ],
+    "effectRecipeIds": [
+      "cli-without-store",
+      "issue-queries",
+      "issue-lifecycle",
+      "issue-annotations",
+      "dependency-mutations"
+    ]
+  },
+  "next": {
+    "id": "D1",
+    "commands": [
+      "cmd:bd/init",
+      "cmd:bd/bootstrap",
+      "cmd:bd/setup",
+      "cmd:bd/quickstart",
+      "cmd:bd/hooks",
+      "cmd:bd/doctor",
+      "cmd:bd/ping",
+      "cmd:bd/upgrade",
+      "cmd:bd/migrate",
+      "cmd:bd/preflight",
+      "cmd:bd/lint",
+      "cmd:bd/stale",
+      "cmd:bd/orphans",
+      "cmd:bd/sync",
+      "cmd:bd/backup",
+      "cmd:bd/restore",
+      "cmd:bd/export",
+      "cmd:bd/import"
+    ]
+  },
+  "remaining": {
+    "id": "D2",
+    "definition": "Every command in the pinned inventory that is not assigned to D0 or D1."
+  },
+  "decisions": {
+    "syncTier": "D1",
+    "backupTreatment": "write-stage prerequisite and D1 command",
+    "aliasTreatment": "Canonical command and flag names gate D0; aliases and short flags remain required by full compatibility.",
+    "interactionPriority": "Non-interactive automation first; interactive compatibility remains required.",
+    "outputPriority": "JSON first for automation, with the selected human output contracts retained in D0.",
+    "repositoryWorkflowAddition": "Heartbeat is D0 because active work leases require it."
+  },
+  "approval": {
+    "status": "approved",
+    "role": "repository owner",
+    "date": "2026-08-20"
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "status": "planned",
+  "derivationRule": "Each frozen up migration in the pinned Git tree is one numbered graph node. Its lane, version, filename, SHA-256, predecessor edge, and down-file presence are derived rather than copied into this plan.",
+  "authorities": {
+    "orchestration": "internal/storage/schema/schema.go",
+    "lock": "internal/storage/schema/lock.go",
+    "repairs": "internal/storage/schema/migration_repairs.go",
+    "forwardRepair": "internal/storage/schema/wisp_dep_forward_repair.go",
+    "remoteGate": "internal/storage/schema/remote_migrate_gate.go",
+    "smartRemoteGate": "internal/storage/schema/smart_remote_migrate_gate.go",
+    "nondeterminismAllowlist": "internal/storage/schema/migrations/nondeterminism-allowlist.txt",
+    "historicalWorkflow": ".github/workflows/migration-test.yml",
+    "legacySQLiteReader": "cmd/bd/legacy_sqlite_reader.go",
+    "legacyUpgradeGuard": "cmd/bd/legacy_upgrade_guard.go"
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "directory": "internal/storage/schema/migrations",
+      "cursorTable": "schema_migrations",
+      "latestVersion": 65,
+      "upFileCount": 65,
+      "downFileCount": 58,
+      "missingDownVersions": [24, 25, 26, 47, 59, 61, 62],
+      "scope": "versioned"
+    },
+    {
+      "id": "ignored",
+      "directory": "internal/storage/schema/migrations/ignored",
+      "cursorTable": "ignored_schema_migrations",
+      "latestVersion": 24,
+      "upFileCount": 24,
+      "downFileCount": 0,
+      "missingDownVersions": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+      "scope": "clone-local"
+    }
+  ],
+  "productionOrder": [
+    "migration-lock",
+    "remote-migrate-gate",
+    "schema-skew-ahead-guard",
+    "seed-dolt-ignore",
+    "unstage-preexisting",
+    "main-dirty-guard",
+    "main-numbered-lane",
+    "custom-status-type-backfill",
+    "dependency-id-rekey",
+    "aux-row-id-rekey",
+    "ignored-dirty-guard",
+    "ignored-cursor-reality",
+    "ignored-numbered-lane",
+    "unstage-ignored",
+    "preexisting-dirty-signature-guard",
+    "scoped-schema-commit"
+  ],
+  "applicationNodes": [
+    {"id": "migration-lock", "kind": "guard", "resume": "retry", "source": "internal/storage/schema/lock.go"},
+    {"id": "remote-migrate-gate", "kind": "guard", "resume": "operator-choice", "source": "internal/storage/schema/remote_migrate_gate.go"},
+    {"id": "schema-skew-ahead-guard", "kind": "guard", "resume": "newer-binary", "source": "internal/storage/schema/schema.go"},
+    {"id": "schema-behind-readonly-guard", "kind": "guard", "resume": "writable-migration", "source": "internal/storage/schema/schema.go"},
+    {"id": "seed-dolt-ignore", "kind": "heal", "resume": "idempotent", "source": "internal/storage/schema/schema.go"},
+    {"id": "unstage-preexisting", "kind": "working-set-guard", "resume": "idempotent", "source": "internal/storage/schema/schema.go"},
+    {"id": "main-dirty-guard", "kind": "working-set-guard", "resume": "user-recovery", "source": "internal/storage/schema/schema.go"},
+    {"id": "repair-main-0040", "kind": "pre-migration-repair", "resume": "idempotent", "source": "internal/storage/schema/migration_repairs.go"},
+    {"id": "repair-main-0041", "kind": "pre-migration-repair", "resume": "idempotent", "source": "internal/storage/schema/migration_repairs.go"},
+    {"id": "repair-main-0047", "kind": "pre-migration-repair", "resume": "idempotent", "source": "internal/storage/schema/migration_repairs.go"},
+    {"id": "repair-main-0053", "kind": "pre-migration-repair", "resume": "idempotent", "source": "internal/storage/schema/migration_repairs.go"},
+    {"id": "repair-main-0058", "kind": "pre-migration-repair", "resume": "idempotent", "source": "internal/storage/schema/wisp_dep_forward_repair.go"},
+    {"id": "main-numbered-lane", "kind": "derived-lane", "resume": "per-step-cursor-and-hash", "source": "internal/storage/schema/schema.go"},
+    {"id": "custom-status-type-backfill", "kind": "data-backfill", "resume": "idempotent", "source": "internal/storage/schema/backfill.go"},
+    {"id": "dependency-id-rekey", "kind": "identity-rekey", "resume": "deterministic", "source": "internal/storage/schema/dep_id_backfill.go"},
+    {"id": "aux-row-id-rekey", "kind": "identity-rekey", "resume": "marker-and-sentinel", "source": "internal/storage/schema/aux_row_id_backfill.go"},
+    {"id": "ignored-dirty-guard", "kind": "working-set-guard", "resume": "user-recovery", "source": "internal/storage/schema/schema.go"},
+    {"id": "ignored-cursor-reality", "kind": "heal", "resume": "replay-contradicted-cursor", "source": "internal/storage/schema/schema.go"},
+    {"id": "ignored-numbered-lane", "kind": "derived-lane", "resume": "per-step-cursor-and-hash", "source": "internal/storage/schema/schema.go"},
+    {"id": "unstage-ignored", "kind": "working-set-boundary", "resume": "idempotent", "source": "internal/storage/schema/schema.go"},
+    {"id": "preexisting-dirty-signature-guard", "kind": "working-set-guard", "resume": "user-recovery", "source": "internal/storage/schema/schema.go"},
+    {"id": "scoped-schema-commit", "kind": "publication", "resume": "inspect-indeterminate-outcome", "source": "internal/storage/schema/schema.go"},
+    {"id": "legacy-sqlite-conversion", "kind": "format-conversion", "resume": "authenticated-read-only-source", "source": "cmd/bd/legacy_sqlite_reader.go"},
+    {"id": "doctor-migration-skew", "kind": "diagnostic-repair", "resume": "operator-choice", "source": "cmd/bd/doctor/migration_skew.go"}
+  ],
+  "repairBindings": [
+    {"node": "repair-main-0040", "lane": "main", "beforeVersion": 40, "function": "repairPartial0040NonlocalInsert"},
+    {"node": "repair-main-0041", "lane": "main", "beforeVersion": 41, "function": "repairPartial0041NonlocalDelete"},
+    {"node": "repair-main-0047", "lane": "main", "beforeVersion": 47, "function": "ensureWispTablesForMixedBlockedRecompute"},
+    {"node": "repair-main-0053", "lane": "main", "beforeVersion": 53, "function": "repairV53RigAndSplitTargets"},
+    {"node": "repair-main-0058", "lane": "main", "beforeVersion": 58, "function": "repairWispDependenciesForwardShape"}
+  ],
+  "schemaObservers": [
+    "information-schema-tables-and-views",
+    "information-schema-columns-types-nullability-defaults-generated-expressions",
+    "information-schema-indexes",
+    "information-schema-primary-unique-foreign-and-check-constraints",
+    "main-and-ignored-cursor-version-and-content-hash",
+    "dolt-ignore-and-nonlocal-table-membership",
+    "representative-row-and-derived-value-invariants",
+    "dolt-status-staging-and-commit-history"
+  ],
+  "determinism": {
+    "convergenceFloorMainVersion": 43,
+    "allowlistedFileCount": 10,
+    "replicatedStoredValueRisk": ["main:0004", "main:0005", "main:0009", "main:0010", "main:0037", "main:0043"],
+    "queryTimeOnly": ["main:0017"],
+    "cloneLocalOnly": ["main:0021", "ignored:0001", "ignored:0005"]
+  },
+  "reversibilityPolicy": {
+    "downFile": "A down file is executable evidence, not proof of lossless semantic reversal.",
+    "unlisted": "A numbered node not listed below is schema-additive or has a declared down path, but still requires pair evidence before BeadsHX calls it lossless.",
+    "irreversible": [
+      {"node": "main:0032", "reason": "Drops migration application timestamps."},
+      {"node": "main:0037", "reason": "Rekeys stored row identities with no inverse identity map."},
+      {"node": "main:0038", "reason": "Drops hop columns and their stored values."},
+      {"node": "main:0050", "reason": "Rekeys dependency identities without retaining the former key map."},
+      {"node": "main:0061", "reason": "Rekeys auxiliary row identities to content-derived keys without an inverse map."},
+      {"node": "main:0062", "reason": "Moves events from versioned history to clone-local state and rebuilds the table."},
+      {"node": "ignored:0011", "reason": "Deletes orphaned child-counter rows as destructive cleanup."}
+    ],
+    "conditional": [
+      {"node": "main:0028", "condition": "Local metadata and repo-mtime rows remain available after the plane move."},
+      {"node": "main:0030", "condition": "Copied local metadata survives after legacy source keys are deleted."},
+      {"node": "main:0035", "condition": "The wisp representation retains every former infrastructure field and identity."},
+      {"node": "main:0041", "condition": "Split dependency target kinds remain available when recombining the old target."},
+      {"node": "main:0053", "condition": "Rig and split-target repair inputs remain distinguishable after normalization."},
+      {"node": "main:0055", "condition": "Lease-table rows remain available if lease columns must be reconstructed."},
+      {"node": "ignored:0003", "condition": "Split wisp dependency target kinds remain available."},
+      {"node": "ignored:0023", "condition": "Journal repair retains every valid pre-repair row and sequence value."}
+    ]
+  },
+  "testPairFamilies": [
+    {"id": "fresh-to-latest", "construction": "production-bootstrap", "observer": "embedded-cgo-and-cli-parity"},
+    {"id": "adjacent-main", "construction": "MigrateUpTo", "observer": "embedded-cgo"},
+    {"id": "adjacent-ignored", "construction": "frozen-ignored-sql", "observer": "embedded-cgo"},
+    {"id": "historical-release-to-latest", "construction": "pinned-historical-binary", "observer": "migration-harness"},
+    {"id": "repair-state-to-latest", "construction": "focused-partial-state", "observer": "embedded-cgo"},
+    {"id": "mixed-cursor-and-remote", "construction": "focused-cursor-or-ref-state", "observer": "embedded-cgo"},
+    {"id": "legacy-sqlite-to-current-dolt", "construction": "authenticated-read-only-conversion", "observer": "source-hash-jsonl-and-dolt-readback"},
+    {"id": "binary-schema-guard", "construction": "cursor-ahead-current-or-behind", "observer": "typed-error-and-process-contract"}
+  ],
+  "explicitTestCases": {
+    "fresh-to-latest": ["fresh-production"],
+    "historical-release-to-latest": ["v0.9.1", "v0.17.0", "v0.49.6", "v0.50.3", "v0.55.4", "v0.56.1", "v0.57.0", "v0.62.0", "v0.63.3", "v1.0.0", "v1.0.1", "v1.1.0", "v1.1.2"],
+    "repair-state-to-latest": ["partial-main-0040", "partial-main-0041", "mixed-main-0047", "rig-main-0053", "forward-main-0058", "aux-rekey-first", "aux-rekey-second", "dolt-ignore-heal", "content-hash-heal", "contradicted-ignored-cursor", "journal-shape", "interrupted-fresh-bootstrap"],
+    "mixed-cursor-and-remote": ["main-behind-ignored-latest", "main-latest-ignored-behind", "ignored-latest-missing-sentinel", "remote-below-convergence", "remote-ahead-adopt", "remote-fast-forward-adopt", "remote-content-skew-reject", "designated-single-migrator"],
+    "legacy-sqlite-to-current-dolt": ["v0.49.6-sqlite", "v0.50.3-sqlite"],
+    "binary-schema-guard": ["database-ahead", "database-current", "readonly-database-behind"]
+  },
+  "testPairFamilyOutcomes": {
+    "fresh-to-latest": "main:65+ignored:24",
+    "historical-release-to-latest": "main:65+ignored:24",
+    "repair-state-to-latest": "main:65+ignored:24",
+    "mixed-cursor-and-remote": "main:65+ignored:24",
+    "legacy-sqlite-to-current-dolt": "converted-main:65+ignored:24",
+    "binary-schema-guard": "open-current"
+  },
+  "testPairOutcomeOverrides": {
+    "remote-below-convergence": "reject-operator-choice",
+    "remote-ahead-adopt": "adopt-remote-latest",
+    "remote-fast-forward-adopt": "adopt-remote-fast-forward",
+    "remote-content-skew-reject": "reject-content-skew",
+    "designated-single-migrator": "migrate-local-to-latest",
+    "database-ahead": "reject-SchemaSkewError",
+    "database-current": "open-current",
+    "readonly-database-behind": "reject-SchemaBehindError"
+  },
+  "gaps": [
+    {"id": "normalized-node-shapes", "status": "pending", "owner": "BHX-M06", "need": "Execute every generated pair and retain normalized before/after observer output."},
+    {"id": "doctor-repair-outcomes", "status": "pending", "owner": "BHX-M02-11", "need": "Classify best-effort repair and history publication as compatibility or explicit divergence."},
+    {"id": "platform-migration-matrix", "status": "pending", "owner": "BHX-M18", "need": "Qualify the graph on every supported release platform."}
+  ]
+}

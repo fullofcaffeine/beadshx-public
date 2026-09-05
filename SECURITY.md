@@ -1,8 +1,20 @@
 # Security Policy
 
-## Reporting Security Issues
+## Reporting BeadsHX Security Issues
 
-If you discover a security vulnerability in bd, please report it responsibly:
+This repository is a public compatibility fork. Report a BeadsHX-specific
+vulnerability privately through a
+[private GitHub security advisory](https://github.com/fullofcaffeine/beadshx/security/advisories/new).
+Do not put credentials, exploit details, or private project data in a normal
+issue.
+
+If the vulnerability also occurs in unmodified Beads, report it to the
+upstream Beads maintainers through their private channel.
+
+## Reporting Upstream Beads Security Issues
+
+If you discover a security vulnerability in upstream `bd`, report it
+responsibly:
 
 **Email**: security@steveyegge.com (or open a private security advisory on GitHub)
 
@@ -126,14 +138,13 @@ All dependencies are pinned via `go.sum` and verified with `go mod verify`. Reno
 
 ## Supported Versions
 
-We provide security updates for:
+BeadsHX has no supported release. Security fixes for the port land on `main`
+during development.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| main    | :white_check_mark: |
-| < 1.0   | :x:                |
-
-Once version 1.0 is released, we will support the latest major version and one previous major version.
+| Version | Status |
+| ------- | ------ |
+| `main` | Development fixes |
+| Releases | None available |
 
 ## Best Practices
 

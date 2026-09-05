@@ -10,6 +10,7 @@ import (
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
 	"github.com/steveyegge/beads/internal/doltserver"
+	"github.com/steveyegge/beads/internal/proxiedworkspace"
 	"github.com/steveyegge/beads/internal/storage/dbproxy/proxy"
 	"github.com/steveyegge/beads/internal/storage/dolt"
 	"github.com/steveyegge/beads/internal/storage/uow"
@@ -118,49 +119,27 @@ func newSQLServerUOWProvider(ctx context.Context, beadsDir string, topology sqlS
 // writes land in the wrong database (split-brain) — and the identity assertion
 // below silently degrades to no assertion at all.
 func resolveProxiedServerUOWTopology(beadsDir, databaseOverride string, posture identityPosture) (sqlServerUOWTopology, error) {
-	persisted, err := configfile.Load(beadsDir)
+	var (
+		resolved proxiedworkspace.Topology
+		err      error
+	)
+	if posture == adoptWorkspaceIdentity {
+		resolved, err = proxiedworkspace.ResolveAdopting(beadsDir, databaseOverride)
+	} else {
+		resolved, err = proxiedworkspace.Resolve(beadsDir, databaseOverride)
+	}
 	if err != nil {
-		return sqlServerUOWTopology{}, fmt.Errorf(
-			"corrupt workspace config %s: %w — refusing to fall back to a fresh database; repair or remove the file to proceed",
-			configfile.ConfigPath(beadsDir), err)
+		return sqlServerUOWTopology{}, err
 	}
-	topology := sqlServerUOWTopology{database: configfile.DefaultDoltDatabase}
-	if persisted != nil {
-		topology.database = persisted.GetDoltDatabase()
-		topology.teamServer = persisted.IsTeamServerManaged()
-		if posture == assertWorkspaceIdentity {
-			topology.expectedProjectID = persisted.ProjectID
-			// An empty local identity would reach checkTeamServerIdentity as
-			// "nothing to assert" — indistinguishable from the adoption path,
-			// which would silently disable the guard. A team-server workspace
-			// always has an adopted ProjectID after a successful init, so an
-			// empty one here is a broken workspace, not a legacy one.
-			if topology.teamServer && topology.expectedProjectID == "" {
-				return sqlServerUOWTopology{}, fmt.Errorf(
-					"newProxiedServerUOWProvider: this team-server workspace has no project identity in %s; re-run 'bd init --team-server' to adopt the identity provisioned in the shared database (it never writes to that database)",
-					configfile.ConfigFileName)
-			}
-		}
-	}
-	if databaseOverride != "" {
-		topology.database = databaseOverride
-	}
-
-	info, err := configfile.LoadProxiedServerClientInfo(beadsDir)
-	if err != nil {
-		return sqlServerUOWTopology{}, fmt.Errorf(
-			"corrupt proxied-server sidecar %s: %w — refusing to fall back to a fresh database; repair or remove the file to proceed",
-			configfile.ProxiedServerClientInfoPath(beadsDir), err)
-	}
-	if info != nil {
-		topology.proxyPort = info.Port
-		topology.proxyIdle = info.IdleTimeout
-		if info.External != nil {
-			topology.external = info.External
-			topology.rootPassword = os.Getenv(configfile.ExternalDoltPasswordEnvVar)
-		}
-	}
-	return topology, nil
+	return sqlServerUOWTopology{
+		database:          resolved.Database,
+		teamServer:        resolved.TeamServer,
+		expectedProjectID: resolved.ExpectedProjectID,
+		proxyPort:         resolved.ProxyPort,
+		proxyIdle:         resolved.ProxyIdle,
+		external:          resolved.External,
+		rootPassword:      resolved.RootPassword,
+	}, nil
 }
 
 // serverModeSocketProbeTimeout is how long the socket-first / TCP-fallback

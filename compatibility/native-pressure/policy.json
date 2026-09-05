@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "compilerEvidence": {
+    "project": "haxe.go",
+    "commit": "c1e3333d2ce358b451e69b2b1530030bc4083dd5",
+    "policy": "This task records pressure against the compiler commit pinned by the BeadsHX toolchain. Newer compiler changes are delta evidence until the toolchain lock advances."
+  },
+  "goVersion": "1.26.5",
+  "firstPartyPrefix": "github.com/steveyegge/beads/",
+  "rootPackages": ["github.com/steveyegge/beads/cmd/bd"],
+  "profiles": [
+    {"id": "portable-nocgo", "goos": "linux", "goarch": "amd64", "cgoEnabled": false, "buildTags": ["gms_pure_go"]},
+    {"id": "release-cgo", "goos": "linux", "goarch": "amd64", "cgoEnabled": true, "buildTags": ["gms_pure_go"]}
+  ],
+  "pressureAxes": ["callback", "cgo", "channel", "context", "generic", "interface", "multipleReturns", "platformSpecific", "pointer"],
+  "featureRanks": [
+    {"id": "extern-first-native-boundaries", "priority": "P0", "axes": ["pointer", "cgo", "platformSpecific"], "decision": "Port first-party Beads behavior to authored Haxe. Use precise externs for Go standard-library and independent third-party APIs underneath the port, and fix reusable haxe.go gaps before retaining only a proven third-party or platform native island."},
+    {"id": "typed-records-and-results", "priority": "P0", "axes": ["multipleReturns"], "decision": "Convert boundary results immediately into named Haxe records, enums, or go.Result values; do not expose positional implementation detail to domain code."},
+    {"id": "context-and-cancellation", "priority": "P1", "axes": ["context"], "decision": "Haxe owns cancellation intent and deadlines and consumes context APIs through precise externs. Keep native construction only when an unexported or lifetime constraint is proven."},
+    {"id": "callback-boundaries", "priority": "P1", "axes": ["callback"], "decision": "Prove bounded callback signatures with precise externs and a reduced compiler fixture. Retain callback execution in a native island only while an exact safe binding remains unsupported."},
+    {"id": "interface-method-sets", "priority": "P1", "axes": ["interface"], "decision": "Generate precise interface externs and route reusable method-set failures to haxe.go. Do not replace exported interfaces with product-specific Go wrappers."},
+    {"id": "concrete-generic-adapters", "priority": "P1", "axes": ["generic"], "decision": "Represent supported concrete generic instantiations through precise externs. Keep Haxe-owned policy and collections in authored Haxe and report unsupported shapes explicitly."},
+    {"id": "go-owned-concurrency", "priority": "P1", "axes": ["channel"], "decision": "Use typed channel and concurrency externs when haxe.go can preserve their semantics. Retain only proven host lifecycle and cleanup effects in a narrow native island."}
+  ],
+  "compilerGaps": [
+    {"id": "haxe_go-vfp.8.4.1", "axes": ["interface"], "disposition": "existing-owner", "need": "Prove external Go interface satisfaction from Haxe method sets."},
+    {"id": "haxe_go-vfp.9.4", "axes": ["context", "pointer"], "disposition": "existing-owner", "need": "Keep opaque native handles typed and lifetime-safe."},
+    {"id": "haxe_go-vfp.9.6", "axes": ["callback"], "disposition": "existing-owner", "need": "Prove bounded typed callback lowering."},
+    {"id": "haxe_go-vfp.9.6.1", "axes": ["channel"], "disposition": "existing-owner", "need": "Complete native channel direction, range, and select only when required by a product contract."},
+    {"id": "haxe_go-vfp.9.7", "axes": ["generic"], "disposition": "existing-owner", "need": "Prove supported generic extern shapes without mirroring broad foreign APIs."},
+    {"id": "haxe_go-vfp.9.7.1", "axes": ["interface", "multipleReturns", "pointer"], "disposition": "existing-owner", "need": "Generate deterministic precise extern dependency graphs for named types referenced across Go packages."},
+    {"id": "haxe_go-vfp.8.12", "axes": ["multipleReturns"], "disposition": "existing-owner", "need": "Keep tuple and value-error carriers precise at approved native seams."}
+  ],
+  "boundaryGroups": [
+    {
+      "id": "command-host",
+      "callerPackageRegex": "^github\\.com/steveyegge/beads/cmd/bd($|/)",
+      "semanticRole": "CLI orchestration and presentation edge",
+      "selectedOwner": "authored-haxe-first-party-port",
+      "facadeId": "facade:command-host",
+      "severity": "P0",
+      "commandProfiles": ["cli-without-store", "process-adapters", "issue-queries", "issue-lifecycle", "issue-annotations", "dependency-mutations", "composed-workflows", "workspace-metadata", "repository-lifecycle", "external-integrations", "journal-and-provenance", "server-runtime", "storage-administration"],
+      "operationIds": ["noStorage", "issueReader", "issueLifecycle", "graphRelations", "commentsAndLabels", "workspaceState", "batchPlan", "versionControl", "backupAndMigration", "integrationSync", "eventsJournal", "rawSqlAdmin", "serverRuntime", "externalProcess"],
+      "effectIds": ["fs-discover-workspace", "fs-write-control-files", "fs-transfer-and-backup", "fs-runtime-artifacts", "git-observe", "git-configure-and-hook", "git-publish-history", "dolt-observe", "dolt-commit-local-state", "dolt-mutate-remote", "dolt-destructive-maintenance", "process-run-tool", "process-after-commit-hook", "process-detached-metrics", "network-local-database-service", "network-serve-http-api", "network-read-external-service", "network-mutate-external-service", "network-export-opentelemetry", "credential-resolve-and-delegate", "credential-persist-federation-key"],
+      "haxeGoEvidence": ["authored Haxe command port", "typed Cobra and standard-library externs", "go.Result<T>"],
+      "reducedFixture": "test/native-pressure/simple_facade",
+      "waiver": null
+    },
+    {
+      "id": "storage-runtime",
+      "callerPackageRegex": "^github\\.com/steveyegge/beads/(internal/(storage|doltserver|doltremote|migration)|schema)($|/)",
+      "semanticRole": "Beads storage source family over Dolt, SQL, migration, transaction, and database-service APIs",
+      "selectedOwner": "authored-haxe-first-party-port",
+      "facadeId": "facade:storage-runtime",
+      "severity": "P0",
+      "commandProfiles": ["issue-queries", "issue-lifecycle", "issue-annotations", "dependency-mutations", "composed-workflows", "workspace-metadata", "repository-lifecycle", "external-integrations", "journal-and-provenance", "server-runtime", "storage-administration"],
+      "operationIds": ["issueReader", "issueLifecycle", "graphRelations", "commentsAndLabels", "workspaceState", "batchPlan", "versionControl", "backupAndMigration", "integrationSync", "eventsJournal", "rawSqlAdmin", "serverRuntime"],
+      "effectIds": ["fs-transfer-and-backup", "fs-runtime-artifacts", "dolt-observe", "dolt-commit-local-state", "dolt-mutate-remote", "dolt-destructive-maintenance", "network-local-database-service", "credential-resolve-and-delegate", "credential-persist-federation-key"],
+      "haxeGoEvidence": ["authored Haxe storage and transaction port", "typed database/sql and Dolt-driver externs", "go.Result<T>", "opaque typed handles"],
+      "reducedFixture": "M06 storage facade tracer",
+      "waiver": null
+    },
+    {
+      "id": "platform-runtime",
+      "callerPackageRegex": "^github\\.com/steveyegge/beads/internal/(atomicfile|config|configfile|creds|fdhygiene|git|hooks|lockfile|metrics|procid|remotecache|routing|ui)($|/)",
+      "semanticRole": "Filesystem, Git, process, terminal, credential, lock, and platform mechanics",
+      "selectedOwner": "authored-haxe-first-party-port",
+      "facadeId": "facade:platform-runtime",
+      "severity": "P0",
+      "commandProfiles": ["cli-without-store", "process-adapters", "composed-workflows", "workspace-metadata", "repository-lifecycle", "external-integrations", "journal-and-provenance", "server-runtime", "storage-administration"],
+      "operationIds": ["noStorage", "workspaceState", "versionControl", "backupAndMigration", "integrationSync", "eventsJournal", "serverRuntime", "externalProcess"],
+      "effectIds": ["fs-discover-workspace", "fs-write-control-files", "fs-runtime-artifacts", "git-observe", "git-configure-and-hook", "git-publish-history", "process-run-tool", "process-after-commit-hook", "process-detached-metrics", "network-local-database-service", "network-export-opentelemetry", "credential-resolve-and-delegate"],
+      "haxeGoEvidence": ["authored Haxe platform policy", "typed standard-library and independent tool externs", "opaque typed handles", "go.Go.spawn", "go.Chan<T>"],
+      "reducedFixture": "M06 platform facade tracer",
+      "waiver": null
+    },
+    {
+      "id": "http-runtime",
+      "callerPackageRegex": "^github\\.com/steveyegge/beads/internal/(httpapi|workapi)($|/)",
+      "semanticRole": "HTTP server, event stream, and work API lifecycle",
+      "selectedOwner": "authored-haxe-first-party-port",
+      "facadeId": "facade:http-runtime",
+      "severity": "P0",
+      "commandProfiles": ["server-runtime"],
+      "operationIds": ["issueReader", "issueLifecycle", "graphRelations", "commentsAndLabels", "workspaceState", "eventsJournal", "serverRuntime"],
+      "effectIds": ["dolt-observe", "dolt-commit-local-state", "network-local-database-service", "network-serve-http-api", "credential-resolve-and-delegate"],
+      "haxeGoEvidence": ["authored Haxe HTTP application port", "typed net/http and independent-library externs", "go.Result<T>", "named Haxe request and response records"],
+      "reducedFixture": "M06 HTTP facade tracer",
+      "waiver": null
+    },
+    {
+      "id": "integration-runtime",
+      "callerPackageRegex": "^github\\.com/steveyegge/beads/internal/(ado|compact|github|gitlab|jira|linear|notion|tracker)($|/)",
+      "semanticRole": "Remote tracker, AI, mapping, and synchronization adapters",
+      "selectedOwner": "authored-haxe-first-party-port",
+      "facadeId": "facade:integration-runtime",
+      "severity": "P0",
+      "commandProfiles": ["composed-workflows", "external-integrations", "repository-lifecycle"],
+      "operationIds": ["issueReader", "issueLifecycle", "graphRelations", "integrationSync", "externalProcess"],
+      "effectIds": ["fs-transfer-and-backup", "dolt-commit-local-state", "dolt-mutate-remote", "network-read-external-service", "network-mutate-external-service", "credential-resolve-and-delegate"],
+      "haxeGoEvidence": ["authored Haxe integration port", "typed independent client-library externs", "named Haxe service records", "go.Result<T>"],
+      "reducedFixture": "M06 integration facade tracer",
+      "waiver": null
+    },
+    {
+      "id": "telemetry-runtime",
+      "callerPackageRegex": "^github\\.com/steveyegge/beads/internal/telemetry($|/)",
+      "semanticRole": "OpenTelemetry storage decorators and exporters",
+      "selectedOwner": "authored-haxe-first-party-port",
+      "facadeId": "facade:telemetry-runtime",
+      "severity": "P1",
+      "commandProfiles": ["cli-without-store", "process-adapters", "issue-queries", "issue-lifecycle", "issue-annotations", "dependency-mutations", "composed-workflows", "workspace-metadata", "repository-lifecycle", "external-integrations", "journal-and-provenance", "server-runtime", "storage-administration"],
+      "operationIds": ["issueReader", "issueLifecycle", "graphRelations", "commentsAndLabels", "workspaceState", "batchPlan", "versionControl", "backupAndMigration", "integrationSync", "eventsJournal", "rawSqlAdmin", "serverRuntime"],
+      "effectIds": ["network-export-opentelemetry"],
+      "haxeGoEvidence": ["authored Haxe telemetry policy", "typed OpenTelemetry externs", "named Haxe telemetry events"],
+      "reducedFixture": "M06 telemetry opt-in tracer",
+      "waiver": null
+    }
+  ],
+  "dependencyPolicies": [
+    {"id": "storage-engine", "packageRegex": "^(database/sql|github\\.com/dolthub/(driver|dolt|go-mysql-server|gozstd)|github\\.com/go-sql-driver/|github\\.com/mattn/go-sqlite3)", "owner": "haxe-extern-first-or-proven-native-island", "severity": "P0", "decision": "Consume exported storage APIs through precise externs. Keep only unexported construction, unsafe CGO, or transaction-lifetime mechanics in a typed native island."},
+    {"id": "cli-presentation", "packageRegex": "^(github\\.com/spf13/(cobra|viper)|charm\\.land/|github\\.com/charmbracelet/)", "owner": "haxe-domain", "severity": "P0", "decision": "Haxe owns command meaning and presentation. Use precise externs for exported host-library mechanics without moving product behavior into Go."},
+    {"id": "telemetry-sdk", "packageRegex": "^(go\\.opentelemetry\\.io/|github\\.com/dolthub/eventkit)", "owner": "haxe-extern-first", "severity": "P1", "decision": "Use precise externs at the SDK boundary and convert immediately to named Haxe telemetry events; retain native code only for a proven unsupported lifecycle."},
+    {"id": "remote-sdk", "packageRegex": "^(github\\.com/anthropics/|github\\.com/google/go-github/|cloud\\.google\\.com/|github\\.com/Azure/|github\\.com/aws/|github\\.com/oracle/)", "owner": "haxe-extern-first", "severity": "P1", "decision": "Use precise externs and convert remote data and credentials at a typed Haxe service boundary."},
+    {"id": "host-runtime", "packageRegex": "^(context|net|net/http|os|os/exec|os/signal|runtime|syscall|unsafe|golang\\.org/x/(sys|term|sync))($|/)", "owner": "haxe-extern-first-or-proven-native-island", "severity": "P0", "decision": "Use precise externs for exported host APIs. Keep only unexported, unsafe, or lifecycle effects that a reduced compiler proof cannot represent in a narrow native island."},
+    {"id": "pure-value", "packageRegex": ".*", "owner": "haxe-domain", "severity": "P2", "decision": "Own pure values, parsing, validation, ordering, and product policy in authored Haxe; call exported helper libraries through precise externs when reuse is justified."}
+  ]
+}

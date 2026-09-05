@@ -1,5 +1,11 @@
 # Contributing to bd
 
+> **BeadsHX fork:** This repository ports Beads to Haxe and Go. Read
+> [the port specification](beadshx-complete-port-prd.md) before you change
+> BeadsHX behavior. The upstream setup instructions below apply to inherited
+> Go code. BeadsHX work also requires Haxe 4.3.7 and the toolchain locks in
+> `engdocs/beadshx/program/`.
+
 Thank you for your interest in contributing to bd! This document provides guidelines and instructions for contributing.
 
 ## Development Setup

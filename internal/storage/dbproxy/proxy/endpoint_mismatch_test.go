@@ -76,6 +76,74 @@ func TestGetCreateDatabaseProxyServerEndpoint_ReusesMatchingUpstream(t *testing.
 	assert.Equal(t, port, ep.Port)
 }
 
+func TestGetExistingDatabaseProxyServerEndpoint_ReusesMatchingUpstream(t *testing.T) {
+	root := t.TempDir()
+
+	cfg := configfile.ExternalDoltConfig{Host: "10.0.0.1", Port: 3306}
+	ts := server.New()
+	ts.ID_ = server.ExternalDoltServerID(cfg)
+	port := freeTCPPort(t)
+	h := runProxy(t, proxy.ProxyOpts{
+		RootDir: root,
+		Port:    port,
+		Server:  ts,
+	})
+	waitListening(t, root, listenWait)
+	t.Cleanup(func() {
+		h.Cancel()
+		_ = h.waitErr(t, shutdownWait)
+	})
+
+	ep, err := proxy.GetExistingDatabaseProxyServerEndpoint(root, proxy.OpenOpts{
+		Backend:  proxy.BackendExternal,
+		External: cfg,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "127.0.0.1", ep.Host)
+	assert.Equal(t, port, ep.Port)
+}
+
+func TestGetExistingDatabaseProxyServerEndpoint_MissingRecordDoesNotCreateState(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "missing")
+
+	_, err := proxy.GetExistingDatabaseProxyServerEndpoint(root, proxy.OpenOpts{
+		Backend: proxy.BackendLocalServer,
+	})
+	require.ErrorContains(t, err, "no record")
+	assert.NoDirExists(t, root)
+}
+
+func TestGetExistingDatabaseProxyServerEndpoint_RejectsUpstreamMismatch(t *testing.T) {
+	root := t.TempDir()
+
+	existingCfg := configfile.ExternalDoltConfig{Host: "10.0.0.1", Port: 3306}
+	ts := server.New()
+	ts.ID_ = server.ExternalDoltServerID(existingCfg)
+	h := runProxy(t, proxy.ProxyOpts{
+		RootDir: root,
+		Port:    freeTCPPort(t),
+		Server:  ts,
+	})
+	waitListening(t, root, listenWait)
+	t.Cleanup(func() {
+		h.Cancel()
+		_ = h.waitErr(t, shutdownWait)
+	})
+
+	wantCfg := configfile.ExternalDoltConfig{Host: "10.0.0.2", Port: 3306}
+	_, err := proxy.GetExistingDatabaseProxyServerEndpoint(root, proxy.OpenOpts{
+		Backend:  proxy.BackendExternal,
+		External: wantCfg,
+	})
+	require.Error(t, err)
+
+	var mismatch *proxy.ErrUpstreamMismatch
+	require.ErrorAs(t, err, &mismatch)
+	assert.Equal(t, server.ExternalDoltServerID(wantCfg), mismatch.Want)
+	assert.Equal(t, server.ExternalDoltServerID(existingCfg), mismatch.Have)
+}
+
 func TestGetCreateDatabaseProxyServerEndpoint_DoesNotBlindlyAdoptLegacyListener(t *testing.T) {
 	root := t.TempDir()
 

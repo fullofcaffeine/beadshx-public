@@ -829,10 +829,25 @@ func TestInstallHooksBeads_WorktreeAccess(t *testing.T) {
 
 		// Create a worktree and verify hooks are accessible from it
 		worktreeDir := filepath.Join(t.TempDir(), "worktree")
+		hookBinDir := t.TempDir()
+		writeHookProcessFixture(t, hookBinDir, "bd", hookProcessBDStub)
 		cmd = exec.Command("git", "worktree", "add", worktreeDir, "-b", "test-worktree")
 		cmd.Dir = tmpDir
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git worktree add failed: %v\n%s", err, string(output))
+		cmd.Env = make([]string, 0, len(os.Environ())+1)
+		for _, entry := range os.Environ() {
+			key, _, found := strings.Cut(entry, "=")
+			if found && strings.EqualFold(key, "PATH") {
+				continue
+			}
+			cmd.Env = append(cmd.Env, entry)
+		}
+		cmd.Env = append(cmd.Env, "PATH="+hookBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		worktreeOutput, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git worktree add failed: %v\n%s", err, string(worktreeOutput))
+		}
+		if !strings.Contains(string(worktreeOutput), "bd-arg-2=<post-checkout>") {
+			t.Fatalf("worktree did not execute the installed post-checkout hook\n%s", string(worktreeOutput))
 		}
 		defer func() {
 			exec.Command("git", "worktree", "remove", worktreeDir).Run()

@@ -71,3 +71,23 @@ func TestApplyProviderOptions(t *testing.T) {
 		t.Fatal("applyProviderOptions(WithPreview()).preview = false, want true")
 	}
 }
+
+func TestInspectionIssueReaderDisablesAdvisoryWrites(t *testing.T) {
+	p := &doltSQLProvider{}
+
+	ordinary, err := NewIssueReader(p)
+	if err != nil {
+		t.Fatalf("NewIssueReader: %v", err)
+	}
+	if !ordinary.(*issueReader).wakeExpiredDefers {
+		t.Fatal("ordinary reader disabled advisory defer waking")
+	}
+
+	inspection, err := NewInspectionIssueReader(p)
+	if err != nil {
+		t.Fatalf("NewInspectionIssueReader: %v", err)
+	}
+	if inspection.(*issueReader).wakeExpiredDefers {
+		t.Fatal("inspection reader enabled advisory defer waking")
+	}
+}

@@ -220,6 +220,10 @@ func (p *notifyingProvider) IssueLifecycle() (publicops.Lifecycle, error) {
 
 func (p *notifyingProvider) IssueReader() (publicops.Reader, error) { return NewIssueReader(p) }
 
+func (p *notifyingProvider) InspectionIssueReader() (publicops.Reader, error) {
+	return NewInspectionIssueReader(p)
+}
+
 func (p *notifyingProvider) IssueClaimer() (publicops.Claimer, error) { return NewIssueClaimer(p) }
 
 func (p *notifyingProvider) IssueRelations() (publicops.Relations, error) {
@@ -379,36 +383,37 @@ func (p *notifyingProvider) RunEventsMaintenanceTx(ctx context.Context, fn func(
 }
 
 var (
-	_ UnitOfWorkProvider        = (*notifyingProvider)(nil)
-	_ MaintenanceProvider       = (*notifyingProvider)(nil)
-	_ PoolTuner                 = (*notifyingProvider)(nil)
-	_ IssueLifecycleSource      = (*notifyingProvider)(nil)
-	_ IssueReaderSource         = (*notifyingProvider)(nil)
-	_ IssueClaimerSource        = (*notifyingProvider)(nil)
-	_ RelationsSource           = (*notifyingProvider)(nil)
-	_ EdgeReaderSource          = (*notifyingProvider)(nil)
-	_ BlockingAnnotatorSource   = (*notifyingProvider)(nil)
-	_ TreeWalkerSource          = (*notifyingProvider)(nil)
-	_ GraphCounterSource        = (*notifyingProvider)(nil)
-	_ CounterSource             = (*notifyingProvider)(nil)
-	_ ReadyCounterSource        = (*notifyingProvider)(nil)
-	_ ReadyClaimerSource        = (*notifyingProvider)(nil)
-	_ QuerierSource             = (*notifyingProvider)(nil)
-	_ StatsReporterSource       = (*notifyingProvider)(nil)
-	_ CycleDetectorSource       = (*notifyingProvider)(nil)
-	_ CommenterSource           = (*notifyingProvider)(nil)
-	_ BatchCloserSource         = (*notifyingProvider)(nil)
-	_ BatchCreatorSource        = (*notifyingProvider)(nil)
-	_ DependencyEditorSource    = (*notifyingProvider)(nil)
-	_ DeleterSource             = (*notifyingProvider)(nil)
-	_ SweeperSource             = (*notifyingProvider)(nil)
-	_ ImporterSource            = (*notifyingProvider)(nil)
-	_ BootstrapperSource        = (*notifyingProvider)(nil)
-	_ InitVerifierSource        = (*notifyingProvider)(nil)
-	_ WorkspaceConfigSource     = (*notifyingProvider)(nil)
-	_ VersionReconcilerSource   = (*notifyingProvider)(nil)
-	_ MemoriesSource            = (*notifyingProvider)(nil)
-	_ EventsJournalCursorSource = (*notifyingProvider)(nil)
+	_ UnitOfWorkProvider          = (*notifyingProvider)(nil)
+	_ MaintenanceProvider         = (*notifyingProvider)(nil)
+	_ PoolTuner                   = (*notifyingProvider)(nil)
+	_ IssueLifecycleSource        = (*notifyingProvider)(nil)
+	_ IssueReaderSource           = (*notifyingProvider)(nil)
+	_ InspectionIssueReaderSource = (*notifyingProvider)(nil)
+	_ IssueClaimerSource          = (*notifyingProvider)(nil)
+	_ RelationsSource             = (*notifyingProvider)(nil)
+	_ EdgeReaderSource            = (*notifyingProvider)(nil)
+	_ BlockingAnnotatorSource     = (*notifyingProvider)(nil)
+	_ TreeWalkerSource            = (*notifyingProvider)(nil)
+	_ GraphCounterSource          = (*notifyingProvider)(nil)
+	_ CounterSource               = (*notifyingProvider)(nil)
+	_ ReadyCounterSource          = (*notifyingProvider)(nil)
+	_ ReadyClaimerSource          = (*notifyingProvider)(nil)
+	_ QuerierSource               = (*notifyingProvider)(nil)
+	_ StatsReporterSource         = (*notifyingProvider)(nil)
+	_ CycleDetectorSource         = (*notifyingProvider)(nil)
+	_ CommenterSource             = (*notifyingProvider)(nil)
+	_ BatchCloserSource           = (*notifyingProvider)(nil)
+	_ BatchCreatorSource          = (*notifyingProvider)(nil)
+	_ DependencyEditorSource      = (*notifyingProvider)(nil)
+	_ DeleterSource               = (*notifyingProvider)(nil)
+	_ SweeperSource               = (*notifyingProvider)(nil)
+	_ ImporterSource              = (*notifyingProvider)(nil)
+	_ BootstrapperSource          = (*notifyingProvider)(nil)
+	_ InitVerifierSource          = (*notifyingProvider)(nil)
+	_ WorkspaceConfigSource       = (*notifyingProvider)(nil)
+	_ VersionReconcilerSource     = (*notifyingProvider)(nil)
+	_ MemoriesSource              = (*notifyingProvider)(nil)
+	_ EventsJournalCursorSource   = (*notifyingProvider)(nil)
 )
 
 // ── The unit of work ────────────────────────────────────────────────

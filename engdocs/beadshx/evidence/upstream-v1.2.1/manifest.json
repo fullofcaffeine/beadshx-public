@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-14T23:18:08-06:00",
+  "trackerIssue": "beadshx-m00-10",
+  "source": {
+    "repository": "gastownhall/beads",
+    "tag": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "toolchains": {
+    "go": "go1.26.5",
+    "nativeHostCompiler": "Apple clang 17.0.0",
+    "git": "2.40.1",
+    "dockerClient": "28.3.2",
+    "dockerServer": "28.3.2",
+    "containerImage": "golang:1.26.5-bookworm",
+    "migrationContainerImage": "ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea",
+    "regressionDoltCli": "dolt 2.2.0, Darwin ARM64 archive SHA-256 c6737dc2c5806e2eeef4839ad76c28167c861f878af3071df1242a6589d81267",
+    "regressionDoltServer": "dolthub/dolt-sql-server:2.2.0@sha256:baf9449a54dc6572dc5d688386e6f45ecb9f76e5bc4869be429f450b90ffecb0",
+    "python": "3.14.5",
+    "uv": "0.11.16",
+    "node": "24.18.1",
+    "npm": "11.16.0"
+  },
+  "oracleBinary": {
+    "identity": "bd version 1.2.1 (634cbbc4b: 634cbbc4bc58)",
+    "sha256": "553b53e70d4009f906607222ffe54a2f3eabfee37f0af98c1aa60d35d8731d52",
+    "schema": 65
+  },
+  "publishedRelease": {
+    "tag": "v1.2.1",
+    "publishedAt": "2026-08-11T22:10:00Z",
+    "prerelease": true,
+    "assetCount": 11,
+    "checksumRows": 9,
+    "checksumsSha256": "f6fc2e56c516bed118825f5ca582f38220c52f0286699a1c4fd2b0a8532ec00c",
+    "darwinArm64ArchiveSha256": "d71ea29b5c5879ea0ef927efffb266cfedf7ba75d4e4db6689daffec3697595a",
+    "contractCorpusSha256": "77308603eb67ac855253f06d7590548f52b7bc684bb0473f817b42450892d49c",
+    "sbomSha256": "be13ef02685625268544225211ac583f634f388937012ae09151a57d6157f53f"
+  },
+  "runs": [
+    {
+      "id": "build-darwin-arm64",
+      "command": "make build",
+      "environment": "macOS 15.4, darwin/arm64, CGO enabled, gms_pure_go",
+      "result": "pass"
+    },
+    {
+      "id": "unit-full-darwin-arm64",
+      "command": "PATH=\"$PWD:$PATH\" make test",
+      "environment": "macOS 15.4, darwin/arm64",
+      "result": "pass",
+      "wallClockSeconds": 349.3,
+      "coveragePercent": 38.0,
+      "note": "The repository binary precedes the global safety dispatcher for temporary-worktree hook tests."
+    },
+    {
+      "id": "upgrade-v1.2.0-darwin-arm64",
+      "command": "CANDIDATE_BIN=./bd ./scripts/upgrade-smoke-test.sh v1.2.0",
+      "environment": "macOS 15.4, darwin/arm64",
+      "result": "blocked",
+      "wallClockSeconds": 1.94,
+      "maxResidentBytes": 7340032,
+      "note": "The v1.2.0 Git tag has no GitHub release, so the expected Darwin ARM64 release asset returns HTTP 404. No database operation began."
+    },
+    {
+      "id": "upgrade-v1.1.2-darwin-arm64",
+      "command": "CANDIDATE_BIN=./bd ./scripts/upgrade-smoke-test.sh v1.1.2",
+      "environment": "macOS 15.4, darwin/arm64",
+      "result": "pass",
+      "wallClockSeconds": 39.17,
+      "maxResidentBytes": 181501952,
+      "scenariosPassed": 6
+    },
+    {
+      "id": "cross-version-v1.1.2-darwin-arm64",
+      "command": "CANDIDATE_BIN=./bd ./scripts/cross-version-smoke-test.sh v1.1.2",
+      "environment": "macOS 15.4, darwin/arm64",
+      "result": "pass",
+      "wallClockSeconds": 12.16,
+      "maxResidentBytes": 168165376,
+      "versionsPassed": 1,
+      "versionsSkipped": 0,
+      "versionsFailed": 0
+    },
+    {
+      "id": "cross-version-last-30-darwin-arm64",
+      "command": "CANDIDATE_BIN=./bd ./scripts/cross-version-smoke-test.sh",
+      "environment": "macOS 15.4, darwin/arm64, complete upstream tag refs",
+      "result": "fail",
+      "wallClockSeconds": 320.93,
+      "maxResidentBytes": 187482112,
+      "versionsPassed": 11,
+      "versionsSkipped": 18,
+      "versionsFailed": 1,
+      "note": "v0.55.4 was the only failure. BSD grep cannot parse its IDs because the harness uses grep -P, but a Linux rerun confirmed the deeper contract mismatch: the candidate correctly requires explicit migration for this legacy Dolt workspace while the generic cross-version harness attempts a direct open."
+    },
+    {
+      "id": "cross-version-v0.55.4-linux-arm64",
+      "command": "docker run --rm --platform linux/arm64 <copied-workspace> golang:1.26.5-bookworm <v0.55.4-cross-version-command>",
+      "environment": "Linux/ARM64 container, disposable copied workspace",
+      "result": "fail",
+      "wallClockSeconds": 138.88,
+      "wrapperMaxResidentBytes": 26050560,
+      "note": "The old binary created three records. Candidate direct reads refused all three with the intentional explicit-migration-required diagnostic. The doctor quick check passed. This lane must route through the historical migration contract rather than direct-open smoke."
+    },
+    {
+      "id": "migration-v1.1.2-darwin-arm64",
+      "command": "CANDIDATE_BIN=./bd ./scripts/migration-test/run.sh --version v1.1.2",
+      "environment": "macOS 15.4, darwin/arm64",
+      "result": "unsupported-host",
+      "wallClockSeconds": 1.61,
+      "maxResidentBytes": 3047424,
+      "note": "The authenticated corpus is explicitly Linux/AMD64-only. Its GNU realpath usage also rejects BSD realpath before the platform guard. No database operation began."
+    },
+    {
+      "id": "migration-v1.1.2-linux-amd64",
+      "command": "docker run --rm --platform linux/amd64 <read-only-source> golang:1.26.5-bookworm <build-and-migration-command>",
+      "environment": "Linux/AMD64 container under Docker x86 emulation, source mounted read-only",
+      "result": "pass",
+      "wallClockSeconds": 320.42,
+      "wrapperMaxResidentBytes": 24674304,
+      "note": "The sealed-copy bridge smoke passed. The direct embedded-Dolt upgrade preserved representative data and repeated migration was idempotent. Wrapper measurements describe the host Docker client, not container peak memory."
+    },
+    {
+      "id": "migration-full-linux-amd64",
+      "command": "docker run --rm --platform linux/amd64 <read-only-source> ubuntu:24.04 <qualified-build-and-migration-command>",
+      "environment": "Ubuntu 24.04 Linux/AMD64 container under Docker x86 emulation, source mounted read-only, libicu74, checksum-pinned Dolt v2.1.8",
+      "result": "pass",
+      "wallClockSeconds": 851.95,
+      "wrapperMaxResidentBytes": 25427968,
+      "historicalVersionsPassed": 13,
+      "upgradeRoutesPassed": 14,
+      "note": "The complete authenticated corpus passed from v0.9.1 through v1.1.2. It covered source-tag and pre-canonical SQLite bridges, direct SQLite upgrades, external-server Dolt upgrades, the two distinct v0.55.4 layouts, and direct embedded-Dolt upgrades. Repeated migration remained idempotent and representative data survived every route. Wrapper measurements describe the host Docker client, not container peak memory."
+    },
+    {
+      "id": "regression-darwin-arm64",
+      "command": "make test-regression",
+      "environment": "macOS 15.4, darwin/arm64",
+      "result": "skipped",
+      "wallClockSeconds": 2.21,
+      "maxResidentBytes": 297549824,
+      "note": "The upstream test exits successfully but skips its differential scenarios when the Dolt CLI is absent from PATH."
+    },
+    {
+      "id": "regression-dolt-darwin-arm64",
+      "command": "PATH=\"<verified-dolt-v2.2.0>:$PWD:$PATH\" go test -tags=regression,gms_pure_go -timeout=20m -v ./tests/regression/...",
+      "environment": "macOS 15.4, Darwin ARM64, verified Dolt 2.2.0 CLI, pinned Dolt SQL server 2.2.0 container",
+      "result": "pass",
+      "wallClockSeconds": 932.45,
+      "maxResidentBytes": 2288173056,
+      "topLevelTestsPassed": 74,
+      "topLevelTestsSkipped": 11,
+      "subtestsPassed": 19,
+      "subtestsSkipped": 5,
+      "note": "The suite compared the v0.49.6 baseline with the v1.2.1 candidate. All active differential tests passed. Skips identify known upstream regressions, intentional behavior changes, or commands that the baseline does not support."
+    },
+    {
+      "id": "policy-darwin-arm64",
+      "command": "CI_SKIP_BEADS_CHANGE_CHECK=1 make ci-pr-policy",
+      "environment": "macOS 15.4 system Bash 3",
+      "result": "unsupported-host",
+      "wallClockSeconds": 1.06,
+      "maxResidentBytes": 5046272,
+      "note": "The upstream build-tag checker uses Bash mapfile, which is unavailable in the macOS system Bash."
+    },
+    {
+      "id": "policy-linux-arm64",
+      "command": "docker run --rm --platform linux/arm64 <copied-workspace> golang:1.26.5-bookworm make ci-pr-policy",
+      "environment": "Linux/ARM64 container, disposable copied workspace",
+      "result": "pass",
+      "wallClockSeconds": 113.73,
+      "wrapperMaxResidentBytes": 25591808,
+      "note": "The immutable v1.1.0 CLI-doc generation tag was fetched from the upstream remote before the isolated run. The Beads database diff check was explicitly not applicable because tracker state is local and ignored."
+    },
+    {
+      "id": "release-version-consistency",
+      "command": "./scripts/check-versions.sh",
+      "environment": "macOS 15.4, Darwin ARM64",
+      "result": "pass",
+      "note": "All package versions, lock data, plugin manifests, hook markers, and released-document rules agree on v1.2.1."
+    },
+    {
+      "id": "release-assets-v1.2.1",
+      "command": "gh release download v1.2.1 <selected-assets>",
+      "environment": "GitHub release API and macOS 15.4, Darwin ARM64",
+      "result": "pass",
+      "note": "All nine checksum rows match the GitHub asset digests. The Darwin ARM64 archive reports the locked commit. Its reference files match the source, its signature is valid, and it has no ICU dependency. GitHub attestation verification passed. The SPDX 2.3 SBOM contains 736 packages and 2,551 relationships."
+    },
+    {
+      "id": "package-mcp-darwin-arm64-initial",
+      "command": "make ci-package-mcp",
+      "environment": "macOS 15.4, Darwin ARM64, Python 3.14.5, uv 0.11.16, disposable source copy",
+      "result": "blocked",
+      "wallClockSeconds": 727.89,
+      "maxResidentBytes": 66994176,
+      "note": "The locked dependency sync stopped when PyPI returned host unreachable for websockets 15.0.1. No package test began."
+    },
+    {
+      "id": "package-mcp-darwin-arm64-retry",
+      "command": "make ci-package-mcp",
+      "environment": "macOS 15.4, Darwin ARM64, Python 3.14.5, uv 0.11.16, disposable Git clone",
+      "result": "pass",
+      "wallClockSeconds": 361.54,
+      "maxResidentBytes": 424493056,
+      "testsPassed": 228,
+      "testsSkipped": 5,
+      "note": "The locked sync, Ruff, Mypy, pytest, source distribution, and wheel build passed."
+    },
+    {
+      "id": "package-npm-darwin-arm64",
+      "command": "make ci-package-npm",
+      "environment": "macOS 15.4, Darwin ARM64, Node 24.18.1, npm 11.16.0, disposable source copy",
+      "result": "pass",
+      "wallClockSeconds": 1745.03,
+      "maxResidentBytes": 478674944,
+      "scenariosPassed": 5,
+      "note": "Package installation, binary behavior, a basic task workflow, web-session restoration, platform detection, and the package dry run passed."
+    }
+  ],
+  "claims": {
+    "darwinArm64": "Build, full unit suite, v1.1.2 upgrade, v1.1.2 cross-version behavior, and active differential regression tests passed on this host.",
+    "linuxAmd64": "The complete authenticated migration corpus passed in a qualified Ubuntu 24.04 Linux/AMD64 container. It covered 13 versions and 14 routes. This is correctness evidence, not performance or native-host platform admission.",
+    "linuxArm64": "The repository policy lane passed in a native Linux/ARM64 container. This is policy evidence, not the complete Linux release suite."
+  },
+  "remaining": [],
+  "scopeBoundaries": [
+    "The v0.55.4 generic cross-version mismatch is an input to the later compatibility and migration work. Both authenticated migration routes pass.",
+    "Project license approval remains with BHX-M00-05. This evidence records the upstream packaged MIT license but does not approve BeadsHX publication.",
+    "BeadsHX packaging, SBOM, provenance, and native performance admission remain future release work. This upstream baseline does not replace those gates."
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "schema": "beadshx.caf-provider-intent",
+  "schemaVersion": 1,
+  "authority": "authored-intent-only",
+  "identity": {
+    "providerId": "caf.provider.task-port.beadshx-candidate",
+    "product": "BeadsHX",
+    "sourceRepository": "https://github.com/fullofcaffeine/beadshx.git"
+  },
+  "selection": {
+    "status": "unselected",
+    "activation": "none",
+    "execution": "none"
+  },
+  "exactSourceIntent": {
+    "beadshxRevision": "exact-release-commit-required",
+    "sourceLock": "engdocs/beadshx/program/source-locks.json",
+    "compatibilityTarget": {
+      "version": "v1.2.1",
+      "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+    },
+    "cafeteraContract": {
+      "commit": "c9723630b45bc0ed422fcfbab6b05ddf246d3bc0"
+    },
+    "compiler": {
+      "project": "haxe.go",
+      "commit": "c1e3333d2ce358b451e69b2b1530030bc4083dd5"
+    }
+  },
+  "proposedTaskPortCapabilities": [
+    {"id": "caf.capability.task-port-read-model", "version": 1},
+    {"id": "caf.capability.task-port-mutation-contracts", "version": 1},
+    {"id": "caf.capability.task-port-beads-writer", "version": 2}
+  ],
+  "effectUpperBounds": [
+    "caf.effect.task-port.claim",
+    "caf.effect.task-port.append-evidence",
+    "caf.effect.task-port.close"
+  ],
+  "fallback": {
+    "binary": "bd-upstream",
+    "policy": "direct-pinned-upstream",
+    "automaticDelegation": false
+  },
+  "futureEvidenceExpectations": [
+    "exact-provider-source-lock",
+    "task-port-contract-conformance",
+    "read-before-write-read-after",
+    "native-task-readback",
+    "effect-policy-approval",
+    "terminal-action-receipt",
+    "fallback-parity-evidence",
+    "reversible-removal"
+  ],
+  "claims": {
+    "installation": false,
+    "availability": false,
+    "selection": false,
+    "permission": false,
+    "execution": false,
+    "taskState": false,
+    "effectSuccess": false,
+    "receiptSuccess": false
+  }
+}

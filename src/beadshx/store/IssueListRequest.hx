@@ -1,0 +1,55 @@
+package beadshx.store;
+
+/** Core query choices for one issue-list page. */
+typedef IssueListRequest = {
+	final status:String;
+	final issueType:String;
+	final assignee:String;
+	final titleSearch:String;
+	final specPrefix:String;
+	final idFilter:String;
+	final labels:Array<String>;
+	final labelsAny:Array<String>;
+	final excludeLabels:Array<String>;
+	final labelPattern:String;
+	final labelRegex:String;
+	final titleContains:String;
+	final descriptionContains:String;
+	final notesContains:String;
+	final externalContains:String;
+	final externalRef:String;
+	final timeFilters:Array<IssueListTimeFilter>;
+	final priority:OptionalInt;
+	final priorityMin:OptionalInt;
+	final priorityMax:OptionalInt;
+	final all:Bool;
+	final ready:Bool;
+	final noAssignee:Bool;
+	final noLabels:Bool;
+	final emptyDescription:Bool;
+	final skipLabels:Bool;
+	final brief:Bool;
+	final pinned:Bool;
+	final noPinned:Bool;
+	final includeTemplates:Bool;
+	final includeGates:Bool;
+	final includeInfra:Bool;
+	final excludeTypes:Array<String>;
+	final parentId:String;
+	final noParent:Bool;
+	final moleculeType:String;
+	final wispType:String;
+	final deferred:Bool;
+	final overdue:Bool;
+	final metadataFields:Array<IssueListMetadataFilter>;
+	final hasMetadataKey:String;
+	final format:String;
+	final sortBy:String;
+	final reverse:Bool;
+	final limit:OptionalInt;
+	final offset:OptionalInt;
+	final maxRows:OptionalInt;
+	final maxRowsSource:String;
+	final skipCounts:Bool;
+	final blockingAnnotations:Bool;
+}

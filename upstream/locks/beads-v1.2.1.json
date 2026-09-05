@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "project": "Beads",
+  "version": "v1.2.1",
+  "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff",
+  "remote": "https://github.com/gastownhall/beads.git",
+  "go": "1.26.5",
+  "modulePathPolicy": "preserve-during-early-compatibility",
+  "oracleBinaryName": "bd-upstream",
+  "candidateBinaryName": "bdhx"
+}

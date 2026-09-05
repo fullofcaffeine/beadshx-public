@@ -1,0 +1,59 @@
+package beadshx.cli;
+
+import beadshx.store.IssueListRequest;
+import beadshx.store.CountGroup;
+import beadshx.store.CountRequest;
+import beadshx.store.ReadyRequest;
+import beadshx.store.StaleRequest;
+import beadshx.query.QueryCommandRequest;
+
+/** A parsed invocation with no process-global or native storage types. */
+typedef Invocation = {
+	final command:Command;
+	final output:OutputMode;
+	final actor:String;
+	final directory:String;
+	final databasePath:String;
+	final databaseName:String;
+	final global:Bool;
+	final cpuProfile:Bool;
+	final memProfilePath:String;
+	final showHelp:Bool;
+	final infoSchema:Bool;
+	final infoWhatsNew:Bool;
+	final statusSkipBlocked:Bool;
+	final statusAssigned:Bool;
+	final countRequest:CountRequest;
+	final countGroup:CountGroup;
+	final readyRequest:ReadyRequest;
+	final readyPretty:Bool;
+	final readyPlain:Bool;
+	final readyClaim:Bool;
+	final readyGated:Bool;
+	final readyMolecule:String;
+	final readyExplain:Bool;
+	final searchQuery:String;
+	final queryRequest:QueryCommandRequest;
+	final staleRequest:StaleRequest;
+	final orphansDetails:Bool;
+	final orphansFix:Bool;
+	final listRequest:IssueListRequest;
+	final listWarning:String;
+	final listFlat:Bool;
+	final listLong:Bool;
+	final listNoPager:Bool;
+	final listDepsMode:String;
+	final listAgentMode:Bool;
+	final showShort:Bool;
+	final showLong:Bool;
+	final showCurrent:Bool;
+	final watchMode:Bool;
+	final showThread:Bool;
+	final showRefs:Bool;
+	final showChildren:Bool;
+	final showIncludeDependents:Bool;
+	final showIncludeComments:Bool;
+	final showBriefDependencies:Bool;
+	final showIds:Array<String>;
+	final depType:String;
+}

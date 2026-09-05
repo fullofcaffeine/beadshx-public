@@ -1,0 +1,9 @@
+-cp src
+-lib reflaxe.go
+-D go_output=generated/go/bdhx
+-D go_module=github.com/steveyegge/beads
+-D reflaxe_go_project=compile.bdhx.json
+-D reflaxe_go_profile=portable
+-D reflaxe_go_hxrt_features=
+-D reflaxe.disallow_build_cache_check
+-main beadshx.bootstrap.Main

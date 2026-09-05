@@ -1,0 +1,324 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+)
+
+type beadshxProbeSnapshot struct {
+	Profile     string                `json:"profile"`
+	Activation  string                `json:"activation"`
+	Commands    []beadshxProbeCommand `json:"commands"`
+	Flags       []beadshxProbeFlag    `json:"flagDeclarations"`
+	GlobalFlags []string              `json:"unexpectedGlobalFlags"`
+}
+
+type beadshxProbeCommand struct {
+	ID                   string                   `json:"id"`
+	ParentID             string                   `json:"parentId,omitempty"`
+	Name                 string                   `json:"name"`
+	Path                 string                   `json:"path"`
+	Origin               string                   `json:"origin"`
+	Aliases              []string                 `json:"aliases"`
+	SuggestFor           []string                 `json:"suggestFor"`
+	GroupID              string                   `json:"groupId,omitempty"`
+	Hidden               bool                     `json:"hidden"`
+	Deprecated           string                   `json:"deprecated,omitempty"`
+	Runnable             bool                     `json:"runnable"`
+	HasArgsValidator     bool                     `json:"hasArgsValidator"`
+	HasValidArgsFunction bool                     `json:"hasValidArgsFunction"`
+	ValidArgs            []string                 `json:"validArgs"`
+	ArgAliases           []string                 `json:"argAliases"`
+	LocalFlagRefs        []string                 `json:"localFlagRefs"`
+	PersistentFlagRefs   []string                 `json:"persistentFlagRefs"`
+	InheritedFlagRefs    []string                 `json:"inheritedFlagRefs"`
+	EffectiveFlagRefs    []string                 `json:"effectiveFlagRefs"`
+	SemanticDispositions beadshxProbeDispositions `json:"semanticDispositions"`
+}
+
+type beadshxProbeDispositions struct {
+	Environment string `json:"environment"`
+	Stdin       string `json:"stdin"`
+	Output      string `json:"output"`
+	Completion  string `json:"completion"`
+}
+
+type beadshxProbeFlag struct {
+	ID                    string                   `json:"id"`
+	CommandID             string                   `json:"commandId"`
+	Scope                 string                   `json:"scope"`
+	Name                  string                   `json:"name"`
+	Shorthand             string                   `json:"shorthand,omitempty"`
+	Type                  string                   `json:"type"`
+	Default               string                   `json:"default"`
+	NoOptionDefault       string                   `json:"noOptionDefault,omitempty"`
+	Usage                 string                   `json:"usage"`
+	Hidden                bool                     `json:"hidden"`
+	Deprecated            string                   `json:"deprecated,omitempty"`
+	Annotations           []beadshxProbeAnnotation `json:"annotations"`
+	HasCompletionFunction bool                     `json:"hasCompletionFunction"`
+}
+
+type beadshxProbeAnnotation struct {
+	Name   string   `json:"name"`
+	Values []string `json:"values"`
+}
+
+var beadshxProbeStop = errors.New("beadshx inventory snapshot complete")
+
+func TestBeadsHXInventoryProbe(t *testing.T) {
+	profile := requireProbeEnv(t, "BEADSHX_INVENTORY_PROFILE")
+	activation := requireProbeEnv(t, "BEADSHX_INVENTORY_ACTIVATION")
+	output := requireProbeEnv(t, "BEADSHX_INVENTORY_OUTPUT")
+	workingDirectory := requireProbeEnv(t, "BEADSHX_INVENTORY_CWD")
+	if err := os.Chdir(workingDirectory); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetOut(io.Discard)
+	rootCmd.SetErr(io.Discard)
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
+	rootCmd.InitDefaultHelpCmd()
+	registerHelpAllFlag()
+
+	switch activation {
+	case "normal":
+		rootCmd.SetArgs([]string{"__beadshx_inventory_missing_command__"})
+		_, err := rootCmd.ExecuteC()
+		if err == nil || !strings.Contains(err.Error(), "unknown command") {
+			t.Fatalf("normal activation reached an unexpected execution path: %v", err)
+		}
+		writeBeadsHXSnapshot(t, output, collectBeadsHXSnapshot(profile, activation))
+	case "completion":
+		originalPreRun := rootCmd.PersistentPreRun
+		originalPreRunE := rootCmd.PersistentPreRunE
+		rootCmd.PersistentPreRun = nil
+		rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
+			writeBeadsHXSnapshot(t, output, collectBeadsHXSnapshot(profile, activation))
+			return beadshxProbeStop
+		}
+		t.Cleanup(func() {
+			rootCmd.PersistentPreRun = originalPreRun
+			rootCmd.PersistentPreRunE = originalPreRunE
+		})
+		rootCmd.SetArgs([]string{cobra.ShellCompRequestCmd, ""})
+		_, err := rootCmd.ExecuteC()
+		if !errors.Is(err, beadshxProbeStop) {
+			t.Fatalf("completion activation escaped the probe pre-run: %v", err)
+		}
+	default:
+		t.Fatalf("unsupported activation %q", activation)
+	}
+}
+
+func collectBeadsHXSnapshot(profile string, activation string) beadshxProbeSnapshot {
+	commands := collectBeadsHXCommands(rootCmd)
+	commandIDs := make(map[*cobra.Command]string, len(commands))
+	for _, record := range commands {
+		commandIDs[record.command] = record.id
+	}
+
+	declarationIDs := make(map[*pflag.Flag]string)
+	var flags []beadshxProbeFlag
+	for _, record := range commands {
+		record.command.InitDefaultHelpFlag()
+		record.command.InitDefaultVersionFlag()
+	}
+	for _, record := range commands {
+		collect := func(scope string, set *pflag.FlagSet) {
+			set.VisitAll(func(flag *pflag.Flag) {
+				id := "flag:" + record.id + "/--" + flag.Name
+				declarationIDs[flag] = id
+				flags = append(flags, makeBeadsHXFlag(record.command, record.id, scope, id, flag))
+			})
+		}
+		collect("local", record.command.LocalNonPersistentFlags())
+		collect("persistent", record.command.PersistentFlags())
+	}
+
+	var commandOutput []beadshxProbeCommand
+	var unexpected []string
+	for _, record := range commands {
+		local, localUnknown := beadshxFlagRefs(record.command.LocalNonPersistentFlags(), declarationIDs, record.id)
+		persistent, persistentUnknown := beadshxFlagRefs(record.command.PersistentFlags(), declarationIDs, record.id)
+		inherited, inheritedUnknown := beadshxFlagRefs(record.command.InheritedFlags(), declarationIDs, record.id)
+		effective, effectiveUnknown := beadshxFlagRefs(record.command.Flags(), declarationIDs, record.id)
+		unexpected = append(unexpected, localUnknown...)
+		unexpected = append(unexpected, persistentUnknown...)
+		unexpected = append(unexpected, inheritedUnknown...)
+		unexpected = append(unexpected, effectiveUnknown...)
+		parentID := ""
+		if record.command.Parent() != nil {
+			parentID = commandIDs[record.command.Parent()]
+		}
+		commandOutput = append(commandOutput, beadshxProbeCommand{
+			ID:                   record.id,
+			ParentID:             parentID,
+			Name:                 record.command.Name(),
+			Path:                 strings.ReplaceAll(strings.TrimPrefix(record.id, "cmd:"), "/", " "),
+			Origin:               beadshxCommandOrigin(record.id),
+			Aliases:              beadshxStrings(record.command.Aliases),
+			SuggestFor:           beadshxStrings(record.command.SuggestFor),
+			GroupID:              record.command.GroupID,
+			Hidden:               record.command.Hidden,
+			Deprecated:           record.command.Deprecated,
+			Runnable:             record.command.Runnable(),
+			HasArgsValidator:     record.command.Args != nil,
+			HasValidArgsFunction: record.command.ValidArgsFunction != nil,
+			ValidArgs:            beadshxStrings(record.command.ValidArgs),
+			ArgAliases:           beadshxStrings(record.command.ArgAliases),
+			LocalFlagRefs:        local,
+			PersistentFlagRefs:   persistent,
+			InheritedFlagRefs:    inherited,
+			EffectiveFlagRefs:    effective,
+			SemanticDispositions: beadshxProbeDispositions{
+				Environment: "reviewed-source-census",
+				Stdin:       "reviewed-source-census",
+				Output:      "reviewed-source-census",
+				Completion:  "runtime-presence-and-reviewed-source-census",
+			},
+		})
+	}
+	sort.Slice(flags, func(i, j int) bool { return flags[i].ID < flags[j].ID })
+	sort.Strings(unexpected)
+	unexpected = compactBeadsHXStrings(unexpected)
+	return beadshxProbeSnapshot{
+		Profile: profile, Activation: activation, Commands: commandOutput,
+		Flags: flags, GlobalFlags: unexpected,
+	}
+}
+
+type beadshxCommandWithID struct {
+	command *cobra.Command
+	id      string
+}
+
+func collectBeadsHXCommands(root *cobra.Command) []beadshxCommandWithID {
+	var records []beadshxCommandWithID
+	var walk func(*cobra.Command, string)
+	walk = func(command *cobra.Command, parentID string) {
+		id := "cmd:bd"
+		if parentID != "" {
+			id = parentID + "/" + command.Name()
+		}
+		records = append(records, beadshxCommandWithID{command: command, id: id})
+		children := append([]*cobra.Command(nil), command.Commands()...)
+		sort.Slice(children, func(i, j int) bool {
+			if children[i].Name() != children[j].Name() {
+				return children[i].Name() < children[j].Name()
+			}
+			return children[i].Use < children[j].Use
+		})
+		for _, child := range children {
+			walk(child, id)
+		}
+	}
+	walk(root, "")
+	return records
+}
+
+func makeBeadsHXFlag(command *cobra.Command, commandID string, scope string, id string, flag *pflag.Flag) beadshxProbeFlag {
+	annotations := make([]beadshxProbeAnnotation, 0, len(flag.Annotations))
+	annotationNames := make([]string, 0, len(flag.Annotations))
+	for name := range flag.Annotations {
+		annotationNames = append(annotationNames, name)
+	}
+	sort.Strings(annotationNames)
+	for _, name := range annotationNames {
+		values := beadshxStrings(flag.Annotations[name])
+		annotations = append(annotations, beadshxProbeAnnotation{Name: name, Values: values})
+	}
+	_, hasCompletion := command.GetFlagCompletionFunc(flag.Name)
+	return beadshxProbeFlag{
+		ID: id, CommandID: commandID, Scope: scope, Name: flag.Name,
+		Shorthand: flag.Shorthand, Type: flag.Value.Type(), Default: flag.DefValue,
+		NoOptionDefault: flag.NoOptDefVal, Usage: flag.Usage, Hidden: flag.Hidden,
+		Deprecated: flag.Deprecated, Annotations: annotations,
+		HasCompletionFunction: hasCompletion,
+	}
+}
+
+func beadshxFlagRefs(set *pflag.FlagSet, declarations map[*pflag.Flag]string, commandID string) ([]string, []string) {
+	var refs []string
+	var unexpected []string
+	set.VisitAll(func(flag *pflag.Flag) {
+		if id := declarations[flag]; id != "" {
+			refs = append(refs, id)
+			return
+		}
+		unexpected = append(unexpected, commandID+"/--"+flag.Name)
+	})
+	sort.Strings(refs)
+	sort.Strings(unexpected)
+	if refs == nil {
+		refs = []string{}
+	}
+	if unexpected == nil {
+		unexpected = []string{}
+	}
+	return refs, unexpected
+}
+
+func beadshxCommandOrigin(id string) string {
+	if id == "cmd:bd/help" || strings.HasPrefix(id, "cmd:bd/help/") ||
+		id == "cmd:bd/completion" || strings.HasPrefix(id, "cmd:bd/completion/") ||
+		id == "cmd:bd/__complete" {
+		return "cobra@1.10.2"
+	}
+	return "beads@v1.2.1"
+}
+
+func beadshxStrings(values []string) []string {
+	result := append([]string(nil), values...)
+	if result == nil {
+		result = []string{}
+	}
+	return result
+}
+
+func compactBeadsHXStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if len(result) == 0 || result[len(result)-1] != value {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func writeBeadsHXSnapshot(t *testing.T, path string, snapshot beadshxProbeSnapshot) {
+	t.Helper()
+	if !filepath.IsAbs(path) {
+		t.Fatalf("inventory output must be absolute: %q", path)
+	}
+	content, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, '\n')
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func requireProbeEnv(t *testing.T, name string) string {
+	t.Helper()
+	value := os.Getenv(name)
+	if value == "" {
+		t.Fatalf("%s is required", name)
+	}
+	return value
+}
+
+var _ = fmt.Sprintf

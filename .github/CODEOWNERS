@@ -8,10 +8,10 @@
 # — the matrix + review gate is the structural hedge.
 
 # Init-safety critical path
-cmd/bd/init.go              @gastownhall/beads-maintainers
-cmd/bd/init_*.go            @gastownhall/beads-maintainers
-cmd/bd/init_safety*.go      @gastownhall/beads-maintainers
-engdocs/adr/0002-init-safety-invariants.md  @gastownhall/beads-maintainers
+cmd/bd/init.go              @fullofcaffeine
+cmd/bd/init_*.go            @fullofcaffeine
+cmd/bd/init_safety*.go      @fullofcaffeine
+engdocs/adr/0002-init-safety-invariants.md  @fullofcaffeine
 
 # Schema-migration critical path (bd-6dnrw.15). The 2026 Apr-Jun window
 # shipped a corrupting migration (PR 4039, DEFAULT (UUID()) PK, zero reviews,
@@ -22,5 +22,18 @@ engdocs/adr/0002-init-safety-invariants.md  @gastownhall/beads-maintainers
 # additions and hygiene-script changes with the same suspicion as the
 # migrations themselves. NOTE: GitHub only enforces CODEOWNERS when branch
 # protection has "require review from Code Owners" enabled (bd-6dnrw.23).
-internal/storage/schema/migrations/  @gastownhall/beads-maintainers
-scripts/check-migration-hygiene.sh   @gastownhall/beads-maintainers
+internal/storage/schema/migrations/  @fullofcaffeine
+scripts/check-migration-hygiene.sh   @fullofcaffeine
+
+# BeadsHX source, generated-code policy, and repository safety
+/src/beadshx/                              @fullofcaffeine
+/native/go/                                @fullofcaffeine
+/scripts/beadshx/                          @fullofcaffeine
+/engdocs/beadshx/                          @fullofcaffeine
+/release/                                  @fullofcaffeine
+/caf/providers/beadshx-task-port.intent.json  @fullofcaffeine
+/.github/workflows/beadshx-bootstrap.yml   @fullofcaffeine
+/.githooks/                                @fullofcaffeine
+/.pre-commit-config.yaml                   @fullofcaffeine
+/.gitleaksignore                           @fullofcaffeine
+/engdocs/beadshx/program/gitleaks-ignore-contract.json  @fullofcaffeine

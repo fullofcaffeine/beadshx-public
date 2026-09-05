@@ -1,0 +1,2331 @@
+{
+  "schemaVersion": 1,
+  "runId": "darwin-arm64-20260820-b",
+  "source": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "machine": {
+    "goos": "darwin",
+    "goarch": "arm64",
+    "operatingSystem": "macOS 15.4",
+    "operatingSystemBuild": "24E248",
+    "kernelRelease": "24.4.0",
+    "machineModel": "Mac14,9",
+    "cpu": "Apple M2 Pro",
+    "logicalCpuCount": 12,
+    "memoryBytes": 34359738368,
+    "filesystem": "APFS",
+    "storageMedium": "solid-state",
+    "powerSource": "ac",
+    "goVersion": "go1.26.5",
+    "memoryObserver": "wait4 rusage.ru_maxrss (Darwin bytes)",
+    "filesystemCacheNote": "host filesystem cache is uncontrolled; fixture copies use APFS clone-on-write outside timed regions"
+  },
+  "binary": {
+    "version": "1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff",
+    "build": "634cbbc4b",
+    "sha256": "53cd7d50111daba7c82a1be9fedf485c9009ef1b980eb5fff59315faa8f9f044",
+    "sizeBytes": 201565728,
+    "debugSymbols": "default go build symbols retained",
+    "codeSignature": "ad-hoc codesign from pinned Makefile"
+  },
+  "doltServer": {
+    "version": "2.2.0",
+    "sha256": "2c775333f7085821e95136d2066fa3d63e0926087b4b6878f68d0a4d78343690",
+    "sizeBytes": 118796306
+  },
+  "measuredWorkloads": 37,
+  "pendingWorkloads": 0,
+  "unavailableWorkloads": 1,
+  "workloads": [
+    {
+      "id": "backup-large",
+      "category": "backup",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 762101958,
+          "maximum": 862120208,
+          "mean": 812613783,
+          "median": 815437791.5,
+          "p90": 855073957.7,
+          "p95": 858597082.85,
+          "standardDeviation": 37029344.08484655,
+          "coefficientOfVariation": 0.04556819593699477,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 569720000,
+          "maximum": 609912000,
+          "mean": 596188000,
+          "median": 601473500,
+          "p90": 608049900,
+          "p95": 608980950,
+          "standardDeviation": 13079191.701154761,
+          "coefficientOfVariation": 0.021938032468205935,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 233822000,
+          "maximum": 280755000,
+          "mean": 258725000,
+          "median": 262924500,
+          "p90": 275634000,
+          "p95": 278194500,
+          "standardDeviation": 16382674.262769189,
+          "coefficientOfVariation": 0.06332080109293338,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 250920960,
+          "maximum": 268288000,
+          "mean": 260146790.4,
+          "median": 261398528,
+          "p90": 265766502.4,
+          "p95": 267027251.2,
+          "standardDeviation": 5628483.359084285,
+          "coefficientOfVariation": 0.021635797814110895,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 10,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "backup-small",
+      "category": "backup",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 255912167,
+          "maximum": 424761917,
+          "mean": 302933166.9,
+          "median": 285512521,
+          "p90": 347842104.8,
+          "p95": 386302010.9,
+          "standardDeviation": 48292605.75580124,
+          "coefficientOfVariation": 0.15941669989454443,
+          "outlierIndexes": [
+            3
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 99446000,
+          "maximum": 108291000,
+          "mean": 104810400,
+          "median": 104552000,
+          "p90": 108048000,
+          "p95": 108169500,
+          "standardDeviation": 2731610.5220994526,
+          "coefficientOfVariation": 0.02606239955290174,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 57922000,
+          "maximum": 83403000,
+          "mean": 71292800,
+          "median": 71926500,
+          "p90": 76820400,
+          "p95": 80111700,
+          "standardDeviation": 7046877.429834516,
+          "coefficientOfVariation": 0.09884416701033646,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 113672192,
+          "maximum": 124059648,
+          "mean": 120481382.4,
+          "median": 121044992,
+          "p90": 121921536,
+          "p95": 122990592,
+          "standardDeviation": 2666833.432003631,
+          "coefficientOfVariation": 0.022134817669585694,
+          "outlierIndexes": [
+            3,
+            7
+          ]
+        }
+      },
+      "uniqueOutputDigests": 9,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "build-clean",
+      "category": "build",
+      "profile": "darwin-arm64-build",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 65056453916,
+          "maximum": 67954742750,
+          "mean": 66132320345.6,
+          "median": 66108880187,
+          "p90": 67209281037.2,
+          "p95": 67582011893.6,
+          "standardDeviation": 915268680.594341,
+          "coefficientOfVariation": 0.013839960186052006,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 279477696000,
+          "maximum": 282635257000,
+          "mean": 280357654000,
+          "median": 280213594500,
+          "p90": 280937893000,
+          "p95": 281786575000,
+          "standardDeviation": 907537580.8148847,
+          "coefficientOfVariation": 0.0032370708195998982,
+          "outlierIndexes": [
+            0
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 45016985000,
+          "maximum": 46405858000,
+          "mean": 45730555700,
+          "median": 45777425000,
+          "p90": 46241432500,
+          "p95": 46323645250,
+          "standardDeviation": 432892645.33062285,
+          "coefficientOfVariation": 0.009466157554928266,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 2272411648,
+          "maximum": 2336227328,
+          "mean": 2294988800,
+          "median": 2281562112,
+          "p90": 2331729920,
+          "p95": 2333978624,
+          "standardDeviation": 25732381.66082303,
+          "coefficientOfVariation": 0.011212421455312998,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "build-no-change",
+      "category": "build",
+      "profile": "darwin-arm64-build",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 1078487208,
+          "maximum": 1303142125,
+          "mean": 1199668916.6,
+          "median": 1215323229,
+          "p90": 1296804437.5,
+          "p95": 1299973281.25,
+          "standardDeviation": 84009436.56308223,
+          "coefficientOfVariation": 0.07002718450118277,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 953568000,
+          "maximum": 1004107000,
+          "mean": 975390600,
+          "median": 966828500,
+          "p90": 1000423300,
+          "p95": 1002265150,
+          "standardDeviation": 17335077.080237564,
+          "coefficientOfVariation": 0.017772446320722758,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 1611785000,
+          "maximum": 3837161000,
+          "mean": 3371375600,
+          "median": 3520514000,
+          "p90": 3780218000,
+          "p95": 3808689500,
+          "standardDeviation": 652253996.3697169,
+          "coefficientOfVariation": 0.1934682081610002,
+          "outlierIndexes": [
+            0
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 413057024,
+          "maximum": 413843456,
+          "mean": 413365043.2,
+          "median": 413343744,
+          "p90": 413622272,
+          "p95": 413732864,
+          "standardDeviation": 249649.24924951096,
+          "coefficientOfVariation": 0.0006039437861433344,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "build-warm",
+      "category": "build",
+      "profile": "darwin-arm64-build",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 19975053459,
+          "maximum": 23957947417,
+          "mean": 21484376216.7,
+          "median": 21165952937.5,
+          "p90": 23187858142,
+          "p95": 23572902779.5,
+          "standardDeviation": 1380293039.4772217,
+          "coefficientOfVariation": 0.06424636329000362,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 15548782000,
+          "maximum": 16411306000,
+          "mean": 15989770200,
+          "median": 16009592000,
+          "p90": 16243151800,
+          "p95": 16327228900,
+          "standardDeviation": 270427358.2896359,
+          "coefficientOfVariation": 0.0169125231261695,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 4711646000,
+          "maximum": 5626798000,
+          "mean": 5038472100,
+          "median": 5007292000,
+          "p90": 5325334900,
+          "p95": 5476066450,
+          "standardDeviation": 265679821.64939728,
+          "coefficientOfVariation": 0.05273023574932514,
+          "outlierIndexes": [
+            4
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 2226814976,
+          "maximum": 2284224512,
+          "mean": 2243416883.2,
+          "median": 2237161472,
+          "p90": 2262740172.8,
+          "p95": 2273482342.4,
+          "standardDeviation": 17073012.080670454,
+          "coefficientOfVariation": 0.0076102717281496006,
+          "outlierIndexes": [
+            0
+          ]
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "large-list-json",
+      "category": "large-list",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 1169177417,
+          "maximum": 1336278792,
+          "mean": 1258824154.3,
+          "median": 1273527416.5,
+          "p90": 1308560179.8,
+          "p95": 1322419485.8999999,
+          "standardDeviation": 51476075.38006368,
+          "coefficientOfVariation": 0.040892189114919084,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 792196000,
+          "maximum": 828411000,
+          "mean": 810273500,
+          "median": 810047500,
+          "p90": 825081900,
+          "p95": 826746450,
+          "standardDeviation": 11261734.494887248,
+          "coefficientOfVariation": 0.01389868296925328,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 182233000,
+          "maximum": 217460000,
+          "mean": 200498700,
+          "median": 201490000,
+          "p90": 211325600,
+          "p95": 214392800,
+          "standardDeviation": 10064956.234932724,
+          "coefficientOfVariation": 0.05019960845099108,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 255868928,
+          "maximum": 280739840,
+          "mean": 266544742.4,
+          "median": 264839168,
+          "p90": 278513254.4,
+          "p95": 279626547.2,
+          "standardDeviation": 8443674.195013385,
+          "coefficientOfVariation": 0.03167826203955687,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "large-list-text",
+      "category": "large-list",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 1198353167,
+          "maximum": 1351522583,
+          "mean": 1275337241.7,
+          "median": 1275219604,
+          "p90": 1328511233.6,
+          "p95": 1340016908.3,
+          "standardDeviation": 46334814.466832206,
+          "coefficientOfVariation": 0.03633142117379776,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 791019000,
+          "maximum": 827256000,
+          "mean": 809549200,
+          "median": 809814500,
+          "p90": 816694500,
+          "p95": 821975250,
+          "standardDeviation": 9623151.01778576,
+          "coefficientOfVariation": 0.011887049011703996,
+          "outlierIndexes": [
+            0
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 192761000,
+          "maximum": 221082000,
+          "mean": 204350200,
+          "median": 201460500,
+          "p90": 211542900,
+          "p95": 216312450,
+          "standardDeviation": 7922266.80243028,
+          "coefficientOfVariation": 0.038768089301749055,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 255983616,
+          "maximum": 282034176,
+          "mean": 270190182.4,
+          "median": 271368192,
+          "p90": 279040819.2,
+          "p95": 280537497.6,
+          "standardDeviation": 7966700.040603389,
+          "coefficientOfVariation": 0.029485527452693224,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "microbenchmarks-discovery",
+      "category": "microbenchmark",
+      "profile": "darwin-arm64-build",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 9512561000,
+          "maximum": 11816542584,
+          "mean": 10302402841.8,
+          "median": 10192578083.5,
+          "p90": 10912943446.2,
+          "p95": 11364743015.099998,
+          "standardDeviation": 685753863.0480406,
+          "coefficientOfVariation": 0.06656251687865743,
+          "outlierIndexes": [
+            8
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 8711653000,
+          "maximum": 9237201000,
+          "mean": 8917031600,
+          "median": 8892867500,
+          "p90": 9162443400,
+          "p95": 9199822200,
+          "standardDeviation": 167525852.74332368,
+          "coefficientOfVariation": 0.018787177197322445,
+          "outlierIndexes": [
+            2
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 4805489000,
+          "maximum": 5898984000,
+          "mean": 5250374700,
+          "median": 5140270000,
+          "p90": 5712346500,
+          "p95": 5805665250,
+          "standardDeviation": 338003671.12209165,
+          "coefficientOfVariation": 0.06437705695978073,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 2003746816,
+          "maximum": 2092302336,
+          "mean": 2052520345.6,
+          "median": 2055626752,
+          "p90": 2088984576,
+          "p95": 2090643456,
+          "standardDeviation": 31444179.980472527,
+          "coefficientOfVariation": 0.01531978966633856,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 10,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "microbenchmarks-selected",
+      "category": "microbenchmark",
+      "profile": "darwin-arm64-server",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 81066171833,
+          "maximum": 92343038542,
+          "mean": 86694437608.5,
+          "median": 86517978271,
+          "p90": 91045488967,
+          "p95": 91694263754.5,
+          "standardDeviation": 4019268064.584947,
+          "coefficientOfVariation": 0.046361314237199414,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 1974050000,
+          "maximum": 2335530000,
+          "mean": 2130612300,
+          "median": 2109420000,
+          "p90": 2227623600,
+          "p95": 2281576800,
+          "standardDeviation": 105857274.54355174,
+          "coefficientOfVariation": 0.04968396856788621,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 2645209000,
+          "maximum": 3384997000,
+          "mean": 2950110900,
+          "median": 2938614500,
+          "p90": 3103779400,
+          "p95": 3244388200,
+          "standardDeviation": 203176971.93850487,
+          "coefficientOfVariation": 0.06887096072846105,
+          "outlierIndexes": [
+            8
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 525434880,
+          "maximum": 535527424,
+          "mean": 531090636.8,
+          "median": 531185664,
+          "p90": 533566259.2,
+          "p95": 534546841.6,
+          "standardDeviation": 2764425.300173168,
+          "coefficientOfVariation": 0.0052051855344876,
+          "outlierIndexes": [
+            5
+          ]
+        }
+      },
+      "uniqueOutputDigests": 10,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "migration-current-noop",
+      "category": "migration",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 272300584,
+          "maximum": 317964708,
+          "mean": 291045608.5,
+          "median": 287426812.5,
+          "p90": 306373121.1,
+          "p95": 312168914.55,
+          "standardDeviation": 12830649.600769699,
+          "coefficientOfVariation": 0.04408466998315729,
+          "outlierIndexes": [
+            9
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 91738000,
+          "maximum": 98143000,
+          "mean": 95035200,
+          "median": 95110000,
+          "p90": 97153900,
+          "p95": 97648450,
+          "standardDeviation": 1851557.3505085448,
+          "coefficientOfVariation": 0.01948285846200718,
+          "outlierIndexes": [
+            8
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 57448000,
+          "maximum": 68982000,
+          "mean": 64673200,
+          "median": 66011500,
+          "p90": 67528500,
+          "p95": 68255250,
+          "standardDeviation": 3643703.451770526,
+          "coefficientOfVariation": 0.05634023756007938,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 118734848,
+          "maximum": 122159104,
+          "mean": 119709696,
+          "median": 119521280,
+          "p90": 120537088,
+          "p95": 121348096,
+          "standardDeviation": 1000460.5189709165,
+          "coefficientOfVariation": 0.008357389187346333,
+          "outlierIndexes": [
+            4
+          ]
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "migration-v1.1.2",
+      "category": "migration",
+      "profile": "linux-amd64-native",
+      "status": "unsupported-on-darwin-requires-native-linux-amd64",
+      "sampleCount": 0
+    },
+    {
+      "id": "read-count-large",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 200969125,
+          "maximum": 289969083,
+          "mean": 234083620.8,
+          "median": 221542250,
+          "p90": 272680908.3,
+          "p95": 281324995.65,
+          "standardDeviation": 30081181.16971952,
+          "coefficientOfVariation": 0.12850613411957065,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 146709000,
+          "maximum": 176368000,
+          "mean": 160943700,
+          "median": 158562500,
+          "p90": 169822300,
+          "p95": 173095150,
+          "standardDeviation": 8286657.147353074,
+          "coefficientOfVariation": 0.051487924953589816,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 51223000,
+          "maximum": 92489000,
+          "mean": 65243700,
+          "median": 62814000,
+          "p90": 76297100,
+          "p95": 84393049.99999999,
+          "standardDeviation": 11501870.051334165,
+          "coefficientOfVariation": 0.1762908917080755,
+          "outlierIndexes": [
+            6
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 186318848,
+          "maximum": 212959232,
+          "mean": 200723660.8,
+          "median": 204046336,
+          "p90": 209759436.8,
+          "p95": 211359334.4,
+          "standardDeviation": 9561398.197521772,
+          "coefficientOfVariation": 0.047634634399422886,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-count-small",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 136100000,
+          "maximum": 199399834,
+          "mean": 148535945.8,
+          "median": 142987208.5,
+          "p90": 155635157.8,
+          "p95": 177517495.89999998,
+          "standardDeviation": 18658303.044324163,
+          "coefficientOfVariation": 0.1256147321366042,
+          "outlierIndexes": [
+            1
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 52693000,
+          "maximum": 59907000,
+          "mean": 55566700,
+          "median": 54396000,
+          "p90": 59697300,
+          "p95": 59802150,
+          "standardDeviation": 2765352.21988086,
+          "coefficientOfVariation": 0.049766356826676045,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 36296000,
+          "maximum": 56970000,
+          "mean": 41613400,
+          "median": 39681000,
+          "p90": 46191600,
+          "p95": 51580799.99999999,
+          "standardDeviation": 6302468.07387568,
+          "coefficientOfVariation": 0.1514528510978598,
+          "outlierIndexes": [
+            1
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 92323840,
+          "maximum": 96305152,
+          "mean": 93757440,
+          "median": 93028352,
+          "p90": 95759564.8,
+          "p95": 96032358.4,
+          "standardDeviation": 1514026.0071578105,
+          "coefficientOfVariation": 0.016148329211610413,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-dependencies-large",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 345418959,
+          "maximum": 467546709,
+          "mean": 384082071,
+          "median": 373885750.5,
+          "p90": 412396508.1,
+          "p95": 439971608.54999995,
+          "standardDeviation": 37407310.55259844,
+          "coefficientOfVariation": 0.09739405553402788,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 273189000,
+          "maximum": 301518000,
+          "mean": 288122100,
+          "median": 289771000,
+          "p90": 297082800,
+          "p95": 299300400,
+          "standardDeviation": 9825993.17513389,
+          "coefficientOfVariation": 0.03410357336397968,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 76901000,
+          "maximum": 115960000,
+          "mean": 92076800,
+          "median": 89678000,
+          "p90": 102647200,
+          "p95": 109303600,
+          "standardDeviation": 11285016.89852523,
+          "coefficientOfVariation": 0.12256091543717017,
+          "outlierIndexes": [
+            9
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 220692480,
+          "maximum": 231325696,
+          "mean": 225183334.4,
+          "median": 224370688,
+          "p90": 229069619.2,
+          "p95": 230197657.6,
+          "standardDeviation": 3467275.3307158826,
+          "coefficientOfVariation": 0.015397566342795405,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-dependencies-small",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 208946500,
+          "maximum": 227992250,
+          "mean": 216618983.3,
+          "median": 216306104,
+          "p90": 221417262.2,
+          "p95": 224704756.1,
+          "standardDeviation": 5440116.91926247,
+          "coefficientOfVariation": 0.02511375889770631,
+          "outlierIndexes": [
+            6
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 74209000,
+          "maximum": 78401000,
+          "mean": 76289000,
+          "median": 76478500,
+          "p90": 77700800,
+          "p95": 78050900,
+          "standardDeviation": 1313742.322104639,
+          "coefficientOfVariation": 0.017220599589778854,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 41727000,
+          "maximum": 52958000,
+          "mean": 48085700,
+          "median": 48353000,
+          "p90": 52898600,
+          "p95": 52928300,
+          "standardDeviation": 4105444.191693648,
+          "coefficientOfVariation": 0.08537765264296139,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 107986944,
+          "maximum": 117358592,
+          "mean": 112952934.4,
+          "median": 113729536,
+          "p90": 116916224,
+          "p95": 117137408,
+          "standardDeviation": 3407867.1863213866,
+          "coefficientOfVariation": 0.03017068307630781,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-list-large",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 1270353458,
+          "maximum": 1376351292,
+          "mean": 1311843466.6,
+          "median": 1302656749.5,
+          "p90": 1352246329.2,
+          "p95": 1364298810.6,
+          "standardDeviation": 33586486.94244221,
+          "coefficientOfVariation": 0.025602511120850987,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 833306000,
+          "maximum": 862941000,
+          "mean": 848841100,
+          "median": 848145000,
+          "p90": 860631600,
+          "p95": 861786300,
+          "standardDeviation": 10634718.263519933,
+          "coefficientOfVariation": 0.01252851477563932,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 211165000,
+          "maximum": 252898000,
+          "mean": 229498300,
+          "median": 228222500,
+          "p90": 248891200,
+          "p95": 250894600,
+          "standardDeviation": 13945883.877410647,
+          "coefficientOfVariation": 0.060766828675465775,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 251150336,
+          "maximum": 296255488,
+          "mean": 266916659.2,
+          "median": 266166272,
+          "p90": 282188185.6,
+          "p95": 289221836.8,
+          "standardDeviation": 13597599.283832397,
+          "coefficientOfVariation": 0.05094323945379427,
+          "outlierIndexes": [
+            4
+          ]
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-list-small",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 402040667,
+          "maximum": 434435959,
+          "mean": 411440033.5,
+          "median": 407408562.5,
+          "p90": 425608833.7,
+          "p95": 430022396.35,
+          "standardDeviation": 10988387.06133831,
+          "coefficientOfVariation": 0.026707141178905987,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 116568000,
+          "maximum": 125550000,
+          "mean": 120729700,
+          "median": 121119000,
+          "p90": 124756200,
+          "p95": 125153100,
+          "standardDeviation": 3343504.9490683344,
+          "coefficientOfVariation": 0.02769413780592791,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 73196000,
+          "maximum": 86912000,
+          "mean": 79208000,
+          "median": 78114000,
+          "p90": 84284900,
+          "p95": 85598450,
+          "standardDeviation": 3972367.779772887,
+          "coefficientOfVariation": 0.05015109306853963,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 128024576,
+          "maximum": 136773632,
+          "mean": 132133683.2,
+          "median": 131530752,
+          "p90": 136021606.4,
+          "p95": 136397619.20000002,
+          "standardDeviation": 3016365.1502837646,
+          "coefficientOfVariation": 0.022828131913330062,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-ready-large",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 589516666,
+          "maximum": 746456791,
+          "mean": 666229774.9,
+          "median": 669305979,
+          "p90": 702803641.9,
+          "p95": 724630216.45,
+          "standardDeviation": 45440146.76216518,
+          "coefficientOfVariation": 0.06820491739353089,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 351412000,
+          "maximum": 396377000,
+          "mean": 374329200,
+          "median": 375150000,
+          "p90": 387665900,
+          "p95": 392021450,
+          "standardDeviation": 14246842.307449512,
+          "coefficientOfVariation": 0.0380596606074266,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 119366000,
+          "maximum": 170630000,
+          "mean": 142344100,
+          "median": 144995000,
+          "p90": 154148300,
+          "p95": 162389150,
+          "standardDeviation": 15442578.105499238,
+          "coefficientOfVariation": 0.10848765846634485,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 214630400,
+          "maximum": 236109824,
+          "mean": 226992128,
+          "median": 227631104,
+          "p90": 232836300.8,
+          "p95": 234473062.4,
+          "standardDeviation": 6984254.270556242,
+          "coefficientOfVariation": 0.030768706968359018,
+          "outlierIndexes": [
+            2,
+            6
+          ]
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-ready-small",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 190193208,
+          "maximum": 234709333,
+          "mean": 205942783.4,
+          "median": 203589021,
+          "p90": 218146596.1,
+          "p95": 226427964.54999998,
+          "standardDeviation": 12857435.50129453,
+          "coefficientOfVariation": 0.06243207598258833,
+          "outlierIndexes": [
+            2
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 71665000,
+          "maximum": 81466000,
+          "mean": 76776400,
+          "median": 75800500,
+          "p90": 80998000,
+          "p95": 81232000,
+          "standardDeviation": 3333428.9052965664,
+          "coefficientOfVariation": 0.043417363998527754,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 50523000,
+          "maximum": 61768000,
+          "mean": 55739800,
+          "median": 55804000,
+          "p90": 61299100,
+          "p95": 61533550,
+          "standardDeviation": 4347283.080014204,
+          "coefficientOfVariation": 0.07799244130790214,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 105119744,
+          "maximum": 119996416,
+          "mean": 110346240,
+          "median": 108199936,
+          "p90": 116147814.4,
+          "p95": 118072115.2,
+          "standardDeviation": 5528245.2885384085,
+          "coefficientOfVariation": 0.05009908165913409,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-search-large",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 442237291,
+          "maximum": 509281708,
+          "mean": 467526200.1,
+          "median": 456818667,
+          "p90": 496807783.6,
+          "p95": 503044745.8,
+          "standardDeviation": 23280754.479657345,
+          "coefficientOfVariation": 0.04979561460871665,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 344666000,
+          "maximum": 369930000,
+          "mean": 356573400,
+          "median": 354328500,
+          "p90": 367564800,
+          "p95": 368747400,
+          "standardDeviation": 8751214.343671905,
+          "coefficientOfVariation": 0.024542532739884423,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 92898000,
+          "maximum": 123754000,
+          "mean": 109429100,
+          "median": 110059500,
+          "p90": 118040800,
+          "p95": 120897400,
+          "standardDeviation": 8912201.14287773,
+          "coefficientOfVariation": 0.08144269799237798,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 220086272,
+          "maximum": 237338624,
+          "mean": 229792153.6,
+          "median": 230408192,
+          "p90": 237087948.8,
+          "p95": 237213286.4,
+          "standardDeviation": 6969103.019649375,
+          "coefficientOfVariation": 0.030327854587152342,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-search-small",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 236862792,
+          "maximum": 262402750,
+          "mean": 248145458.2,
+          "median": 247389354,
+          "p90": 257983487.2,
+          "p95": 260193118.6,
+          "standardDeviation": 8595342.359584596,
+          "coefficientOfVariation": 0.0346383223047223,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 76693000,
+          "maximum": 84704000,
+          "mean": 80581900,
+          "median": 81346000,
+          "p90": 83587100,
+          "p95": 84145550,
+          "standardDeviation": 2653628.3943980467,
+          "coefficientOfVariation": 0.032930824346386056,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 42034000,
+          "maximum": 59390000,
+          "mean": 49746000,
+          "median": 48882000,
+          "p90": 55304000,
+          "p95": 57347000,
+          "standardDeviation": 5293744.358517261,
+          "coefficientOfVariation": 0.1064154777975568,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 113934336,
+          "maximum": 127418368,
+          "mean": 120682905.6,
+          "median": 121708544,
+          "p90": 126651596.8,
+          "p95": 127034982.39999999,
+          "standardDeviation": 5442341.017791745,
+          "coefficientOfVariation": 0.04509620472538362,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-show-large",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 674119500,
+          "maximum": 786788917,
+          "mean": 721537796,
+          "median": 704449250,
+          "p90": 783550154.5,
+          "p95": 785169535.75,
+          "standardDeviation": 39443283.00853535,
+          "coefficientOfVariation": 0.054665581244943334,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 561866000,
+          "maximum": 594884000,
+          "mean": 574299000,
+          "median": 574948000,
+          "p90": 584526800,
+          "p95": 589705400,
+          "standardDeviation": 10717918.838199057,
+          "coefficientOfVariation": 0.0186626110061119,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 123680000,
+          "maximum": 157407000,
+          "mean": 134719300,
+          "median": 134448500,
+          "p90": 139842600,
+          "p95": 148624800,
+          "standardDeviation": 9402108.652968345,
+          "coefficientOfVariation": 0.0697903615366792,
+          "outlierIndexes": [
+            8
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 226557952,
+          "maximum": 237633536,
+          "mean": 233204940.8,
+          "median": 234160128,
+          "p90": 236557107.2,
+          "p95": 237095321.6,
+          "standardDeviation": 3539450.0642282707,
+          "coefficientOfVariation": 0.015177423137290025,
+          "outlierIndexes": [
+            8
+          ]
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "read-show-small",
+      "category": "read",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 367740500,
+          "maximum": 627939458,
+          "mean": 416155550.1,
+          "median": 382625104,
+          "p90": 488005508.6,
+          "p95": 557972483.3,
+          "standardDeviation": 80436938.34551336,
+          "coefficientOfVariation": 0.1932857517487987,
+          "outlierIndexes": [
+            0,
+            7
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 110361000,
+          "maximum": 126109000,
+          "mean": 115691200,
+          "median": 114458500,
+          "p90": 121928500,
+          "p95": 124018750,
+          "standardDeviation": 4793641.153769346,
+          "coefficientOfVariation": 0.04143479498673491,
+          "outlierIndexes": [
+            7,
+            9
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 63284000,
+          "maximum": 86304000,
+          "mean": 72197000,
+          "median": 70721500,
+          "p90": 83386200,
+          "p95": 84845100,
+          "standardDeviation": 7925071.412226447,
+          "coefficientOfVariation": 0.10977009310949827,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 127844352,
+          "maximum": 135839744,
+          "mean": 132369612.8,
+          "median": 132833280,
+          "p90": 135043481.6,
+          "p95": 135441612.8,
+          "standardDeviation": 2421912.611362479,
+          "coefficientOfVariation": 0.018296590585497877,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "startup-help",
+      "category": "startup",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 42164417,
+          "maximum": 50625542,
+          "mean": 47120437.6,
+          "median": 46961313,
+          "p90": 50612566.7,
+          "p95": 50619054.35,
+          "standardDeviation": 2554021.8443661323,
+          "coefficientOfVariation": 0.05420199757156186,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 27780000,
+          "maximum": 32299000,
+          "mean": 30602600,
+          "median": 30892000,
+          "p90": 32281900,
+          "p95": 32290450,
+          "standardDeviation": 1617764.3833389336,
+          "coefficientOfVariation": 0.052863625421988115,
+          "outlierIndexes": [
+            5
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 15288000,
+          "maximum": 24660000,
+          "mean": 21195700,
+          "median": 22686500,
+          "p90": 24113700,
+          "p95": 24386850,
+          "standardDeviation": 3048969.88250859,
+          "coefficientOfVariation": 0.14384851090120118,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 66306048,
+          "maximum": 67289088,
+          "mean": 66702540.8,
+          "median": 66641920,
+          "p90": 67156377.6,
+          "p95": 67222732.8,
+          "standardDeviation": 330291.0372965031,
+          "coefficientOfVariation": 0.0049517009897245634,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "startup-version",
+      "category": "startup",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 87259250,
+          "maximum": 113605125,
+          "mean": 96435820.8,
+          "median": 94382312.5,
+          "p90": 107359874.7,
+          "p95": 110482499.85,
+          "standardDeviation": 8395681.211550467,
+          "coefficientOfVariation": 0.08705977863725993,
+          "outlierIndexes": [
+            4
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 48264000,
+          "maximum": 53057000,
+          "mean": 50584100,
+          "median": 50520000,
+          "p90": 53004800,
+          "p95": 53030900,
+          "standardDeviation": 1609918.5245084784,
+          "coefficientOfVariation": 0.03182657247056839,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 35102000,
+          "maximum": 50386000,
+          "mean": 42280300,
+          "median": 42747000,
+          "p90": 48640900,
+          "p95": 49513450,
+          "standardDeviation": 5426280.37220505,
+          "coefficientOfVariation": 0.12834063079507596,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 67076096,
+          "maximum": 68648960,
+          "mean": 67719987.2,
+          "median": 67575808,
+          "p90": 68383539.2,
+          "p95": 68516249.6,
+          "standardDeviation": 538103.4855442254,
+          "coefficientOfVariation": 0.00794600689978018,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "startup-workspace-info",
+      "category": "startup",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 237611541,
+          "maximum": 307084833,
+          "mean": 258390187.6,
+          "median": 249569438,
+          "p90": 299887008.3,
+          "p95": 303485920.65000004,
+          "standardDeviation": 25338309.681894507,
+          "coefficientOfVariation": 0.09806219778407138,
+          "outlierIndexes": [
+            2
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 85575000,
+          "maximum": 94137000,
+          "mean": 89009200,
+          "median": 89268000,
+          "p90": 91136400,
+          "p95": 92636700,
+          "standardDeviation": 2524855.3225878114,
+          "coefficientOfVariation": 0.028366228688582882,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 52310000,
+          "maximum": 78247000,
+          "mean": 63648000,
+          "median": 61690500,
+          "p90": 73972000,
+          "p95": 76109500,
+          "standardDeviation": 8181254.766571907,
+          "coefficientOfVariation": 0.12853907061607447,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 109690880,
+          "maximum": 121012224,
+          "mean": 115810304,
+          "median": 115662848,
+          "p90": 119906304,
+          "p95": 120459264,
+          "standardDeviation": 3732430.789616154,
+          "coefficientOfVariation": 0.03222883163847108,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 10,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "sync-clean-merge",
+      "category": "sync",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 723160875,
+          "maximum": 816259583,
+          "mean": 765232787.4,
+          "median": 763108104,
+          "p90": 803264258,
+          "p95": 809761920.5,
+          "standardDeviation": 34838357.66098293,
+          "coefficientOfVariation": 0.04552648322787081,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 283061000,
+          "maximum": 302442000,
+          "mean": 294008400,
+          "median": 293450000,
+          "p90": 301017300,
+          "p95": 301729650,
+          "standardDeviation": 5250142.88059541,
+          "coefficientOfVariation": 0.017857118642172844,
+          "outlierIndexes": [
+            4,
+            7,
+            9
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 113293000,
+          "maximum": 135307000,
+          "mean": 125242300,
+          "median": 125390500,
+          "p90": 131828500,
+          "p95": 133567750,
+          "standardDeviation": 6529282.316355042,
+          "coefficientOfVariation": 0.052133203529119494,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 143933440,
+          "maximum": 155287552,
+          "mean": 148180172.8,
+          "median": 146399232,
+          "p90": 153444352,
+          "p95": 154365952,
+          "standardDeviation": 4099987.0173994126,
+          "coefficientOfVariation": 0.027668931274180644,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "sync-conflict",
+      "category": "sync",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 379790584,
+          "maximum": 462169833,
+          "mean": 414455062.5,
+          "median": 411594291.5,
+          "p90": 450916345.5,
+          "p95": 456543089.25,
+          "standardDeviation": 24892436.775705542,
+          "coefficientOfVariation": 0.06006064113574567,
+          "outlierIndexes": [
+            1,
+            2
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 116202000,
+          "maximum": 141930000,
+          "mean": 129925300,
+          "median": 129326500,
+          "p90": 140293800,
+          "p95": 141111900,
+          "standardDeviation": 7480079.8428596705,
+          "coefficientOfVariation": 0.05757215756176565,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 58172000,
+          "maximum": 95096000,
+          "mean": 76836300,
+          "median": 76443000,
+          "p90": 92403200,
+          "p95": 93749600,
+          "standardDeviation": 11703791.779210322,
+          "coefficientOfVariation": 0.15232112659264335,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 128319488,
+          "maximum": 140804096,
+          "mean": 135636582.4,
+          "median": 136871936,
+          "p90": 139830886.4,
+          "p95": 140317491.2,
+          "standardDeviation": 3784520.3749586493,
+          "coefficientOfVariation": 0.0279019148668748,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "sync-no-change",
+      "category": "sync",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 567463167,
+          "maximum": 658718666,
+          "mean": 619243904.2,
+          "median": 623509708.5,
+          "p90": 657163766.6,
+          "p95": 657941216.3,
+          "standardDeviation": 29418477.59473137,
+          "coefficientOfVariation": 0.04750709275489283,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 202171000,
+          "maximum": 222748000,
+          "mean": 213360400,
+          "median": 214345000,
+          "p90": 222742600,
+          "p95": 222745300,
+          "standardDeviation": 7949661.700698688,
+          "coefficientOfVariation": 0.037259311946821846,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 91174000,
+          "maximum": 124747000,
+          "mean": 109189600,
+          "median": 109619500,
+          "p90": 116940400,
+          "p95": 120843700,
+          "standardDeviation": 8662237.96076331,
+          "coefficientOfVariation": 0.07933207888629787,
+          "outlierIndexes": [
+            0,
+            5
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 138264576,
+          "maximum": 144310272,
+          "mean": 141449625.6,
+          "median": 142311424,
+          "p90": 143617228.8,
+          "p95": 143963750.4,
+          "standardDeviation": 2300993.961809799,
+          "coefficientOfVariation": 0.016267232607010868,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "sync-pull-only",
+      "category": "sync",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 651367500,
+          "maximum": 839708375,
+          "mean": 722509362.4,
+          "median": 702131229.5,
+          "p90": 787394262.2,
+          "p95": 813551318.5999999,
+          "standardDeviation": 56800416.35060687,
+          "coefficientOfVariation": 0.07861547449285604,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 242456000,
+          "maximum": 271259000,
+          "mean": 257492200,
+          "median": 257769500,
+          "p90": 266548400,
+          "p95": 268903700,
+          "standardDeviation": 8525034.985917132,
+          "coefficientOfVariation": 0.03310793486527799,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 91899000,
+          "maximum": 128026000,
+          "mean": 117190600,
+          "median": 120427000,
+          "p90": 127820800,
+          "p95": 127923400,
+          "standardDeviation": 12108696.812163102,
+          "coefficientOfVariation": 0.10332481284474268,
+          "outlierIndexes": [
+            9
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 142409728,
+          "maximum": 155926528,
+          "mean": 150755737.6,
+          "median": 153337856,
+          "p90": 155646361.6,
+          "p95": 155786444.79999998,
+          "standardDeviation": 5018238.489552976,
+          "coefficientOfVariation": 0.03328721393588257,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "sync-push-only",
+      "category": "sync",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 611584666,
+          "maximum": 764278666,
+          "mean": 673207966.6,
+          "median": 639718167,
+          "p90": 761685954.1,
+          "p95": 762982310.0500001,
+          "standardDeviation": 62624982.818531506,
+          "coefficientOfVariation": 0.0930247203324339,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 210771000,
+          "maximum": 240213000,
+          "mean": 221871100,
+          "median": 221221000,
+          "p90": 232253400,
+          "p95": 236233200,
+          "standardDeviation": 9119594.5261959,
+          "coefficientOfVariation": 0.04110312035319562,
+          "outlierIndexes": [
+            7
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 103954000,
+          "maximum": 143878000,
+          "mean": 117208700,
+          "median": 110786500,
+          "p90": 132862900,
+          "p95": 138370450,
+          "standardDeviation": 12954275.879672574,
+          "coefficientOfVariation": 0.11052315979677767,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 141459456,
+          "maximum": 152190976,
+          "mean": 145039360,
+          "median": 144932864,
+          "p90": 146307481.6,
+          "p95": 149249228.79999998,
+          "standardDeviation": 2883493.4935291405,
+          "coefficientOfVariation": 0.019880765424841507,
+          "outlierIndexes": [
+            1,
+            4,
+            7
+          ]
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "write-close",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 508051833,
+          "maximum": 627235667,
+          "mean": 542262591.7,
+          "median": 525643375,
+          "p90": 574775529.2,
+          "p95": 601005598.0999999,
+          "standardDeviation": 36631141.46275906,
+          "coefficientOfVariation": 0.06755240362039353,
+          "outlierIndexes": [
+            5
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 209869000,
+          "maximum": 232978000,
+          "mean": 224080500,
+          "median": 224063500,
+          "p90": 231722500,
+          "p95": 232350250,
+          "standardDeviation": 6523090.12065771,
+          "coefficientOfVariation": 0.02911047646117226,
+          "outlierIndexes": [
+            6
+          ]
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 80150000,
+          "maximum": 98637000,
+          "mean": 88115000,
+          "median": 86390500,
+          "p90": 95541900,
+          "p95": 97089450,
+          "standardDeviation": 5643087.216527256,
+          "coefficientOfVariation": 0.06404229945556666,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 141459456,
+          "maximum": 147456000,
+          "mean": 144796876.8,
+          "median": 145195008,
+          "p90": 146748211.2,
+          "p95": 147102105.6,
+          "standardDeviation": 1884738.495926147,
+          "coefficientOfVariation": 0.01301643058592647,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 9,
+      "uniqueObservedDigests": 10
+    },
+    {
+      "id": "write-comment",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 407459542,
+          "maximum": 445621541,
+          "mean": 422475741.6,
+          "median": 419608895.5,
+          "p90": 440550829.4,
+          "p95": 443086185.2,
+          "standardDeviation": 12714981.50065828,
+          "coefficientOfVariation": 0.03009635879329806,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 129239000,
+          "maximum": 139964000,
+          "mean": 135074000,
+          "median": 134939500,
+          "p90": 139563500,
+          "p95": 139763750,
+          "standardDeviation": 3338163.766703685,
+          "coefficientOfVariation": 0.024713592302765038,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 67008000,
+          "maximum": 87531000,
+          "mean": 77383500,
+          "median": 77404500,
+          "p90": 83117400,
+          "p95": 85324200,
+          "standardDeviation": 5549723.041137578,
+          "coefficientOfVariation": 0.07171713661358789,
+          "outlierIndexes": [
+            5
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 130334720,
+          "maximum": 137723904,
+          "mean": 134389760,
+          "median": 134807552,
+          "p90": 136927641.6,
+          "p95": 137325772.8,
+          "standardDeviation": 2471218.634010534,
+          "coefficientOfVariation": 0.01838844443215416,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 7,
+      "uniqueObservedDigests": 7
+    },
+    {
+      "id": "write-create",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 621157834,
+          "maximum": 904746709,
+          "mean": 712021350.3,
+          "median": 669756979.5,
+          "p90": 784566633.7,
+          "p95": 844656671.3499999,
+          "standardDeviation": 83685072.87752849,
+          "coefficientOfVariation": 0.11753169036612313,
+          "outlierIndexes": [
+            6
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 209875000,
+          "maximum": 225486000,
+          "mean": 219202700,
+          "median": 219467000,
+          "p90": 225331200,
+          "p95": 225408600,
+          "standardDeviation": 5354402.550964746,
+          "coefficientOfVariation": 0.024426718060337513,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 114412000,
+          "maximum": 149302000,
+          "mean": 133367000,
+          "median": 132999500,
+          "p90": 145175500,
+          "p95": 147238750,
+          "standardDeviation": 9911298.076213608,
+          "coefficientOfVariation": 0.07431597078897784,
+          "outlierIndexes": [
+            3
+          ]
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 133021696,
+          "maximum": 147472384,
+          "mean": 140940083.2,
+          "median": 142606336,
+          "p90": 144464281.6,
+          "p95": 145968332.8,
+          "standardDeviation": 4627506.362569245,
+          "coefficientOfVariation": 0.032833146238480757,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 10,
+      "uniqueObservedDigests": 10
+    },
+    {
+      "id": "write-dependency",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 569316334,
+          "maximum": 659407000,
+          "mean": 598046279.1,
+          "median": 593832583,
+          "p90": 625105412.5,
+          "p95": 642256206.25,
+          "standardDeviation": 26835354.221080218,
+          "coefficientOfVariation": 0.04487170167075489,
+          "outlierIndexes": [
+            0
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 180175000,
+          "maximum": 195712000,
+          "mean": 187603900,
+          "median": 187238000,
+          "p90": 193504300,
+          "p95": 194608150,
+          "standardDeviation": 5058235.626733452,
+          "coefficientOfVariation": 0.02696231595789561,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 93394000,
+          "maximum": 102128000,
+          "mean": 97435700,
+          "median": 97418000,
+          "p90": 100529600,
+          "p95": 101328800,
+          "standardDeviation": 2788180.013716634,
+          "coefficientOfVariation": 0.02861558970394459,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 138035200,
+          "maximum": 146391040,
+          "mean": 142005043.2,
+          "median": 141991936,
+          "p90": 146037145.6,
+          "p95": 146214092.8,
+          "standardDeviation": 2845570.0719488254,
+          "coefficientOfVariation": 0.020038514181085265,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "write-label",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 350339541,
+          "maximum": 406097583,
+          "mean": 366937804,
+          "median": 363403604,
+          "p90": 379097845.8,
+          "p95": 392597714.4,
+          "standardDeviation": 15488269.18032194,
+          "coefficientOfVariation": 0.04220952164504135,
+          "outlierIndexes": [
+            7
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 117079000,
+          "maximum": 123170000,
+          "mean": 120085200,
+          "median": 120009500,
+          "p90": 122084600,
+          "p95": 122627300,
+          "standardDeviation": 1900805.9577160655,
+          "coefficientOfVariation": 0.015828811191687782,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 68226000,
+          "maximum": 80211000,
+          "mean": 74753700,
+          "median": 75180000,
+          "p90": 78407400,
+          "p95": 79309200,
+          "standardDeviation": 3880402.471966593,
+          "coefficientOfVariation": 0.05190916933832831,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 127647744,
+          "maximum": 136724480,
+          "mean": 131353804.8,
+          "median": 129835008,
+          "p90": 136473804.8,
+          "p95": 136599142.4,
+          "standardDeviation": 3624431.466905206,
+          "coefficientOfVariation": 0.027592892892777523,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 1,
+      "uniqueObservedDigests": 1
+    },
+    {
+      "id": "write-reopen",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 419330000,
+          "maximum": 496339959,
+          "mean": 449231754.3,
+          "median": 437375812.5,
+          "p90": 474624908.40000004,
+          "p95": 485482433.7,
+          "standardDeviation": 24939663.202392824,
+          "coefficientOfVariation": 0.05551625183142763,
+          "outlierIndexes": []
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 196001000,
+          "maximum": 205512000,
+          "mean": 201998500,
+          "median": 203303000,
+          "p90": 205468800,
+          "p95": 205490400,
+          "standardDeviation": 3407319.678117815,
+          "coefficientOfVariation": 0.016868044456358908,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 76885000,
+          "maximum": 86049000,
+          "mean": 80105000,
+          "median": 78485000,
+          "p90": 85255200,
+          "p95": 85652100,
+          "standardDeviation": 3346598.1068674633,
+          "coefficientOfVariation": 0.04177764317917063,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 136871936,
+          "maximum": 144310272,
+          "mean": 141056409.6,
+          "median": 141090816,
+          "p90": 143337062.4,
+          "p95": 143823667.20000002,
+          "standardDeviation": 2265830.7874317532,
+          "coefficientOfVariation": 0.016063295484813993,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 9,
+      "uniqueObservedDigests": 10
+    },
+    {
+      "id": "write-update",
+      "category": "write",
+      "profile": "darwin-arm64-embedded",
+      "status": "measured",
+      "sampleCount": 10,
+      "metrics": {
+        "elapsedNanoseconds": {
+          "count": 10,
+          "minimum": 376151250,
+          "maximum": 515382583,
+          "mean": 411249516.7,
+          "median": 393063396,
+          "p90": 449718920.5,
+          "p95": 482550751.75,
+          "standardDeviation": 42810999.76609856,
+          "coefficientOfVariation": 0.10409981781772769,
+          "outlierIndexes": [
+            4
+          ]
+        },
+        "userNanoseconds": {
+          "count": 10,
+          "minimum": 128847000,
+          "maximum": 137115000,
+          "mean": 133024400,
+          "median": 133150000,
+          "p90": 135056700,
+          "p95": 136085850,
+          "standardDeviation": 2473164.199068787,
+          "coefficientOfVariation": 0.01859180871380579,
+          "outlierIndexes": []
+        },
+        "systemNanoseconds": {
+          "count": 10,
+          "minimum": 67581000,
+          "maximum": 79377000,
+          "mean": 72521100,
+          "median": 71674000,
+          "p90": 76664400,
+          "p95": 78020700,
+          "standardDeviation": 4119365.928823944,
+          "coefficientOfVariation": 0.05680230896696195,
+          "outlierIndexes": []
+        },
+        "maximumResidentBytes": {
+          "count": 10,
+          "minimum": 132595712,
+          "maximum": 137740288,
+          "mean": 135307264,
+          "median": 135553024,
+          "p90": 136413184,
+          "p95": 137076736,
+          "standardDeviation": 1424314.2674839082,
+          "coefficientOfVariation": 0.010526517389959997,
+          "outlierIndexes": []
+        }
+      },
+      "uniqueOutputDigests": 9,
+      "uniqueObservedDigests": 10
+    }
+  ]
+}

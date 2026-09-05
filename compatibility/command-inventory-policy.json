@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff",
+  "goVersion": "1.26.5",
+  "cobraVersion": "v1.10.2",
+  "container": "golang:1.26.5-bookworm@sha256:53eeac89074db483fdf0ab3be1df32bf6e47562263d2d0d6baa7f26acb4957dd",
+  "profiles": [
+    {
+      "id": "portable-nocgo",
+      "goos": "linux",
+      "goarch": "amd64",
+      "cgoEnabled": false,
+      "buildTags": [
+        "gms_pure_go"
+      ]
+    },
+    {
+      "id": "release-cgo",
+      "goos": "linux",
+      "goarch": "amd64",
+      "cgoEnabled": true,
+      "buildTags": [
+        "gms_pure_go"
+      ]
+    }
+  ],
+  "activations": [
+    "completion",
+    "normal"
+  ],
+  "semantics": {
+    "reviewerRole": "repository maintainer",
+    "sourceClosure": "Production cmd/bd and the union of module-owned packages transitively reachable from cmd/bd in the declared profiles; external dependency internals are excluded.",
+    "outputBoundary": "This inventory owns selectors, precedence, stdin sources, completion rules, and stdout/stderr channels. M02-02 owns exact bytes and schemas. M02-03 owns exits and diagnostics.",
+    "exclusionAuthority": "A repository maintainer must approve exclusions. The generated source location and snippet digest make source drift invalidate the reviewed disposition.",
+    "obligationPolicies": [
+      {
+        "kind": "build-constraint",
+        "resolution": "declared-profile-matrix-or-explicit-inactive-variant"
+      },
+      {
+        "kind": "command-metadata",
+        "resolution": "runtime-structure-with-source-census"
+      },
+      {
+        "kind": "command-registration",
+        "resolution": "runtime-structure-with-source-census"
+      },
+      {
+        "kind": "completion-registration",
+        "resolution": "runtime-presence-with-reviewed-source-census"
+      },
+      {
+        "kind": "environment-input",
+        "resolution": "reviewed-source-census"
+      },
+      {
+        "kind": "flag-or-command-metadata",
+        "resolution": "runtime-structure-with-source-census"
+      },
+      {
+        "kind": "flag-registration",
+        "resolution": "runtime-structure-with-source-census"
+      },
+      {
+        "kind": "output-channel",
+        "resolution": "reviewed-source-census-m02-01-channel-only"
+      },
+      {
+        "kind": "stdin-input",
+        "resolution": "reviewed-source-census"
+      }
+    ],
+    "rules": [
+      {
+        "id": "sem:actor-precedence",
+        "kind": "environment",
+        "summary": "Actor selection checks the explicit flag, BEADS_ACTOR, deprecated BD_ACTOR, Git configuration, USER, then unknown.",
+        "evidence": [
+          "cmd/bd/main.go:getActorWithGit"
+        ]
+      },
+      {
+        "id": "sem:root-display-name",
+        "kind": "environment",
+        "summary": "BD_NAME changes the displayed root name but never the stable command identity.",
+        "evidence": [
+          "cmd/bd/main.go:main"
+        ]
+      },
+      {
+        "id": "sem:text-input-sources",
+        "kind": "stdin",
+        "summary": "Shared text input accepts exactly one of stdin, file, explicit text flag, or positional text. Stdin trailing CR and LF are trimmed; file bytes remain unchanged.",
+        "evidence": [
+          "cmd/bd/flags.go:textFromSources",
+          "cmd/bd/flags.go:registerTextSourceFlags"
+        ]
+      },
+      {
+        "id": "sem:issue-id-completion",
+        "kind": "completion",
+        "summary": "Issue ID completion may open the selected task store read-only, returns ID and title candidates, and suppresses file completion.",
+        "evidence": [
+          "cmd/bd/completions.go:issueIDCompletion"
+        ]
+      },
+      {
+        "id": "sem:global-output-selection",
+        "kind": "output",
+        "summary": "The hidden format selector aliases JSON mode. JSON, quiet, verbose, color, and terminal selectors are inventoried here; exact output bytes remain M02-02.",
+        "evidence": [
+          "cmd/bd/main.go:init",
+          "cmd/bd/output.go:outputJSON"
+        ]
+      }
+    ]
+  }
+}

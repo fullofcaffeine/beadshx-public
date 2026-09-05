@@ -1,5 +1,103 @@
 # Agent Instructions
 
+## BeadsHX program overlay
+
+BeadsHX is a compatibility fork of Beads v1.2.1. Haxe owns the complete
+first-party Beads implementation. Haxe consumes Go standard-library and
+independent third-party APIs through precise externs by default. Small typed Go
+facades are exceptions only for proven third-party or platform boundaries; an
+upstream Beads package is porting source, not a permanent native dependency.
+The upstream Beads behavior and database format remain the compatibility
+authority until a visible, approved divergence says otherwise.
+
+Read `beadshx-complete-port-prd.md`, `engdocs/beadshx/program/source-index.md`,
+and `engdocs/beadshx/operations/data-safety.md` before changing BeadsHX behavior. The upstream
+instructions below still govern inherited Go code unless this overlay is more
+specific.
+
+### Source and generated-code ownership
+
+- Authored Haxe under `src/beadshx/` is the preferred source for domain rules,
+  command handlers, validation, diagnostics, application services, and public
+  BeadsHX behavior.
+- Consume exported Go standard-library and independent third-party libraries
+  through precise Haxe externs first. Use haxe.go's deterministic binding
+  generator and fallback report when they fit the package.
+- Do not classify upstream Beads product code as a permanent external library
+  merely because it exports a Go API. Packages that own Beads application,
+  domain, command, validation, query, dependency, graph, or rendering semantics
+  are porting sources: authored Haxe must replace that behavior before the
+  corresponding compatibility task can close.
+- An extern over an upstream Beads semantic API can be used as explicit,
+  removal-tracked tracer scaffolding. It is not final port evidence. Final
+  release paths must not depend on upstream Beads first-party Go packages,
+  including command, issueops, storage, unit-of-work, domain, validation,
+  rendering, configuration, sync, or integration implementations. Port those
+  behaviors to authored Haxe and reach only standard-library, driver, CGO,
+  platform, or independent third-party APIs through precise externs.
+- Before adding or expanding handwritten Go, prove that the pinned compiler
+  cannot represent the required safe boundary with a reduced, library-neutral
+  fixture.
+- Fix each reusable haxe.go gap in an isolated worktree and pull request. Run
+  the compiler repository's required checks, review the generated Go, and
+  merge the pull request before BeadsHX consumes the change.
+- After a compiler merge, update the exact BeadsHX compiler lock. Regenerate
+  the Go output and prove the focused compiler fixture and real BeadsHX path.
+- Keep handwritten native Go only for a proven independent third-party or
+  platform boundary that a reusable haxe.go compiler or SDK improvement cannot
+  safely represent. An unexported upstream Beads API does not qualify: port the
+  first-party behavior to Haxe and bind the lower standard-library or
+  independent driver API instead. Each native island must satisfy the PRD's
+  native-island test, remain narrow and typed, and contain no product policy.
+- Generated Go is disposable compiler output. Never hand edit it to make a
+  check pass.
+- Keep the upstream oracle available as an explicitly named binary. A release
+  build must never delegate a command to it.
+
+### Production-data safety
+
+- Never run automated, destructive, migration, recovery, parity-write, or
+  fault-injection tests against a primary Beads database.
+- Create test workspaces under a fresh temporary directory and require the
+  repository's disposable-fixture marker before a destructive test starts.
+- Treat `BEADS_DB` as insufficient isolation for `bd init`; initialization and
+  all later commands must run inside the disposable workspace.
+- Back up before migration or recovery experiments. A successful process exit
+  never proves a write; read the result back through the native authority.
+- Do not bypass schema checks, use `--ignore-schema-skew`, or let an ambient
+  `bd` binary choose the database client.
+
+### Private Beads tracking remote
+
+- The public code repository is not a Beads data remote. Never push
+  `refs/dolt/data` or `__dolt_remote_info__` to its Git origin.
+- Before `bd dolt push` or `bd dolt pull`, make sure that the configured Beads
+  remote is the approved private maintainer sidecar. Use `--no-adopt` for
+  every push. Never let `bd` derive a data remote from the public Git origin.
+- Keep the private sidecar URL and issue data out of tracked files, logs,
+  pull requests, and public CI evidence.
+
+### Haxe rules
+
+- Use Haxe 4.3.7 and precise Haxe types. Optional structure fields use `?`.
+- Do not use `Dynamic`, `Any`, `Reflect`, `untyped`, unchecked `cast`, or raw
+  Go injection as design shortcuts. Contain unavoidable foreign boundaries,
+  validate immediately, and return concrete types.
+- Parse JSON, CLI, filesystem, configuration, compiler, and native data at
+  explicit typed boundaries.
+- Prefer module-level functions for stateless module-owned behavior, named
+  record-shaped inputs, exhaustive variants, typed adapters, and concise
+  Why/What/How HaxeDoc for non-obvious boundaries.
+- For meaningful behavior, start with the smallest faithful failing contract,
+  then prove one Haxe-to-generated-Go-to-native-runtime tracer bullet.
+
+### Repository commands
+
+The BeadsHX-specific command surface is introduced incrementally under M01.
+Until those wrappers exist, use the inherited upstream commands only for the
+unchanged pinned oracle and follow `engdocs/TESTING.md`. Do not claim that a
+BeadsHX command or compatibility lane exists merely because upstream passes.
+
 <!-- bd-doctor-divergence: ok -->
 
 See [AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md) for full instructions.

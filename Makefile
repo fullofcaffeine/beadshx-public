@@ -45,10 +45,93 @@ endif
 
 .PHONY: all build doctor-build test test-icu-path test-full-cgo test-regression test-upgrade test-cross-version test-migration corpus-regen bench bench-quick clean clean-test-tmp install install-force help check-up-to-date fmt fmt-check check-testing-short
 .PHONY: ci-pr-core ci-pr-policy ci-pr-lint ci-package-mcp ci-package-npm
+.PHONY: beadshx-bootstrap beadshx-bootstrap-check beadshx-clean-generated
+.PHONY: beadshx-generate beadshx-build beadshx-build-oracle beadshx-inventory beadshx-test-inventory beadshx-test-output-contracts beadshx-test-error-contracts beadshx-test-storage-contracts beadshx-test-effect-contracts beadshx-test-native-pressure beadshx-test-schema-migrations beadshx-schema-migration-pairs beadshx-test-focused beadshx-test-generated beadshx-test-identity beadshx-test-caf-intent
+.PHONY: beadshx-parity beadshx-test beadshx-ci-local beadshx-format beadshx-lint beadshx-package beadshx-hooks-install
 .PHONY: api-gen api-check
 
 # Default target
 all: build
+
+# BeadsHX bootstrap tracer. Authored Haxe joins the caller-owned Go module
+# through haxe.go's governed existing-module mode.
+beadshx-bootstrap:
+	@./scripts/beadshx/generate-bootstrap.sh
+
+beadshx-bootstrap-check:
+	@./scripts/beadshx/check-bootstrap.sh
+
+beadshx-clean-generated:
+	@./scripts/beadshx/command.sh clean
+
+beadshx-generate:
+	@./scripts/beadshx/command.sh generate
+
+beadshx-build:
+	@./scripts/beadshx/command.sh build
+
+beadshx-build-oracle:
+	@./scripts/beadshx/command.sh oracle
+
+beadshx-inventory:
+	@./scripts/beadshx/command.sh inventory
+
+beadshx-test-inventory:
+	@./scripts/beadshx/command.sh inventory-check
+
+beadshx-test-output-contracts:
+	@./scripts/beadshx/command.sh output-contracts
+
+beadshx-test-error-contracts:
+	@./scripts/beadshx/command.sh error-contracts
+
+beadshx-test-storage-contracts:
+	@./scripts/beadshx/command.sh storage-contracts
+
+beadshx-test-effect-contracts:
+	@./scripts/beadshx/command.sh effect-contracts
+
+beadshx-test-native-pressure:
+	@./scripts/beadshx/command.sh native-pressure
+
+beadshx-test-schema-migrations:
+	@./scripts/beadshx/command.sh schema-migrations
+
+beadshx-schema-migration-pairs:
+	@./scripts/beadshx/schema-migration-graph.sh pairs
+
+beadshx-test-focused:
+	@./scripts/beadshx/command.sh test-focused
+
+beadshx-test-generated:
+	@./scripts/beadshx/command.sh generated
+
+beadshx-test-identity:
+	@./scripts/beadshx/command.sh identity
+
+beadshx-test-caf-intent:
+	@./scripts/beadshx/command.sh caf-intent
+
+beadshx-parity:
+	@./scripts/beadshx/command.sh parity
+
+beadshx-test:
+	@./scripts/beadshx/command.sh test
+
+beadshx-ci-local:
+	@./scripts/beadshx/command.sh ci-local
+
+beadshx-format:
+	@./scripts/beadshx/command.sh format
+
+beadshx-lint:
+	@./scripts/beadshx/command.sh lint
+
+beadshx-package:
+	@./scripts/beadshx/command.sh package
+
+beadshx-hooks-install:
+	@./scripts/beadshx/install-hooks.sh
 
 BUILD_DIR := .
 GIT_BUILD := $(shell git rev-parse --short HEAD)
@@ -330,7 +413,6 @@ else
 	@ln -sfn bd "$(INSTALL_DIR)/.beads.install.tmp.$$$$" && mv -f "$(INSTALL_DIR)/.beads.install.tmp.$$$$" "$(INSTALL_DIR)/beads"
 	@echo "Created 'beads' alias -> bd"
 endif
-	@git config core.hooksPath .githooks 2>/dev/null && echo "Configured git hooks (.githooks/)" || true
 
 install: check-up-to-date
 

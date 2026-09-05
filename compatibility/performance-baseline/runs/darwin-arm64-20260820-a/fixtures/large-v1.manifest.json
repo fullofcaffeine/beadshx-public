@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "fixture": {
+    "id": "large-v1",
+    "generatorRevision": 1,
+    "seed": 20260820,
+    "issueCount": 5000,
+    "dependencyCount": 2048,
+    "labelCount": 2500,
+    "commentCount": 500,
+    "graphShape": "layered deterministic DAG with bounded fan-out",
+    "textDistributionBytes": [
+      64,
+      256,
+      4096
+    ],
+    "schemaVersion": 65,
+    "storageProfile": "darwin-arm64-embedded"
+  },
+  "contentFile": "large-v1.jsonl",
+  "contentSha256": "48e93f9f0c937c758cfc46399c248bbe9a0f5437e818a61c95007d9b160b0f1a",
+  "contentBytes": 8814696,
+  "generatedIssueIds": [
+    "perf-l-00001",
+    "perf-l-02501",
+    "perf-l-05000"
+  ]
+}

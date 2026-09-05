@@ -1,0 +1,2830 @@
+{
+  "schemaVersion": 1,
+  "program": "BeadsHX",
+  "document": "beadshx-complete-port-prd.md",
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "compilerReference": {
+    "project": "haxe.go",
+    "version": "v0.54.0",
+    "commit": "92d458e760a30bcb57f2cefb6202f0996fe1ac71"
+  },
+  "issueCreationRule": "Reconcile live Git and live Beads state; mutate existing owners and create only missing issues.",
+  "milestones": [
+    {
+      "id": "M00",
+      "title": "Authority, source locks, and safety baseline",
+      "objective": "Freeze the exact product, compiler, repository, legal, and data-safety authority before implementation begins.",
+      "depends_on": [],
+      "exit_gate": [
+        "All exact source locks are recorded and reproducible.",
+        "The full Beads source is available.",
+        "Architecture and license decisions are accepted.",
+        "No implementation test can touch primary task data."
+      ],
+      "forbidden": [
+        "No source translation.",
+        "No schema changes.",
+        "No use of a floating upstream branch as the compatibility target."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M00-01",
+          "title": "Read all repository authority files",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Read AGENTS.md and linked contributor, architecture, testing, release, security, and storage-boundary documents in Beads, haxe.go, and Cafetera before changing code.",
+          "acceptance": "A source-index artifact records every authority file read, its repository commit, and the rules that affect this program.",
+          "depends_on": [],
+          "labels": [
+            "governance",
+            "thinking:xhigh"
+          ]
+        },
+        {
+          "id": "BHX-M00-02",
+          "title": "Acquire the complete Beads source",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Clone the full Beads v1.2.1 source, including internal/**, tests, release files, licenses, and Git history. Do not use the Repomix pack as the implementation source.",
+          "acceptance": "The checkout resolves to commit 634cbbc4bc580fa5124f63fdf65d137a46d5b4ff and all expected internal packages are present.",
+          "depends_on": [],
+          "labels": [
+            "baseline",
+            "source-lock"
+          ]
+        },
+        {
+          "id": "BHX-M00-03",
+          "title": "Lock the haxe.go baseline",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Record haxe.go v0.54.0 commit 92d458e760a30bcb57f2cefb6202f0996fe1ac71 as the minimum known baseline, then record the actual live starting commit used by implementation.",
+          "acceptance": "The program lock names both the reference release and the live implementation commit, with no floating branch references.",
+          "depends_on": [],
+          "labels": [
+            "compiler",
+            "source-lock"
+          ]
+        },
+        {
+          "id": "BHX-M00-04",
+          "title": "Lock the Cafetera reconciliation baseline",
+          "repository": "cafetera",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Inspect the live Cafetera repository and live Beads database. Record the current commit, dirty state, active claims, and the status of cafetera-4vzs.80, .81, .82, .86, and cafetera-o0sg.",
+          "acceptance": "The reconciliation report identifies work to reuse, extend, or leave unchanged and does not duplicate the existing TaskPort/Brew epics.",
+          "depends_on": [],
+          "labels": [
+            "caf",
+            "reconciliation"
+          ]
+        },
+        {
+          "id": "BHX-M00-05",
+          "title": "Approve the license and attribution plan",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Record the Beads MIT obligations, haxe.go GPL-3.0-only compiler status, haxe.go generated-output MIT grant, Haxe/Reflaxe notices, and third-party notices required in source and binary releases.",
+          "acceptance": "A license matrix names the owner, license, files, generated-output treatment, release artifacts, and automated verification for every code class.",
+          "depends_on": [],
+          "labels": [
+            "license",
+            "release",
+            "thinking:xhigh"
+          ]
+        },
+        {
+          "id": "BHX-M00-06",
+          "title": "Define the production data safety constitution",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Write rules that prohibit early tests against primary Beads databases, require disposable copies, preserve backups, and require native readback after mutations.",
+          "acceptance": "CI and local scripts reject known production paths, destructive tests require explicit disposable-fixture markers, and the rule is documented in AGENTS.md.",
+          "depends_on": [],
+          "labels": [
+            "data-safety",
+            "p0"
+          ]
+        },
+        {
+          "id": "BHX-M00-07",
+          "title": "Accept the architecture decision record set",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Accept ADRs for the hybrid Haxe/Go architecture, Dolt ownership, typed native islands, side-by-side oracle, TaskPort boundary, Caf module posture, and Brew-above-TaskPort direction.",
+          "acceptance": "Each ADR states the decision, alternatives, authority boundary, removal test, risks, and conditions that can reopen it.",
+          "depends_on": [],
+          "labels": [
+            "architecture",
+            "thinking:xhigh"
+          ]
+        },
+        {
+          "id": "BHX-M00-08",
+          "title": "Define the exact meaning of complete",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Adopt the completion definition in this PRD and establish how exceptions are approved, dated, and exposed in the compatibility matrix.",
+          "acceptance": "No milestone can call the port complete while a command, data rule, platform, or release gate is silently untested or delegated.",
+          "depends_on": [],
+          "labels": [
+            "scope",
+            "release"
+          ]
+        },
+        {
+          "id": "BHX-M00-09",
+          "title": "Create the cross-repository program ledger",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Create a durable ledger for baseline commits, upstream deltas, compiler blockers, compatibility gaps, waivers, release evidence, and owner decisions.",
+          "acceptance": "Every program change can be traced to a repository issue, commit, test artifact, and owner disposition where required.",
+          "depends_on": [],
+          "labels": [
+            "provenance",
+            "program-management"
+          ]
+        },
+        {
+          "id": "BHX-M00-10",
+          "title": "Capture upstream build and test evidence",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Build upstream bd with the official v1.2.1 process and run the required focused, full, migration, upgrade, and release-relevant tests on a qualified host.",
+          "acceptance": "The baseline bundle contains commands, toolchain versions, logs, checksums, supported platform claims, failures, skips, and wall-clock/resource measurements.",
+          "depends_on": [],
+          "labels": [
+            "baseline",
+            "tests"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M01",
+      "title": "Repository and program bootstrap",
+      "objective": "Create a safe, reproducible, agent-friendly BeadsHX repository without changing Beads behavior.",
+      "depends_on": [
+        "M00"
+      ],
+      "exit_gate": [
+        "The fork, locks, CI skeleton, issue graph, and source layout exist.",
+        "Both the pinned upstream oracle and an empty Haxe-generated binary build on Linux."
+      ],
+      "forbidden": [
+        "No command claims compatibility yet.",
+        "No generated Go is hand edited.",
+        "No Brew implementation is added."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M01-01",
+          "title": "Create the BeadsHX fork and upstream remote",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Create a dedicated BeadsHX repository from the exact Beads v1.2.1 history. Keep gastownhall/beads as the upstream remote and use a distinct origin and product identity. Defer any Go module-path migration to a separate accepted change.",
+          "acceptance": "The repository can show the exact fork point, fetch upstream tags, and build the unmodified oracle from the locked commit without mixing module-path churn into the bootstrap.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-02",
+          "title": "Adopt the repository source layout",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Create governed roots for Haxe source, native Go islands, generated Go, compatibility data, fixtures, reports, release files, Caf provider assets, and later Brew packages.",
+          "acceptance": "Each root has an owner, edit policy, generated/source status, and beginner-readable README.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-03",
+          "title": "Add Beads issue tracking for the port",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Initialize or reconcile the live Beads database and create one program epic plus milestone epics and child issues from the machine-readable backlog.",
+          "acceptance": "All created issues preserve this PRD task ID, dependencies, priority, type, labels, acceptance criteria, and source provenance; duplicates are not created.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-04",
+          "title": "Add exact Haxe, Lix, Go, and native tool locks",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Pin Haxe 4.3.7, Lix dependencies, haxe.go, Go 1.26.5, C/C++ toolchains used by CGO, Dolt dependencies, and auxiliary test tools.",
+          "acceptance": "A clean machine can verify every lock and fails closed on an unapproved toolchain.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-05",
+          "title": "Create the build command surface",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Add documented commands for bootstrap, Haxe generation, Go build, upstream-oracle build, focused tests, parity tests, full tests, formatting, lint, packaging, and clean recovery.",
+          "acceptance": "Each command is non-interactive, deterministic where required, and produces machine-readable failure output.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-06",
+          "title": "Define generated-source governance",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Make Haxe the source of truth. Mark generated Go as disposable, prohibit hand edits, define drift checks, and decide which small generated fixtures are committed.",
+          "acceptance": "CI detects changed generated bytes and identifies the owning Haxe source or compiler revision; release archives include the required generated source and notices.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-07",
+          "title": "Establish base CI lanes",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Create Linux baseline jobs for Haxe checks, Go generation, Go compile/test, upstream tests, parity smoke tests, license checks, secret scans, and artifact retention.",
+          "acceptance": "A clean no-feature skeleton passes, and each lane reports its exact toolchain and source locks.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-08",
+          "title": "Add contribution and agent instructions",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Create AGENTS.md, contributor guidance, testing authority, architecture index, PR sizing rules, issue workflow, and session closeout rules suitable for Codex.",
+          "acceptance": "The instructions preserve upstream Beads layering and data-safety rules and add Haxe/native-island/generated-code rules.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-09",
+          "title": "Create the release identity policy",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Define the temporary and final Go module-path policy, binary names, version format, compatibility target, build metadata, user-agent strings, and when a bd alias is permitted.",
+          "acceptance": "Development binaries identify themselves as BeadsHX and never impersonate upstream bd; any module-path migration is isolated and the release metadata includes the upstream compatibility commit.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M01-10",
+          "title": "Seed the no-effect Caf provider descriptor",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Add an early Caf-facing descriptor for BeadsHX identity, proposed TaskPort capabilities, effect upper bounds, exact-source intent, fallback, and future evidence expectations. Keep it unselected and non-executing.",
+          "acceptance": "The descriptor validates as authored intent, contains no task/host/runtime facts, and can be removed without changing BeadsHX behavior or any Beads database.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M02",
+      "title": "Complete behavior, data, and dependency inventory",
+      "objective": "Turn the pinned Beads release into a measurable compatibility contract before porting behavior.",
+      "depends_on": [
+        "M01"
+      ],
+      "exit_gate": [
+        "Every command and persistent effect is classified.",
+        "A versioned compatibility manifest and golden-corpus plan exist.",
+        "Compiler blockers are ranked with concrete Beads call sites."
+      ],
+      "forbidden": [
+        "No broad source-to-source translation.",
+        "No undocumented compatibility waiver.",
+        "No performance budget without a measured upstream baseline."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M02-01",
+          "title": "Generate the complete command and flag inventory",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Walk the Cobra tree and source registration to record every command, alias, hidden command, flag, default, environment input, stdin mode, output mode, and completion rule.",
+          "acceptance": "The inventory is deterministic, machine-readable, and accounts for 100 percent of the v1.2.1 command tree.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-02",
+          "title": "Catalog JSON and text output contracts",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Capture success, empty, warning, and failure output for every command profile, including JSON field names, nullability, ordering rules, text layout, colors, and terminal detection.",
+          "acceptance": "Each command links to golden corpus cases and explicitly labels stable, volatile, and presentation-only fields.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-03",
+          "title": "Catalog exit codes and error classes",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Inventory process exit codes, typed errors, diagnostics, stderr/stdout routing, partial-result behavior, and signal handling.",
+          "acceptance": "The compatibility manifest can distinguish semantic errors, usage errors, storage errors, conflicts, cancellations, and internal defects.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-04",
+          "title": "Inventory storage and transaction capabilities",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Inspect internal/storage, issueops, backend interfaces, unit-of-work code, embedded/server paths, and public conformance suites.",
+          "acceptance": "Every command is mapped to the lowest owning storage/application capability and transaction requirement; direct SQL reaches are identified.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-05",
+          "title": "Inventory the database schema and migration graph",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Record tables, keys, relations, metadata shapes, schema versions, old-version fixtures, legacy SQLite paths, migration ordering, downgrade guards, and repair behavior.",
+          "acceptance": "The resulting graph can generate every supported migration test pair and names all irreversible transitions.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-06",
+          "title": "Inventory filesystem, Git, process, and network effects",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Map files, directories, locks, hooks, Git refs, remotes, child processes, sockets, HTTP endpoints, credentials, telemetry, and external services touched by each command.",
+          "acceptance": "Every effect has an owner, rollback rule, test seam, and platform notes.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-07",
+          "title": "Inventory Go dependency and native-boundary pressure",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Classify Beads dependencies and signatures that require context, interfaces, callbacks, generics, channels, pointers, multiple returns, CGO, or platform-specific code.",
+          "acceptance": "A generated report ranks required haxe.go features and identifies which APIs need narrow Go facades.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-08",
+          "title": "Capture upstream performance baselines",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Measure build, startup, common reads, common writes, sync, backup, migration, large-list, and memory behavior on fixed fixtures.",
+          "acceptance": "Raw measurements, machine profile, repetitions, variance, and fixture digests are retained; no performance claim uses a one-off run.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-09",
+          "title": "Define the real daily-workflow profile",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Use shell history, project workflows, and owner review to rank the commands and flags that Marcelo relies on, without storing sensitive command contents.",
+          "acceptance": "The profile defines the minimum dogfood surface and remains separate from the full-compatibility target.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-10",
+          "title": "Create the compatibility manifest",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Create a versioned manifest that records each command/capability, ownership lane, implementation status, tests, platform status, data effects, known differences, and waiver.",
+          "acceptance": "The manifest validates against a schema, is generated in docs, and fails CI when command inventory and declared coverage diverge.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M02-11",
+          "title": "Catalog upstream defects and ambiguous behavior",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Record known upstream bugs, including the Caf hierarchical human-response defect, nondeterministic behavior, contradictory docs, and behavior that requires owner choice.",
+          "acceptance": "Each item states whether BeadsHX copies compatibility behavior, fixes it behind an explicit divergence, or waits for an upstream decision.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M03",
+      "title": "haxe.go existing Go project mode",
+      "objective": "Make haxe.go a respectful code generator inside a real, dependency-rich Go project.",
+      "depends_on": [
+        "M02"
+      ],
+      "exit_gate": [
+        "haxe.go emits into a locked caller-owned Go module without changing module files.",
+        "Beads build tags, CGO environment, ldflags, and package target can be expressed without shell hacks.",
+        "Standalone behavior remains green."
+      ],
+      "forbidden": [
+        "No implicit go mod tidy.",
+        "No unrestricted shell string.",
+        "No project-specific Beads condition in compiler core."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M03-01",
+          "title": "Specify haxe.go existing-module mode",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Design a first-class mode that emits into a caller-owned Go module instead of creating a standalone module with a generated go.mod.",
+          "acceptance": "The design defines roots, package identity, ownership, confinement, build execution, diagnostics, migration from current defines, and misuse errors.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-02",
+          "title": "Preserve caller-owned go.mod and go.sum",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement generation that never creates, rewrites, deletes, or tidies the caller's module files unless a separate explicit operation is requested.",
+          "acceptance": "Fixtures prove exact go.mod/go.sum bytes remain unchanged across success and failure.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-03",
+          "title": "Support caller-selected Go package output",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Allow generated files to join an existing package such as main and select a confined package directory inside the project module.",
+          "acceptance": "Generated imports, runtime paths, package declarations, entry points, and output cleanup are correct for standalone and embedded modes.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-04",
+          "title": "Add a structured build invocation contract",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Replace the fixed go build dot invocation with a typed manifest for package targets, output, tags, ldflags, trimpath, race mode, and additional approved arguments.",
+          "acceptance": "The effective invocation is deterministic, recorded, safely escaped, and covered by positive and negative tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-05",
+          "title": "Add governed build environment support",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Allow an explicit allowlisted environment for CGO, compiler selection, cache paths, and platform build variables without inheriting ambient secrets into reports.",
+          "acceptance": "Unknown or forbidden variables fail; effective non-secret values and redactions are visible in the build report.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-06",
+          "title": "Emit the generated import manifest",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Record all imported Go packages, native boundaries, runtime features, and source owners used by generated output.",
+          "acceptance": "BeadsHX can compare imports with its locked module and fail on undeclared dependency drift.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-07",
+          "title": "Keep standalone generation backward compatible",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Retain the current standalone go.mod generation and build behavior for existing users unless an accepted migration explicitly changes it.",
+          "acceptance": "The complete existing haxe.go suite passes, and new behavior activates only through the new explicit mode.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-08",
+          "title": "Add embedded-mode confinement and cleanup tests",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Prove generated output cannot escape the authorized directory, cannot delete caller files, and cleans only files listed in its own prior manifest.",
+          "acceptance": "Traversal, symlink, stale-manifest, interrupted-write, and mixed-owner fixtures fail safely.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M03-09",
+          "title": "Document and release existing-module mode",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Update define/config references, examples, generated-output policy, troubleshooting, and release evidence.",
+          "acceptance": "A minimal external Go project can follow the docs and build a Haxe-generated command without repository-specific scripts.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M04",
+      "title": "haxe.go production interop foundation",
+      "objective": "Prove the typed Haxe-to-Go boundaries needed by a large CLI and transactional application.",
+      "depends_on": [
+        "M03"
+      ],
+      "exit_gate": [
+        "Representative context, callback, interface, pointer, collection, concurrency, and error paths work under tests and race detection.",
+        "Cobra and storage facades are narrow and typed.",
+        "No app-level raw Go injection is required."
+      ],
+      "forbidden": [
+        "No broad JSON bridge to storage.",
+        "No Dynamic hidden behind casts.",
+        "No Haxe reimplementation of Dolt or the Go scheduler."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M04-01",
+          "title": "Define the typed native-island standard",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Specify how Haxe code calls approved Go facades, how types cross, where Dynamic is forbidden, how errors map, and how each island is reported and tested.",
+          "acceptance": "The standard includes ownership, effect, thread, memory, nullability, and removal information for each boundary.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-02",
+          "title": "Qualify context and cancellation interop",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Provide a typed path for context creation, propagation, deadlines, cancellation, and error classification, either directly or through a standard facade.",
+          "acceptance": "A subprocess, database call, and concurrent task all cancel deterministically and preserve the expected error category.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-03",
+          "title": "Qualify Go error and multi-return interop",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Harden go.Result, tuple carriers, wrapped errors, sentinel checks, and multiple-return conversion for Beads call patterns.",
+          "acceptance": "No required Beads boundary uses an unchecked cast or loses the native error cause and stable Haxe diagnostic.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-04",
+          "title": "Add a typed callback facade pattern",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Provide an approved wrapper strategy for Cobra handlers, transactions, iterator callbacks, HTTP handlers, and other Go function values.",
+          "acceptance": "The pattern supports success, error, panic containment, cancellation, and repeated calls without leaking callback identity or using raw __go__ in app code.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-05",
+          "title": "Add interface and external named-type closure",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Improve goextern and compiler support or generate facade stubs so selected external interfaces and cross-package named types do not collapse to untracked Dynamic.",
+          "acceptance": "Every Beads-used fallback is either typed, wrapped, or listed in an approved boundary report with a task to remove or justify it.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-06",
+          "title": "Qualify pointer, optional, and ownership semantics",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Define safe representations for nullable pointers, mutable pointer arguments, returned structs, borrowed values, and copied DTOs used by Beads.",
+          "acceptance": "Tests prove nil handling, mutation visibility, lifetime, and no accidental aliasing for representative storage and CLI values.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-07",
+          "title": "Qualify collections, maps, iterators, and generic facades",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Support the concrete slice, map, iterator, and generic API shapes used by Beads through typed specialization or narrow monomorphic wrappers.",
+          "acceptance": "Large iteration, early stop, error during iteration, empty collections, and map-key rules have semantic-diff tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-08",
+          "title": "Qualify concurrency and synchronization boundaries",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Exercise goroutines, channels, mutex-protected native services, once semantics, wait groups, and race-sensitive callback entry.",
+          "acceptance": "The chosen patterns pass Go race tests and do not require Haxe application code to emulate Go runtime internals.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-09",
+          "title": "Build the Haxe-owned Cobra boundary",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Express the parser/help/completion surface in Haxe over precise third-party Cobra externs, improving haxe.go compiler or SDK support when a reduced callback fixture exposes a reusable gap.",
+          "acceptance": "No upstream Beads Go host remains; Haxe owns parsing and command behavior, and help, flags, aliases, errors, cancellation, and streams are parity tested.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-10",
+          "title": "Build the Haxe-owned storage boundary",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Port Beads storage and transaction coordination to Haxe over precise standard-library, Dolt-driver, and other independent third-party externs, improving haxe.go first for reusable interop gaps.",
+          "acceptance": "No upstream Beads storage, issueops, domain, or UOW implementation remains in the release path; transaction ownership and data-safety behavior pass native readback tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M04-11",
+          "title": "Enforce the native-boundary budget",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Extend reports and CI to reject unapproved Dynamic, raw injection, undeclared native imports, or facade growth outside allowlisted modules.",
+          "acceptance": "BeadsHX release builds have a zero-unapproved-boundary report and a human-readable inventory of every approved island.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M05",
+      "title": "haxe.go scale, diagnostics, and Go quality",
+      "objective": "Make compiler output manageable, diagnosable, and reviewable at Beads scale.",
+      "depends_on": [
+        "M04"
+      ],
+      "exit_gate": [
+        "Large-project generation is deterministic and bounded.",
+        "Generated Go passes the required Go gates.",
+        "The single-package decision is supported by measurements.",
+        "A qualified haxe.go commit is pinned."
+      ],
+      "forbidden": [
+        "No multi-package project solely for aesthetics.",
+        "No committed generated tree as a second source authority.",
+        "No hidden machine-local input in contract reports."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M05-01",
+          "title": "Create the large-project compiler fixture",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Add a generated application fixture with thousands of types/functions/files and a non-trivial existing Go module to expose scale defects before BeadsHX depends on them.",
+          "acceptance": "The fixture runs in a bounded CI lane and reports generation time, Go build time, memory, file counts, and largest files.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-02",
+          "title": "Partition generated output deterministically",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Improve file partitioning so large Haxe packages do not create pathological Go files while retaining one Go package unless evidence requires more.",
+          "acceptance": "Stable inputs produce stable file names and bytes; no file exceeds the accepted measured threshold without a report.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-03",
+          "title": "Add incremental generation and stale-file safety",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Avoid rewriting unchanged generated files and remove only stale compiler-owned files based on a signed or hashed manifest.",
+          "acceptance": "A no-change rebuild preserves mtimes where allowed, shortens the measured cycle, and never deletes native project files.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-04",
+          "title": "Harden source maps and panic diagnostics",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Make line directives, stack traces, generated symbol mapping, and error reports useful in a mixed Haxe/generated-Go/native-Go process.",
+          "acceptance": "Representative compile errors, panics, native errors, and callback failures point to Haxe or named native island source with redacted machine paths.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-05",
+          "title": "Run generated Go quality gates",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Ensure generated output is gofmt-clean and can pass go test, go vet, static analysis, and race-enabled builds where the fixture supports them.",
+          "acceptance": "The compiler release gate fails on generated constructs that violate the agreed Go quality policy.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-06",
+          "title": "Measure the single-package boundary",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Define and collect evidence for Go compile time, memory, tool responsiveness, visibility, and importability under a large single generated package.",
+          "acceptance": "A written decision either retains one package or opens a scoped multi-package epic based on named thresholds and BeadsHX evidence.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-07",
+          "title": "Add deterministic compiler contract reports",
+          "repository": "haxe.go",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Emit stable manifests for source inputs, compiler/toolchain locks, native islands, imports, runtime features, generated files, and build invocation.",
+          "acceptance": "Two clean builds can compare contracts without machine-local noise and can explain every changed generated file.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M05-08",
+          "title": "Qualify haxe.go for the BeadsHX lane",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Publish an internal compatibility release or exact commit with all M03-M05 evidence and explicit platform limits.",
+          "acceptance": "BeadsHX pins the qualified commit and CI verifies that no later compiler drift enters without renewed evidence.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M06",
+      "title": "Dual-binary skeleton and differential oracle",
+      "objective": "Create the side-by-side execution and evidence system that will judge every ported behavior.",
+      "depends_on": [
+        "M03",
+        "M02"
+      ],
+      "exit_gate": [
+        "bd-upstream and bdhx build from locked sources.",
+        "The harness compares process and persistent state.",
+        "Every mismatch produces a replayable evidence bundle."
+      ],
+      "forbidden": [
+        "No candidate write command.",
+        "No normalizer that hides arbitrary output.",
+        "No release claim based on upstream fallback."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M06-01",
+          "title": "Build the pinned upstream oracle binary",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Create a reproducible bd-upstream build from the locked commit with exact tags, CGO settings, ldflags, and toolchain.",
+          "acceptance": "The binary checksum and build manifest are captured and its version output proves the expected source identity.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-02",
+          "title": "Build the Haxe-authored bdhx entry point",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Compile a minimal Haxe main into the existing Go module and produce a distinct bdhx binary with no task mutations.",
+          "acceptance": "bdhx starts, reports its own build identity and upstream compatibility target, and exits deterministically.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-03",
+          "title": "Create the command ownership registry",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Map every command path to Haxe-owned, native-facade, development-only delegated, or unsupported status.",
+          "acceptance": "The registry is generated from the compatibility manifest and release builds reject delegated or unknown commands.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-04",
+          "title": "Create the disposable fixture manager",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Create, clone, hash, reset, and destroy isolated workspaces, HOME, Git config, Dolt state, servers, ports, and credentials.",
+          "acceptance": "Parallel tests cannot share state, and fixture teardown reports leaked processes/files instead of hiding them.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-05",
+          "title": "Create the differential process runner",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Run the same scenario against bd-upstream and bdhx with controlled argv, stdin, environment, terminal mode, clock, and signals.",
+          "acceptance": "Each result captures exit, stdout, stderr, duration, resources, files, database state, native revision, and child-process facts.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-06",
+          "title": "Create explicit compatibility normalizers",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Normalize only declared volatile values such as temp paths, PIDs, timestamps, random IDs, and build metadata.",
+          "acceptance": "Every normalizer names fields, rationale, scope, and tests; it cannot remove unknown fields or semantic differences.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-07",
+          "title": "Create logical database state comparison",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Export or query canonical task, dependency, comment, event, metadata, configuration, and revision state after each scenario.",
+          "acceptance": "State comparison detects equal-looking output with different writes, ordering, missing history, or revision behavior.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-08",
+          "title": "Create parity failure evidence bundles",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Persist a minimal reproducible bundle for every mismatch, including commands, locks, normalized/raw output, state diff, and replay instructions.",
+          "acceptance": "A Codex session can reproduce one failed case without access to primary data or the original machine.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-09",
+          "title": "Add development-only fallback execution",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Optionally exec the pinned upstream binary for unported commands during controlled dogfood, with an explicit flag and usage ledger.",
+          "acceptance": "Fallback is off by default, visible to the user, never included in compatibility claims, and impossible in release qualification mode.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M06-10",
+          "title": "Add the parity smoke lane",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run version, help, invalid usage, and no-workspace cases through the differential harness on every change.",
+          "acceptance": "The lane is fast, deterministic, and blocks any unreviewed output or exit-code drift.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M07",
+      "title": "Typed domain, protocol, and application boundaries",
+      "objective": "Create the Haxe-owned semantic core that can express all Beads behavior without importing storage or CLI implementation types.",
+      "depends_on": [
+        "M04",
+        "M06"
+      ],
+      "exit_gate": [
+        "Core domain and wire values are typed and round-trip compatible.",
+        "Command handlers can depend on neutral ports.",
+        "Expected failures are typed and map to compatible output/exit behavior."
+      ],
+      "forbidden": [
+        "No universal Types.hx.",
+        "No Dynamic metadata bag as a substitute for typed core fields.",
+        "No native database or graph type in the domain layer."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M07-01",
+          "title": "Define opaque task and workspace identifiers",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement typed workspace, issue, hierarchical issue, prefix, native revision, database, remote, and relation identifiers.",
+          "acceptance": "Invalid, ambiguous, truncated, dotted, and cross-workspace forms return typed diagnostics and preserve exact wire bytes when valid.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-02",
+          "title": "Port the core issue domain model",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Define Haxe-owned issue lifecycle, status, priority, type, assignment, timestamps, estimates, descriptions, notes, acceptance, and metadata types.",
+          "acceptance": "The model represents every v1.2.1 valid state without Dynamic and rejects only states upstream also rejects or an approved divergence names.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-03",
+          "title": "Port relation and readiness types",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Define dependency kinds, parent/child, discovered-from, related, blocking, readiness, cycles, trees, gates, and derived blocked state.",
+          "acceptance": "Golden and property tests cover empty, chain, DAG, hierarchy, cycle, missing target, and cross-prefix behavior.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-04",
+          "title": "Port comments, events, history, and provenance types",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Define typed comments, author/source, event kinds, audit records, history entries, and immutable evidence references.",
+          "acceptance": "JSON and database DTO conversion preserve ordering, identity, timestamps, and unknown-compatible fields according to policy.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-05",
+          "title": "Create deterministic public wire codecs",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement JSON, JSONL, metadata, date/time, duration, enum, and output-envelope codecs with stable field and null rules.",
+          "acceptance": "Round-trip and cross-binary corpus tests cover all public wire values, malformed inputs, large strings, Unicode, and forward-compatible unknown fields.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-06",
+          "title": "Create the typed diagnostic taxonomy",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Map usage, validation, not-found, ambiguity, conflict, stale revision, storage, network, cancellation, permission, schema, and internal failures.",
+          "acceptance": "Every expected failure has a stable internal code, upstream-compatible user presentation, cause chain, and process-exit mapping.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-07",
+          "title": "Define typed CLI invocation and output ports",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Model argv results, flags, stdin, terminal capabilities, clocks, environment inputs, output modes, streams, and cancellation as explicit ports.",
+          "acceptance": "Command handlers can be unit tested without Cobra, global process state, or filesystem access.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-08",
+          "title": "Define typed application and storage ports",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Create small behavior-oriented interfaces for query, lifecycle, relations, comments, metadata, config, version control, backup, sync, and server operations.",
+          "acceptance": "Interfaces follow upstream layering, segregate capabilities, and do not leak Dolt, SQL, Cobra, or graph types.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-09",
+          "title": "Build the domain compatibility corpus",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Generate representative and edge-case values from upstream fixtures and public protocol corpus.",
+          "acceptance": "The same corpus runs through upstream serialization, Go facade DTOs, generated Go, and Haxe codecs with explained differences only.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-10",
+          "title": "Add fuzz and property checks for boundary types",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Fuzz IDs, JSON, filters, dates, metadata, relation graphs, and error decoding with bounded deterministic seeds in CI.",
+          "acceptance": "No crash, silent truncation, uncontrolled allocation, or invalid accepted state remains in the qualified corpus.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M07-11",
+          "title": "Extract the neutral TaskPort contract package",
+          "repository": "program",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Reconcile the smallest task facts and operations in Caf's current task-port module with BeadsHX needs, then publish one provider-neutral Haxe package used by both repositories. Keep Beads-specific extensions outside the core package.",
+          "acceptance": "BeadsHX core remains independent; the provider and Caf compile against the same locked contract bytes; a deterministic fake passes the shared conformance suite; no live task state or broad metadata bag enters the contract.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M08",
+      "title": "Read-only workspace and query profile",
+      "objective": "Make bdhx a safe, useful Beads reader before it can mutate task data.",
+      "depends_on": [
+        "M07"
+      ],
+      "exit_gate": [
+        "The declared read-only command profile passes differential tests.",
+        "The process performs no persistent writes.",
+        "Workspace, configuration, schema, and native revision behavior are correct."
+      ],
+      "forbidden": [
+        "No write command hidden behind a read path.",
+        "No task state copied into CML or graph authority.",
+        "No production workspace dogfood without owner-selected read-only mode."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M08-01",
+          "title": "Implement workspace discovery and routing",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Port explicit and current-directory workspace discovery, redirects, database selection, repository fingerprints, routed workspaces, and no-workspace errors.",
+          "acceptance": "where/info/no-workspace behavior matches across normal, nested, redirected, Git-free, and malformed workspaces.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-02",
+          "title": "Implement read-only configuration resolution",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Read layered config, environment, workspace values, defaults, drift indicators, and redacted secrets without applying changes.",
+          "acceptance": "config show and relevant info/status output match, and secret values never enter reports.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-03",
+          "title": "Open the native store through the typed facade",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement read-only open/close, schema/version checks, embedded/server selection, timeout/cancellation, and native revision observation.",
+          "acceptance": "Leaked connections, wrong schema, unsupported mode, unavailable server, and cancellation fail with compatible diagnostics.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-04",
+          "title": "Port version, help, info, where, ping, and status",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement the first complete read-only command family with text and JSON output.",
+          "acceptance": "All flags, aliases, terminal modes, exit codes, and no-workspace cases pass differential tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-05",
+          "title": "Port show and list",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement issue resolution, list filters, sorting, pagination, tree views, formats, refs, threads, children, and max-row behavior.",
+          "acceptance": "Golden cases include hierarchical IDs, ambiguity, large fields, empty results, JSON, terminal text, and server-backed reads.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-06",
+          "title": "Port ready, count, search, query, stale, and orphans",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement read models and filters for actionable work, counts, textual search, structured query, stale work, and orphan detection.",
+          "acceptance": "Results, ordering, limits, validation, performance, and blocked-state semantics match upstream fixtures.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-07",
+          "title": "Port dependency and graph reads",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement dep list/tree/cycle reports, children, graph export/visual read views, relations, and blocked explanations without mutations.",
+          "acceptance": "DAG, hierarchy, missing node, cycle, large graph, and output-format scenarios pass.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-08",
+          "title": "Port comments, events, history, audit, labels, types, and statuses reads",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Expose the remaining core read-only facts and history through typed query ports.",
+          "acceptance": "Ordering, pagination, empty history, malformed legacy values, and JSON/text output are compatible.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-09",
+          "title": "Add read-only snapshot artifacts",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Produce an optional deterministic task snapshot with native revision for parity, Caf, and recovery consumers.",
+          "acceptance": "The artifact is derived, contains no secret, is schema-versioned, and can be deleted and regenerated from the native authority.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M08-10",
+          "title": "Qualify the read-only profile",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run the complete read-only compatibility corpus against embedded and supported server fixtures.",
+          "acceptance": "The compatibility manifest marks the profile green only when process output and logical state match with zero writes.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M09",
+      "title": "Core safe write lifecycle",
+      "objective": "Prove that Haxe-owned command behavior can safely mutate a real Beads database through typed Go adapters.",
+      "depends_on": [
+        "M08"
+      ],
+      "exit_gate": [
+        "The complete core lifecycle is two-way compatible with upstream bd.",
+        "Atomic claim and transaction rollback are proven under concurrency and injected failure.",
+        "Native readback—not process exit—proves every mutation."
+      ],
+      "forbidden": [
+        "No test against a primary database.",
+        "No success inferred only from exit code.",
+        "No storage retry or crash logic in the Haxe domain layer."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M09-01",
+          "title": "Implement transaction and unit-of-work control",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Add typed begin/commit/rollback behavior, transaction callbacks, cancellation, panic containment, retry classification, and revision capture through the native facade.",
+          "acceptance": "Fault injection proves no partial state after validation, storage, callback, cancellation, panic, or commit failures.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-02",
+          "title": "Implement create and atomic create",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port issue creation, IDs, prefixes, defaults, templates/forms needed by core create, stdin fields, dependency creation, and atomic multi-create.",
+          "acceptance": "Upstream reads every Haxe-created task and all fields, relations, events, and revisions match expected state.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-03",
+          "title": "Implement exact issue resolution for writes",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Use the same resolver semantics for simple, hierarchical, partial, ambiguous, and missing IDs before all mutations.",
+          "acceptance": "Mutation commands cannot target a different issue from show/list resolution, including the human respond hierarchical-ID regression case.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-04",
+          "title": "Implement claim and unclaim",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port atomic claim, assignment, owner identity, already-claimed behavior, release, and relevant compare-and-set rules.",
+          "acceptance": "Two concurrent claims cannot both succeed, and upstream bd observes the correct winner and history.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-05",
+          "title": "Implement update with stale-revision protection",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port field updates, clears, stdin, metadata, priorities, status transitions, append behavior, validation, and conditional revision checks.",
+          "acceptance": "Stale, conflicting, repeated, partial, malformed, and no-op updates match the compatibility contract and never partially apply.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-06",
+          "title": "Implement close and reopen",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port close reasons, status rules, dependency effects, reopen, repeated operations, and event/history behavior.",
+          "acceptance": "Ready/blocked state and native revisions update correctly and remain readable in both binaries.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-07",
+          "title": "Implement comments and evidence append",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port comment add and any core evidence/provenance append behavior required by the daily loop.",
+          "acceptance": "Exact text, source, timestamp policy, ordering, idempotency behavior, and readback pass differential tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-08",
+          "title": "Implement labels and dependency mutations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port label add/remove and dependency add/remove/relation semantics with cycle and missing-target validation.",
+          "acceptance": "All changes are transactional and upstream graph/readiness results match after cross-binary writes.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-09",
+          "title": "Implement batch mutation semantics",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Port the selected batch and multi-target mutation rules, including all-or-nothing and per-item outcomes where upstream defines them.",
+          "acceptance": "Mixed success, duplicate target, stale item, invalid input, and cancellation cases preserve the upstream transaction contract.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-10",
+          "title": "Run cross-binary write round trips",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "For every core mutation, create with one binary, read/update with the other, then reverse direction on copied fixtures.",
+          "acceptance": "No repair, export/import, or special migration is needed for either binary to continue the workflow.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M09-11",
+          "title": "Qualify the core write lifecycle",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Prove create to read to ready to claim to update to close to final read, plus rollback, stale revision, duplicate request, and backup/restore.",
+          "acceptance": "The gate produces a signed evidence bundle and remains blocked by any unexplained state, history, exit, or output mismatch.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "Daily workflow and core relation parity",
+      "objective": "Cover the normal Beads workflow beyond the smallest lifecycle while preserving Beads as an issue tracker, not an orchestrator.",
+      "depends_on": [
+        "M09"
+      ],
+      "exit_gate": [
+        "The owner daily-workflow profile is green without delegation.",
+        "Core import/export and relation behavior are two-way compatible.",
+        "The hierarchical human-response defect is either fixed compatibly or explicitly documented as a divergence."
+      ],
+      "forbidden": [
+        "No Brew selection policy in Beads core.",
+        "No hidden auto-claim or auto-close.",
+        "No import that silently loses data."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M10-01",
+          "title": "Port assignment, priority, defer, undefer, and reclaim",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement the remaining common lifecycle and scheduling-field commands without adding orchestration policy.",
+          "acceptance": "State, events, readiness, text/JSON output, repeated operations, and invalid transitions match upstream.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-02",
+          "title": "Port delete, duplicate, rename, link, relate, and hierarchy operations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement core identity and relation operations, including safety prompts represented through non-interactive flags and typed confirmation ports.",
+          "acceptance": "References, children, dependencies, events, and rollback remain consistent after normal and failing operations.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-03",
+          "title": "Port quick, todo, note, and template-assisted creation",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement fast capture commands and template input while preserving the same core issue model.",
+          "acceptance": "All shorthand paths produce the same persistent state as their upstream equivalents and do not create a second draft store.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-04",
+          "title": "Port rich filters, trees, roles, and display formats",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Complete list/show/ready filter modes, role views, tree dependencies, markdown, formatting, colors, and terminal-width behavior.",
+          "acceptance": "Golden terminal fixtures and JSON cases pass across TTY and non-TTY modes.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-05",
+          "title": "Port graph apply/export and recompute operations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement supported graph mutations/imports, blocked recomputation, flattening, and related graph utilities.",
+          "acceptance": "Changes use owning issue operations, reject invalid/cyclic input, and leave a compatible audit trail.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-06",
+          "title": "Port import and export core formats",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement JSONL and other core portable formats, source selection, atomic import, conflict rules, IDs, relations, and exact export behavior.",
+          "acceptance": "Round trips preserve all promised data, report losses explicitly, and interoperate with upstream in both directions.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-07",
+          "title": "Port prime, context, rules, prompt, and protocol corpus behavior",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement agent-facing context and instruction surfaces that remain inside Beads core scope.",
+          "acceptance": "Output, repository detection, divergence checks, size bounds, and JSON/text contracts match upstream.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-08",
+          "title": "Port human decision commands and fix hierarchical response",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement human list/show/respond through the shared resolver and add a regression for dotted IDs.",
+          "acceptance": "A hierarchical decision accepts one response, stores the exact comment, closes once, and repeated response follows the documented idempotency/error rule.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-09",
+          "title": "Port shell completions and help-all",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Complete command discovery, hidden/help supplement content, aliases, and shell completion generation through the Cobra host.",
+          "acceptance": "Generated completion and help corpus match after approved volatile normalization.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-10",
+          "title": "Qualify the daily workflow profile",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run the owner-ranked daily command matrix on disposable real repositories, including clean sequential work and an explicit worktree case.",
+          "acceptance": "The profile supports a complete non-critical development task without upstream fallback and with restore evidence.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M10-11",
+          "title": "Prove the candidate BeadsHX TaskPort provider",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Bind the shared neutral contract to the qualified core read/write profile for isolated fixtures. Support exact snapshot/revision, claim, append evidence/comment, update, close, and reopen as the current Caf work loop requires.",
+          "acceptance": "Shared conformance and one isolated read-before/write/read-after loop pass. The provider is marked candidate, is not selected for production Caf work, and keeps provider-native details in typed extensions/evidence.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "Workspace bootstrap, setup, hooks, and portability",
+      "objective": "Make BeadsHX able to create and manage real workspaces, not only operate on prepared fixtures.",
+      "depends_on": [
+        "M10"
+      ],
+      "exit_gate": [
+        "Fresh and existing workspace setup paths pass parity and rollback tests.",
+        "Hooks, worktrees, configuration, and automatic import/export are safe and reversible.",
+        "A new user can complete the documented bootstrap without upstream bd."
+      ],
+      "forbidden": [
+        "No test inherits developer-global Git hooks or HOME.",
+        "No setup overwrites user instructions without a bounded merge contract.",
+        "No implicit installation claim from a path or module selection."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M11-01",
+          "title": "Port init and bootstrap modes",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement quiet, prefix, hook/agent skip, contributor, team, stealth, template, Git-free, and guarded initialization paths.",
+          "acceptance": "Filesystem, Git, database, config, hooks, output, and rollback match for fresh and partially initialized directories.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-02",
+          "title": "Port onboarding and setup surfaces",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement setup for supported agents and tools, generated instruction blocks, safe updates, removal/exit behavior, and divergence detection.",
+          "acceptance": "Every setup action is idempotent or safely reports drift, preserves user content, and has isolated filesystem tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-03",
+          "title": "Port Git hook installation and migration",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement hook creation, configured hooks paths, updates, migration, validation, and non-interactive behavior.",
+          "acceptance": "Tests use repository-local hooks, preserve existing hooks, and cover broken links, permissions, and rollback.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-04",
+          "title": "Port repository, branch, and worktree behavior",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement repo identity, branch commands, worktree create/remove/discovery, routed workspaces, and native Git error handling.",
+          "acceptance": "Physical worktree paths do not alter semantic workspace identity, and dirty/ambiguous states fail safely.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-05",
+          "title": "Port configuration apply and drift",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement explicit config mutation, side effects, drift reports, defaults, redaction, and proxied paths.",
+          "acceptance": "No ambient inspection becomes authored truth, and apply is atomic with exact readback.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-06",
+          "title": "Port automatic import/export and source policies",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement supported automatic JSONL/source flows, path rules, upgrade guards, Obsidian export, and conflict reporting.",
+          "acceptance": "Automatic behavior is opt-in as upstream defines, cannot overwrite unknown data silently, and is parity tested under failure.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-07",
+          "title": "Port templates, formulas-as-input, and creation forms",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Implement template discovery, schema validation, interactive/non-interactive forms, defaults, and generated issue input.",
+          "acceptance": "Terminal and scripted use produce equivalent validated core issue operations.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M11-08",
+          "title": "Qualify clean setup and clean removal",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Exercise fresh install/init/use/remove and interrupted init/setup recovery on disposable Git and Git-free projects.",
+          "acceptance": "The final filesystem and Git state are either complete or restored to the exact pre-run snapshot; leaked hooks/processes fail the gate.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M12",
+      "title": "Schema, migration, backup, doctor, and recovery parity",
+      "objective": "Prove that BeadsHX can protect and recover task history through upgrades, failures, and destructive maintenance.",
+      "depends_on": [
+        "M11"
+      ],
+      "exit_gate": [
+        "All supported migrations and backups pass cross-version tests.",
+        "Crash/fault injection leaves recoverable state.",
+        "Doctor support is admitted one check at a time and respects the storage boundary."
+      ],
+      "forbidden": [
+        "No blanket doctor embedded-mode enablement.",
+        "No destructive command without verified backup policy.",
+        "No Haxe-side database-engine recovery workaround."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M12-01",
+          "title": "Port schema detection and skew guards",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement current, older, newer, missing, mixed, and malformed schema detection with the same open/write restrictions as upstream.",
+          "acceptance": "Unsupported or unsafe schema states fail before mutation and name the recovery path.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-02",
+          "title": "Port the full migration graph",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement or invoke every supported migration, legacy upgrade, personal migration, issue migration, and mode migration through typed plans and native operations.",
+          "acceptance": "Every supported source version reaches the expected target with data, history, IDs, config, and revisions preserved.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-03",
+          "title": "Port upgrade and cross-version guards",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement version tracking, upgrade command behavior, downgrade protection, auto-import upgrade guard, and remote migration gates.",
+          "acceptance": "Old/new binary matrices cannot silently write incompatible state and provide compatible diagnostics and backup requirements.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-04",
+          "title": "Port backup creation and retention",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement manual, automatic, export, and Dolt backup paths, naming, metadata, checksums, retention, and failure cleanup.",
+          "acceptance": "Backups are self-describing, verified before success, and never replace the source on partial failure.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-05",
+          "title": "Port restore and reset",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement restore selection, validation, dry run, database replacement, reset, and rollback if restoration fails.",
+          "acceptance": "A restore drill recovers the exact logical state and revision expectations from each supported backup class.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-06",
+          "title": "Port compact, garbage collection, prune, purge, and cleanup",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement maintenance operations, dry runs, candidate reporting, retention, safety confirmation, proxied behavior, and post-checks.",
+          "acceptance": "Destructive actions affect only declared candidates, preserve required history, and are recoverable from the required backup.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-07",
+          "title": "Port doctor checks incrementally",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement each doctor check and fix behind the same embedded/server support gate and storage boundary as upstream.",
+          "acceptance": "Every check has a focused fixture, every fix has pre/post evidence and rollback, and unsupported checks remain visibly gated.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-08",
+          "title": "Add crash and fault injection",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Inject process death, disk errors, permission changes, partial files, lock loss, network failure, and commit failure at named points.",
+          "acceptance": "Restart, doctor, backup, and restore behavior meets the declared recovery contract with no silent corruption.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-09",
+          "title": "Run migration and recovery matrices",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Execute old-version, current-version, cross-binary, failed-migration, interrupted-maintenance, and restore scenarios.",
+          "acceptance": "All supported pairs are green; each unsupported pair has a stable fail-closed result and documented owner action.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M12-10",
+          "title": "Qualify destructive operation safety",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Require explicit disposable markers, verified backups, before/after state snapshots, and independent readback for every destructive command.",
+          "acceptance": "The qualification harness cannot target a primary workspace and demonstrates rollback or recovery for each operation.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M13",
+      "title": "Dolt, version control, sync, server, and concurrency parity",
+      "objective": "Qualify the operational modes that make Beads a versioned, concurrent task authority.",
+      "depends_on": [
+        "M12"
+      ],
+      "exit_gate": [
+        "Embedded and server-backed profiles are honest and tested.",
+        "Sync/conflict/concurrency behavior preserves task history.",
+        "Direct and proxied operations have equivalent declared semantics."
+      ],
+      "forbidden": [
+        "No credentials in reports.",
+        "No silent conflict resolution.",
+        "No storage-engine internals exposed through Haxe public APIs."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M13-01",
+          "title": "Qualify embedded Dolt and CGO builds",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Build and run Haxe-owned embedded storage through precise Dolt/CGO library boundaries with required tags, compiler, libraries, cancellation, and cleanup.",
+          "acceptance": "No upstream Beads storage implementation remains; core, migration, recovery, race-relevant, and packaging tests pass on qualified embedded hosts.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-02",
+          "title": "Qualify no-CGO and server-backed modes",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Port store selection, external server connection, no-CGO behavior, unavailable embedded diagnostics, and mode-specific capabilities.",
+          "acceptance": "No-CGO binaries fail or operate exactly as declared and never imply embedded support.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-03",
+          "title": "Port serve and proxied command transport",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement server lifecycle, protocol, request/response mapping, streaming, cancellation, errors, limits, and proxied variants of commands.",
+          "acceptance": "Direct and proxied executions produce equivalent logical outcomes for the declared command set.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-04",
+          "title": "Port sync, push, pull, and remote management",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Implement remote discovery, add/update/remove, push/pull, auth boundaries, progress, cancellation, divergence, and conflict outcomes.",
+          "acceptance": "Multi-clone fixtures prove exact revisions, no lost updates, and safe retry/recovery behavior.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-05",
+          "title": "Port version-control commands",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement branch, diff, history, version, VC, autocommit, autopush, local-only, merge slot, and relevant clean-database behavior.",
+          "acceptance": "State and output match for clean, dirty, divergent, detached, missing-remote, and conflict fixtures.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-06",
+          "title": "Port conflict discovery and resolution support",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Expose conflicts, safe resolution inputs, reset-data/adopt operations, remote guards, and post-resolution verification.",
+          "acceptance": "No automatic choice discards task history; all resolved state is readable by upstream and backed by evidence.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-07",
+          "title": "Port routing, shared stores, and federation",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement multi-repository routing, remote cache, federation, shared store, fingerprints, and cross-workspace boundaries.",
+          "acceptance": "Tasks resolve to the correct authority, collisions fail safely, and graph views do not become a write path.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-08",
+          "title": "Test concurrent writers and server failover",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Exercise multiple processes, server restarts, network partitions, lock contention, stale revisions, and conflicting writers.",
+          "acceptance": "Race tests, logical state, native revisions, retries, and user diagnostics meet the contract without duplicate success.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M13-09",
+          "title": "Qualify sync and server operations",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run direct, embedded, external server, proxied, no-CGO, local-only, and multi-replica matrices.",
+          "acceptance": "Every supported mode is green and every unsupported combination is explicit in the compatibility manifest.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M14",
+      "title": "Advanced Beads feature parity",
+      "objective": "Port the higher-level features present in the pinned Beads release while keeping future Brew orchestration separate.",
+      "depends_on": [
+        "M13"
+      ],
+      "exit_gate": [
+        "Formulas, molecules, wisps, gates, memories, metadata, and expert commands are compatible.",
+        "Advanced data survives all lifecycle operations.",
+        "Compatibility commands do not create a second Brew authority."
+      ],
+      "forbidden": [
+        "No schema expansion merely to simplify the Haxe port.",
+        "No orchestration policy coupled into core TaskPort contracts.",
+        "No unredacted telemetry."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M14-01",
+          "title": "Port key-value metadata and annotations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement kv, typed metadata envelopes, annotations, compare-and-set behavior, and provider-specific extension rules.",
+          "acceptance": "Core fields remain first class, extension data remains namespaced, and CAS/concurrency tests match upstream.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-02",
+          "title": "Port formulas and formula schema",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement formula parsing, validation, storage, application, discovery, and generated task behavior.",
+          "acceptance": "Formula outputs, errors, schema compatibility, and idempotency match the pinned release.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-03",
+          "title": "Port molecules and related lifecycle",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement mol seed/show/current/progress/bond/burn/distill/port/squash/stale/ready-gated and associated task relationships.",
+          "acceptance": "All state transitions, derived views, histories, and error cases pass differential tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-04",
+          "title": "Port wisps and gates",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement wisp lifecycle, gate discovery, gate state, gated readiness, and proxied behavior.",
+          "acceptance": "Transient/persistent semantics, relation effects, and cleanup match upstream.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-05",
+          "title": "Port memories",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement memory create/read/search/update/delete or the exact v1.2.1 surface through its owning native storage capability.",
+          "acceptance": "Memory state does not leak into core issue fields and has compatible output, revision, and recovery behavior.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-06",
+          "title": "Port audit, provenance, metrics, and telemetry facts",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement audit/provenance records, local metrics, telemetry redaction, and explicit send behavior.",
+          "acceptance": "No secret or task content leaves without the same explicit policy; disabled telemetry performs no network effect.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-07",
+          "title": "Port admin, SQL, schema, and diagnostic expert commands",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement expert surfaces with the same access controls, mode gates, read/write warnings, and output contracts.",
+          "acceptance": "Unsafe or unsupported operations fail before execution and all direct data access stays inside the native storage boundary.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-08",
+          "title": "Port cook, pour, ship, promote, swarm, and other high-level compatibility commands",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Reproduce the pinned Beads behavior without treating these commands as the future Brew semantic owner.",
+          "acceptance": "The compatibility matrix is green and the code remains separated from neutral Brew policy packages.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M14-09",
+          "title": "Prove advanced features survive backup, sync, and migration",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run advanced records through export/import, backup/restore, schema migration, push/pull, conflict, and cross-binary reads.",
+          "acceptance": "No advanced record disappears, changes identity, or becomes unreadable without an explicit supported-loss contract.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M15",
+      "title": "External integrations and interactive experience",
+      "objective": "Complete the network, tracker, terminal, and agent-facing surfaces of Beads v1.2.1.",
+      "depends_on": [
+        "M14"
+      ],
+      "exit_gate": [
+        "All declared integrations have typed boundaries and repeatable contract tests.",
+        "Interactive behavior is usable and accessible.",
+        "Secrets and optional network effects are controlled."
+      ],
+      "forbidden": [
+        "No live credential in fixtures or evidence bundles.",
+        "No integration-specific field added to core without charter justification.",
+        "No visual regression accepted only because JSON is correct."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M15-01",
+          "title": "Port GitHub and GitLab integrations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement supported tracker import/export/sync mappings, authentication boundaries, pagination, rate limits, and errors.",
+          "acceptance": "Recorded or sandbox fixtures prove exact issue/dependency mapping without live credentials in normal CI.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-02",
+          "title": "Port Jira, Linear, Notion, and Azure DevOps integrations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement every v1.2.1 integration surface through typed service facades or generated SDK facades.",
+          "acceptance": "Each integration has contract fixtures, redaction tests, retry/cancellation rules, and explicit unsupported-field reporting.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-03",
+          "title": "Port interactive create, edit, and form flows",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Use the native terminal facade for prompts/editors/forms while Haxe owns validation and application behavior.",
+          "acceptance": "Pseudo-terminal tests cover cancel, EOF, invalid input, editor failure, non-TTY, and scripted equivalents.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-04",
+          "title": "Port TUI, human, mail, and visual surfaces",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Implement TUI and user-facing interactive views with upstream symbols, color semantics, accessibility, width, and fallback text.",
+          "acceptance": "Golden screen/state tests cover common terminal profiles and never use forbidden emoji-style status icons.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-05",
+          "title": "Port feedback, thanks, tips, heartbeat, and optional network helpers",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 3,
+          "work": "Complete small user-experience and optional network commands with explicit effects and offline behavior.",
+          "acceptance": "Offline mode is safe, network use is visible, and output/exit behavior matches upstream.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-06",
+          "title": "Port plugin and agent setup surfaces",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Complete plugin metadata, setup for supported agents, hooks, skills, and generated instructions.",
+          "acceptance": "Updates preserve external content and all installed-state claims require native observation.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-07",
+          "title": "Add integration secret and privacy gates",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Audit credential storage, environment use, logs, parity bundles, telemetry, HTTP, and crash output.",
+          "acceptance": "Secret fixtures are redacted in every artifact and no production credential is required for CI.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M15-08",
+          "title": "Qualify the interactive and integration profile",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run deterministic recorded-service and pseudo-terminal suites plus optional live smoke jobs with protected secrets.",
+          "acceptance": "All declared integrations and interactive surfaces are green or carry an owner-approved visible exclusion.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M16",
+      "title": "Full Beads v1.2.1 compatibility closure",
+      "objective": "Close every command, protocol, state, and native-boundary gap against the pinned release.",
+      "depends_on": [
+        "M15"
+      ],
+      "exit_gate": [
+        "No unknown or delegated command remains.",
+        "All applicable upstream and differential suites are accounted for.",
+        "All differences are resolved or explicitly accepted as visible divergences.",
+        "Application policy and command behavior are Haxe-owned."
+      ],
+      "forbidden": [
+        "No blanket 'mostly compatible' label.",
+        "No test waiver without owner, reason, expiry/review trigger, and user-visible effect.",
+        "No upstream test silently skipped."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M16-01",
+          "title": "Close the complete command inventory",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Re-run command extraction and account for every command, alias, flag, hidden surface, setup path, and completion entry.",
+          "acceptance": "The release manifest has no unknown, delegated, or unclassified command.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-02",
+          "title": "Close the complete wire and exit-code corpus",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run all success, empty, warning, invalid, conflict, cancellation, and internal-error cases through the differential harness.",
+          "acceptance": "All process-level differences are zero or have a specific owner-approved compatibility divergence.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-03",
+          "title": "Close the complete persistent-state corpus",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Compare logical database, history, revisions, files, hooks, Git, remotes, backups, and server state for every mutating scenario.",
+          "acceptance": "No output-only parity claim remains; all side effects and non-effects are verified.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-04",
+          "title": "Run and adapt upstream test suites",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run all applicable upstream tests against native shared packages and add bdhx-level adapters or parallel tests where direct reuse is not possible.",
+          "acceptance": "Every upstream test is passed, mapped to equivalent BeadsHX evidence, or carries a reviewed reason and replacement test.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-05",
+          "title": "Run public backend conformance",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Execute Beads backend/conformance roles and extend coverage for capability interfaces used by BeadsHX.",
+          "acceptance": "The report distinguishes semantic conformance from persistence conformance and does not overstate unsupported roles.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-06",
+          "title": "Audit complete Haxe ownership and native islands",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Review every native Go file, import, linked symbol, and generated boundary to ensure all upstream Beads first-party implementation has been ported and only independent third-party or platform boundaries remain.",
+          "acceptance": "The release links no upstream Beads first-party Go implementation; every remaining native island has a necessity statement, typed API, tests, size trend, and proof that compiler/SDK improvement was insufficient.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-07",
+          "title": "Resolve all compatibility waivers",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "For each known difference, port it, fix upstream and rebase, accept a deliberate BeadsHX divergence, or remove the unsupported claim.",
+          "acceptance": "Every remaining divergence is user-visible, versioned, tested, documented, and explicitly accepted by the requester.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-08",
+          "title": "Publish the full compatibility report",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Generate human and machine reports by command, data capability, mode, platform, and test tier.",
+          "acceptance": "The report can be reproduced from source and evidence and contains no green status inferred from missing tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-09",
+          "title": "Qualify public library and embedding surfaces",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Inventory the root Go package, backend package, issueops/memoryops/journalops surfaces, and any documented embedding API. Provide Haxe-authored generated replacements where they serve real users and publish the new library boundary.",
+          "acceptance": "The release states exactly which APIs are supported by Haxe-generated replacements, behavior-compatible under new imports, or intentionally unsupported; it retains no upstream first-party Go implementation and does not imply untested import-path compatibility.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M16-10",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "title": "Prove there is no hidden legacy implementation path",
+          "work": "Inspect the release command registry, Go dependency graph, linked symbols, generated contract, and fallback configuration to prove bdhx cannot route any command, storage, domain, UOW, sync, or integration behavior into upstream Beads first-party Go.",
+          "acceptance": "The release binary contains no upstream Beads first-party Go implementation; development oracle/fallback code is absent or unreachable by construction, and every behavior resolves to authored Haxe over approved standard-library or independent third-party boundaries.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M17",
+      "title": "Performance, security, supply chain, and release quality",
+      "objective": "Prove that compatibility is production quality rather than only functionally correct on small fixtures.",
+      "depends_on": [
+        "M16",
+        "M05"
+      ],
+      "exit_gate": [
+        "Approved performance budgets pass.",
+        "Large repositories and build cycles are usable.",
+        "Security, race, fuzz, static, license, SBOM, provenance, and packaging gates pass."
+      ],
+      "forbidden": [
+        "No optimization without a benchmark.",
+        "No release artifact without exact source provenance and license material.",
+        "No security waiver hidden in a generic compatibility exception."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M17-01",
+          "title": "Set evidence-based performance budgets",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Use M02 baselines to approve budgets for startup, common reads/writes, sync, migration, memory, binary size, and build cycle.",
+          "acceptance": "Budgets name workload, percentile, allowed regression, machine class, repetitions, and owner-approved exceptions.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-02",
+          "title": "Optimize Haxe and native boundaries",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Profile allocations, conversions, command dispatch, JSON, iterators, storage calls, and generated runtime helpers before optimizing.",
+          "acceptance": "Each optimization has a benchmark, preserves semantic parity, and avoids moving product policy into Go.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-03",
+          "title": "Qualify large repositories",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run representative 16k, 100k, deep hierarchy, wide DAG, large comment/history, and large metadata fixtures.",
+          "acceptance": "Commands remain within approved latency, memory, output, and cancellation limits without uncontrolled allocation.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-04",
+          "title": "Qualify compiler and editor scale",
+          "repository": "haxe.go",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Measure clean and incremental Haxe generation, Go build, test selection, gopls/static analysis, and Codex edit/review loops on the full project.",
+          "acceptance": "The build and development cycle meet approved budgets or opens a measured compiler architecture issue.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-05",
+          "title": "Run Go and Haxe static quality gates",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run Haxe formatting/type checks, gofmt, go test, go vet, staticcheck or approved equivalent, race tests, dependency guards, generated-boundary checks, and docs checks.",
+          "acceptance": "Release code has zero unexplained finding and generated/native failures identify source owners.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-06",
+          "title": "Run security and privacy review",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Threat-model local databases, servers, HTTP, credentials, hooks, imports, archives, path traversal, command injection, deserialization, telemetry, and evidence bundles.",
+          "acceptance": "High-risk findings are fixed, P0/P1 issues block release, and security tests cover all external input boundaries.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-07",
+          "title": "Create SBOM, provenance, and reproducible build evidence",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Generate source/binary SBOMs, dependency/license inventories, build provenance, checksums, and repeat-build comparison.",
+          "acceptance": "Release artifacts can be traced to exact Haxe, generated Go, native Go, upstream, compiler, and toolchain inputs.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-08",
+          "title": "Harden release packaging and signing",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Create archives, checksums, signatures/attestations, license bundles, version metadata, install verification, and rollback instructions.",
+          "acceptance": "A release candidate installs, verifies, runs smoke tests, and uninstalls cleanly on the baseline platform.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-09",
+          "title": "Run final fault, fuzz, and race campaigns",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Execute extended fuzzing, process kill, disk/network faults, migration faults, parser corpus, and race suites on release candidates.",
+          "acceptance": "No reproducible crash, corruption, double success, secret leak, or unbounded resource defect remains open at release severity.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M17-10",
+          "title": "Run the Haxe versus raw-Go development trials",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Select at least three representative changes: one domain rule, one CLI/application feature, and one Go-library integration. Implement or simulate the same change against the pinned raw-Go baseline and BeadsHX with equivalent tests. Measure elapsed active work, files and semantic lines changed, build/test cycles, compiler feedback, Codex context/token use where available, review findings, defects, and native-boundary growth.",
+          "acceptance": "A reproducible report states where Haxe improved, matched, or worsened development. The program does not claim that Haxe manages the project better than raw Go unless the evidence supports the claim.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M18",
+      "title": "Cross-platform qualification and packaging",
+      "objective": "Match the pinned Beads release platform scope with evidence for each operating system, architecture, and storage mode.",
+      "depends_on": [
+        "M17"
+      ],
+      "exit_gate": [
+        "Linux amd64, Linux arm64, macOS amd64/arm64, Windows amd64/arm64, FreeBSD, and Android/Termux arm64 have explicit admitted profiles.",
+        "Cross-platform data interchange is proven.",
+        "Every release artifact reports exact mode limitations."
+      ],
+      "forbidden": [
+        "No platform support inferred from Go cross-compilation alone.",
+        "No CGO claim without runtime tests.",
+        "No universal binary label for a partial profile."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M18-01",
+          "title": "Qualify Linux amd64",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run the full embedded, server, no-CGO, CLI, recovery, performance, and packaging matrix on the primary Linux amd64 line.",
+          "acceptance": "Linux amd64 becomes the first admitted production platform with a reproducible release artifact.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-02",
+          "title": "Qualify Linux arm64",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run native or trusted emulation plus required CGO/Dolt tests and packaging on Linux arm64.",
+          "acceptance": "Architecture-specific behavior, performance, and dependencies are recorded and green.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-03",
+          "title": "Qualify macOS arm64 and amd64",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run full platform-relevant tests, signing/notarization decisions, terminal behavior, filesystem, hooks, and packaging on both macOS architectures.",
+          "acceptance": "Both artifacts install and interoperate with the same Beads databases and release manifest.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-04",
+          "title": "Qualify Windows amd64 and arm64",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Provide compatible CGO toolchains, path/process/terminal/hook behavior, server tests, PowerShell install, and packaging for both architectures.",
+          "acceptance": "Windows artifacts pass the declared matrix and do not depend on an undocumented developer compiler setup.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-05",
+          "title": "Qualify FreeBSD",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run supported storage, CLI, filesystem, process, terminal, and packaging tests on the release FreeBSD target.",
+          "acceptance": "The compatibility matrix names any mode limits and the release artifact passes smoke and data round-trip tests.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-06",
+          "title": "Qualify Android Termux arm64",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run the subset supported by upstream release packaging, including no-CGO/CGO reality, filesystem, terminal, and install behavior.",
+          "acceptance": "The artifact is admitted only for the modes actually proven on Termux.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-07",
+          "title": "Create cross-platform database interchange tests",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Move copied workspaces/backups between admitted platforms and alternate upstream/bdhx reads and writes.",
+          "acceptance": "No platform changes logical state, line endings, permissions, IDs, revisions, or archives outside the upstream contract.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M18-08",
+          "title": "Create the release platform matrix",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Publish exact OS, architecture, storage mode, CGO, server, integration, and packaging status for each artifact.",
+          "acceptance": "No download is labeled supported without its full required gate; partial profiles are explicit.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M19",
+      "title": "Caf module/provider and TaskPort integration",
+      "objective": "Make BeadsHX a first-class, replaceable Caf provider while Beads remains the native task authority.",
+      "depends_on": [
+        "M18",
+        "M16"
+      ],
+      "exit_gate": [
+        "Caf can select and observe BeadsHX without copying task truth.",
+        "TaskPort reads and bounded writes pass native readback and receipt gates.",
+        "Graph projections rebuild.",
+        "Provider cutover and rollback are explicit and proven."
+      ],
+      "forbidden": [
+        "No task state in CML.",
+        "No graph-to-database write path.",
+        "No duplicate Brew or Beads authority module.",
+        "No removal of direct native fallback."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M19-01",
+          "title": "Promote and lock the BeadsHX provider manifest",
+          "repository": "cafetera",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Reconcile the early no-effect descriptor with the completed compatibility, platform, source-lock, TaskPort, effect, observation, fallback, documentation, and test evidence.",
+          "acceptance": "The promoted manifest can be selected without claiming installation, health, task state, or activation, and it names only capabilities that passed their production gates.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-02",
+          "title": "Reconcile the existing Caf Beads binding",
+          "repository": "cafetera",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Update the live binding design so upstream bd and BeadsHX are explicit provider/source choices under the existing Beads task authority model.",
+          "acceptance": "No second task authority or duplicate beads-integration semantic module is created; current source locks are migrated explicitly.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-03",
+          "title": "Implement the BeadsHX TaskPort reader",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Expose the neutral task snapshot, dependencies, status, revision, and fields actually required by Caf through a typed provider adapter.",
+          "acceptance": "Provider conformance passes and provider-native fields remain in typed extensions or native evidence, not the neutral core.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-04",
+          "title": "Implement read-before/write/read-after TaskPort mutations",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 0,
+          "work": "Support the narrow claim, append evidence/comment, update, close/reopen, and related operations required by the live Caf workflow.",
+          "acceptance": "Stale, concurrent, replayed, denied, malformed, and mismatched operations fail closed and emit terminal evidence with native readback.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-05",
+          "title": "Implement BeadsHX graph projection artifacts",
+          "repository": "cafetera",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Project explicit snapshots, dependencies, current work, artifacts, and receipts into rebuildable graph/headless views.",
+          "acceptance": "Deleting projections and rebuilding from native snapshots produces equivalent content; graph code has no mutation route.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-06",
+          "title": "Update source/tool/devbox observations",
+          "repository": "cafetera",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Add exact BeadsHX source locks, installation intent, actual binary/version observation, database revision observation, and direct native debug refs.",
+          "acceptance": "Authored CML contains no host path, installed claim, database state, command result, or receipt result.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-07",
+          "title": "Complete cafetera-4vzs.80 against BeadsHX",
+          "repository": "cafetera",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run the existing live Beads TaskPort work-loop acceptance first against upstream where needed and then against the BeadsHX provider.",
+          "acceptance": "The original issue is updated with evidence rather than replaced, and its exact stale/replay/concurrency/denial/mismatch gates pass.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-08",
+          "title": "Prove reversible provider cutover",
+          "repository": "cafetera",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Switch one isolated Caf workspace from upstream bd to BeadsHX and back through explicit binding/source changes and native evidence.",
+          "acceptance": "Task IDs/data remain native, projections rebuild, rollback works, and direct bd/bdhx escape hatches remain available.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M19-09",
+          "title": "Advance cafetera-4vzs.82 without duplicating it",
+          "repository": "cafetera",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Use the BeadsHX provider as evidence for task-authority replaceability while preserving the requirement for a genuinely different second TaskPort provider.",
+          "acceptance": "The issue records what BeadsHX proves and what still requires a non-Beads implementation.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M20",
+      "title": "Brew package above TaskPort",
+      "objective": "Create Brew as a reusable coordination layer above BeadsHX, not as the database, CLI parser, or task authority.",
+      "depends_on": [
+        "M19"
+      ],
+      "exit_gate": [
+        "There is one canonical Brew core.",
+        "Brew works through neutral TaskPort/WorkContext contracts against BeadsHX and a second conformance provider.",
+        "One real Caf workflow passes with explicit evidence and recovery.",
+        "Removing Brew leaves BeadsHX usable."
+      ],
+      "forbidden": [
+        "No beadshx-to-brew dependency.",
+        "No Brew-owned task status or native IDs in authored CML.",
+        "No automatic claim/close without explicit policy and evidence.",
+        "No duplicate caf.brew implementation."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M20-01",
+          "title": "Extend the shared contracts for Brew and WorkContext",
+          "repository": "program",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Build on the M07 TaskPort package and extract only the neutral WorkContext, verification, closeout, recovery, evidence, and receipt types that Brew needs from current Caf ownership.",
+          "acceptance": "Packages import no BeadsHX storage, Cobra, Dolt, graph, or provider-specific types; existing Caf and BeadsHX users migrate through exact locks; deterministic fake-provider conformance remains green.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-02",
+          "title": "Extract one canonical Brew core package",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Move the reusable semantics now owned by caf.brew into `packages/brew-core` in the BeadsHX monorepo, then make Caf consume the exact locked package. Keep Caf-owned workspace CML and product composition in Caf. Do not fork the semantics.",
+          "acceptance": "There is one canonical Brew core and version history; Caf parity passes before the old implementation is removed; the migration and rollback are explicit. A later standalone repository extraction remains possible if a second product proves an independent release cadence.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-03",
+          "title": "Create packages/brew-core above TaskPort",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Implement reusable selection, skipped-candidate explanation, WorkContext assembly, verification plans, closeout policy, recovery plans, and receipt requirements.",
+          "acceptance": "The package cannot read a Beads database or execute a native command except through neutral injected ports.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-04",
+          "title": "Create the BeadsHX Brew provider package",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Bind brew-core to the BeadsHX TaskPort provider, native debug links, and receipt/evidence adapters without changing core task semantics.",
+          "acceptance": "Provider extensions are explicit and the neutral policy works without them.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-05",
+          "title": "Create a deterministic second TaskPort provider",
+          "repository": "program",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Use a small non-Beads in-memory or file-backed conformance provider for semantic tests, then retain the separate real-provider requirement for migration claims.",
+          "acceptance": "The same Brew policy and WorkContext bytes run unchanged against both providers and catch Beads-specific leakage.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-06",
+          "title": "Create the optional brew CLI/host",
+          "repository": "beadshx",
+          "issue_type": "feature",
+          "priority": 2,
+          "work": "Expose select, explain, prepare-context, verify, closeout proposal, recover, and native-open operations while preserving owner approvals and provider authority.",
+          "acceptance": "The CLI reports plans and evidence clearly, does not silently claim/close, and can always show the native task source.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-07",
+          "title": "Compose one Caf CML Brew workflow",
+          "repository": "cafetera",
+          "issue_type": "feature",
+          "priority": 1,
+          "work": "Use visible local CML to select exact binding, policy refs, context profile, verification, closeout, and recovery without live task fields.",
+          "acceptance": "Typed/CML-HX canonical bytes match and invalid refs, multiple authorities, provider-native fields, and missing evidence fail closed.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-08",
+          "title": "Complete cafetera-4vzs.81 with shared Brew",
+          "repository": "cafetera",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Run a real Caf development task through selection, exact context, agent delivery, verification, evidence/close, receipt, and refreshed graph.",
+          "acceptance": "The existing issue receives the provider-use manifest, value comparison against direct bd, clean recovery proof, and second-provider evidence.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M20-09",
+          "title": "Prove Brew removal and direct BeadsHX fallback",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Remove or disable Brew from a fixture while retaining full direct bdhx and TaskPort operation.",
+          "acceptance": "No task data or essential BeadsHX operation depends on Brew, and the same database remains valid.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    },
+    {
+      "id": "M21",
+      "title": "Dogfood, cutover, 1.0, and continuing upstream control",
+      "objective": "Move from evidence to daily use without placing the owner workflow at avoidable risk, then establish durable maintenance.",
+      "depends_on": [
+        "M20"
+      ],
+      "exit_gate": [
+        "Dogfood progresses through read-only, disposable, non-critical, selected daily, and primary cutover stages.",
+        "A full rollback drill succeeds.",
+        "BeadsHX 1.0 ships with complete evidence and exact compatibility scope.",
+        "Upstream tracking is operational."
+      ],
+      "forbidden": [
+        "No big-bang replacement.",
+        "No removal of upstream fallback before a successful cutover/rollback drill and approved soak.",
+        "No future upstream merge directly into a release claim without requalification."
+      ],
+      "tasks": [
+        {
+          "id": "BHX-M21-01",
+          "title": "Run shadow read-only dogfood",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Run bdhx reads beside upstream bd on copied and selected read-only real workspaces and compare every result.",
+          "acceptance": "No unexplained mismatch occurs across the agreed event count and time window; no write path is enabled.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-02",
+          "title": "Run disposable write dogfood",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Use full workflows on throwaway repositories, including concurrency, sync, backup, restore, migration, and crash recovery.",
+          "acceptance": "All failures are recoverable and upstream can continue every database without repair.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-03",
+          "title": "Run non-critical repository dogfood",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Make bdhx the default for one non-critical repository with automatic verified backups and immediate upstream fallback.",
+          "acceptance": "The repository completes the accepted soak/event threshold with no data-loss, corruption, or blocked workflow defect.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-04",
+          "title": "Run selected daily workflow dogfood",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Use bdhx for the owner-ranked daily profile across selected projects while retaining exact fallback and monitoring fallback usage.",
+          "acceptance": "All fallbacks are eliminated or intentionally excluded before release; restore drills succeed from real dogfood backups.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-05",
+          "title": "Perform the primary-workflow cutover drill",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Back up, verify, switch, complete representative work, simulate failure, roll back to upstream, then switch forward again.",
+          "acceptance": "The drill preserves all task state/history and produces a clear operator runbook with measured recovery time and steps.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-06",
+          "title": "Publish BeadsHX 1.0",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 0,
+          "work": "Release signed, provenance-backed artifacts, source, generated source, SBOM, licenses, compatibility report, install docs, migration docs, and recovery docs.",
+          "acceptance": "All M00-M21 gates are green at the release commit and the release page makes divergences/platform limits visible.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-07",
+          "title": "Permit the optional bd alias",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "After the approved soak, provide an explicit install option or wrapper that exposes bdhx as bd while preserving a direct upstream binary name.",
+          "acceptance": "The alias is reversible, reports BeadsHX identity, and cannot strand the user without an upstream-compatible fallback.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-08",
+          "title": "Establish upstream tracking and rebase policy",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Define scheduled discovery, delta classification, security intake, compatibility target upgrades, conflict handling, attribution, and release branches.",
+          "acceptance": "Every upstream commit/release delta enters the program ledger and cannot silently change the compatibility target.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-09",
+          "title": "Create the next-target upgrade procedure",
+          "repository": "beadshx",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Automate command/schema/dependency diff, corpus refresh, migration matrix expansion, compiler impact report, and staged requalification for later Beads releases.",
+          "acceptance": "A dry run against the next available upstream delta produces a bounded issue graph and does not modify the 1.0 compatibility claim.",
+          "depends_on": [],
+          "labels": []
+        },
+        {
+          "id": "BHX-M21-10",
+          "title": "Close the program with retained recovery paths",
+          "repository": "program",
+          "issue_type": "task",
+          "priority": 1,
+          "work": "Archive evidence, close or re-scope remaining issues, retain exact oracle builds/source tags, verify clean repositories, and document continuing owners.",
+          "acceptance": "The project is maintainable without hidden local state, and upstream bd, backup restore, native debug, and Brew removal remain tested escape hatches.",
+          "depends_on": [],
+          "labels": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,12 +1,34 @@
+# BeadsHX
+
+BeadsHX is an experimental Haxe-to-Go port of
+[Beads](https://github.com/gastownhall/beads). The current compatibility target
+is Beads v1.2.1.
+
+BeadsHX is not a stable replacement for `bd`. The port is incomplete, and no
+BeadsHX release is available. Haxe owns new application behavior under
+`src/beadshx/`. The project uses the upstream `bd` binary only as a named test
+oracle. A BeadsHX release build never delegates commands to that binary.
+
+[![BeadsHX CI](https://github.com/fullofcaffeine/beadshx/actions/workflows/beadshx-bootstrap.yml/badge.svg)](https://github.com/fullofcaffeine/beadshx/actions/workflows/beadshx-bootstrap.yml)
+[![License](https://img.shields.io/github/license/fullofcaffeine/beadshx)](LICENSE)
+
+Read [the port specification](beadshx-complete-port-prd.md) and
+[the source index](engdocs/beadshx/program/source-index.md) for the current
+scope and evidence. Use upstream Beads for production work.
+
+## Upstream Beads overview
+
+The text below describes the upstream Beads product. BeadsHX keeps this
+documentation because upstream behavior is the compatibility authority.
+
 # bd - Beads
 
 **Distributed graph issue tracker for AI agents, powered by [Dolt](https://github.com/dolthub/dolt).**
 
 **Platforms:** macOS, Linux, Windows, FreeBSD
 
-[![License](https://img.shields.io/github/license/gastownhall/beads)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/steveyegge/beads)](https://goreportcard.com/report/github.com/steveyegge/beads)
-[![Release](https://img.shields.io/github/v/release/gastownhall/beads)](https://github.com/gastownhall/beads/releases)
+[![Upstream release](https://img.shields.io/github/v/release/gastownhall/beads)](https://github.com/gastownhall/beads/releases)
 [![npm version](https://img.shields.io/npm/v/@beads/bd)](https://www.npmjs.com/package/@beads/bd)
 [![PyPI](https://img.shields.io/pypi/v/beads-mcp)](https://pypi.org/project/beads-mcp/)
 
@@ -24,7 +46,7 @@ flowchart LR
     depgraph <-->|"bd dolt push / pull"| remote[("other machines<br/>and agents")]
 ```
 
-## ⚡ Quick Start
+## ⚡ Upstream Beads Quick Start
 
 ```bash
 # Install beads CLI (system-wide - don't clone this repo into your project)

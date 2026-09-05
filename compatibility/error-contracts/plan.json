@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "compatibilityTarget": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "status": "planned",
+  "classificationRule": "Classify by command profile, scenario, exit status, stdout, stderr, and persistent-state result. Never classify by exit number alone.",
+  "goTypePolicy": "Go error types are implementation evidence only. The compatibility class is external and remains independent of Go type names.",
+  "authorities": {
+    "commandTree": "compatibility/upstream-v1.2.1-command-inventory.json.gz",
+    "outputPlan": "compatibility/output-contracts/plan.json",
+    "protocolTests": [
+      "cmd/bd/protocol/exit_codes_test.go",
+      "cmd/bd/protocol/exit_codes_init_test.go",
+      "cmd/bd/protocol/errors_contract_test.go"
+    ],
+    "routingSources": [
+      "cmd/bd/errors.go",
+      "cmd/bd/main.go",
+      "cmd/bd/output.go"
+    ]
+  },
+  "semanticClasses": {
+    "success": "The requested observable operation completed without a classified failure.",
+    "usage": "The invocation or input shape is invalid before the requested operation can run.",
+    "semantic": "A valid request cannot be satisfied, including not-found, validation, or policy refusal.",
+    "storage": "The task authority is unavailable, corrupt, incompatible, or cannot complete its storage operation.",
+    "conflict": "Concurrent ownership, a stale guard, or divergent state prevents the requested result.",
+    "cancellation": "An operator or supervising process canceled the operation.",
+    "deadline": "The operation stopped because its allowed time expired.",
+    "partialSuccess": "Some requested result or mutation completed while another part did not.",
+    "internalDefect": "The implementation violated an invariant or failed outside an expected user, policy, storage, conflict, cancellation, or deadline condition."
+  },
+  "exitObservations": [
+    {
+      "id": "general-success",
+      "code": 0,
+      "scope": "public-cli",
+      "classes": ["success", "partialSuccess"],
+      "stability": "protocol-v0",
+      "sourceEvidence": ["cmd/bd/protocol/exit_codes_test.go"]
+    },
+    {
+      "id": "general-failure",
+      "code": 1,
+      "scope": "public-cli",
+      "classes": ["usage", "semantic", "storage", "conflict", "cancellation", "deadline", "internalDefect", "partialSuccess"],
+      "stability": "protocol-v0",
+      "sourceEvidence": ["cmd/bd/errors.go", "cmd/bd/main.go"]
+    },
+    {
+      "id": "list-flag-conflict",
+      "code": 2,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/list"],
+      "classes": ["usage"],
+      "stability": "observed",
+      "sourceEvidence": ["cmd/bd/list_input.go"]
+    },
+    {
+      "id": "row-cap-refusal",
+      "code": 2,
+      "scope": "shared-command-policy",
+      "commandIds": ["cmd:bd/list", "cmd:bd/ready", "cmd:bd/dep/tree", "cmd:bd/find-duplicates", "cmd:bd/graph"],
+      "classes": ["semantic"],
+      "stability": "command-local",
+      "sourceEvidence": ["cmd/bd/max_rows.go", "cmd/bd/max_rows_test.go"]
+    },
+    {
+      "id": "sync-conflict",
+      "code": 2,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/sync"],
+      "classes": ["conflict"],
+      "stability": "command-local",
+      "sourceEvidence": ["cmd/bd/sync.go", "cmd/bd/sync_test.go"]
+    },
+    {
+      "id": "sync-retries-exhausted",
+      "code": 3,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/sync"],
+      "classes": ["conflict"],
+      "stability": "command-local",
+      "sourceEvidence": ["cmd/bd/sync.go", "cmd/bd/sync_test.go"]
+    },
+    {
+      "id": "sync-dirty-stuck",
+      "code": 4,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/sync"],
+      "classes": ["conflict"],
+      "stability": "command-local",
+      "sourceEvidence": ["cmd/bd/sync.go", "cmd/bd/sync_test.go"]
+    },
+    {
+      "id": "init-remote-divergence",
+      "code": 10,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/init"],
+      "classes": ["conflict"],
+      "stability": "protocol-v0",
+      "sourceEvidence": ["cmd/bd/init_safety.go", "cmd/bd/protocol/exit_codes_init_test.go"]
+    },
+    {
+      "id": "init-local-exists",
+      "code": 11,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/init"],
+      "classes": ["conflict"],
+      "stability": "protocol-v0-unexecuted",
+      "sourceEvidence": ["cmd/bd/init.go", "cmd/bd/protocol/exit_codes_init_test.go"]
+    },
+    {
+      "id": "init-destroy-token-missing",
+      "code": 12,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/init"],
+      "classes": ["semantic"],
+      "stability": "protocol-v0",
+      "sourceEvidence": ["cmd/bd/init_safety.go", "cmd/bd/protocol/exit_codes_init_test.go"]
+    },
+    {
+      "id": "update-stale-guard",
+      "code": 13,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/update"],
+      "classes": ["conflict"],
+      "stability": "command-local",
+      "sourceEvidence": ["cmd/bd/update.go", "cmd/bd/update_conditional_embedded_test.go", "cmd/bd/update_conditional_proxied_test.go"]
+    },
+    {
+      "id": "proxy-child-lock-held",
+      "code": 75,
+      "scope": "internal-child",
+      "classes": ["conflict"],
+      "stability": "internal-only",
+      "sourceEvidence": ["cmd/bd/db_proxy_child.go", "internal/storage/dbproxy/proxy/server.go"]
+    },
+    {
+      "id": "prompt-canceled",
+      "code": 130,
+      "scope": "command-local",
+      "commandIds": ["cmd:bd/init"],
+      "classes": ["cancellation"],
+      "stability": "protocol-v0-non-windows",
+      "sourceEvidence": ["cmd/bd/prompt.go", "cmd/bd/protocol/exit_codes_init_test.go"]
+    }
+  ],
+  "passthroughExitPolicies": [
+    {
+      "id": "hooks-run-child",
+      "commandIds": ["cmd:bd/hooks/run"],
+      "policy": "Return the configured hook process exit code.",
+      "sourceEvidence": ["cmd/bd/hooks.go"]
+    },
+    {
+      "id": "mail-delegate-child",
+      "commandIds": ["cmd:bd/mail"],
+      "policy": "Return the configured mail delegate process exit code.",
+      "sourceEvidence": ["cmd/bd/mail.go"]
+    },
+    {
+      "id": "metrics-flusher-child",
+      "commandIds": ["cmd:bd/send-metrics"],
+      "policy": "Return the internal metrics flusher result directly.",
+      "sourceEvidence": ["cmd/bd/send_metrics.go"]
+    }
+  ],
+  "diagnosticRoutes": [
+    {"id": "stderr-text", "jsonMode": "text", "stdout": "none", "stderr": "text", "sourceEvidence": ["cmd/bd/errors.go"]},
+    {"id": "json-respecting-stdout", "jsonMode": "json", "stdout": "json", "stderr": "none", "sourceEvidence": ["cmd/bd/errors.go"]},
+    {"id": "hint-on-stderr", "jsonMode": "json-or-text", "stdout": "none", "stderr": "json-or-text", "sourceEvidence": ["cmd/bd/errors.go"]},
+    {"id": "structured-stderr", "jsonMode": "json", "stdout": "none", "stderr": "json", "sourceEvidence": ["cmd/bd/output.go"]},
+    {"id": "silent-exit", "jsonMode": "none", "stdout": "none", "stderr": "none", "sourceEvidence": ["cmd/bd/errors.go"]},
+    {"id": "command-owned", "jsonMode": "command-owned", "stdout": "command-owned", "stderr": "command-owned", "sourceEvidence": ["cmd/bd/protocol/errors_contract_test.go"]}
+  ],
+  "signalFamilies": [
+    {
+      "id": "interactive-prompt",
+      "behavior": "SIGINT cancellation returns exit 130; SIGTERM uses the same source path but still needs an executed fixture.",
+      "oracleEvidence": "pinned-sigint-test-non-windows-and-source-sigterm",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/prompt.go", "cmd/bd/protocol/exit_codes_init_test.go"]
+    },
+    {
+      "id": "root-graceful-shutdown",
+      "behavior": "The first SIGINT, SIGTERM, or SIGHUP flushes pending batch state and cancels the root context; a second signal forces exit 1.",
+      "oracleEvidence": "source-only",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/main.go"]
+    },
+    {
+      "id": "list-watch-and-display",
+      "behavior": "List, watch, and display paths install command-local SIGINT and SIGTERM handlers.",
+      "oracleEvidence": "source-only",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/list_proxied_server.go", "cmd/bd/list_show_filter_modes.go", "cmd/bd/show_display.go"]
+    },
+    {
+      "id": "serve",
+      "behavior": "Serve uses the root cancellation context for graceful shutdown and resource closure.",
+      "oracleEvidence": "source-only",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/serve.go"]
+    }
+  ],
+  "representativeCases": [
+    {
+      "id": "invalid-status",
+      "commandId": "cmd:bd/update",
+      "class": "usage",
+      "processExit": 1,
+      "diagnosticRoute": "stderr-text",
+      "persistentState": "unchanged",
+      "oracleEvidence": "pinned-upstream-test",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/protocol/errors_contract_test.go"]
+    },
+    {
+      "id": "missing-show-json",
+      "commandId": "cmd:bd/show",
+      "class": "semantic",
+      "processExit": 1,
+      "diagnosticRoute": "json-respecting-stdout",
+      "persistentState": "unchanged",
+      "oracleEvidence": "pinned-upstream-test",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/protocol/errors_contract_test.go", "cmd/bd/errors.go"]
+    },
+    {
+      "id": "claim-held-by-other-actor",
+      "commandId": "cmd:bd/update",
+      "class": "conflict",
+      "processExit": 1,
+      "diagnosticRoute": "command-owned",
+      "persistentState": "unchanged",
+      "oracleEvidence": "pinned-upstream-test-with-structured-gap",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/protocol/errors_contract_test.go"]
+    },
+    {
+      "id": "close-partial-success",
+      "commandId": "cmd:bd/close",
+      "class": "partialSuccess",
+      "processExit": 0,
+      "diagnosticRoute": "command-owned",
+      "persistentState": "partial",
+      "oracleEvidence": "pinned-upstream-test",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/protocol/exit_codes_test.go", "cmd/bd/close.go"]
+    },
+    {
+      "id": "update-partial-failure",
+      "commandId": "cmd:bd/update",
+      "class": "partialSuccess",
+      "processExit": 1,
+      "diagnosticRoute": "command-owned",
+      "persistentState": "partial",
+      "oracleEvidence": "pinned-upstream-test",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/update_multi_id_exit_test.go"]
+    },
+    {
+      "id": "interactive-init-cancel",
+      "commandId": "cmd:bd/init",
+      "class": "cancellation",
+      "processExit": 130,
+      "diagnosticRoute": "command-owned",
+      "persistentState": "changed-before-cancel",
+      "oracleEvidence": "pinned-upstream-test-non-windows",
+      "candidateStatus": "pending",
+      "sourceEvidence": ["cmd/bd/protocol/exit_codes_init_test.go", "cmd/bd/prompt.go"]
+    }
+  ],
+  "gaps": [
+    {"id": "storage-unavailable-corrupt", "class": "storage", "status": "pending", "owner": "BHX-M06", "need": "Disposable fault fixtures with process, diagnostic, and native state evidence."},
+    {"id": "deadline", "class": "deadline", "status": "pending", "owner": "BHX-M06", "need": "A controlled deadline fixture distinct from operator cancellation."},
+    {"id": "internal-defect", "class": "internalDefect", "status": "pending", "owner": "BHX-M06", "need": "A safe invariant-failure fixture that cannot touch primary data."},
+    {"id": "long-lived-signals", "class": "cancellation", "status": "pending", "owner": "BHX-M06", "need": "Per-command SIGINT, SIGTERM, and SIGHUP cases for list/watch/display, serve, and batch-commit shutdown."},
+    {"id": "platform-signal-equivalence", "class": "cancellation", "status": "pending", "owner": "BHX-M18", "need": "Native platform qualification; exit 130 is not claimed on Windows by the pinned protocol test."}
+  ]
+}

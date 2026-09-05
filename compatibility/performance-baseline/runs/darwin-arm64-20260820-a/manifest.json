@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "runId": "darwin-arm64-20260820-a",
+  "source": {
+    "project": "Beads",
+    "version": "v1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff"
+  },
+  "machine": {
+    "goos": "darwin",
+    "goarch": "arm64",
+    "operatingSystem": "macOS 15.4",
+    "operatingSystemBuild": "24E248",
+    "kernelRelease": "24.4.0",
+    "machineModel": "Mac14,9",
+    "cpu": "Apple M2 Pro",
+    "logicalCpuCount": 12,
+    "memoryBytes": 34359738368,
+    "filesystem": "APFS",
+    "storageMedium": "solid-state",
+    "powerSource": "ac",
+    "goVersion": "go1.26.5",
+    "memoryObserver": "wait4 rusage.ru_maxrss (Darwin bytes)",
+    "filesystemCacheNote": "host filesystem cache is uncontrolled; fixture copies use APFS clone-on-write outside timed regions"
+  },
+  "binary": {
+    "version": "1.2.1",
+    "commit": "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff",
+    "build": "634cbbc4b",
+    "sha256": "9bb3afc2c7edc39ea1527863b531b36fa7482f860e25415ddfcb92df0633d5c0",
+    "sizeBytes": 201565728,
+    "debugSymbols": "default go build symbols retained",
+    "codeSignature": "ad-hoc codesign from pinned Makefile"
+  },
+  "doltServer": {
+    "version": "2.2.0",
+    "sha256": "2c775333f7085821e95136d2066fa3d63e0926087b4b6878f68d0a4d78343690",
+    "sizeBytes": 118796306
+  },
+  "environment": {
+    "BD_DISABLE_EVENT_FLUSH": "1",
+    "BD_DISABLE_METRICS": "1",
+    "BD_NON_INTERACTIVE": "1",
+    "BEADS_NO_AUTO_FLUSH": "1",
+    "BEADS_NO_AUTO_IMPORT": "1",
+    "BEADS_NO_DAEMON": "1",
+    "BEADS_NO_REMOTE_ADOPT": "1",
+    "CI": "true",
+    "CLICOLOR": "0",
+    "DOLT_DISABLE_UPDATE_CHECK": "1",
+    "EDITOR": "false",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_PAGER": "cat",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOVCS": "*:off",
+    "GOWORK": "off",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "NO_COLOR": "1",
+    "PAGER": "cat",
+    "TZ": "UTC",
+    "VISUAL": "false"
+  },
+  "fixtures": [
+    {
+      "id": "small-v1",
+      "logicalSha256": "4f3a8de1546aa49c1d7b1e2bca0f87ca52d52f126a22fd5ce69c78c72733bcf2",
+      "logicalBytes": 24544,
+      "physicalCopyMethod": "APFS clone-on-write via cp -cR outside timed regions",
+      "issueCount": 32,
+      "schemaVersion": 65
+    },
+    {
+      "id": "large-v1",
+      "logicalSha256": "48e93f9f0c937c758cfc46399c248bbe9a0f5437e818a61c95007d9b160b0f1a",
+      "logicalBytes": 8814696,
+      "physicalCopyMethod": "APFS clone-on-write via cp -cR outside timed regions",
+      "issueCount": 5000,
+      "schemaVersion": 65
+    }
+  ]
+}

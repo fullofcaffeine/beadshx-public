@@ -327,6 +327,30 @@ linters:
 
   exclusions:
     rules:
+      # Generated Haxe storage adapters are the BeadsHX equivalent of the
+      # inherited internal/storage boundary. Keep the exception to the six
+      # files whose typed externs directly consume the Dolt driver API.
+      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|store_embedded(assignedissuereader|dependencyreader|issueidsearch|issuesummaryreader|scalarissuedetailsreader))\.go$'
+        linters:
+          - depguard
+      # Haxe Std.random intentionally implements a non-cryptographic random
+      # integer contract. It must not be replaced with crypto/rand, which has
+      # different semantics and cost.
+      - path: '^generated/go/bdhx/haxego_generated_module_std\.go$'
+        text: 'G404'
+        linters:
+          - gosec
+      # These parameters are part of the Haxe standard-library ABI even when
+      # the Go target does not need their values. Generated callers must keep
+      # the stable signatures.
+      - path: '^generated/go/bdhx/haxego_generated_module_haxe_json\.go$'
+        text: 'replacer is unused'
+        linters:
+          - unparam
+      - path: '^generated/go/bdhx/haxego_generated_module_sys_io_file\.go$'
+        text: 'binary is unused'
+        linters:
+          - unparam
       # forbidigo holds TWO rules - the filter-construction guard and the
       # label-plane guard - and the entries from here to the test exemption are
       # their entire scope. This one keeps both off the rest of the tree; the
@@ -478,7 +502,7 @@ linters:
       # names no filter type, so the hole it needed is closed rather than
       # merely unused. Removing an entry here is how a role commit proves its
       # front door reached the role.
-      
+
       - path: '^cmd/bd/(cleanup|completions|gate_discover|lint|ping|repo|swarm|template)\.go$'
         text: 'do not write a filter here'
         linters:

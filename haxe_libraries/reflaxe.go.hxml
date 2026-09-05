@@ -1,0 +1,10 @@
+# haxe.go source-checkout configuration. Package releases flatten the target
+# overrides into .cross.hx files, but an exact source commit uses these roots.
+-cp ${SCOPE_DIR}/.toolchains/haxe.go/src/
+-cp ${SCOPE_DIR}/.toolchains/haxe.go/std/
+-cp ${SCOPE_DIR}/.toolchains/haxe.go/std/go/_std/
+-lib reflaxe
+-D reflaxe.go=0.0.0-development
+--macro nullSafety("reflaxe.go")
+--macro reflaxe.go.CompilerBootstrap.Start()
+--macro reflaxe.go.CompilerInit.Start()

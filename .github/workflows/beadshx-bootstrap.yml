@@ -1,0 +1,258 @@
+name: BeadsHX bootstrap
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -euo pipefail {0}
+
+jobs:
+  bootstrap:
+    name: Haxe and Go bootstrap
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.18.1"
+          cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - run: npm install --global npm@11.16.0
+      - name: Run bootstrap and finalize evidence
+        if: always()
+        env:
+          BEADSHX_TOOLCHAIN_PROFILE: linux-ci
+        run: scripts/beadshx/ci-hosted.sh bootstrap
+      - name: Upload bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-bootstrap-${{ github.run_id }}
+          path: build/evidence/bootstrap/
+          if-no-files-found: error
+          retention-days: 7
+
+  upstream-oracle:
+    name: Pinned upstream oracle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: Run upstream oracle and finalize evidence
+        if: always()
+        run: scripts/beadshx/ci-hosted.sh upstream-oracle
+      - name: Upload oracle evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-oracle-${{ github.run_id }}
+          path: build/evidence/oracle/
+          if-no-files-found: error
+          retention-days: 7
+
+  parity-smoke:
+    name: CLI parity smoke
+    needs: [bootstrap, upstream-oracle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: beadshx-bootstrap-${{ github.run_id }}
+          path: build/evidence/candidate
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: beadshx-oracle-${{ github.run_id }}
+          path: build/evidence/oracle
+      - name: Run parity smoke and finalize evidence
+        if: always()
+        env:
+          BEADSHX_CANDIDATE_BIN: ${{ github.workspace }}/build/evidence/candidate/bdhx
+          BEADSHX_ORACLE_BIN: ${{ github.workspace }}/build/evidence/oracle/bd-upstream
+        run: scripts/beadshx/ci-hosted.sh parity-smoke
+      - name: Upload parity evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-parity-${{ github.run_id }}
+          path: build/evidence/parity/
+          if-no-files-found: error
+          retention-days: 7
+
+  proxied-readonly:
+    name: Proxied read-only parity
+    needs: [bootstrap, upstream-oracle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: beadshx-bootstrap-${{ github.run_id }}
+          path: build/evidence/candidate
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: beadshx-oracle-${{ github.run_id }}
+          path: build/evidence/oracle
+      - name: Run proxied read-only parity and finalize evidence
+        if: always()
+        env:
+          BEADSHX_CANDIDATE_BIN: ${{ github.workspace }}/build/evidence/candidate/bdhx
+          BEADSHX_ORACLE_BIN: ${{ github.workspace }}/build/evidence/oracle/bd-upstream
+        run: scripts/beadshx/ci-hosted.sh proxied-readonly
+      - name: Upload proxied read-only evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-proxied-readonly-${{ github.run_id }}
+          path: build/evidence/proxied-readonly/
+          if-no-files-found: error
+          retention-days: 7
+
+  license:
+    name: License boundaries
+    needs: bootstrap
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: beadshx-bootstrap-${{ github.run_id }}
+          path: build/evidence/bootstrap
+      - name: Run license policy and finalize evidence
+        if: always()
+        env:
+          BEADSHX_GENERATED_ROOT: ${{ github.workspace }}/build/evidence/bootstrap
+        run: scripts/beadshx/ci-hosted.sh license
+      - name: Upload license evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-license-${{ github.run_id }}
+          path: build/evidence/license/
+          if-no-files-found: error
+          retention-days: 7
+
+  output-contracts:
+    name: Pinned output contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate output contracts and finalize evidence
+        if: always()
+        run: scripts/beadshx/ci-hosted.sh output-contracts
+      - name: Upload output-contract evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-output-contracts-${{ github.run_id }}
+          path: build/evidence/output-contracts/
+          if-no-files-found: error
+          retention-days: 7
+
+  performance-baseline:
+    name: Published performance evidence
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: Validate performance evidence and finalize lane evidence
+        if: always()
+        run: scripts/beadshx/ci-hosted.sh performance-baseline
+      - name: Upload performance evidence validation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-performance-baseline-${{ github.run_id }}
+          path: build/evidence/performance-baseline/
+          if-no-files-found: error
+          retention-days: 7
+
+  secret-scan:
+    name: Tracked tree and BeadsHX history scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Scan secrets and finalize evidence
+        if: always()
+        env:
+          BEADSHX_SECRET_REPORT: ${{ github.workspace }}/build/evidence/secrets/gitleaks.json
+        run: scripts/beadshx/ci-hosted.sh secret-scan
+      - name: Upload secret-scan evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-secrets-${{ github.run_id }}
+          path: build/evidence/secrets/
+          if-no-files-found: error
+          retention-days: 7
+
+  evidence-gate:
+    name: Bootstrap evidence gate
+    if: always()
+    needs: [bootstrap, upstream-oracle, parity-smoke, proxied-readonly, license, output-contracts, performance-baseline, secret-scan]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every evidence lane
+        if: always()
+        env:
+          BOOTSTRAP: ${{ needs.bootstrap.result }}
+          ORACLE: ${{ needs.upstream-oracle.result }}
+          PARITY: ${{ needs.parity-smoke.result }}
+          PROXIED_READONLY: ${{ needs.proxied-readonly.result }}
+          LICENSE_RESULT: ${{ needs.license.result }}
+          OUTPUT_CONTRACTS: ${{ needs.output-contracts.result }}
+          PERFORMANCE_BASELINE: ${{ needs.performance-baseline.result }}
+          SECRETS: ${{ needs.secret-scan.result }}
+          BEADSHX_GATE_REPORT: ${{ github.workspace }}/build/evidence/gate/results.json
+        run: scripts/beadshx/ci-hosted.sh evidence-gate
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: beadshx-gate-${{ github.run_id }}
+          path: build/evidence/gate/
+          if-no-files-found: error
+          retention-days: 7

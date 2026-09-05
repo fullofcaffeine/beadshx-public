@@ -1,0 +1,40 @@
+{
+	"schemaVersion": 1,
+	"fallbacks": [
+		{
+			"package": "time",
+			"symbol": "After",
+			"position": "result:1",
+			"goType": "\u003c-chan time.Time",
+			"reason": "channel"
+		},
+		{
+			"package": "time",
+			"symbol": "AfterFunc",
+			"position": "param:f",
+			"goType": "func()",
+			"reason": "callback_signature"
+		},
+		{
+			"package": "time",
+			"symbol": "Tick",
+			"position": "result:1",
+			"goType": "\u003c-chan time.Time",
+			"reason": "channel"
+		},
+		{
+			"package": "time",
+			"symbol": "Ticker.C",
+			"position": "field:C",
+			"goType": "\u003c-chan time.Time",
+			"reason": "channel"
+		},
+		{
+			"package": "time",
+			"symbol": "Timer.C",
+			"position": "field:C",
+			"goType": "\u003c-chan time.Time",
+			"reason": "channel"
+		}
+	]
+}
