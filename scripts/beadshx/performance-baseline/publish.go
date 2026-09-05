@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -218,7 +219,7 @@ func checkPublished(repository string, selected policy) error {
 	if err := json.Unmarshal(content, &committed); err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(generated, committed) {
+	if !equalPortableSummary(generated, committed) {
 		return fmt.Errorf("published cross-run comparison does not regenerate from run summaries")
 	}
 	return nil
@@ -330,7 +331,7 @@ func validatePublishedRun(root string, selected policy) (preparationEvidence, er
 	if err := json.Unmarshal(committedContent, &committed); err != nil {
 		return preparationEvidence{}, err
 	}
-	if !reflect.DeepEqual(generated, committed) {
+	if !equalPortableSummary(generated, committed) {
 		return preparationEvidence{}, fmt.Errorf("published run %s summary does not regenerate from raw samples", evidence.RunID)
 	}
 	if err := validatePublishedFixtures(root, evidence, selected); err != nil {
@@ -346,6 +347,51 @@ func validatePublishedRun(root string, selected policy) (preparationEvidence, er
 		return preparationEvidence{}, err
 	}
 	return evidence, nil
+}
+
+// equalPortableSummary keeps evidence identity exact while allowing the tiny
+// floating-point differences that math functions can produce across CPU
+// architectures. A relative tolerance of 1e-12 is far below measurement
+// precision and still rejects any material change to the raw evidence.
+func equalPortableSummary(left, right any) bool {
+	return equalPortableValue(reflect.ValueOf(left), reflect.ValueOf(right))
+}
+
+func equalPortableValue(left, right reflect.Value) bool {
+	if left.Type() != right.Type() {
+		return false
+	}
+	switch left.Kind() {
+	case reflect.Float32, reflect.Float64:
+		leftFloat, rightFloat := left.Float(), right.Float()
+		difference := math.Abs(leftFloat - rightFloat)
+		scale := math.Max(1, math.Max(math.Abs(leftFloat), math.Abs(rightFloat)))
+		return difference <= scale*1e-12
+	case reflect.Struct:
+		for index := 0; index < left.NumField(); index++ {
+			if !equalPortableValue(left.Field(index), right.Field(index)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Slice:
+		if left.IsNil() != right.IsNil() || left.Len() != right.Len() {
+			return false
+		}
+		for index := 0; index < left.Len(); index++ {
+			if !equalPortableValue(left.Index(index), right.Index(index)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Pointer:
+		if left.IsNil() || right.IsNil() {
+			return left.IsNil() == right.IsNil()
+		}
+		return equalPortableValue(left.Elem(), right.Elem())
+	default:
+		return reflect.DeepEqual(left.Interface(), right.Interface())
+	}
 }
 
 func validatePublishedFixtures(root string, evidence preparationEvidence, selected policy) error {

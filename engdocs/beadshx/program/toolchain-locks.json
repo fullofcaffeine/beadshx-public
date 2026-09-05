@@ -15,9 +15,9 @@
   "linuxCi": {
     "runnerLabel": "ubuntu-24.04",
     "imageOS": "ubuntu24",
-    "imageVersion": "20260810.271.1",
+    "imageVersion": "20260831.293.1",
     "manifest": "https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md",
-    "manifestReviewedAt": "2026-08-15",
+    "manifestReviewedAt": "2026-09-04",
     "bash": "5.2.21(1)-release",
     "gcc": "13.3.0",
     "gxx": "13.3.0",
