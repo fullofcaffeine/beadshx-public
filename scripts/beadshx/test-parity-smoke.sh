@@ -86,6 +86,14 @@ compare_no_workspace() {
 	if [[ "$oracle_exit" -ne "$candidate_exit" ]]; then
 		printf '%s exit mismatch: upstream=%s candidate=%s\n' \
 			"$name" "$oracle_exit" "$candidate_exit" >&2
+		printf '%s upstream stdout:\n' "$name" >&2
+		cat "$case_root/oracle.stdout" >&2
+		printf '%s upstream stderr:\n' "$name" >&2
+		cat "$case_root/oracle.stderr" >&2
+		printf '%s candidate stdout:\n' "$name" >&2
+		cat "$case_root/candidate.stdout" >&2
+		printf '%s candidate stderr:\n' "$name" >&2
+		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
 	if ! cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"; then
@@ -484,6 +492,14 @@ compare_real_database() {
 	if [[ "$oracle_exit" -ne "$candidate_exit" ]]; then
 		printf '%s exit mismatch: upstream=%s candidate=%s\n' \
 			"$name" "$oracle_exit" "$candidate_exit" >&2
+		printf '%s upstream stdout:\n' "$name" >&2
+		cat "$case_root/oracle.stdout" >&2
+		printf '%s upstream stderr:\n' "$name" >&2
+		cat "$case_root/oracle.stderr" >&2
+		printf '%s candidate stdout:\n' "$name" >&2
+		cat "$case_root/candidate.stdout" >&2
+		printf '%s candidate stderr:\n' "$name" >&2
+		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
 	if ! cmp -s "$case_root/oracle.stderr" "$case_root/candidate.stderr"; then
