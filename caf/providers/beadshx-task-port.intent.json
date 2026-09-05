@@ -24,7 +24,7 @@
     },
     "compiler": {
       "project": "haxe.go",
-      "commit": "c1e3333d2ce358b451e69b2b1530030bc4083dd5"
+      "commit": "c141ac6df83bff1e2a420f18146ce68e4d7a87c7"
     }
   },
   "proposedTaskPortCapabilities": [

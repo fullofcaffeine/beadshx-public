@@ -10,7 +10,7 @@
     "golangciLint": "v2.10.1",
     "preCommit": "4.3.0",
     "preCommitRequirementsSha256": "827f3045cd84bcb55e9cbaa8e59d6ea7e47514a245a85f6dd541e889248a2679",
-    "haxeGoCommit": "c1e3333d2ce358b451e69b2b1530030bc4083dd5"
+    "haxeGoCommit": "c141ac6df83bff1e2a420f18146ce68e4d7a87c7"
   },
   "linuxCi": {
     "runnerLabel": "ubuntu-24.04",
