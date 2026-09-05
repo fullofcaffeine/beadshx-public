@@ -177,9 +177,15 @@ fingerprint_task_state_tree() {
 		# stable byte snapshot until the reader closes.
 		find . -mindepth 1 \
 			! -path '*/.dolt/noms/journal.idx' \
+			! -path '*/.beads.gate.lock' \
+			! -path '*/.beads/dolt.gate.lock' \
+			! -path '*/.beads/.local_version' \
 			! -name 'nbs_manifest_*' -print | LC_ALL=C sort
 		find . -type f \
 			! -path '*/.dolt/noms/journal.idx' \
+			! -path '*/.beads.gate.lock' \
+			! -path '*/.beads/dolt.gate.lock' \
+			! -path '*/.beads/.local_version' \
 			! -name 'nbs_manifest_*' \
 			-exec shasum -a 256 {} \; | LC_ALL=C sort
 	) | shasum -a 256 | awk '{print $1}'
@@ -245,8 +251,8 @@ compare_store_failure() {
 		printf '%s\n' "$metadata" >"$command_root/work/.beads/metadata.json"
 		printf '%s\n' "$config_yaml" >"$command_root/work/.beads/config.yaml"
 	done
-	oracle_before="$(fingerprint_tree "$oracle_root")"
-	candidate_before="$(fingerprint_tree "$candidate_root")"
+	oracle_before="$(fingerprint_task_state_tree "$oracle_root")"
+	candidate_before="$(fingerprint_task_state_tree "$candidate_root")"
 
 	set +e
 	(
@@ -279,13 +285,35 @@ compare_store_failure() {
 	candidate_exit=$?
 	set -e
 
-	[[ "$oracle_exit" -eq "$candidate_exit" ]]
-	cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"
-	cmp -s "$case_root/oracle.stderr" "$case_root/candidate.stderr"
-	oracle_after="$(fingerprint_tree "$oracle_root")"
-	candidate_after="$(fingerprint_tree "$candidate_root")"
-	[[ "$oracle_before" == "$oracle_after" ]]
-	[[ "$candidate_before" == "$candidate_after" ]]
+	if [[ "$oracle_exit" -ne "$candidate_exit" ]]; then
+		printf '%s/%s exit mismatch: upstream=%s candidate=%s\n' \
+			"$scenario" "$case_name" "$oracle_exit" "$candidate_exit" >&2
+		return 1
+	fi
+	if ! cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"; then
+		printf '%s/%s stdout differs from upstream\n' "$scenario" "$case_name" >&2
+		diff -u "$case_root/oracle.stdout" "$case_root/candidate.stdout" >&2 || true
+		return 1
+	fi
+	if ! cmp -s "$case_root/oracle.stderr" "$case_root/candidate.stderr"; then
+		printf '%s/%s stderr differs from upstream\n' "$scenario" "$case_name" >&2
+		diff -u "$case_root/oracle.stderr" "$case_root/candidate.stderr" >&2 || true
+		return 1
+	fi
+	oracle_after="$(fingerprint_task_state_tree "$oracle_root")"
+	candidate_after="$(fingerprint_task_state_tree "$candidate_root")"
+	if [[ "$oracle_before" != "$oracle_after" ]]; then
+		printf '%s/%s upstream command changed its fixture\n' "$scenario" "$case_name" >&2
+		find "$oracle_root" -mindepth 1 -print | LC_ALL=C sort >&2
+		find "$oracle_root" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >&2
+		return 1
+	fi
+	if [[ "$candidate_before" != "$candidate_after" ]]; then
+		printf '%s/%s candidate command changed its fixture\n' "$scenario" "$case_name" >&2
+		find "$candidate_root" -mindepth 1 -print | LC_ALL=C sort >&2
+		find "$candidate_root" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >&2
+		return 1
+	fi
 }
 
 for command in info ping status; do
