@@ -133,6 +133,12 @@ if grep -En '(^|[^[:alnum:]_])gh([[:space:]]|$)' \
     exit 1
 fi
 
+if grep -REn --include='*.sh' '(^|[[:space:]])[r]g([[:space:]]|$)' \
+    "$repository_root/scripts/beadshx" >/dev/null; then
+    printf 'BeadsHX shell checks must use tools available on the locked runner\n' >&2
+    exit 1
+fi
+
 while IFS= read -r use_line; do
     action="$(printf '%s\n' "$use_line" | sed -E \
         's#^.*uses:[[:space:]]*([^[:space:]#]+).*$#\1#')"
