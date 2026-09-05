@@ -113,7 +113,7 @@ done
 grep -Fq 'BEADSHX_TOOLCHAIN_PROFILE: linux-ci' \
     "$repository_root/.github/workflows/beadshx-bootstrap.yml"
 
-if rg -n '(^|[^[:alnum:]_])gh([[:space:]]|$)' \
+if grep -En '(^|[^[:alnum:]_])gh([[:space:]]|$)' \
     "$repository_root/scripts/beadshx/ci-local.sh" >/dev/null; then
     printf 'local CI must not call the GitHub CLI\n' >&2
     exit 1
@@ -129,8 +129,8 @@ while IFS= read -r use_line; do
         printf 'GitHub action does not use a full commit pin: %s\n' "$use_line" >&2
         exit 1
     fi
-done < <(rg --no-heading --line-number '^\s*(- )?uses:' \
-    "$repository_root/.github/workflows" -g '*.yml' -g '*.yaml')
+done < <(grep -REn --include='*.yml' --include='*.yaml' \
+	'^[[:space:]]*(- )?uses:' "$repository_root/.github/workflows")
 
 expected_actions="$(jq -r '.githubActions | to_entries[] |
     "\(.key | sub("@v[0-9]+$"; ""))@\(.value)"' "$locks" | LC_ALL=C sort)"
