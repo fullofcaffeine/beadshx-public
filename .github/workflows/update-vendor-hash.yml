@@ -66,7 +66,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3
+        uses: DeterminateSystems/determinate-nix-action@58b42ef6cd91478a14253e00805ec7c79eb1566a # v3
 
       - name: Capture pre-update vendorHash
         id: pre
