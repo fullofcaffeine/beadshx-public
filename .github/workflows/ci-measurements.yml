@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-pr-linux
           path: artifacts/
@@ -197,7 +197,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration
           path: artifacts/
@@ -262,7 +262,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-shard-${{ matrix.shard }}-of-6
           path: artifacts/
@@ -330,7 +330,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-hybrid-packages-${{ matrix.shard }}-of-6
           path: artifacts/
@@ -398,7 +398,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-cmd-bd-${{ matrix.shard }}-of-8
           path: artifacts/
@@ -466,7 +466,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-cmd-bd-${{ matrix.shard }}-of-16
           path: artifacts/
@@ -496,7 +496,7 @@ jobs:
           ci_time "build cmd/bd subprocess binary" -- go build -tags "$BEADS_BUILD_TAGS" -o artifacts/bd ./cmd/bd
 
       - name: Upload prebuilt bd
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-prebuilt-bd
           path: artifacts/bd
@@ -522,7 +522,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Download prebuilt bd
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ci-measure-linux-integration-prebuilt-bd
           path: prebuilt-bd
@@ -573,7 +573,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-prebuilt-cmd-bd-${{ matrix.shard }}-of-8
           path: artifacts/
@@ -621,7 +621,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-linux-integration-coverage
           path: artifacts/
@@ -681,7 +681,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3
+        uses: DeterminateSystems/determinate-nix-action@96c5ee93a9dddf2830d31e1da6ec719077336c28 # v3
 
       - name: Measure commands
         run: |
@@ -704,7 +704,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
 
@@ -718,7 +718,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-mcp-package
           path: integrations/beads-mcp/dist/
@@ -739,7 +739,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version: '24'
 
@@ -751,7 +751,7 @@ jobs:
 
       - name: Upload measurement artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-measure-npm-package
           path: artifacts/
