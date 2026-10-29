@@ -16,6 +16,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class PrivacyGuards(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Bootstrap invokes this suite before the separate secret-scan lane.
+        # Prepare the real pinned scanner once, before creating isolated repos.
+        verifier = ROOT / "scripts/beadshx/verify-gitleaks.sh"
+        if subprocess.run([str(verifier)], capture_output=True).returncode != 0:
+            subprocess.run([str(ROOT / "scripts/beadshx/install-gitleaks.sh")], check=True)
+        subprocess.run([str(verifier)], check=True, capture_output=True)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="beadshx-privacy-")
         self.addCleanup(self.temporary.cleanup)

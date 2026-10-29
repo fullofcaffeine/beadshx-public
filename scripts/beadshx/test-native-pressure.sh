@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+# shellcheck source=../../.buildflags
+source "$repository_root/.buildflags"
 cd "$repository_root"
 
 go_toolchain="$(jq -er '.common.go' \
