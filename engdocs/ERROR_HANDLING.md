@@ -1,6 +1,6 @@
 # Error Handling Guidelines
 
-Last reviewed: 2026-07-07
+Last reviewed: 2026-10-29
 
 Freshness source: `cmd/bd/*.go`, especially command error exits and JSON error
 helpers in `cmd/bd/errors.go`.
@@ -80,10 +80,8 @@ if err := createConfigYaml(beadsDir, false); err != nil {
 - Core functionality still works
 
 **Files using this pattern:**
-- `cmd/bd/init.go` (lines 155-157, 161-163, 167-169, 188-190, 236-238, 272-274, etc.)
-- `cmd/bd/sync.go` (lines 156, 257, 281, 329, 335, 720-722, 740, 743, 752, 762)
-- `cmd/bd/create.go` (lines 333-334, 340-341)
-- `cmd/bd/sync.go` *(handles Dolt sync operations)*
+- `cmd/bd/init.go`: optional config, README, integration, and metadata writes
+- `cmd/bd/unclaim.go`: an optional reason comment that fails after unclaiming
 
 ---
 
@@ -107,10 +105,8 @@ _ = os.Remove(tempPath)
 - Primary error already reported
 
 **Files using this pattern:**
-- `cmd/bd/init.go` (line 209, 326-327)
-- `cmd/bd/sync.go` (lines 696-698)
-- `cmd/bd/sync.go` *(sync cleanup)*
-- Dozens of other locations throughout the codebase
+- `cmd/bd/init.go`: deferred store cleanup
+- `cmd/bd/create.go`: store cleanup after an error and deferred parent-store cleanup
 
 ---
 
@@ -285,15 +281,10 @@ defer store.Close()
 if err := store.SetConfig(ctx, "issue_prefix", prefix); err != nil {
     return HandleError("failed to set issue prefix: %v", err)
 }
-
-if err := syncbranch.Set(ctx, store, branch); err != nil {
-    return HandleError("failed to set sync branch: %v", err)
-}
 ```
 
 **Examples:**
 - `issue_prefix` - Defines how all issue IDs are generated
-- `sync.branch` - Critical for git synchronization workflow
 
 **Rationale:** These settings are prerequisites for basic operation. Without them, the system cannot function correctly. A failure here indicates a serious problem (e.g., filesystem issues, database corruption).
 
@@ -303,7 +294,7 @@ Tracking metadata **enhances functionality** but the system works without it:
 
 ```go
 // Pattern B: Warn and continue
-if err := store.SetMetadata(ctx, "bd_version", Version); err != nil {
+if err := store.SetLocalMetadata(ctx, "bd_version", Version); err != nil {
     fmt.Fprintf(os.Stderr, "Warning: failed to store version metadata: %v\n", err)
     // Non-fatal - continue anyway
 }
@@ -312,29 +303,31 @@ if err := store.SetMetadata(ctx, "repo_id", repoID); err != nil {
     fmt.Fprintf(os.Stderr, "Warning: failed to set repo_id: %v\n", err)
 }
 
-if err := store.SetMetadata(ctx, "last_import_hash", hash); err != nil {
-    fmt.Fprintf(os.Stderr, "Warning: failed to update last_import_hash: %v\n", err)
+if err := store.SetMetadata(ctx, "last_import_time", time.Now().Format(time.RFC3339)); err != nil {
+    fmt.Fprintf(os.Stderr, "Warning: failed to initialize last_import_time: %v\n", err)
 }
 ```
 
 **Examples:**
 - `bd_version` - Enables version mismatch warnings on upgrades
 - `repo_id` / `clone_id` - Helps with collision detection across clones
-- `last_import_hash` - Optimizes staleness detection (falls back to mtime if unavailable)
+- `last_import_time` - Records when import state was initialized
 
 **Rationale:** System degrades gracefully if tracking metadata is unavailable. Core functionality (creating issues, importing data) still works. Failures here might indicate temporary issues (e.g., read-only filesystem) that shouldn't block the entire operation.
 
-**See also:** `cmd/bd/init.go` lines 206-272 for detailed inline documentation of this distinction.
+**See also:** the tracking-metadata section and `verifyMetadata` helper in `cmd/bd/init.go`. Server-owned stores do not receive per-clone identity metadata during init.
 
 ### File Permission Errors
 
-Setting file permissions is typically **Pattern B** because the file was already written:
+For a non-sensitive file, a permission adjustment can use **Pattern B** when its failure does not invalidate the operation:
 
 ```go
 if err := os.Chmod(jsonlPath, 0600); err != nil {
     fmt.Fprintf(os.Stderr, "Warning: failed to set file permissions: %v\n", err)
 }
 ```
+
+For credentials or other private data, failure to enforce required permissions is a fatal security failure. Do not continue merely because the write succeeded.
 
 ### Resource Cleanup
 
@@ -371,7 +364,8 @@ func HandleError(format string, args ...interface{}) error
 // Like HandleError, but emits a structured JSON error to stdout under --json
 func HandleErrorRespectJSON(format string, args ...interface{}) error
 
-// Adds a "Hint: ..." line (the …RespectJSON variant routes JSON to stdout)
+// Adds a hint; under --json, WithHint writes JSON to stderr and
+// WithHintRespectJSON writes JSON to stdout
 func HandleErrorWithHint(message, hint string) error
 func HandleErrorWithHintRespectJSON(message, hint string) error
 
@@ -393,4 +387,4 @@ func WarnError(format string, args ...interface{})
 - `cmd/bd/errors.go` - The `HandleError*` / `WarnError` / `SilentExit` helpers and the `exitError` sentinel that `main()` maps to an exit code
 - `cmd/bd/defer.go` - Clean example of Pattern A: `return HandleError(...)` from a `RunE` with `SilenceUsage`/`SilenceErrors` set
 - `cmd/bd/init.go` - Examples of all three patterns
-- `cmd/bd/sync.go` - Examples of Pattern B for metadata operations and Pattern C for cleanup operations
+- `cmd/bd/unclaim.go` - Optional comment failure uses Pattern B after a successful unclaim

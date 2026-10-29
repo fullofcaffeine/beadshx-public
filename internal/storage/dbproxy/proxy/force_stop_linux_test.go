@@ -160,16 +160,18 @@ func TestForceStopUnverifiedRejectsVerifiableV2Record(t *testing.T) {
 // their root path.
 func startNamedForceStopHelper(t *testing.T, dir, name string) helperProcess {
 	t.Helper()
-	sleepPath, err := exec.LookPath("sleep")
+	// A copied system sleep may be a multicall executable (uutils on Ubuntu
+	// 26.04), which exits when renamed to bd or dolt. Use our own test binary
+	// so the helper's executable identity does not depend on host utilities.
+	testBinary, err := os.Executable()
 	require.NoError(t, err)
-	sleepPath, err = filepath.EvalSymlinks(sleepPath)
-	require.NoError(t, err)
-	data, err := os.ReadFile(sleepPath)
+	data, err := os.ReadFile(testBinary)
 	require.NoError(t, err)
 	executable := filepath.Join(dir, name)
 	require.NoError(t, os.WriteFile(executable, data, 0o700))
 
-	cmd := exec.Command(executable, "30")
+	cmd := exec.Command(executable, "-test.run=^TestForceStopHelperProcess$")
+	cmd.Env = append(os.Environ(), "BEADS_FORCE_STOP_HELPER=1")
 	require.NoError(t, cmd.Start())
 	token, err := procid.Capture(cmd.Process.Pid)
 	require.NoError(t, err)
@@ -195,6 +197,15 @@ func startNamedForceStopHelper(t *testing.T, dir, name string) helperProcess {
 		}
 	})
 	return helper
+}
+
+// TestForceStopHelperProcess is invoked only by the renamed child binary.
+// Its parent owns termination; the timeout bounds a child left by a crashed test.
+func TestForceStopHelperProcess(t *testing.T) {
+	if os.Getenv("BEADS_FORCE_STOP_HELPER") != "1" {
+		return
+	}
+	time.Sleep(30 * time.Second)
 }
 
 func writeLegacyProxyRecord(t *testing.T, root string, helper helperProcess) {
