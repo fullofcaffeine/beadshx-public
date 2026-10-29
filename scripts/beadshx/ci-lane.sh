@@ -45,6 +45,7 @@ case "$lane" in
     secret-scan)
         report="${BEADSHX_SECRET_REPORT:-$repository_root/build/evidence/secrets/gitleaks.json}"
         "$repository_root/scripts/beadshx/scan-secrets.sh" "$report"
+        python3 "$repository_root/scripts/beadshx/test_privacy_guards.py"
         ;;
     evidence-gate)
         gate_report="${BEADSHX_GATE_REPORT:-$repository_root/build/evidence/gate/results.json}"

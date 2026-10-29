@@ -19,7 +19,7 @@ repos:
   - repo: local
     hooks:
       - id: beadshx-local-paths
-        name: reject machine-local paths
+        name: reject private content and machine-local paths
         entry: scripts/beadshx/check-local-paths-staged.sh
         language: system
         pass_filenames: false

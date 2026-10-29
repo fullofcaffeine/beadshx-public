@@ -340,4 +340,6 @@ expect_failure python3 \
 GOWORK=off GOTOOLCHAIN="$go_toolchain" go test \
     "$repository_root/scripts/beadshx/package-bootstrap" >/dev/null
 
+python3 "$repository_root/scripts/beadshx/test_privacy_guards.py"
+
 printf 'repository safety policy: PASS\n'
