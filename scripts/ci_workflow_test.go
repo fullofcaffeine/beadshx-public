@@ -264,8 +264,8 @@ func TestMacOSTestJobsReuseWorkspaceBDBinary(t *testing.T) {
 	const (
 		workspaceBDBinary = "${{ github.workspace }}/bd"
 		buildCommand      = "go build -v -tags gms_pure_go ./cmd/bd"
-		prTestCommand     = "go test -tags gms_pure_go -v -race -short -skip '^TestEmbedded' ./..."
-		mainTestCommand   = "go test -tags gms_pure_go ${{ matrix.test-flags }} -skip '^TestEmbedded' ./..."
+		prTestCommand     = "go test -tags gms_pure_go -v -race -short -timeout 25m -skip '^TestEmbedded' ./..."
+		mainTestCommand   = "go test -tags gms_pure_go ${{ matrix.test-flags }} -timeout 25m -skip '^TestEmbedded' ./..."
 	)
 
 	workflows := map[string]ciWorkflow{
