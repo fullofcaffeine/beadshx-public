@@ -5,9 +5,9 @@ description: Configure bd setup recipes, hooks, and instruction files for Claude
 
 Configure your IDE or coding agent for optimal beads integration.
 
-Last reviewed: 2026-07-10
+Last reviewed: 2026-10-29
 
-Freshness source: `cmd/bd/setup*.go` and `internal/recipes/`.
+Freshness source: `cmd/bd/setup*.go`, `cmd/bd/setup/`, and `internal/recipes/`.
 
 ## How `bd setup` Works
 
@@ -23,7 +23,7 @@ bd setup claude --remove    # Uninstall
 | Recipe | Files written | Details |
 |--------|---------------|---------|
 | `claude` | `.claude/settings.json` (or `~/.claude/settings.json` with `--global`) + `CLAUDE.md` section | [Claude Code](/integrations/claude-code) |
-| `cursor` | `.cursor/rules/beads.mdc` | [Cursor](/integrations/cursor) |
+| `cursor` | `.cursor/rules/beads.mdc`, `.agents/skills/beads/`, and `.cursor/hooks.json` (global skill and hooks with `--global`) | [Cursor](/integrations/cursor) |
 | `gemini` | `~/.gemini/settings.json` (or `.gemini/settings.json` with `--project`) + `GEMINI.md` section | [Gemini CLI](/integrations/gemini) |
 | `copilot` | `.copilot-plugin/plugin.json` + `.github/copilot-instructions.md` | [Copilot CLI](/integrations/copilot-cli) |
 | `codex` | `.agents/skills/beads/` + `AGENTS.md` section + `.codex/` hooks | [Codex](/integrations/codex) |
@@ -143,11 +143,15 @@ If you prefer manual configuration, add the hook to your Claude Code settings:
 ## Cursor IDE
 
 ```bash
-bd setup cursor            # Always-applied rules file
+bd setup cursor            # Project rules, beads skill, and lifecycle hooks
+bd setup cursor --global   # Global skill and hooks
 ```
 
-This creates `.cursor/rules/beads.mdc` with beads-aware rules that Cursor
-re-includes every turn.
+The project install creates `.cursor/rules/beads.mdc`, the beads skill, and
+`.cursor/hooks.json`. The managed hooks use `sessionStart`, `preCompact`, and
+`postToolUse` to load workflow context and recover it after compaction.
+`--global` installs the skill and hooks in your home directory; rules remain
+project-only.
 
 **Verify:**
 ```bash

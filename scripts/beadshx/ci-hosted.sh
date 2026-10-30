@@ -45,6 +45,19 @@ case "$lane" in
         if [[ -f "$repository_root/build/bin/bdhx" ]]; then
             cp "$repository_root/build/bin/bdhx" "$evidence_root/bdhx"
         fi
+        if [[ -d "$repository_root/build/evidence/generated-drift" ]]; then
+            mkdir -p "$evidence_root/generated-drift"
+            for evidence in candidate.json diff.txt; do
+                if [[ -f "$repository_root/build/evidence/generated-drift/$evidence" ]]; then
+                    cp "$repository_root/build/evidence/generated-drift/$evidence" \
+                        "$evidence_root/generated-drift/$evidence"
+                fi
+            done
+            if [[ -d "$repository_root/build/evidence/generated-drift/files" ]]; then
+                cp -R "$repository_root/build/evidence/generated-drift/files" \
+                    "$evidence_root/generated-drift/files"
+            fi
+        fi
         if [[ -d "$repository_root/LICENSES" ]]; then
             mkdir -p "$evidence_root/LICENSES"
             cp "$repository_root"/LICENSES/* \

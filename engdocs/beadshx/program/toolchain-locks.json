@@ -10,22 +10,22 @@
     "golangciLint": "v2.10.1",
     "preCommit": "4.3.0",
     "preCommitRequirementsSha256": "827f3045cd84bcb55e9cbaa8e59d6ea7e47514a245a85f6dd541e889248a2679",
-    "haxeGoCommit": "c1e3333d2ce358b451e69b2b1530030bc4083dd5"
+    "haxeGoCommit": "c141ac6df83bff1e2a420f18146ce68e4d7a87c7"
   },
   "linuxCi": {
     "runnerLabel": "ubuntu-24.04",
     "imageOS": "ubuntu24",
-    "imageVersion": "20260810.271.1",
-    "manifest": "https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md",
-    "manifestReviewedAt": "2026-08-15",
+    "imageVersion": "20261026.354.1",
+    "manifest": "https://github.com/actions/runner-images/blob/ac85c71971895cd6234578d6b11f49f7c27ff0c4/images/ubuntu/Ubuntu2404-Readme.md",
+    "manifestReviewedAt": "2026-10-29",
     "bash": "5.2.21(1)-release",
     "gcc": "13.3.0",
     "gxx": "13.3.0",
     "binutils": "2.42",
     "pkgConfig": "1.8.1",
     "make": "4.3",
-    "git": "2.54.0",
-    "jq": "jq-1.7.1",
+    "git": "2.56.0",
+    "jq": "jq-1.7",
     "shellcheck": "0.9.0"
   },
   "goModules": {

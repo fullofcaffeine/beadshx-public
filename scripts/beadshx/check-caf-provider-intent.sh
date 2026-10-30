@@ -86,7 +86,7 @@ if [[ "$relative_descriptor" == "$descriptor" ]]; then
 fi
 if git -C "$repository_root" grep -l -F "$relative_descriptor" -- \
 	compile.bootstrap.hxml src native generated release scripts/beadshx/package-bootstrap 2>/dev/null | \
-	rg -v '^scripts/beadshx/check-caf-provider-intent\.sh$' >/dev/null; then
+	grep -v '^scripts/beadshx/check-caf-provider-intent\.sh$' >/dev/null; then
 	printf 'Caf provider intent is referenced by a runtime, compiler, or package input\n' >&2
 	exit 1
 fi

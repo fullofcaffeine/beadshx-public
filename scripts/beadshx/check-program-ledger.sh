@@ -32,7 +32,7 @@ awk -F '\t' '
         if ($1 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) {
             fail("timestamp must use UTC ISO 8601 format")
         }
-        if ($5 !~ /(^|; )issue:beadshx-[a-z0-9-]+(;|$)/) fail("missing BeadsHX issue reference")
+        if ($5 !~ /(^|; )issue:beadshx-[a-z0-9.-]+(;|$)/) fail("missing BeadsHX issue reference")
         if ($5 !~ /(^|; )commit:(WORKTREE|[0-9a-f]+)(;|$)/) fail("missing commit reference")
         if ($5 !~ /(^|; )artifact:[^;]+(;|$)/) fail("missing artifact reference")
         if ($6 !~ /(^|; )state:(worktree|committed|blocked|superseded)(;|$)/) fail("missing result state")

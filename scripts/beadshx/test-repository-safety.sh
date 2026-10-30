@@ -46,6 +46,20 @@ jq -e --slurpfile tools "$locks" '
 ' "$source_locks" >/dev/null
 
 grep -Fq 'formatter=1.18.0' "$repository_root/haxe_libraries/formatter.hxml"
+for classpath in \
+    '.toolchains/haxe.go/src/' \
+    '.toolchains/haxe.go/std/' \
+    '.toolchains/haxe.go/std/go/_std/' \
+    '.toolchains/haxe.go/vendor/reflaxe/src/'; do
+    if ! grep -Fq -- "-cp $classpath" "$repository_root"/haxe_libraries/reflaxe*.hxml; then
+        printf 'haxe.go classpath is not repository-relative: %s\n' "$classpath" >&2
+        exit 1
+    fi
+done
+if grep -Fq '\${SCOPE_DIR}' "$repository_root"/haxe_libraries/reflaxe*.hxml; then
+    printf 'haxe.go classpaths must not expand to machine-local paths\n' >&2
+    exit 1
+fi
 grep -Fq 'run-pre-commit.sh" run' "$repository_root/.githooks/pre-commit"
 grep -Fq -- '--hook-stage pre-commit' "$repository_root/.githooks/pre-commit"
 
@@ -113,9 +127,15 @@ done
 grep -Fq 'BEADSHX_TOOLCHAIN_PROFILE: linux-ci' \
     "$repository_root/.github/workflows/beadshx-bootstrap.yml"
 
-if rg -n '(^|[^[:alnum:]_])gh([[:space:]]|$)' \
+if grep -En '(^|[^[:alnum:]_])gh([[:space:]]|$)' \
     "$repository_root/scripts/beadshx/ci-local.sh" >/dev/null; then
     printf 'local CI must not call the GitHub CLI\n' >&2
+    exit 1
+fi
+
+if grep -REn --include='*.sh' '(^|[[:space:]])[r]g([[:space:]]|$)' \
+    "$repository_root/scripts/beadshx" >/dev/null; then
+    printf 'BeadsHX shell checks must use tools available on the locked runner\n' >&2
     exit 1
 fi
 
@@ -129,8 +149,8 @@ while IFS= read -r use_line; do
         printf 'GitHub action does not use a full commit pin: %s\n' "$use_line" >&2
         exit 1
     fi
-done < <(rg --no-heading --line-number '^\s*(- )?uses:' \
-    "$repository_root/.github/workflows" -g '*.yml' -g '*.yaml')
+done < <(grep -REn --include='*.yml' --include='*.yaml' \
+	'^[[:space:]]*(- )?uses:' "$repository_root/.github/workflows")
 
 expected_actions="$(jq -r '.githubActions | to_entries[] |
     "\(.key | sub("@v[0-9]+$"; ""))@\(.value)"' "$locks" | LC_ALL=C sort)"
@@ -319,5 +339,7 @@ expect_failure python3 \
 
 GOWORK=off GOTOOLCHAIN="$go_toolchain" go test \
     "$repository_root/scripts/beadshx/package-bootstrap" >/dev/null
+
+python3 "$repository_root/scripts/beadshx/test_privacy_guards.py"
 
 printf 'repository safety policy: PASS\n'

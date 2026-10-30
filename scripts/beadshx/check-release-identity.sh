@@ -57,12 +57,12 @@ grep -Fqx -- '-D go_module=github.com/steveyegge/beads' compile.bootstrap.hxml
 grep -Fqx -- "-D go_output=$(jq -r '.goModules.generatedPackage' "$policy")" compile.bootstrap.hxml
 grep -Fqx -- '-D reflaxe_go_project=compile.bdhx.json' compile.bootstrap.hxml
 jq -e --arg version "$(jq -r '.product.developmentVersion' "$policy")" '.version == $version' package.json >/dev/null
-rg -Fq --glob '*.hx' \
+grep -RFq --include='*.hx' -- \
 	"$(jq -r '.binaries.developmentIdentity' "$policy")" src/beadshx
 grep -Fq '"$repository_root/build/bin/bdhx"' scripts/beadshx/clean-generated.sh
 grep -Fq 'output="$repository_root/build/bin/bd-upstream"' scripts/beadshx/build-upstream-oracle.sh
 
-if rg -n -i 'user-agent|useragent' src/beadshx native/go >/dev/null; then
+if grep -REni 'user-agent|useragent' src/beadshx native/go >/dev/null; then
 	printf 'bootstrap source emits a user agent before that identity surface is implemented\n' >&2
 	exit 1
 fi

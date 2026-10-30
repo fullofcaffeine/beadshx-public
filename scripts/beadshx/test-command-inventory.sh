@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+# shellcheck source=../../.buildflags
+source "$repository_root/.buildflags"
 go_toolchain="$(jq -er '.common.go' \
     "$repository_root/engdocs/beadshx/program/toolchain-locks.json")"
 export GOWORK=off

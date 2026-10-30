@@ -15,12 +15,10 @@ fi
 compiler_commit="$(jq -er '.requiredCommit' upstream/locks/haxe-go.json)"
 compiler_remote="$(jq -er '.remote' upstream/locks/haxe-go.json)"
 compiler_root="$repository_root/.toolchains/haxe.go"
-
-npx lix download haxe 4.3.7
-npx lix use haxe 4.3.7
-npx lix download
+compiler_created=false
 
 if [[ ! -d "$compiler_root/.git" ]]; then
+	compiler_created=true
 	mkdir -p "$(dirname "$compiler_root")"
 	if git -C "$repository_root/../haxe.go" cat-file -e "$compiler_commit^{commit}" 2>/dev/null; then
 		git clone --quiet --reference-if-able "$repository_root/../haxe.go" \
@@ -39,7 +37,8 @@ if ! git -C "$compiler_root" cat-file -e "$compiler_commit^{commit}" 2>/dev/null
 	exit 1
 fi
 
-if [[ -n "$(git -C "$compiler_root" status --porcelain --untracked-files=all)" ]]; then
+if [[ "$compiler_created" == false ]] && \
+	[[ -n "$(git -C "$compiler_root" status --porcelain --untracked-files=all)" ]]; then
 	printf 'haxe.go checkout has tracked or untracked changes; preserve them before setup\n' >&2
 	exit 1
 fi
@@ -65,6 +64,10 @@ if [[ -f "$alternates" ]]; then
 	printf 'haxe.go checkout still depends on a shared object store\n' >&2
 	exit 1
 fi
+
+npx lix download haxe 4.3.7
+npx lix use haxe 4.3.7
+npx lix download
 
 resolved_haxe="$(npx haxe --version)"
 if [[ "$resolved_haxe" != "4.3.7" ]]; then

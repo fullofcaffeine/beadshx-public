@@ -1,0 +1,4 @@
+# Explicitly select the pinned scanner's built-in rules. Environment variables
+# and an unreviewed root config must not replace the repository's rule set.
+[extend]
+useDefault = true

@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 
 
@@ -23,17 +24,38 @@ def regular_file(root: Path, relative: str) -> Path:
     return path
 
 
+def read_source(root: Path, relative: str, staged: bool) -> bytes:
+    """Read the exact index blob without following a worktree symlink."""
+    if not staged:
+        return regular_file(root, relative).read_bytes()
+    if Path(relative).is_absolute() or ".." in Path(relative).parts:
+        raise ValueError("exception path escapes repository")
+    entry = subprocess.check_output(
+        ["git", "-C", os.fspath(root), "ls-files", "--stage", "-z", "--",
+         ":(literal)" + relative]
+    ).split(b"\0")
+    if len(entry) != 2 or not entry[0]:
+        raise ValueError("exception source is missing or conflicted in the index")
+    metadata, _path = entry[0].split(b"\t", 1)
+    mode, oid, stage = metadata.split()
+    if mode not in {b"100644", b"100755"} or stage != b"0":
+        raise ValueError("exception source must be a regular staged file")
+    return subprocess.check_output(
+        ["git", "-C", os.fspath(root), "cat-file", "blob", oid.decode("ascii")]
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True, type=Path)
+    parser.add_argument("--staged", action="store_true")
     arguments = parser.parse_args()
     root = arguments.repository.resolve(strict=True)
     try:
-        contract_path = regular_file(
-            root, "engdocs/beadshx/program/gitleaks-ignore-contract.json"
-        )
-        ignore_path = regular_file(root, ".gitleaksignore")
-        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract = json.loads(read_source(
+            root, "engdocs/beadshx/program/gitleaks-ignore-contract.json", arguments.staged
+        ))
+        ignore_bytes = read_source(root, ".gitleaksignore", arguments.staged)
         if contract.get("schemaVersion") != 1:
             raise ValueError("unsupported Gitleaks ignore contract schema")
         exceptions = contract.get("exceptions")
@@ -41,7 +63,7 @@ def main() -> int:
             raise ValueError("Gitleaks ignore contract has no exceptions")
         actual_fingerprints = [
             line
-            for line in ignore_path.read_text(encoding="utf-8").splitlines()
+            for line in ignore_bytes.decode("utf-8").splitlines()
             if line and not line.startswith("#")
         ]
         expected_fingerprints = [item.get("fingerprint") for item in exceptions]
@@ -52,15 +74,14 @@ def main() -> int:
             path_text, rule, line_text = fingerprint.rsplit(":", 2)
             if not rule or not line_text.isdigit():
                 raise ValueError(f"invalid exception fingerprint: {fingerprint}")
-            source = regular_file(root, path_text)
-            lines = source.read_bytes().splitlines()
+            lines = read_source(root, path_text, arguments.staged).splitlines()
             line_number = int(line_text)
             if line_number < 1 or line_number > len(lines):
                 raise ValueError(f"exception line is missing: {fingerprint}")
             actual = hashlib.sha256(lines[line_number - 1]).hexdigest()
             if actual != item.get("lineSha256"):
                 raise ValueError(f"exception content changed: {fingerprint}")
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         print(f"Gitleaks ignore contract: FAIL: {error}", file=sys.stderr)
         return 1
     print("Gitleaks ignore contract: PASS")

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+# shellcheck source=../../.buildflags
+source "$repository_root/.buildflags"
 package="$repository_root/build/packages/beadshx-development-bootstrap.zip"
 
 "$repository_root/scripts/beadshx/generate-bootstrap.sh"
