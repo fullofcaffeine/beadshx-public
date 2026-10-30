@@ -30,8 +30,8 @@ touch "$fixture_root/.beadshx-disposable-fixture"
 	fi
 	cp -rf generated/go "$backup_root/go"
 	npx haxe test/storage_transaction/compile.hxml
-	CGO_ENABLED=1 GOFLAGS=-tags=gms_pure_go \
-		go run ./generated/go/bdhx "$fixture_root"
+	CGO_ENABLED=1 \
+		go run -tags=gms_pure_go ./generated/go/bdhx "$fixture_root"
 )
 
 actual_entries="$(find "$fixture_root" -mindepth 1 -print | sort)"
