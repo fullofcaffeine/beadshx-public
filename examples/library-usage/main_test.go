@@ -155,20 +155,23 @@ func TestFindDatabasePath(t *testing.T) {
 		t.Fatalf("Failed to create .beads dir: %v", err)
 	}
 
-	dbPath := filepath.Join(beadsDir, "test.db")
-	f, err := os.Create(dbPath)
-	if err != nil {
-		t.Fatalf("Failed to create db file: %v", err)
+	// Discovery recognizes the current Dolt workspace, not legacy SQLite files.
+	dbPath := filepath.Join(beadsDir, "embeddeddolt")
+	if err := os.Mkdir(dbPath, 0o750); err != nil {
+		t.Fatalf("Failed to create Dolt directory: %v", err)
 	}
-	f.Close()
+	want, err := filepath.EvalSymlinks(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to resolve fixture path: %v", err)
+	}
 
 	// Change to temp directory
 	t.Chdir(tmpDir)
 
 	// Test FindDatabasePath
 	found := beads.FindDatabasePath()
-	if found == "" {
-		t.Error("Expected to find database, got empty string")
+	if found != want {
+		t.Errorf("FindDatabasePath() = %q, want %q", found, want)
 	}
 
 	t.Logf("Found database: %s", found)
