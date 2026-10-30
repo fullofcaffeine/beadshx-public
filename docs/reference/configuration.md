@@ -5,14 +5,14 @@ description: Complete reference for bd configuration across config.yaml and data
 
 Complete configuration reference for beads.
 
-Last reviewed: 2026-07-10
+Last reviewed: 2026-10-29
 
-Freshness source: `cmd/bd/main.go`, `cmd/bd/config.go`, and `internal/configfile/`.
+Freshness source: `cmd/bd/main.go`, `cmd/bd/config.go`, `internal/config/`, and `internal/configfile/`.
 
 beads has two complementary configuration systems:
 
 1. **Tool-level configuration** (YAML, managed by [Viper](https://github.com/spf13/viper)) — startup flags and tool behavior, stored in `config.yaml` files. These are user preferences: output format, auto-commit behavior, CLI ergonomics.
-2. **Project-level configuration** (managed by `bd config`) — integration credentials, status maps, and project-specific settings, stored in the Dolt database. Some keys are routed to `config.yaml` instead (see [YAML-only keys](#yaml-only-keys-startup-settings) below).
+2. **Project-level configuration** (managed by `bd config`) — integration settings, status maps, and project-specific settings, stored in the Dolt database. Some keys are routed to `config.yaml` instead (see [YAML-only keys](#yaml-only-keys-startup-settings) below).
 
 The split is deliberate: tool settings are user-specific; project config is team-shared and travels with the database when you run `bd dolt push`. That is also why secrets are refused in the database — see [Security](#security-where-secrets-live).
 
@@ -23,9 +23,10 @@ Dolt is the only storage backend. Embedded mode (the default) stores data at `.b
 `config.yaml` is searched in this order, with later files overriding earlier ones:
 
 1. `~/.beads/config.yaml` (legacy user-level, lowest priority)
-2. `~/.config/bd/config.yaml` (user-level; this exact path is checked even on platforms whose native user-config directory differs)
-3. `<repo>/.beads/config.yaml` (project-level, walked up from the current directory)
-4. `$BEADS_DIR/config.yaml` (highest priority, when `BEADS_DIR` points at a different workspace)
+2. The native user-config directory’s `bd/config.yaml` (for example, `~/Library/Application Support/bd/config.yaml` on macOS)
+3. `~/.config/bd/config.yaml` (user-level; this exact path is checked even on platforms whose native user-config directory differs)
+4. `<repo>/.beads/config.yaml` (project-level, walked up from the current directory)
+5. `$BEADS_DIR/config.yaml` (highest priority, when `BEADS_DIR` points at a different workspace)
 
 A `config.local.yaml` next to the project `config.yaml` is also merged in last for machine-specific overrides that should not be committed.
 
@@ -38,7 +39,7 @@ For Viper-managed (YAML) keys, highest to lowest:
 3. **`config.yaml`** files (in the order listed above)
 4. **Built-in defaults**
 
-Project-level keys written via `bd config set` (Jira, Linear, GitHub, status maps, etc.) live in the Dolt database. They are read at command time and have no env var override.
+Project-level keys written via `bd config set` (Jira, Linear, GitHub, status maps, etc.) live in the Dolt database. They are read at command time; integration-specific environment fallbacks are described below.
 
 When a config.yaml value or environment variable shadows a database key, `bd config list` prints an override warning, and `bd config show` reports the source of every effective key.
 
@@ -82,13 +83,13 @@ These keys must live in `config.yaml`, not the database, because they are read b
 
 The full namespaces routed to YAML are:
 
-`routing.*`, `sync.*`, `git.*`, `directory.*`, `repos.*`, `external_projects.*`, `validation.*`, `hierarchy.*`, `ai.*`, `backup.*`, `export.*`, `dolt.*`, `federation.*`, `metrics.*`, `list.*`
+`routing.*`, `sync.*`, `git.*`, `directory.*`, `repos.*`, `external_projects.*`, `validation.*`, `hierarchy.*`, `ai.*`, `backup.*`, `export.*`, `dolt.*`, `federation.*`, `metrics.*`, `list.*`, `audit.*`, `storage-class.*`
 
 Plus these individual keys:
 
-`no-db`, `json`, `db`, `actor`, `identity`, `no-push`, `no-git-ops`, `agent.profile`, `create.require-description`, `import.auto`, `import.path`, `prime.max-memories`, `prime.max-memory-chars`, and the secret keys `github.token`, `gitlab.token`, `jira.api_token`, `ado.pat`, `linear.api_key`, `linear.oauth_client_id`, `linear.oauth_client_secret`.
+`no-db`, `json`, `events-journal`, `events-journal-retain-days`, `events-journal-retain-rows`, `events-journal-auto-prune`, `db`, `actor`, `identity`, `node_id`, `no-push`, `no-git-ops`, `agent.profile`, `create.require-description`, `import.auto`, `import.path`, `prime.max-memories`, `prime.max-memory-chars`, and the secret keys `github.token`, `gitlab.token`, `jira.api_token`, `ado.pat`, `linear.api_key`, `linear.oauth_client_id`, `linear.oauth_client_secret`.
 
-Any key whose name contains `api_key`, `api-key`, `secret`, `token`, or `password` is treated as a secret: it is refused on git-tracked `config.yaml` files unless you pass `--force-git-tracked`. Prefer exporting the value as an environment variable instead (e.g. `LINEAR_API_KEY`).
+Any key whose name contains `api_key`, `api-key`, `apikey`, `secret`, `token`, `password`, `passwd`, `credential`, `private_key`, `privatekey`, or `privkey` is treated as a secret. Whole key segments such as `pat`, `auth`, `bearer`, `cert`, and `pwd` also count. For YAML-routed keys, writing a secret is refused on git-tracked `config.yaml` files unless you pass `--force-git-tracked`. Prefer exporting the value as an environment variable instead (e.g. `LINEAR_API_KEY`).
 
 ## Tool-Level Settings (config.yaml)
 
@@ -98,7 +99,7 @@ Any key whose name contains `api_key`, `api-key`, `secret`, `token`, or `passwor
 | `db` | `--db` | `BD_DB` | (auto-discover) | Database path |
 | `actor` | `--actor` | `BEADS_ACTOR` | `git config user.name` | Actor name for audit trail (see [Actor identity](#actor-identity-resolution)) |
 | `identity` | `--identity` | `BEADS_IDENTITY` | (git user / hostname) | Sender identity for `bd mail` |
-| `no-db` | `--no-db` | `BD_NO_DAEMON` (related) | `false` | Run without opening the database |
+| `no-db` | `--no-db` | `BD_NO_DB` | `false` | Run without opening the database |
 | `no-push` | `--no-push` | `BD_NO_PUSH` | `false` | Skip pushing to the remote in `bd dolt push` |
 | `no-git-ops` | — | — | `false` | Disable git ops in `bd prime` close protocol |
 | `agent.profile` | — | `BD_AGENT_PROFILE` | `conservative` | Policy profile `bd prime` uses for git/commit authority: `conservative`, `minimal`, `team-maintainer`; invalid values fall back to `conservative` |
@@ -259,7 +260,7 @@ export BEADS_ACTOR="my-github-handle"
 
 ## Project-Level Settings (Database)
 
-These are written to the Dolt database by `bd config set` and have no env var override. Common namespaces:
+These are written to the Dolt database by `bd config set` and may have integration-specific environment fallbacks. Common namespaces:
 
 | Namespace | Purpose |
 |---|---|
@@ -466,7 +467,7 @@ Integration secrets follow tracker-specific conventions: `LINEAR_API_KEY`, `GITH
 
 ## Security: Where Secrets Live
 
-- Tokens and API keys are never stored in the Dolt database — database config is pushed to remotes, which would expose secrets and trip GitHub secret scanning. `bd config set` routes secret keys to the local `config.yaml` instead.
+- The named integration secret keys listed above are routed to local `config.yaml` by `bd config set`. Do not store credentials under arbitrary database keys: database config travels with Dolt pushes. Key-name detection is not a scan of secret values.
 - Writing a secret to a git-tracked `config.yaml` is refused unless you pass `--force-git-tracked`; environment variables are the safer default.
 - `bd init` writes a `.beads/.gitignore` that keeps the database directories (`embeddeddolt/`, `dolt/`), runtime files, push state, and the federation credential key out of git.
 

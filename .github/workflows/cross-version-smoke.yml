@@ -6,7 +6,7 @@ on:
     tags:
       - 'v*'
 
-  # On PR to main: test only the last 5 releases for fast feedback
+  # On PR to main: test the last 5 releases supported by the pinned fork target
   pull_request:
     branches: [ main ]
 
@@ -72,6 +72,8 @@ jobs:
     outputs:
       matrix: ${{ steps.resolve.outputs.matrix }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
       - name: Resolve release versions
         id: resolve
         env:
@@ -79,10 +81,10 @@ jobs:
           # Tag push and manual dispatch test more versions; PRs test fewer for speed
           VERSION_COUNT: ${{ (github.event_name == 'push' && '30') || (github.event_name == 'workflow_dispatch' && inputs.version_count) || '5' }}
         run: |
-          VERSIONS=$(gh release list \
-            --repo gastownhall/beads \
-            --limit "$VERSION_COUNT" \
-            --json tagName \
-            --jq '[.[].tagName]')
+          python3 scripts/ci/test_upgrade_release_matrix.py
+          TARGET=$(jq -er '.compatibilityTarget.version' engdocs/beadshx/program/source-locks.json)
+          VERSIONS=$(gh api --paginate --slurp repos/gastownhall/beads/releases |
+            jq -ce --arg target "$TARGET" --argjson count "$VERSION_COUNT" \
+              -f scripts/ci/upgrade-release-matrix.jq)
           echo "matrix=$VERSIONS" >> "$GITHUB_OUTPUT"
           echo "Testing versions: $VERSIONS"

@@ -3,10 +3,10 @@ title: Recovery Playbooks
 description: Step-by-step recovery for bd init and bd dolt push/pull refusals, including the primary-key fork playbook
 ---
 
-Last reviewed: 2026-06-09
+Last reviewed: 2026-10-29
 
 Freshness source: `cmd/bd/init.go`, `cmd/bd/init_safety.go`,
-`cmd/bd/init_safety_test.go`, and `cmd/bd/dolt.go`.
+`cmd/bd/init_safety_test.go`, `cmd/bd/bootstrap.go`, `cmd/bd/import.go`, and `cmd/bd/dolt.go`.
 
 This document lives next to the ADRs and matches the structure of `bd`'s
 error messages: each named refusal in `bd init` and `bd dolt push`/`pull`
@@ -55,8 +55,9 @@ Pick the one that matches your intent.
 bd bootstrap
 ```
 
-This clones the remote's Dolt database into a fresh local `.beads/`.
-Your local state is ignored; the team's history becomes yours.
+In a fresh workspace, this clones the configured remote's Dolt database.
+If a local database already exists, bootstrap validates it and reports its
+status; it does not discard or replace existing issues. Use `bd bootstrap --dry-run` to inspect the proposed action first.
 
 ### 2. You want to diagnose what went wrong before deciding
 
@@ -122,7 +123,7 @@ for why the token is never echoed in `bd`'s error messages.
 
 ## init-local-exists
 
-**Exit code:** `11` (`ExitLocalExistsRefused`)
+**Exit code:** `11` (`ExitLocalExistsRefused`) when interactive confirmation is declined; `12` (`ExitDestroyTokenMissing`) when a non-interactive reinitialization lacks the required token.
 
 **Symptom**
 
@@ -226,12 +227,16 @@ clone.)
 
 ### 3. On EVERY other clone: save local-only work, re-clone, re-apply
 
-```
-bd export --all -o /tmp/beads-local.jsonl    # safety net for un-synced work
-rm -rf .beads/dolt                           # discard the un-mergeable history
-bd bootstrap                                 # re-clone from the remote
-bd import /tmp/beads-local.jsonl             # re-apply local-only work
-```
+Export all local issues to a private backup location with
+`bd export --all -o <backup-file>`. Keep the original workspace intact. Create a fresh checkout,
+configure its approved Dolt data remote, and run `bd bootstrap --dry-run` to
+verify the source before running `bd bootstrap`. Import the saved export in
+that new workspace with `bd import <backup-file>`.
+
+This avoids deleting a hard-coded storage directory: embedded and server
+workspaces use different paths, and a server database may be shared. Do not
+remove the original workspace until the new database and imported work have
+been verified.
 
 `bd import` has upsert semantics: issues that only existed on this clone are
 re-created, newer local edits are applied, and rows older than what the
@@ -246,8 +251,10 @@ remote already has are skipped. Spot-check with `bd stats` afterwards.
 - **One designated migrator**: upgrade one machine, let it migrate, then
   `bd dolt push`.
 - **Every other clone adopts, does not pull**: after the migrator pushes, each
-  other clone upgrades the binary and runs `bd bootstrap` to adopt the migrated
-  database. `bd dolt pull` is *refused* while the clone still has pending
+  other clone upgrades the binary and bootstraps a fresh workspace from the
+  approved remote, preserving the original workspace as described above.
+  `bd dolt pull` is *refused* while the clone still has pending
   migrations, so do not rely on it; the "sync before" step above is what
-  preserves these clones' work, because `bd bootstrap` replaces the local
-  database.
+  preserves these clones' work, because a fresh bootstrap contains only the
+  remote’s data. Running
+  bootstrap over an existing database does not replace it.

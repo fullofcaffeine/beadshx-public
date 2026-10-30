@@ -36,3 +36,30 @@ The local command writes each lane log under `build/evidence/local-ci/`.
 Run `scripts/beadshx/test-ci-lanes.sh` to check the job structure, action pins,
 lock reports, failure behavior, and artifact retention. Run
 `scripts/beadshx/scan-secrets.sh` to use the locked scanner bytes.
+
+## Commit privacy checks
+
+Run `npm run hooks:install` in each checkout. The versioned pre-commit hook
+checks staged files for secrets, private runtime files, and machine-local paths.
+The secret check uses a frozen copy of the Git index, validates exceptions
+against those same staged bytes, and selects the pinned scanner's built-in
+rules. Inline suppression comments and environment-supplied scanner rules do
+not bypass the check. The CI secret lane scans the committed tree and the
+BeadsHX commit range; it is not an audit of every remote branch or GitHub text.
+
+To reject personal names, private email addresses, or private service URLs,
+create `info/private-content-patterns.json` inside the directory reported by
+`git rev-parse --git-common-dir`. Keep it local with mode `0600`. Its format is
+`{"patterns":["private value to reject"]}`. Use exact values, not regular
+expressions. The guard checks changed staged blobs, filenames, and the pending
+commit's author and committer identities. It does not print matched values.
+The file is shared by linked worktrees and is never committed or uploaded.
+A malformed policy blocks the commit; an absent policy leaves only the shared
+path and runtime-file checks active. CI cannot check local-only private values.
+
+Hooks can be bypassed by a user and cannot recognize every kind of personal
+information. Before making a private repository public, separately audit all
+reachable refs, author metadata, PR text, logs, and artifacts. Do not push
+private backup branches or use a mirror push to a sanitized public repository.
+Existing public upstream contributor attribution is not permission to publish
+new private identities.

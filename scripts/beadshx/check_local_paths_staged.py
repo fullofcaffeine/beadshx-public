@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Reject machine-local paths introduced by staged or committed changes."""
+"""Reject private content and local paths without printing the rejected values.
+
+Private literals belong in Git's local info/private-content-patterns.json file,
+never in repository policy. The index is authoritative for staged content.
+"""
 
 from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import os
 from pathlib import Path
 import re
@@ -48,13 +53,12 @@ def git(root: Path, arguments: list[str], *, input_bytes: bytes | None = None) -
 def changed_blobs(root: Path, revision_range: str | None) -> list[tuple[bytes, bytes, bytes]]:
     if revision_range is None:
         arguments = [
-            "diff-index",
+            "diff",
             "--cached",
             "--raw",
             "-z",
-            "--full-index",
+            "--no-abbrev",
             "--no-renames",
-            "HEAD",
             "--",
         ]
     else:
@@ -67,7 +71,7 @@ def changed_blobs(root: Path, revision_range: str | None) -> list[tuple[bytes, b
             "diff",
             "--raw",
             "-z",
-            "--full-index",
+            "--no-abbrev",
             "--no-renames",
             base,
             head,
@@ -135,23 +139,57 @@ def outside_reference(root: Path, source_path: bytes, reference: bytes) -> bool:
 
 def scan(root: Path, revision_range: str | None) -> list[str]:
     findings: list[str] = []
+    common = Path(os.fsdecode(git(root, ["rev-parse", "--git-common-dir"]).strip()))
+    if not common.is_absolute():
+        common = root / common
+    policy_path = common / "info/private-content-patterns.json"
+    private_patterns: list[bytes] = []
+    if policy_path.exists():
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        patterns = policy.get("patterns") if isinstance(policy, dict) else None
+        if not isinstance(patterns, list) or not patterns or any(
+            not isinstance(value, str) or not value.strip() for value in patterns
+        ):
+            raise ScanError("invalid local private-content policy")
+        private_patterns = [value.casefold().encode("utf-8") for value in patterns]
+
+    def has_private_value(value: bytes) -> bool:
+        folded = value.decode("utf-8", "replace").casefold().encode("utf-8")
+        return any(pattern in folded for pattern in private_patterns)
+
+    if revision_range is None and private_patterns:
+        for identity in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"]:
+            if has_private_value(git(root, ["var", identity])):
+                findings.append(f"{identity}: private identity; use approved public attribution")
+
     for path, old_oid, new_oid in changed_blobs(root, revision_range):
         old = blob(root, old_oid)
         new = blob(root, new_oid)
-        display_path = os.fsdecode(path)
+        display_path = "[private filename]" if has_private_value(path) else repr(os.fsdecode(path))
+        parts = Path(os.fsdecode(path)).parts
+        if (
+            (".beads" in parts and not (
+                len(parts) > 2 and parts[:2] == (".beads", "formulas")
+                and ".beads" not in parts[2:]
+            ))
+            or ".dolt" in parts
+            or any(part in {".env", ".beads-credential-key", "id_rsa", "id_ed25519"} for part in parts)
+            or (parts and parts[-1].startswith(".env.") and not parts[-1].endswith((".example", ".sample", ".template")))
+            or path == b"issues.jsonl"
+        ):
+            findings.append(f"{display_path}: private runtime or credential file")
+        if has_private_value(path) or has_private_value(new):
+            findings.append(f"{display_path}: matches local private-content policy (value redacted)")
         for line_number, line in added_lines(old, new):
             for match in UNIX_PATH.finditer(line):
-                value = match.group(0).decode("utf-8", "backslashreplace")
-                findings.append(f"{display_path}:{line_number}: machine-local path {value}")
+                findings.append(f"{display_path}:{line_number}: machine-local path (value redacted)")
             for match in WINDOWS_PATH.finditer(line):
-                value = match.group(0).decode("utf-8", "backslashreplace")
-                findings.append(f"{display_path}:{line_number}: machine-local path {value}")
+                findings.append(f"{display_path}:{line_number}: machine-local path (value redacted)")
             for match in RELATIVE_PATH.finditer(line):
                 reference = match.group(1)
                 if outside_reference(root, path, reference):
-                    value = reference.decode("utf-8", "backslashreplace")
                     findings.append(
-                        f"{display_path}:{line_number}: relative path escapes repository: {value}"
+                        f"{display_path}:{line_number}: relative path escapes repository (value redacted)"
                     )
     return findings
 
@@ -164,14 +202,14 @@ def main() -> int:
     root = arguments.repository.resolve(strict=True)
     try:
         findings = scan(root, arguments.revision_range)
-    except (OSError, ScanError, subprocess.SubprocessError) as error:
-        print(f"local path guard could not complete: {error}", file=sys.stderr)
+    except (OSError, ValueError, ScanError, subprocess.SubprocessError):
+        print("privacy guard could not complete; check Git and the local privacy policy", file=sys.stderr)
         return 2
     if findings:
-        print("local path guard: machine-local paths found", file=sys.stderr)
+        print("privacy guard: private content or unsafe paths found", file=sys.stderr)
         print("\n".join(findings), file=sys.stderr)
         return 1
-    print("local path guard: PASS")
+    print("privacy guard: PASS")
     return 0
 
 

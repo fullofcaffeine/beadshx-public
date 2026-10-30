@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+# shellcheck source=../../.buildflags
+source "$repository_root/.buildflags"
 commit="$(jq -er '.commit' "$repository_root/upstream/locks/beads-v1.2.1.json")"
 worktree_parent="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-oracle.XXXXXX")"
 worktree="$worktree_parent/source"

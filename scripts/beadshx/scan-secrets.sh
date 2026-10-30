@@ -18,19 +18,20 @@ if ! "$repository_root/scripts/beadshx/verify-gitleaks.sh" >/dev/null 2>&1; then
     "$repository_root/scripts/beadshx/install-gitleaks.sh"
 fi
 "$repository_root/scripts/beadshx/verify-gitleaks.sh" >/dev/null
-python3 "$repository_root/scripts/beadshx/check_gitleaks_ignore_contract.py" \
-    --repository "$repository_root"
 
-(
-    cd "$repository_root"
-    git ls-files -z | tar --null -T - -cf -
-) | tar -xf - -C "$scan_root"
+python3 "$repository_root/scripts/beadshx/materialize_scan_tree.py" \
+    --repository "$repository_root" --tree HEAD --destination "$scan_root"
+
+python3 "$repository_root/scripts/beadshx/check_gitleaks_ignore_contract.py" \
+    --repository "$scan_root"
 
 mkdir -p "$(dirname "$report")"
 tree_status=0
 (
     cd "$scan_root"
     "$scanner" dir . --redact --no-banner --report-format json \
+        --ignore-gitleaks-allow \
+        --config "$scan_root/scripts/beadshx/gitleaks.toml" \
         --gitleaks-ignore-path "$scan_root/.gitleaksignore" \
         --report-path "$tree_report"
 ) || tree_status=$?
@@ -44,11 +45,19 @@ fi
 history_commits="$(git -C "$repository_root" rev-list --count "$baseline..HEAD")"
 
 history_status=0
+# Gitleaks discovers ignore files in its Git target even with an explicit path.
+# Require committed policy bytes before treating a local history scan as proof.
+if ! git -C "$repository_root" diff HEAD --quiet -- .gitleaksignore; then
+    printf 'commit the secret ignore policy before scanning history\n' >&2
+    exit 1
+fi
 "$scanner" git "$repository_root" \
     --log-opts="$baseline..HEAD" \
     --redact \
     --no-banner \
-    --gitleaks-ignore-path "$repository_root/.gitleaksignore" \
+    --ignore-gitleaks-allow \
+    --config "$scan_root/scripts/beadshx/gitleaks.toml" \
+    --gitleaks-ignore-path "$scan_root/.gitleaksignore" \
     --report-format json \
     --report-path "$history_report" || history_status=$?
 

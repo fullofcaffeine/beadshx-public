@@ -2,7 +2,22 @@
 # outside the `pkgs.callPackage` auto-argument machinery (callPackage cannot
 # supply a flake output on its own). flake.nix applies this as
 # `import ./overlay.nix self`.
-self: final: prev: {
+self: final: prev:
+let
+  toolchains = builtins.fromJSON (builtins.readFile ./engdocs/beadshx/program/toolchain-locks.json);
+  goVersion = prev.lib.removePrefix "go" toolchains.common.go;
+in
+{
+  # Keep Nix builds and development shells on the reviewed security patch.
+  # The older nixpkgs lock remains usable without downgrading go.mod.
+  go_1_26 = prev.go_1_26.overrideAttrs (_: {
+    version = goVersion;
+    src = prev.fetchurl {
+      url = "https://go.dev/dl/go${goVersion}.src.tar.gz";
+      hash = toolchains.common.goSourceSha256;
+    };
+  });
+
   # Unwrapped Go build of the bd binary. Exposed so downstream consumers can
   # override inputs (vendorHash, buildGoModule, etc.) via the standard
   # callPackage `.override` pattern, e.g.

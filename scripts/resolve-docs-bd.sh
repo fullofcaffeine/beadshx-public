@@ -37,11 +37,12 @@ if [ -x "$CACHED_BD" ]; then
     exit 0
 fi
 
-# Make sure the pinned tag exists locally; shallow CI checkouts may not have
-# fetched tags.
+# The docs pin describes an upstream release. Forks and sanitized mirrors may
+# not carry upstream release tags, so origin is not the release authority.
 if ! git -C "$PROJECT_ROOT" rev-parse --verify --quiet "refs/tags/$PIN^{commit}" >/dev/null; then
-    echo "docs pin: fetching tag $PIN from origin..." >&2
-    git -C "$PROJECT_ROOT" fetch --depth=1 origin "refs/tags/$PIN:refs/tags/$PIN" >&2
+    echo "docs pin: fetching upstream release tag $PIN..." >&2
+    git -C "$PROJECT_ROOT" fetch --depth=1 https://github.com/gastownhall/beads.git \
+        "refs/tags/$PIN:refs/tags/$PIN" >&2
 fi
 
 echo "docs pin: building bd from tag $PIN (CGO_ENABLED=0 -tags gms_pure_go)..." >&2

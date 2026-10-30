@@ -29,3 +29,12 @@ when GitHub publishes a new image.
 The Linux profile does not admit macOS, Windows, or another architecture.
 Each later release profile must add its own compiler, linker, native library,
 and packaging-tool locks before it can publish artifacts.
+
+The current build uses Go 1.26.10 for its security fixes. This patch update
+supersedes the initial Go 1.26.5 build pin in the port PRD. The Beads v1.2.1
+compatibility target and database format remain unchanged.
+
+Historical command and native-boundary inventories still use the original
+Go version from `upstream/locks/beads-v1.2.1.json`. Their policies and evidence
+record that original compiler. They must not inherit the current build pin,
+or claim that old measurements came from a newer compiler.

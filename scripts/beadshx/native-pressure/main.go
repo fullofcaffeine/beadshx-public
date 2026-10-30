@@ -117,18 +117,8 @@ func validatePolicy(repository string, selected policy) error {
 		return fmt.Errorf("pinned source commit is unavailable: %w", err)
 	}
 
-	toolchainPath := filepath.Join(repository, "engdocs", "beadshx", "program", "toolchain-locks.json")
-	var toolchains struct {
-		Common struct {
-			Go           string `json:"go"`
-			HaxeGoCommit string `json:"haxeGoCommit"`
-		} `json:"common"`
-	}
-	if err := decodeJSONLoose(toolchainPath, &toolchains); err != nil {
+	if err := validateInventoryToolchains(repository, selected); err != nil {
 		return err
-	}
-	if toolchains.Common.Go != "go"+selected.GoVersion || toolchains.Common.HaxeGoCommit != selected.CompilerEvidence.Commit {
-		return errors.New("native-pressure policy drifted from toolchain locks")
 	}
 
 	seen := make(map[string]bool)
@@ -407,4 +397,33 @@ func sortedKeys(values map[string]int) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// validateInventoryToolchains keeps historical inventory evidence tied to its
+// original Go compiler while current candidate builds receive security patches.
+func validateInventoryToolchains(repository string, selected policy) error {
+	toolchainPath := filepath.Join(repository, "engdocs", "beadshx", "program", "toolchain-locks.json")
+	var toolchains struct {
+		Common struct {
+			HaxeGoCommit string `json:"haxeGoCommit"`
+		} `json:"common"`
+	}
+	if err := decodeJSONLoose(toolchainPath, &toolchains); err != nil {
+		return err
+	}
+	if toolchains.Common.HaxeGoCommit != selected.CompilerEvidence.Commit {
+		return errors.New("native-pressure policy drifted from toolchain locks")
+	}
+
+	var source struct {
+		Go     string `json:"go"`
+		Commit string `json:"commit"`
+	}
+	if err := decodeJSONLoose(filepath.Join(repository, "upstream", "locks", "beads-v1.2.1.json"), &source); err != nil {
+		return err
+	}
+	if source.Go != selected.GoVersion || source.Commit != selected.Compatibility.Commit {
+		return errors.New("native-pressure policy drifted from upstream source lock")
+	}
+	return nil
 }
