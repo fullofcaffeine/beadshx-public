@@ -9,7 +9,7 @@
     "go": "go1.26.10",
     "golangciLint": "v2.10.1",
     "preCommit": "4.3.0",
-    "preCommitRequirementsSha256": "827f3045cd84bcb55e9cbaa8e59d6ea7e47514a245a85f6dd541e889248a2679",
+    "preCommitRequirementsSha256": "18448d25f3c7690e70977f522cd7fd2326da0948c2a3b0be5c99e6b39d80dee8",
     "haxeGoCommit": "c141ac6df83bff1e2a420f18146ce68e4d7a87c7",
     "goSourceSha256": "sha256-/WPog7ovK/ypPBZGsx6+9j4rHk0rMXyXidl2po2B828="
   },
