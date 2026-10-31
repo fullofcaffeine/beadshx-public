@@ -165,7 +165,7 @@ func snapshotBeadsHXProxiedState(t *testing.T, project proxiedProject) beadshxPr
 		ProxyPID:    readProxiedPID(t, project.proxyRoot),
 		Metadata:    readProxiedFile(t, configfile.ConfigPath(project.beadsDir)),
 		ClientInfo:  readProxiedFile(t, configfile.ProxiedServerClientInfoPath(project.beadsDir)),
-		WorkspaceFS: proxiedPathSet(t, project.beadsDir),
+		WorkspaceFS: proxiedPathSet(t, project.dir),
 	}
 }
 
