@@ -5,8 +5,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,63 +39,88 @@ func TestBeadsHXProxiedReadonly(t *testing.T) {
 	upstream := buildEmbeddedBD(t)
 	project := newSharedProxiedProject(t, upstream, "bhxp")
 	issue := bdProxiedCreate(t, upstream, project.dir, "Proxied Haxe tracer", "--type", "task", "--description", "server-backed details")
+	child := bdProxiedCreate(t, upstream, project.dir, "Child Haxe tracer", "--parent", issue.ID)
 	commit := exec.Command("git", "commit", "--allow-empty", "-m", "feat: implement ("+issue.ID+")")
 	commit.Dir = project.dir
 	if output, err := commit.CombinedOutput(); err != nil {
 		t.Fatalf("create orphan tracer commit: %v\n%s", err, output)
 	}
 
-	wantList := runProxiedJSON(t, upstream, project, "list", "--json", "--all")
-	wantShow := runProxiedJSON(t, upstream, project, "show", "--json", issue.ID)
-	wantCount := runProxiedJSON(t, upstream, project, "count", "--json")
-	wantCountByStatus := runProxiedJSON(t, upstream, project, "count", "--by-status", "--json")
-	wantReady := runProxiedJSON(t, upstream, project, "ready", "--json", "--limit", "0")
-	wantSearch := runProxiedJSON(t, upstream, project, "search", "--json", "Proxied")
-	wantQuery := runProxiedJSON(t, upstream, project, "query", "status=open", "--json")
-	wantStale := runProxiedJSON(t, upstream, project, "stale", "--json", "--days", "1")
-	wantOrphans := runProxiedJSON(t, upstream, project, "orphans", "--json")
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"where", []string{"where", "--json"}},
+		{"info", []string{"info", "--schema", "--json"}},
+		{"ping", []string{"ping", "--json"}},
+		{"status", []string{"status", "--json"}},
+		{"list", []string{"list", "--json", "--all"}},
+		{"show", []string{"show", "--json", issue.ID}},
+		{"count", []string{"count", "--json"}},
+		{"count-by-status", []string{"count", "--by-status", "--json"}},
+		{"ready", []string{"ready", "--json", "--limit", "0"}},
+		{"search", []string{"search", "--json", "Proxied"}},
+		{"query", []string{"query", "status=open", "--json"}},
+		{"stale", []string{"stale", "--json", "--days", "1"}},
+		{"orphans", []string{"orphans", "--json"}},
+		{"children", []string{"children", issue.ID, "--json"}},
+		{"dep-list", []string{"dep", "list", child.ID, "--json"}},
+	}
+	// Run oracle reads before the candidate snapshot: only candidate effects
+	// are under qualification, while the oracle owns fixture preparation.
+	want := make([]any, len(cases))
+	for i, tc := range cases {
+		want[i] = runProxiedJSON(t, upstream, project, tc.args...)
+		if tc.name == "ping" {
+			normalizeProxiedPing(t, want[i])
+		}
+	}
 	before := snapshotBeadsHXProxiedState(t, project)
-
-	gotList := runProxiedJSON(t, candidate, project, "list", "--json", "--all")
-	gotShow := runProxiedJSON(t, candidate, project, "show", "--json", issue.ID)
-	gotCount := runProxiedJSON(t, candidate, project, "count", "--json")
-	gotCountByStatus := runProxiedJSON(t, candidate, project, "count", "--by-status", "--json")
-	gotReady := runProxiedJSON(t, candidate, project, "ready", "--json", "--limit", "0")
-	gotSearch := runProxiedJSON(t, candidate, project, "search", "--json", "Proxied")
-	gotQuery := runProxiedJSON(t, candidate, project, "query", "status=open", "--json")
-	gotStale := runProxiedJSON(t, candidate, project, "stale", "--json", "--days", "1")
-	gotOrphans := runProxiedJSON(t, candidate, project, "orphans", "--json")
-	if !reflect.DeepEqual(gotList, wantList) {
-		t.Fatalf("BeadsHX proxied list differs from upstream\nwant: %#v\n got: %#v", wantList, gotList)
-	}
-	if !reflect.DeepEqual(gotShow, wantShow) {
-		t.Fatalf("BeadsHX proxied show differs from upstream\nwant: %#v\n got: %#v", wantShow, gotShow)
-	}
-	if !reflect.DeepEqual(gotCount, wantCount) {
-		t.Fatalf("BeadsHX proxied count differs from upstream\nwant: %#v\n got: %#v", wantCount, gotCount)
-	}
-	if !reflect.DeepEqual(gotCountByStatus, wantCountByStatus) {
-		t.Fatalf("BeadsHX proxied grouped count differs from upstream\nwant: %#v\n got: %#v", wantCountByStatus, gotCountByStatus)
-	}
-	if !reflect.DeepEqual(gotReady, wantReady) {
-		t.Fatalf("BeadsHX proxied ready differs from upstream\nwant: %#v\n got: %#v", wantReady, gotReady)
-	}
-	if !reflect.DeepEqual(gotSearch, wantSearch) {
-		t.Fatalf("BeadsHX proxied search differs from upstream\nwant: %#v\n got: %#v", wantSearch, gotSearch)
-	}
-	if !reflect.DeepEqual(gotQuery, wantQuery) {
-		t.Fatalf("BeadsHX proxied query differs from upstream\nwant: %#v\n got: %#v", wantQuery, gotQuery)
-	}
-	if !reflect.DeepEqual(gotStale, wantStale) {
-		t.Fatalf("BeadsHX proxied stale differs from upstream\nwant: %#v\n got: %#v", wantStale, gotStale)
-	}
-	if !reflect.DeepEqual(gotOrphans, wantOrphans) {
-		t.Fatalf("BeadsHX proxied orphans differ from upstream\nwant: %#v\n got: %#v", wantOrphans, gotOrphans)
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runProxiedJSON(t, candidate, project, tc.args...)
+			if tc.name == "ping" {
+				normalizeProxiedPing(t, got)
+			}
+			if !reflect.DeepEqual(got, want[i]) {
+				t.Fatalf("BeadsHX proxied read differs from upstream\nwant: %#v\n got: %#v", want[i], got)
+			}
+		})
 	}
 
 	after := snapshotBeadsHXProxiedState(t, project)
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("BeadsHX proxied reads changed persistent or lifecycle state\nbefore: %#v\n after: %#v", before, after)
+	}
+}
+
+// Timing values vary between processes. Validate their contract before removing
+// only those four fields, using the same normalization as the embedded corpus.
+func normalizeProxiedPing(t *testing.T, value any) {
+	t.Helper()
+	fields, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("ping JSON is not an object: %T", value)
+	}
+	var sum, total int64
+	for _, key := range []string{"query_ms", "resolve_ms", "store_ms", "total_ms"} {
+		number, ok := fields[key].(json.Number)
+		if !ok {
+			t.Fatalf("ping %s is not a number", key)
+		}
+		n, err := number.Int64()
+		if err != nil || n < 0 {
+			t.Fatalf("ping %s is not a nonnegative integer: %s", key, number)
+		}
+		if key == "total_ms" {
+			total = n
+		} else {
+			sum += n
+		}
+		delete(fields, key)
+	}
+	if sum != total {
+		t.Fatalf("ping total %d differs from component sum %d", total, sum)
 	}
 }
 
@@ -120,6 +147,7 @@ func runProxiedJSON(t *testing.T, binary string, project proxiedProject, args ..
 
 type beadshxProxiedState struct {
 	Head        string
+	WorkingHash string
 	WorkingSet  []string
 	ProxyPID    pidfile.PidFile
 	Metadata    string
@@ -132,12 +160,25 @@ func snapshotBeadsHXProxiedState(t *testing.T, project proxiedProject) beadshxPr
 	db := openProxiedDB(t, project)
 	return beadshxProxiedState{
 		Head:        proxiedHead(t, db),
+		WorkingHash: proxiedWorkingHash(t, db),
 		WorkingSet:  proxiedWorkingSet(t, db),
 		ProxyPID:    readProxiedPID(t, project.proxyRoot),
 		Metadata:    readProxiedFile(t, configfile.ConfigPath(project.beadsDir)),
 		ClientInfo:  readProxiedFile(t, configfile.ProxiedServerClientInfoPath(project.beadsDir)),
-		WorkspaceFS: proxiedPathSet(t, project.beadsDir),
+		WorkspaceFS: proxiedPathSet(t, project.dir),
 	}
+}
+
+// Include uncommitted row values, not only the names of dirty tables.
+func proxiedWorkingHash(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var hash string
+	if err := db.QueryRowContext(ctx, "SELECT DOLT_HASHOF_DB()").Scan(&hash); err != nil {
+		t.Fatalf("read proxied working database hash: %v", err)
+	}
+	return hash
 }
 
 func proxiedHead(t *testing.T, db *sql.DB) string {
@@ -204,7 +245,25 @@ func proxiedPathSet(t *testing.T, root string) []string {
 		if err != nil {
 			return err
 		}
-		paths = append(paths, relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		value := relative + "|" + info.Mode().String()
+		if info.Mode().IsRegular() {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			value += fmt.Sprintf("|%x", sha256.Sum256(content))
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			value += "|" + target
+		}
+		paths = append(paths, value)
 		return nil
 	})
 	if err != nil {
@@ -212,4 +271,19 @@ func proxiedPathSet(t *testing.T, root string) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func TestBeadsHXReadonlySnapshotDetectsContentChange(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.yaml")
+	if err := os.WriteFile(path, []byte("mode: before\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := proxiedPathSet(t, root)
+	if err := os.WriteFile(path, []byte("mode: after!\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(before, proxiedPathSet(t, root)) {
+		t.Fatal("read-only snapshot missed a same-path, same-size content change")
+	}
 }
