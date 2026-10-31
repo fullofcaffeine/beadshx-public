@@ -20,11 +20,16 @@ if ! docker image inspect dolthub/dolt-sql-server:2.2.0 >/dev/null 2>&1; then
 fi
 
 cd "$repository_root"
+result="$(mktemp "${TMPDIR:-/tmp}/beadshx-proxied-result.XXXXXX")"
+trap 'rm -f "$result"' EXIT
 BEADS_TEST_PROXIED_SERVER=1 \
 	BEADS_TEST_BD_BINARY="$oracle" \
 	BEADSHX_CANDIDATE_BIN="$candidate" \
 	CGO_ENABLED=1 \
 	go test -tags gms_pure_go ./cmd/bd \
-		-run '^TestBeadsHXProxiedReadonly$' -count=1 -v
+		-run '^TestBeadsHX(ProxiedReadonly|ReadonlySnapshotDetectsContentChange)$' -count=1 -json | tee "$result"
+
+# An unavailable Docker fixture skips the Go test. A skip is not qualification.
+jq -se 'any(.[]; .Test == "TestBeadsHXProxiedReadonly" and .Action == "pass")' "$result" >/dev/null
 
 printf 'BeadsHX proxied read-only parity: PASS\n'

@@ -335,6 +335,7 @@ compare_store_failure unavailable-server info info
 real_database_seed="$test_root/real-database-seed"
 mkdir -p "$real_database_seed/home" "$real_database_seed/config" "$real_database_seed/work"
 touch "$real_database_seed/work/.beadshx-disposable-fixture"
+"$repository_root/scripts/beadshx/assert-disposable-workspace.sh" "$real_database_seed/work" >/dev/null
 real_database_env=(
 	BEADS_ACTOR=fixture
 	BEADS_TELEMETRY_DISABLED=1
