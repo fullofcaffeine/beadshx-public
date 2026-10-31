@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = [
-    "fastmcp==3.4.10",
-    "pydantic==2.13.4",
+    "fastmcp==4.1.4",
+    "pydantic==2.14.1",
     "pydantic-settings==2.15.0",
     # Security floors also protect wheel/sdist installs, which do not read uv.lock.
     "anyio>=4.14.2",
