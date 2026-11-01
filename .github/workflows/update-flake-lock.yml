@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   update-flake-lock:
+    # The app credentials and token target belong to the upstream repository.
+    if: ${{ github.repository == 'gastownhall/beads' }}
     runs-on: ubuntu-latest
     steps:
       - name: Mint flake update token
