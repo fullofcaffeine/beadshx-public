@@ -17,7 +17,7 @@ handler exists. It does not prove compatibility for every argument or backend.
 | `search`, `query` | Search and query cases | `search --json Proxied`; `query status=open --json` |
 | `stale`, `orphans` | Stale and orphan cases | `stale --json --days 1`; `orphans --json` |
 | `children`, `dep list` | Relationship cases | `children ID --json`; `dep list ID --json` with a nonempty parent relation |
-| `where`, `info`, `ping`, `status` | Workspace, diagnostics, and database cases | `where --json`; `info --schema --json`; `ping --json`; `status --json` |
+| `where`, `info`, `ping`, `status` | Workspace, diagnostics, and database cases | `where --json`; the other three commands explicitly reject this backend |
 | Root help, `version` | Development identity, parsing, and terminal cases | No database backend required |
 
 The scripts define the exact cases and normalizations. In particular, the
@@ -50,10 +50,15 @@ commit, toolchain lock, binary hashes, host, and command logs with each run.
 
 The embedded suite initializes marked temporary workspaces with the upstream
 binary. It compares exit codes, stdout, and stderr and checks candidate file
-state before and after each read. The server tracer also validates and normalizes ping timings. It uses a temporary workspace
+state before and after each read. The server tracer uses a temporary workspace
 and an isolated test server. It compares decoded JSON, requires empty stderr
 and successful exit, and checks the native revision, complete working database hash, working set, proxy identity,
 configuration, filenames, file contents, and modes around candidate reads.
+The sole content exception is the upstream proxy connection log: reads and
+the SQL observer append trace records, so the test requires its existing
+contents to remain an unchanged prefix. This is logical read-only behavior,
+not a claim of zero filesystem writes. The test separately checks the exact
+refusal from `info`, `ping`, and `status` on the proxied-server backend.
 A skipped server test fails qualification.
 
 A passing run qualifies only the cases in that run on its recorded host and
