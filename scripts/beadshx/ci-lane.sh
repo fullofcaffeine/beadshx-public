@@ -31,6 +31,7 @@ case "$lane" in
             "$oracle" "$candidate"
         ;;
     proxied-readonly)
+        "$repository_root/scripts/beadshx/test-proxied-readonly-contract.sh"
         "$repository_root/scripts/beadshx/test-proxied-readonly.sh"
         ;;
     license)

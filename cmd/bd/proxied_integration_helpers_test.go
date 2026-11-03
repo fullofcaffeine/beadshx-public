@@ -390,6 +390,16 @@ func bdProxiedInitInternal(t *testing.T, bd, prefix string, skipHooks bool, extr
 	t.Helper()
 
 	dir := t.TempDir()
+	if os.Getenv("BEADSHX_CANDIDATE_BIN") != "" {
+		// Qualification may initialize only a marked, disposable workspace.
+		if err := os.WriteFile(filepath.Join(dir, ".beadshx-disposable-fixture"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		guard := exec.Command("../../scripts/beadshx/assert-disposable-workspace.sh", dir)
+		if output, err := guard.CombinedOutput(); err != nil {
+			t.Fatalf("disposable qualification fixture: %v\n%s", err, output)
+		}
+	}
 	initGitRepoAt(t, dir)
 	beadsDir := filepath.Join(dir, ".beads")
 	proxyRoot := filepath.Join(beadsDir, "dolt")

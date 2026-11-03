@@ -35,7 +35,7 @@ returns that same exit code to the caller.
 | `npm run test:generated` | Regenerate Go and detect byte drift against the committed ownership fixture. |
 | `npm run test:identity` | Reject upstream impersonation, identity drift, or an early `bd` alias. |
 | `npm run test:caf-intent` | Validate the unselected, non-executing Caf provider intent and reject observed facts. |
-| `npm run test:parity` | Compare only the admitted development identities. This command does not claim behavior parity. |
+| `npm run test:parity` | Compare development identities and the current embedded read-only command corpus. See the [preview coverage limits](readonly-preview.md). |
 | `npm test` | Run the complete current BeadsHX bootstrap, oracle, and identity-parity suite. |
 | `npm run ci:local` | Run the same seven repository lanes that GitHub Actions calls. This command does not require GitHub or `gh`. |
 | `npm run format` | Format authored Haxe and Go in the native and disposable generated trees. |
@@ -50,6 +50,10 @@ development binary, generated Go source, licenses, source locks, and toolchain
 locks. Its fixed entry order and timestamps make repeated packages identical
 when their inputs are identical. It does not identify itself as upstream
 `bd`, and it is not release or compatibility evidence.
+
+For the exact read-only command coverage and the separate server qualification
+command, see [Read-only development preview](readonly-preview.md). A passing
+bootstrap build alone does not qualify the read-only profile.
 
 `npm run ci:local` stores one log and one lock report for each lane. It does
 not require `gh`, GitHub credentials, or a hosted runner. A clean setup still
