@@ -26,4 +26,12 @@ jq -e --arg path "$lint_module" \
         printf 'GolangCI-Lint module bytes do not match the repository lock\n' >&2
         exit 1
     }
-GOWORK=off CGO_ENABLED=0 "$locked_go" run "$lint_package" run "$@"
+# Build the tool for this host while keeping the caller's target for linting.
+# Go owns the executable cache; -exec restores the target only at execution.
+target_os="$(GOWORK=off "$locked_go" env GOOS)"
+target_arch="$(GOWORK=off "$locked_go" env GOARCH)"
+host_os="$(GOWORK=off "$locked_go" env GOHOSTOS)"
+host_arch="$(GOWORK=off "$locked_go" env GOHOSTARCH)"
+GOWORK=off CGO_ENABLED=0 GOOS="$host_os" GOARCH="$host_arch" \
+    "$locked_go" run -exec "env GOOS=$target_os GOARCH=$target_arch" \
+    "$lint_package" run "$@"
