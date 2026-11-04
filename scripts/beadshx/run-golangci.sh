@@ -26,16 +26,12 @@ jq -e --arg path "$lint_module" \
         printf 'GolangCI-Lint module bytes do not match the repository lock\n' >&2
         exit 1
     }
-# The lint target can differ from the machine running the tool. Build only the
-# launcher for the host, then let the linter inherit the caller's target.
+# Build the tool for this host while keeping the caller's target for linting.
+# Go owns the executable cache; -exec restores the target only at execution.
+target_os="$(GOWORK=off "$locked_go" env GOOS)"
+target_arch="$(GOWORK=off "$locked_go" env GOARCH)"
 host_os="$(GOWORK=off "$locked_go" env GOHOSTOS)"
 host_arch="$(GOWORK=off "$locked_go" env GOHOSTARCH)"
-tool_dir="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-golangci.XXXXXX")"
-trap 'rm -rf -- "$tool_dir"' EXIT
-GOWORK=off CGO_ENABLED=0 GOOS="$host_os" GOARCH="$host_arch" GOBIN="$tool_dir" \
-    "$locked_go" install "$lint_package"
-tool="$tool_dir/golangci-lint"
-if [[ "$host_os" == windows ]]; then
-    tool="$tool.exe"
-fi
-GOWORK=off CGO_ENABLED=0 "$tool" run "$@"
+GOWORK=off CGO_ENABLED=0 GOOS="$host_os" GOARCH="$host_arch" \
+    "$locked_go" run -exec "env GOOS=$target_os GOARCH=$target_arch" \
+    "$lint_package" run "$@"
