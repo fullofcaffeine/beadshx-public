@@ -8,6 +8,7 @@ cd "$repository_root"
 shasum -a 256 -c beadshx-prd-sha256.txt
 jq empty beadshx-complete-backlog.json engdocs/beadshx/program/source-locks.json upstream/locks/*.json
 ./scripts/beadshx/test-toolchain-locks.sh
+python3 scripts/beadshx/test_lint_launcher.py
 if [[ -n "${BEADSHX_TOOLCHAIN_PROFILE:-}" ]]; then
     ./scripts/beadshx/verify-toolchains.sh \
         "--profile=$BEADSHX_TOOLCHAIN_PROFILE"
