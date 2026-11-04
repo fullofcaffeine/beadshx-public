@@ -27,7 +27,7 @@ locked() {
 
 expect_exact kernel Linux "$(uname -s)"
 expect_exact runner "$(locked '.linuxCi.imageOS')" "${ImageOS:-missing}"
-expect_exact runner-image "$(locked '.linuxCi.imageVersion')" "${ImageVersion:-missing}"
+"$repository_root/scripts/beadshx/verify-runner-image.sh"
 expect_exact Bash "$(locked '.linuxCi.bash')" "$BASH_VERSION"
 expect_exact Git "$(locked '.linuxCi.git')" \
     "$(git --version | sed 's/^git version //')"

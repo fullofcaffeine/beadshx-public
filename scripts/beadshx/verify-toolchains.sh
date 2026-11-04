@@ -134,7 +134,7 @@ fi
 if [[ "$profile" == "linux-ci" ]]; then
     expect_exact kernel Linux "$(uname -s)"
     expect_exact runner "$(locked '.linuxCi.imageOS')" "${ImageOS:-missing}"
-    expect_exact runner-image "$(locked '.linuxCi.imageVersion')" "${ImageVersion:-missing}"
+    "$repository_root/scripts/beadshx/verify-runner-image.sh"
     expect_exact Bash "$(locked '.linuxCi.bash')" "$BASH_VERSION"
     expect_exact GCC "$(locked '.linuxCi.gcc')" "$(gcc -dumpfullversion -dumpversion)"
     expect_exact G++ "$(locked '.linuxCi.gxx')" "$(g++ -dumpfullversion -dumpversion)"

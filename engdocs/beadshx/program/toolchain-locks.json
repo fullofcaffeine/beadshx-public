@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "common": {
     "node": "24.18.1",
     "npm": "11.16.0",
@@ -16,9 +16,6 @@
   "linuxCi": {
     "runnerLabel": "ubuntu-24.04",
     "imageOS": "ubuntu24",
-    "imageVersion": "20261101.360.1",
-    "manifest": "https://github.com/actions/runner-images/blob/add4380b0d6685806e9192c33c37359ee0aa4023/images/ubuntu/Ubuntu2404-Readme.md",
-    "manifestReviewedAt": "2026-11-04",
     "bash": "5.2.21(1)-release",
     "gcc": "13.3.0",
     "gxx": "13.3.0",
@@ -27,7 +24,19 @@
     "make": "4.3",
     "git": "2.56.0",
     "jq": "jq-1.7",
-    "shellcheck": "0.9.0"
+    "shellcheck": "0.9.0",
+    "images": [
+      {
+        "version": "20261026.354.1",
+        "manifest": "https://github.com/actions/runner-images/blob/ac85c71971895cd6234578d6b11f49f7c27ff0c4/images/ubuntu/Ubuntu2404-Readme.md",
+        "reviewedAt": "2026-10-29"
+      },
+      {
+        "version": "20261101.360.1",
+        "manifest": "https://github.com/actions/runner-images/blob/add4380b0d6685806e9192c33c37359ee0aa4023/images/ubuntu/Ubuntu2404-Readme.md",
+        "reviewedAt": "2026-11-04"
+      }
+    ]
   },
   "goModules": {
     "github.com/dolthub/driver/v2": "v2.2.0",
