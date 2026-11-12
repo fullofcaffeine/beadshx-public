@@ -1,14 +1,15 @@
 # `bd serve` operator runbook
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-11-11
 
 Freshness source: `internal/httpapi/server.go`,
 `internal/httpapi/events_watch.go`, `cmd/bd/serve.go` and
 `internal/httpapi/auth.go` — the operating-envelope constants, the fields their
 `event` emitters write, and the flag, posture and token-file rules.
 
-Every flag, error string, event name and reason value quoted below was checked
-against a build of those files, not read off the source.
+The current source review covers flags, error strings, event names, reason
+values, and operating limits. Earlier runtime measurements below retain their
+original dates and are not measurements of every host.
 
 Running the v0 HTTP surface. For the contract it serves — the operations, the
 error vocabulary, the cursor, the loopback posture — see
@@ -89,7 +90,7 @@ liveness endpoint that 401s is a pod that restarts forever.
 The file holds **one token per line, and every non-empty line is accepted**.
 There is no `--auth-token` flag: an argument is readable out of `ps` by every
 local user. `BEADS_SERVE_TOKEN_FILE` is the environment fallback, and it
-applies only when the flag was not passed.
+applies when the flag value is empty.
 
 **Rotation is a file rewrite, with no restart.** Write the new token alongside
 the old, roll the clients over, then delete the old line; both the addition and
@@ -101,8 +102,8 @@ rename; a Kubernetes secret mount already does). A failed or empty re-read
 keeps the last-good set and logs `event=auth_reload_error`, so a writer that
 truncates before writing cannot lock every client out.
 
-Tokens are held and compared as SHA-256 digests in constant time, so the
-process holds no raw credential and a heap dump discloses none.
+The accepted token set stores SHA-256 digests. Presented request tokens are
+hashed before constant-time comparison; raw tokens still arrive in HTTP headers.
 
 The refusal is `401` with `code: unauthenticated` and `WWW-Authenticate:
 Bearer`. Its `detail` is a fixed string and never echoes what was presented; a
@@ -128,7 +129,8 @@ reaching the address would otherwise be the whole authorization: every peer
 that can reach it gets full read and claim access.
 
 ```
-bd serve --addr 0.0.0.0:7777 --auth-token-file /run/secrets/bd-tokens \
+bd serve --addr 0.0.0.0:7777 --allow-non-loopback \
+         --auth-token-file /run/secrets/bd-tokens \
          --allowed-host bd.internal.example
 ```
 

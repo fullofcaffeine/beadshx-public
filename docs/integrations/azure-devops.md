@@ -3,7 +3,7 @@ title: Azure DevOps (ADO) Integration Configuration
 description: Configuration reference for bd ado sync, which bidirectionally syncs beads issues with Azure DevOps work items
 ---
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-11-11
 
 Freshness source: `cmd/bd/ado*.go` and `internal/ado/`.
 
@@ -253,7 +253,7 @@ When the same issue has been modified both locally and in ADO:
 | Flag | Description |
 |---|---|
 | `--dry-run` | Preview sync without making changes |
-| `--no-create` | Only update existing items, never create new ones |
+| `--no-create` | Only update existing items; skip new items on both pull and push |
 | `--bootstrap-match` | Enable heuristic title matching for first sync |
 | `--reconcile` | Force reconciliation scan for deleted items (see Reconciliation below) |
 | `--issues` | Sync specific issues by bead ID or ADO work item ID |

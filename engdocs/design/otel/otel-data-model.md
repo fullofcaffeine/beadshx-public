@@ -1,9 +1,10 @@
 # OpenTelemetry Data Model
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-11-11
 
 Freshness source: `internal/telemetry/`, `internal/storage/dolt/store.go`,
-`internal/compact/haiku.go`, `cmd/bd/find_duplicates.go`, and hook execution
+`internal/storage/dolt/transaction.go`, `internal/compact/haiku.go`,
+`cmd/bd/command_telemetry.go`, `cmd/bd/find_duplicates.go`, and hook execution
 code under `internal/hooks/`.
 
 Complete schema of all telemetry events emitted by Beads. Each event consists of:
@@ -55,12 +56,19 @@ OTel SDK names use **dot notation** internally. Prometheus-compatible backends (
 
 ### 1.1 Instance
 
-The outermost grouping. Derived at command startup time from the machine hostname and the working directory.
+The outermost grouping is the SDK resource built by `buildResource` in
+`internal/telemetry/telemetry.go`. It enables host and process detectors,
+then applies `OTEL_RESOURCE_ATTRIBUTES` overrides.
 
 | Attribute | Type | Description |
 |---|---|---|
-| `host` | string | System hostname |
-| `os` | string | System OS information |
+| `host.name` | string | Host detector's machine name |
+| `process.pid` | int | Current process ID |
+| `process.command_args` | string[] | Original process arguments from the SDK process detector |
+
+The `bd.args` scrubber below applies to command-span attributes. It does not
+scrub `process.command_args` in the resource. Other process attributes follow
+the SDK's `resource.WithProcess()` detector.
 
 ### 1.2 Command
 
@@ -196,18 +204,19 @@ UpdateIssue UpdateIssueChecked UpdateIssueType
 
 **Issueops role operations** — `storage.<Role>.<Method>`, emitted when a caller
 goes through the guarded issueops surface instead of calling storage directly
-(39 spans):
+(43 spans):
 
 ```
-BatchCloser.CloseBatch BatchCreator.CreateBatch
+BatchApplier.ApplyBatch BatchCloser.CloseBatch BatchCreator.CreateBatch
 BlockingAnnotator.AnnotateBlocking Bootstrapper.Bootstrap Commenter.AddComment
 Counter.Count Counter.CountByGroup CycleDetector.DetectCycles Deleter.Delete
 DependencyEditor.AddDependencies DependencyEditor.RemoveDependency
-EdgeReader.ReadEdges InitVerifier.VerifyIdentity IssueClaimer.Claim
+EdgeReader.ReadEdges GraphCounter.CountEdges InitVerifier.VerifyIdentity IssueClaimer.Claim
 IssueOperations.Close IssueOperations.Create IssueOperations.Reopen
 IssueOperations.Update IssueReader.Get IssueReader.List IssueReader.Ready
 IssueRelations.Related Memories.Forget Memories.List Memories.Recall
-Memories.Remember Querier.Query ReadyClaimer.ClaimNext ReadyCounter.CountReady
+Memories.Remember MetadataCAS.CompareAndSetKey Querier.Query
+ReadyClaimer.ClaimNext ReadyCounter.CountReady Releaser.Release
 StatsReporter.AssigneeStats StatsReporter.Stats Sweeper.Sweep
 TreeWalker.WalkTree VersionReconciler.ReconcileVersion
 VersionReconciler.RecordedVersion WorkspaceConfig.GetSetting
@@ -394,6 +403,11 @@ One span per Anthropic API call. The `bd.ai.operation` attribute distinguishes t
 | `bd.db.conn_acquire_ms` | Histogram | — | ✅ Implemented |
 | `bd.db.pool_wait_count` | Counter | — | ✅ Implemented |
 | `bd.db.pool_wait_ms` | Histogram | — | ✅ Implemented |
+| `bd.db.ignored_tx_fresh_pool` | Counter | — | ✅ Implemented; dedicated-pool fallback for ignored transactions |
+| `bd.db.pool_open` | Observable gauge | — | ✅ Implemented; open connections |
+| `bd.db.pool_in_use` | Observable gauge | — | ✅ Implemented; connections in use |
+| `bd.db.pool_idle` | Observable gauge | — | ✅ Implemented; idle connections |
+| `bd.db.pool_max_open` | Observable gauge | — | ✅ Implemented; configured pool limit |
 | `bd.claim_verify_lost_total` | Counter | `op` (`claim` \| `unclaim` \| `guarded-update` \| `ready-claim`) | ✅ Implemented |
 | `bd.claim_verify_recovered_total` | Counter | `op`, `outcome` | 🔲 Registered, not recorded |
 | `bd.ai.input_tokens` | Counter | `bd.ai.model` | ✅ Implemented (compact only) |
@@ -421,7 +435,9 @@ Key variables: `BD_OTEL_ENABLED=true` (master switch) plus the standard SDK vars
 
 ## Appendix: Source Reference Audit
 
-Audited against **`main` @ `5eb7c25dd`**. All line numbers below refer to that commit.
+The inventory was re-reviewed against **`main` @ `e678b1c9c`**.
+The original line-number audit below refers to **`5eb7c25dd`**; use the named
+symbols to find the current locations. Added instruments are listed by symbol.
 
 Every metric name, span name, and attribute listed in this document is backed by a specific source location. This table exists to prevent documentation drift and to make re-verification straightforward after code changes.
 
@@ -447,6 +463,8 @@ Every metric name, span name, and attribute listed in this document is backed by
 | `bd.ai.input_tokens` | Counter | `haiku.go:117` — `m.Int64Counter("bd.ai.input_tokens")` |
 | `bd.ai.output_tokens` | Counter | `haiku.go:121` — `m.Int64Counter("bd.ai.output_tokens")` |
 | `bd.ai.request.duration` | Histogram | `haiku.go:125` — `m.Float64Histogram("bd.ai.request.duration")` |
+| `bd.db.ignored_tx_fresh_pool` | Counter | `store.go` instrument registration; `transaction.go` dedicated-pool fallback records it |
+| `bd.db.pool_open`, `bd.db.pool_in_use`, `bd.db.pool_idle`, `bd.db.pool_max_open` | Observable gauges | `DoltStore.registerPoolGauges` in `store.go`; callbacks read `sql.DB.Stats()` |
 
 ### Spans and attributes
 
