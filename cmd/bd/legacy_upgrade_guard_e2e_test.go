@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,12 @@ import (
 
 func TestLegacyUpgradeGuardRefusesBeforeMutatingHistoricalWorkspace(t *testing.T) {
 	bd := buildBDUnderTest(t)
+	// Invoke the repository guard through Bash explicitly, including on Windows
+	// runners where os/exec does not interpret a shell script's shebang.
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatalf("disposable fixture guard requires Bash (as does scripts/test.sh): %v", err)
+	}
 
 	layouts := []struct {
 		name       string
@@ -84,9 +91,18 @@ func TestLegacyUpgradeGuardRefusesBeforeMutatingHistoricalWorkspace(t *testing.T
 		{name: "doctor", args: []string{"doctor", "--json"}, wantOK: true, wantJSON: true},
 	}
 
+	// These cases run serially and share one accounting counter.
+	remainingCommands := len(layouts) * len(commands)
 	for _, layout := range layouts {
 		t.Run(layout.name, func(t *testing.T) {
 			repoDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(repoDir, ".beadshx-disposable-fixture"), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			guard := exec.Command(bash, "../../scripts/beadshx/assert-disposable-workspace.sh", repoDir)
+			if output, err := guard.CombinedOutput(); err != nil {
+				t.Fatalf("disposable workspace guard: %v\n%s", err, output)
+			}
 			initGitRepo(t, repoDir)
 			beadsDir := filepath.Join(repoDir, ".beads")
 			layout.setup(t, beadsDir)
@@ -97,19 +113,31 @@ func TestLegacyUpgradeGuardRefusesBeforeMutatingHistoricalWorkspace(t *testing.T
 			for _, tc := range commands {
 				t.Run(tc.name, func(t *testing.T) {
 					before := legacyUpgradeTreeDigest(t, beadsDir)
-					commandCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					deadline, _ := t.Deadline()
+					allowance, err := legacyGuardCommandAllowance(time.Now(), deadline, remainingCommands)
+					remainingCommands--
+					if err != nil {
+						t.Fatal(err)
+					}
+					commandCtx, cancel := context.WithTimeout(context.Background(), allowance)
+					defer cancel()
 					cmd := exec.CommandContext(commandCtx, bd, tc.args...)
 					cmd.Dir = repoDir
 					cmd.Env = append(os.Environ(), "BD_DISABLE_METRICS=1", "BEADS_DOLT_AUTO_START=0")
 					var stdout, stderr bytes.Buffer
 					cmd.Stdout = &stdout
 					cmd.Stderr = &stderr
-					err := cmd.Run()
+					started := time.Now()
+					err = cmd.Run()
 					commandContextErr := commandCtx.Err()
 					cancel()
 					output := stdout.String() + stderr.String()
+					// Observe source integrity even when the command times out or fails.
+					if after := legacyUpgradeTreeDigest(t, beadsDir); after != before {
+						t.Errorf("bd %s mutated legacy source: before=%s after=%s", strings.Join(tc.args, " "), before, after)
+					}
 					if commandContextErr != nil {
-						t.Fatalf("bd %s did not refuse before the command deadline: %v\n%s", strings.Join(tc.args, " "), commandContextErr, output)
+						t.Fatalf("bd %s exceeded its test allowance %s after %s: %v (process: %v)\n%s", strings.Join(tc.args, " "), allowance, time.Since(started), commandContextErr, err, output)
 					}
 					if (err == nil) != tc.wantOK {
 						t.Fatalf("bd %s error = %v, want success=%v\n%s", strings.Join(tc.args, " "), err, tc.wantOK, output)
@@ -133,12 +161,67 @@ func TestLegacyUpgradeGuardRefusesBeforeMutatingHistoricalWorkspace(t *testing.T
 							t.Fatalf("doctor advertised the SQLite bridge for %s", layout.name)
 						}
 					}
-					if after := legacyUpgradeTreeDigest(t, beadsDir); after != before {
-						t.Fatalf("bd %s mutated legacy source: before=%s after=%s", strings.Join(tc.args, " "), before, after)
-					}
 				})
 			}
 		})
+	}
+}
+
+// legacyGuardCommandAllowance divides the remaining package test budget among
+// the outstanding serial commands and one cleanup share. The invariant here is
+// refusal before mutation, not a five-second performance SLA: background I/O
+// scheduling can delay even a correct refusal. A hung child must still leave
+// budget for the other cases and the final source-integrity check.
+func legacyGuardCommandAllowance(now, deadline time.Time, remaining int) (time.Duration, error) {
+	if remaining < 1 {
+		return 0, fmt.Errorf("legacy guard has no remaining command cases")
+	}
+	if deadline.IsZero() {
+		// Preserve the existing backstop when -timeout=0 removes the test budget.
+		return 5 * time.Second, nil
+	}
+	allowance := deadline.Sub(now) / time.Duration(remaining+1)
+	if allowance <= 0 {
+		return 0, fmt.Errorf("legacy guard test budget exhausted before command start")
+	}
+	return allowance, nil
+}
+
+func TestLegacyGuardCommandAllowance(t *testing.T) {
+	now := time.Unix(0, 0)
+	// A deliberately slow runner may need six seconds per command. A 126s
+	// package budget admits all 20 commands plus cleanup without retaining the
+	// old five-second false-failure threshold.
+	allowance, err := legacyGuardCommandAllowance(now, now.Add(126*time.Second), 20)
+	if err != nil || allowance != 6*time.Second {
+		t.Fatalf("slow-runner allowance=%s, err=%v; want 6s", allowance, err)
+	}
+	// A one-minute test budget must retain one share for cleanup after each
+	// command spends its full share; later cases must not lose that reservation.
+	deadline := now.Add(time.Minute)
+	for remaining := 20; remaining > 0; remaining-- {
+		allowance, err := legacyGuardCommandAllowance(now, deadline, remaining)
+		if err != nil || allowance <= 0 {
+			t.Fatalf("remaining=%d: allowance=%s, err=%v", remaining, allowance, err)
+		}
+		if allowance*time.Duration(remaining+1) > deadline.Sub(now) {
+			t.Fatal("command allowances consume the cleanup share")
+		}
+		now = now.Add(allowance)
+	}
+	if !now.Before(deadline) {
+		t.Fatal("commands exhausted the cleanup budget")
+	}
+	for _, exhausted := range []time.Time{deadline, deadline.Add(time.Second)} {
+		if _, err := legacyGuardCommandAllowance(exhausted, deadline, 1); err == nil {
+			t.Fatal("expired budget admitted a new subprocess")
+		}
+	}
+	if allowance, err := legacyGuardCommandAllowance(now, time.Time{}, 20); err != nil || allowance != 5*time.Second {
+		t.Fatalf("unbounded runner fallback=%s, err=%v; want existing 5s backstop", allowance, err)
+	}
+	if _, err := legacyGuardCommandAllowance(now, deadline, 0); err == nil {
+		t.Fatal("empty command portfolio admitted a new subprocess")
 	}
 }
 
