@@ -162,6 +162,29 @@ def scan(root: Path, revision_range: str | None) -> list[str]:
             if has_private_value(git(root, ["var", identity])):
                 findings.append(f"{identity}: private identity; use approved public attribution")
 
+    if revision_range is not None and private_patterns:
+        # Inspect stored metadata, not the current Git configuration or mailmap.
+        # Include empty and merge commits: their identities can disclose private
+        # values even when the range has no file changes.
+        metadata = git(root, [
+            "log", "-z", "--format=%H%x00%an%x00%ae%x00%cn%x00%ce",
+            "--end-of-options", revision_range, "--",
+        ])
+        fields = metadata.split(b"\0")
+        if fields.pop() != b"" or len(fields) % 5:
+            raise ScanError("Git returned malformed commit metadata")
+        for index in range(0, len(fields), 5):
+            oid, author_name, author_email, committer_name, committer_email = fields[index:index + 5]
+            for role, name, email in [
+                ("AUTHOR", author_name, author_email),
+                ("COMMITTER", committer_name, committer_email),
+            ]:
+                if has_private_value(name) or has_private_value(email):
+                    findings.append(
+                        f"commit {oid.decode('ascii')}: {role}: private identity; "
+                        "use approved public attribution"
+                    )
+
     for path, old_oid, new_oid in changed_blobs(root, revision_range):
         old = blob(root, old_oid)
         new = blob(root, new_oid)

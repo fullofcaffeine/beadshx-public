@@ -223,5 +223,89 @@ class PrivacyGuards(unittest.TestCase):
                 self.assertNotIn(value, result.stdout + result.stderr)
 
 
+class CommitIdentityGuards(unittest.TestCase):
+    """Metadata-only contracts need Git, not the separate secret scanner."""
+
+    setUp = PrivacyGuards.setUp
+    git = PrivacyGuards.git
+    write = PrivacyGuards.write
+    baseline = PrivacyGuards.baseline
+    private_name = "Synthetic Private Display"
+
+    def policy(self):
+        self.write(".git/info/private-content-patterns.json",
+                   json.dumps({"patterns": [self.private_name]}))
+
+    def scan(self, revision_range=None, environment=None):
+        command = ["python3", str(ROOT / "scripts/beadshx/check_local_paths_staged.py"),
+                   "--repository", str(self.root)]
+        if revision_range:
+            command += ["--range", revision_range]
+        return subprocess.run(command, capture_output=True, text=True, env=environment)
+
+    def identity_environment(self, role):
+        environment = os.environ.copy()
+        for identity in ["AUTHOR", "COMMITTER"]:
+            environment["GIT_" + identity + "_NAME"] = (
+                self.private_name if role == identity else "Public fixture")
+            environment["GIT_" + identity + "_EMAIL"] = "fixture@users.noreply.github.com"
+        return environment
+
+    def assert_private_rejected(self, result, role):
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(role, result.stderr)
+        self.assertNotIn(self.private_name, result.stdout + result.stderr)
+
+    def test_staged_private_names_with_public_emails(self):
+        self.baseline()
+        self.policy()
+        for role in ["AUTHOR", "COMMITTER"]:
+            with self.subTest(role=role):
+                self.assert_private_rejected(self.scan(environment=self.identity_environment(role)), role)
+
+    def test_range_checks_actual_author_and_committer(self):
+        self.baseline()
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.policy()
+        for role in ["AUTHOR", "COMMITTER"]:
+            with self.subTest(role=role):
+                subprocess.run(["git", "-C", str(self.root), "commit", "--allow-empty",
+                                "-m", "metadata fixture"], check=True, capture_output=True,
+                               env=self.identity_environment(role))
+                head = self.git("rev-parse", "HEAD").decode().strip()
+                self.assert_private_rejected(self.scan(base + ".." + head), role)
+                base = head
+
+    def test_range_checks_merge_commit_without_file_changes(self):
+        self.baseline()
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("checkout", "--quiet", "-b", "side")
+        self.git("commit", "--quiet", "--allow-empty", "-m", "side")
+        self.git("checkout", "--quiet", "--detach", base)
+        self.policy()
+        subprocess.run(["git", "-C", str(self.root), "merge", "--no-ff", "side",
+                        "-m", "merge fixture"], check=True, capture_output=True,
+                       env=self.identity_environment("COMMITTER"))
+        self.assert_private_rejected(self.scan(base + "..HEAD"), "COMMITTER")
+
+    def test_empty_range_with_local_policy_passes(self):
+        self.baseline()
+        self.policy()
+        result = self.scan("HEAD..HEAD")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unrelated_identity_and_missing_local_policy_remain_allowed(self):
+        self.baseline()
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("commit", "--quiet", "--allow-empty", "-m", "contributor fixture")
+        self.policy()
+        self.assertEqual(self.scan(base + "..HEAD").returncode, 0)
+        (self.root / ".git/info/private-content-patterns.json").unlink()
+        subprocess.run(["git", "-C", str(self.root), "commit", "--allow-empty",
+                        "-m", "no local policy fixture"], check=True, capture_output=True,
+                       env=self.identity_environment("AUTHOR"))
+        self.assertEqual(self.scan(base + "..HEAD").returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
