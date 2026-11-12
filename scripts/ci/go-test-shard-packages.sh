@@ -40,7 +40,8 @@ GO_TEST_SHARD_TAGS="${GO_TEST_SHARD_TAGS:-$BEADS_BUILD_TAGS}"
 
 GO_TEST_SHARD_EXCLUDE_REGEX="${GO_TEST_SHARD_EXCLUDE_REGEX:-}"
 
-mapfile -t ALL_PACKAGES < <(
+# Capture discovery before publishing a shard; process substitution hides failures.
+DISCOVERED_PACKAGES="$(
     go list -tags="$GO_TEST_SHARD_TAGS" "$@" \
         | while IFS= read -r pkg; do
             if [[ -n "$GO_TEST_SHARD_EXCLUDE_REGEX" && "$pkg" =~ $GO_TEST_SHARD_EXCLUDE_REGEX ]]; then
@@ -49,12 +50,14 @@ mapfile -t ALL_PACKAGES < <(
             printf '%s\n' "$pkg"
         done \
         | sort -u
-)
+)"
 
-if ((${#ALL_PACKAGES[@]} == 0)); then
+if [[ -z "$DISCOVERED_PACKAGES" ]]; then
     echo "No Go packages matched: $*" >&2
     exit 1
 fi
+
+mapfile -t ALL_PACKAGES <<< "$DISCOVERED_PACKAGES"
 
 SELECTED_PACKAGES=()
 for pkg in "${ALL_PACKAGES[@]}"; do

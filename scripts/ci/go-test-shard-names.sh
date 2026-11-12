@@ -35,7 +35,8 @@ SHARD_INDEX=$((SHARD_NUMBER - 1))
 GO_TEST_SHARD_TAGS="${GO_TEST_SHARD_TAGS:-$BEADS_BUILD_TAGS}"
 GO_TEST_SHARD_EXCLUDE_TEST_REGEX="${GO_TEST_SHARD_EXCLUDE_TEST_REGEX:-}"
 
-mapfile -t ALL_TESTS < <(
+# Capture discovery before publishing a shard; process substitution hides failures.
+DISCOVERED_TESTS="$(
     GO_TEST_SHARD_TAGS="$GO_TEST_SHARD_TAGS" go run -tags=ci_tools ./scripts/ci/go-list-test-names "$PACKAGE" \
         | while IFS= read -r test_name; do
             if [[ -n "$GO_TEST_SHARD_EXCLUDE_TEST_REGEX" && "$test_name" =~ $GO_TEST_SHARD_EXCLUDE_TEST_REGEX ]]; then
@@ -44,12 +45,14 @@ mapfile -t ALL_TESTS < <(
             printf '%s\n' "$test_name"
         done \
         | sort -u
-)
+)"
 
-if ((${#ALL_TESTS[@]} == 0)); then
+if [[ -z "$DISCOVERED_TESTS" ]]; then
     echo "No top-level Go tests matched in package: $PACKAGE" >&2
     exit 1
 fi
+
+mapfile -t ALL_TESTS <<< "$DISCOVERED_TESTS"
 
 SELECTED_TESTS=()
 for test_name in "${ALL_TESTS[@]}"; do
