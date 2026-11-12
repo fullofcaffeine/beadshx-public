@@ -1,14 +1,22 @@
 # CI Cleanup Plan
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-11-11
 
 Freshness source: `engdocs/CI_TEST_SURFACE_AUDIT.md`, `.github/workflows/*.yml`,
 `.buildflags`, `.golangci.yml`, `scripts/ci/pr-lint.sh`, `Makefile`, package test
 manifests, and maintainer decision review.
 
-This document records the agreed target shape for CI cleanup. It is the policy
-and roadmap layer; the current inventory remains in
+This document records the target shape for CI cleanup and its historical
+measurements. It is the policy and roadmap layer; the inventory remains in
 [`CI_TEST_SURFACE_AUDIT.md`](CI_TEST_SURFACE_AUDIT.md).
+
+The current workflow differs from parts of that target. At `e678b1c9c`,
+`.github/workflows/pr.yml` also runs macOS tests, focused Windows tests, and
+cross-platform process checks. Its `Build Artifacts` job builds and checksums
+the Linux binary; policy and lint run in separate required jobs. Website jobs,
+the website wrapper, and the `ci-website` target are absent. Use the workflow
+files for the current job graph; the target tier table below does not claim
+that every proposed migration has landed.
 
 ## Goals
 
@@ -116,16 +124,12 @@ measured main lanes: Linux no-short integration, embedded, regression, coverage,
 macOS short, and Windows smoke. Main can tolerate more jobs than PRs, but should
 still avoid rebuilding the same Linux candidate binary in each consumer.
 
-Initial implementation on branch `ci/bd-am3.1-wrapper-commands` adds the
-`Build Artifacts` CI job. It runs `make ci-pr-policy`, `make ci-pr-lint`, builds
-`bd-linux-gms-pure`, writes `SHA256SUMS` and `build-manifest.txt`, then uploads
-the run-scoped `ci-build-artifacts` artifact. The first consumers are
-`PR Core (wrapper timing)`, `Test (ubuntu-latest)`, and
-`Test (storage domain + uow)`, all of which verify `SHA256SUMS`; the Linux test
-consumers pass the binary through `BEADS_TEST_BD_BINARY` for subprocess tests.
-The legacy cross-platform `Test` matrix and Windows smoke job are gated to
-push-to-main only, so PR and merge queue events do not run macOS, Windows, or
-coverage collection.
+The current `Build Artifacts` job builds `bd-linux-gms-pure`, writes
+`SHA256SUMS` and `build-manifest.txt`, then uploads the run-scoped
+`ci-build-artifacts` artifact. Policy and lint execute separately. PR core,
+storage domain+uow, and applicable package gates consume the Linux artifact
+and verify its checksum. Subprocess consumers receive the binary through
+`BEADS_TEST_BD_BINARY`. macOS and Windows checks build for their own platforms.
 
 ### `pr-core`
 
@@ -133,11 +137,12 @@ Initial wrapper behavior must preserve the current Linux PR command exactly:
 
 ```bash
 source ./.buildflags
-go test -race -short -skip '^TestEmbedded' ./...
+go test -p 4 -parallel 4 -race -short -skip '^TestEmbedded' ./...
 ```
 
-CI may wrap that command with `gotestsum` for logs and JUnit, but the underlying
-test contract must remain identical during the first migration.
+The wrapper isolates its test environment through `scripts/ci/lib/test-env.sh`.
+`GO_TEST_PKG_PARALLEL` and `GO_TEST_PARALLEL` can override the two defaults.
+CI may wrap the command with `gotestsum` for logs and JUnit.
 
 Additional rules:
 
@@ -155,7 +160,11 @@ Additional rules:
 - Unsupported `go install` guidance: `scripts/check-go-install-guidance.sh`.
 - Version consistency: `scripts/check-versions.sh`.
 - CLI flag freshness: `make check-docs` or the underlying doc flag script.
+- Reference-document review dates: `scripts/check-doc-freshness.sh`.
+- `testing.Short()` boundaries: `scripts/check-testing-short.sh`.
+- Frontend boundary checks for `internal/workapi`.
 - PR guard for `.beads/issues.jsonl` changes.
+- OpenAPI drift: `make api-check`.
 
 ### `pr-lint`
 
@@ -239,10 +248,9 @@ nightly workflow while the new workflow file is still branch-local. It measures
 one selected suite per dispatch so maintainers can control macOS, package, and
 integration cost.
 
-Until `.github/workflows/ci-measurements.yml` exists on `main`, dispatch it from
-the branch through the existing `Nightly Full Tests` workflow by selecting any
-suite other than `full-test`. After the measurement workflow is on `main`, it
-can be dispatched directly.
+`.github/workflows/ci-measurements.yml` now exists on `main` and supports direct
+manual dispatch. The branch-dispatch instructions below describe historical
+measurement runs.
 
 Measurement requirements:
 
@@ -284,8 +292,8 @@ Selectable measurement suites:
 - `cross-version-smoke`: one previous-release smoke sample, optionally pinned
   by workflow input.
 - `nix`: full `nix build .#default`.
-- `mcp-package`, `npm-package`, and `website`: package and documentation probes
-  for measurement. These are not promoted gates yet.
+- `mcp-package` and `npm-package`: package probes for measurement. Both also
+  have path-gated PR and release checks. The former website suite is absent.
 
 Measure at least:
 
@@ -610,11 +618,10 @@ reducing the remaining slow test bodies, not adding more count-based shards.
 Package checks should be reusable from PR risk jobs, measurement jobs, `main`,
 and release workflows.
 
-Initial package gate implementation on branch `ci/bd-am3.1-wrapper-commands`
-adds `scripts/ci/package-mcp.sh`, `scripts/ci/package-npm.sh`, and
-`scripts/ci/website.sh`, with Make aliases `ci-package-mcp`,
-`ci-package-npm`, and `ci-website`. CI uses `scripts/ci/detect-package-gates.sh`
-to run these jobs only when package, website, release, workflow, or wrapper
+The package gates are `scripts/ci/package-mcp.sh` and
+`scripts/ci/package-npm.sh`, with Make aliases `ci-package-mcp` and
+`ci-package-npm`. CI uses `scripts/ci/detect-package-gates.sh`
+to run these jobs only when package, release, workflow, or wrapper
 paths are relevant; otherwise each package gate reports success as not
 applicable. MCP and npm gates consume the `Build Artifacts` `bd-linux-gms-pure`
 binary through `BEADS_TEST_BD_BINARY`.
@@ -627,7 +634,14 @@ name, not the `beads` alias.
 Wrapper command sequence:
 
 ```bash
-go build -tags gms_pure_go -o /tmp/bd-mcp-test ./cmd/bd
+./scripts/ci/package-mcp.sh
+```
+
+The wrapper copies `BEADS_TEST_BD_BINARY` when supplied; otherwise it builds
+`./cmd/bd` with the repository build flags. It puts that binary in a temporary
+directory at the front of `PATH`, then runs:
+
+```bash
 cd integrations/beads-mcp
 uv sync --all-groups --locked
 uv run ruff check src/beads_mcp tests
@@ -662,23 +676,8 @@ That keeps the gate focused on the candidate binary copied into
 
 ### Website
 
-Classify `scripts/generate-llms-full.sh` as a docs/website check, not generic
-policy.
-
-Wrapper command sequence:
-
-```bash
-cd website
-npm ci
-npm run typecheck
-cd ..
-./scripts/generate-llms-full.sh
-cd website
-npm run build
-```
-
-Keep the internal link check in Actions through the existing Lychee workflow
-step. External link checking remains non-blocking.
+The earlier website gate is no longer present in this checkout. There is no
+`scripts/ci/website.sh`, `ci-website` target, or release website dependency.
 
 ## Mandatory `testing.Short()` Cleanup
 
@@ -719,9 +718,8 @@ checks pass.
 - Keep privileged automation isolated and audited. Do not broaden normal
   validation to `pull_request_target`.
 
-Initial release hardening on branch `ci/bd-am3.1-wrapper-commands` adds
-release-only MCP, npm, and website package gate jobs to `.github/workflows/release.yml`.
-GoReleaser now waits for all three gates before publishing GitHub release
+`.github/workflows/release.yml` has release-only MCP and npm package gates.
+GoReleaser waits for both gates before publishing GitHub release
 assets. PyPI publishing downloads the validated `beads-mcp` `dist/*` artifact
 from the MCP gate instead of rebuilding it in the publish job. npm publishing
 waits for the npm package gate and both Linux/Windows and macOS GitHub release
