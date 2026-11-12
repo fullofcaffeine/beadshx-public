@@ -1,8 +1,7 @@
 """Real integration tests for MCP server using fastmcp.Client."""
 
 import os
-import shutil
-import tempfile
+from pathlib import Path
 
 import pytest
 from fastmcp.client import Client
@@ -10,55 +9,19 @@ from fastmcp.client import Client
 from beads_mcp.server import mcp
 
 
-@pytest.fixture(scope="session")
-def bd_executable():
-    """Verify bd is available in PATH."""
-    bd_path = shutil.which("bd")
-    if not bd_path:
-        pytest.fail(
-            "bd executable not found in PATH. "
-            "Please install bd or add it to your PATH before running integration tests."
-        )
-    return bd_path
-
-
 @pytest.fixture
-async def temp_db(bd_executable):
-    """Create a temporary database file and initialize it - fully hermetic."""
-    # Create temp directory that will serve as the workspace root
-    temp_dir = tempfile.mkdtemp(prefix="beads_mcp_test_", dir="/tmp")
+def temp_db(initialized_workspace):
+    """Use the same marked database setup as the real CLI integration tests."""
+    return str(initialized_workspace / ".beads")
 
-    # Initialize database in this directory (creates .beads/ subdirectory)
-    import asyncio
 
-    env = os.environ.copy()
-    # Clear any existing BEADS_DIR/BEADS_DB to ensure clean state
-    env.pop("BEADS_DB", None)
-    env.pop("BEADS_DIR", None)
-
-    # Run bd init in the temp directory - it will create .beads/ subdirectory
-    process = await asyncio.create_subprocess_exec(
-        bd_executable,
-        "init",
-        "--prefix",
-        "test",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-        cwd=temp_dir,  # Run in temp dir - bd init creates .beads/ here
-    )
-    stdout, stderr = await process.communicate()
-
-    if process.returncode != 0:
-        pytest.fail(f"Failed to initialize test database: {stderr.decode()}")
-
-    # Return the .beads directory path (not the db file)
-    beads_dir = os.path.join(temp_dir, ".beads")
-
-    yield beads_dir
-
-    # Cleanup
-    shutil.rmtree(temp_dir, ignore_errors=True)
+def test_database_setup_skips_agent_files(temp_db):
+    """Preparing tool tests must not install unrelated agent configuration."""
+    workspace = Path(temp_db).parent
+    assert (workspace / ".beadshx-disposable-fixture").is_file()
+    assert (Path(temp_db) / "metadata.json").is_file()
+    for name in ("AGENTS.md", ".claude", ".codex", ".cursor"):
+        assert not (workspace / name).exists()
 
 
 @pytest.fixture
@@ -642,16 +605,12 @@ async def test_blocked_tool(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_context_init_action(bd_executable):
+async def test_context_init_action(temp_workspace):
     """Test context tool with init action.
 
     Note: This test validates that context(action='init') can be called successfully via MCP.
     Uses a fresh temp directory without an existing database.
     """
-    import os
-    import shutil
-    import tempfile
-
     from beads_mcp import tools
     from beads_mcp.server import mcp
 
@@ -662,12 +621,10 @@ async def test_context_init_action(bd_executable):
     os.environ.pop("BEADS_DB", None)
     os.environ.pop("BEADS_DIR", None)
 
-    # Create a fresh temp directory without any beads database
-    temp_dir = tempfile.mkdtemp(prefix="beads_init_test_")
     try:
         async with Client(mcp) as client:
             # First set context to the fresh directory
-            await client.call_tool("context", {"workspace_root": temp_dir})
+            await client.call_tool("context", {"workspace_root": str(temp_workspace)})
 
             # Call context tool with init action
             result = await client.call_tool("context", {"action": "init", "prefix": "test-init"})
@@ -678,7 +635,6 @@ async def test_context_init_action(bd_executable):
             assert "test-init" in output
     finally:
         tools._connection_pool.clear()
-        shutil.rmtree(temp_dir, ignore_errors=True)
         os.environ.pop("BEADS_CONTEXT_SET", None)
         os.environ.pop("BEADS_WORKING_DIR", None)
 

@@ -3,10 +3,92 @@
 This module provides safety checks to prevent test pollution in production databases (bd-2c5a).
 """
 
+import asyncio
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(scope="session")
+def bd_executable():
+    """Use the real bd executable selected by the package gate's PATH."""
+    bd_path = shutil.which("bd")
+    if not bd_path:
+        pytest.fail("bd executable not found in PATH. Install bd before running integration tests.")
+    return bd_path
+
+
+@pytest.fixture(scope="session")
+def bd_init_isolation_flags_supported(bd_executable):
+    """Skip integration tests when bd cannot suppress unrelated setup."""
+    result = subprocess.run([bd_executable, "init", "--help"], capture_output=True, text=True, check=False)
+    help_text = f"{result.stdout}\n{result.stderr}"
+    required_flags = ("--non-interactive", "--skip-agents", "--skip-hooks")
+    missing_flags = [flag for flag in required_flags if flag not in help_text]
+    if missing_flags:
+        pytest.skip("bd init lacks required test isolation flags: " + ", ".join(missing_flags))
+
+
+@pytest.fixture
+def temp_workspace(tmp_path: Path, monkeypatch, bd_executable) -> Path:
+    """Mark a disposable workspace and keep its database, home, and config local.
+
+    Like scripts/ci/lib/test-env.sh, this prevents inherited configuration from
+    redirecting a real integration command to a maintainer's database or home.
+    """
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / ".beadshx-disposable-fixture").touch()
+    for name in ("home", "xdg-config", "dolt-root"):
+        (tmp_path / name).mkdir()
+    git_config = tmp_path / "gitconfig"
+    git_config.touch()
+
+    for name in tuple(os.environ):
+        if name.startswith(("BEADS_", "BD_", "GIT_")) or name == "GT_ROOT":
+            monkeypatch.delenv(name)
+    for name, value in {
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
+        "DOLT_ROOT_PATH": str(tmp_path / "dolt-root"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": str(git_config),
+        "BEADS_TEST_MODE": "1",
+        "BEADS_TEST_IGNORE_REPO_CONFIG": "1",
+        "BD_NON_INTERACTIVE": "1",
+        "BD_DISABLE_METRICS": "1",
+        "BEADS_PATH": bd_executable,
+    }.items():
+        monkeypatch.setenv(name, value)
+    return workspace
+
+
+@pytest.fixture
+async def initialized_workspace(temp_workspace: Path, bd_executable, bd_init_isolation_flags_supported) -> Path:
+    """Initialize only a marked workspace, without hooks or agent setup."""
+    if not (temp_workspace / ".beadshx-disposable-fixture").is_file():
+        pytest.fail("Refusing to initialize an unmarked integration workspace")
+    process = await asyncio.create_subprocess_exec(
+        bd_executable,
+        "init",
+        "--prefix",
+        "test",
+        "--non-interactive",
+        "--skip-agents",
+        "--skip-hooks",
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=temp_workspace,
+    )
+    _stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        pytest.fail(f"Failed to initialize test database: {stderr.decode()}")
+    return temp_workspace
 
 
 def pytest_configure(config):

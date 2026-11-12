@@ -1,9 +1,8 @@
 """Real integration tests for BdClient using actual bd binary."""
 
 import os
-import shutil
-import subprocess
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -22,88 +21,47 @@ from beads_mcp.models import (
     ShowIssueParams,
     UpdateIssueParams,
 )
+from tests.conftest import initialized_workspace
 
 
-@pytest.fixture(scope="session")
-def bd_executable():
-    """Verify bd is available in PATH."""
-    bd_path = shutil.which("bd")
-    if not bd_path:
-        pytest.fail(
-            "bd executable not found in PATH. "
-            "Please install bd or add it to your PATH before running integration tests."
-        )
-    return bd_path
+def test_temp_workspace_is_disposable(monkeypatch, request, tmp_path: Path):
+    """Ambient database and Git routing must not escape the disposable fixture."""
+    monkeypatch.setenv("HOME", str(tmp_path / "ambient-home"))
+    monkeypatch.setenv("BEADS_DIR", str(tmp_path / "ambient-database"))
+    monkeypatch.setenv("BEADS_DOLT_SERVER_HOST", "ambient.invalid")
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "ambient-git"))
+    temp_workspace = request.getfixturevalue("temp_workspace")
+
+    assert (temp_workspace / ".beadshx-disposable-fixture").is_file()
+    test_home = Path(os.environ["HOME"]).resolve()
+    assert test_home.parent == temp_workspace.parent.resolve()
+    assert test_home != temp_workspace.resolve()
+    assert test_home.is_dir()
+    assert Path(os.environ["GIT_CONFIG_GLOBAL"]).read_text() == ""
+    assert Path(os.environ["DOLT_ROOT_PATH"]).parent == temp_workspace.parent
+    assert not any(name in os.environ for name in ("BEADS_DIR", "BEADS_DOLT_SERVER_HOST", "GIT_DIR"))
 
 
-@pytest.fixture(scope="session")
-def bd_init_isolation_flags_supported(bd_executable):
-    """Skip integration tests when bd lacks the init flags these tests require."""
-    result = subprocess.run(
-        [bd_executable, "init", "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    help_text = f"{result.stdout}\n{result.stderr}"
-    required_flags = ("--non-interactive", "--skip-agents", "--skip-hooks")
-    missing_flags = [flag for flag in required_flags if flag not in help_text]
-    if missing_flags:
-        pytest.skip(
-            "bd init does not support required test isolation flags: "
-            + ", ".join(missing_flags)
-            + ". Install a current bd from this repository before running integration tests."
-        )
-
-
-@pytest.fixture
-def temp_workspace(tmp_path: Path) -> Path:
-    """Create a per-test workspace isolated with its own BEADS_DIR."""
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    return workspace
+@pytest.mark.asyncio
+async def test_database_setup_rejects_unmarked_workspace(temp_workspace: Path, bd_executable):
+    """A missing safety marker must fail before any real subprocess starts."""
+    (temp_workspace / ".beadshx-disposable-fixture").unlink()
+    with patch("tests.conftest.asyncio.create_subprocess_exec", new_callable=AsyncMock) as start_process:
+        with pytest.raises(pytest.fail.Exception, match="unmarked integration workspace"):
+            # Call the fixture body directly to observe its refusal before setup.
+            await initialized_workspace.__wrapped__(temp_workspace, bd_executable, None)
+        start_process.assert_not_called()
 
 
 @pytest.fixture
-async def bd_client(bd_executable, temp_workspace, monkeypatch, bd_init_isolation_flags_supported):
+async def bd_client(bd_executable, initialized_workspace):
     """Create BdClient with a temporary Dolt workspace - fully hermetic."""
-    beads_dir = temp_workspace / ".beads"
-    monkeypatch.delenv("BEADS_DB", raising=False)
-    monkeypatch.delenv("BEADS_DIR", raising=False)
-    monkeypatch.delenv("BD_DB", raising=False)
-    monkeypatch.delenv("BEADS_WORKING_DIR", raising=False)
-
     client = BdClient(
         bd_path=bd_executable,
-        beads_dir=str(beads_dir),
+        beads_dir=str(initialized_workspace / ".beads"),
         beads_db="",
-        working_dir=str(temp_workspace),
+        working_dir=str(initialized_workspace),
     )
-
-    env = os.environ.copy()
-    env["BEADS_DIR"] = str(beads_dir)
-    env["BD_NON_INTERACTIVE"] = "1"
-
-    import asyncio
-
-    process = await asyncio.create_subprocess_exec(
-        bd_executable,
-        "init",
-        "--prefix",
-        "test",
-        "--non-interactive",
-        "--skip-agents",
-        "--skip-hooks",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-        cwd=temp_workspace,
-    )
-    _stdout, stderr = await process.communicate()
-
-    if process.returncode != 0:
-        pytest.fail(f"Failed to initialize test database: {stderr.decode()}")
-
     yield client
 
 
@@ -470,9 +428,7 @@ async def test_dependency_types(bd_client):
 
 
 @pytest.mark.asyncio
-async def test_init_creates_beads_directory(
-    bd_executable, tmp_path, monkeypatch, bd_init_isolation_flags_supported
-):
+async def test_init_creates_beads_directory(bd_executable, temp_workspace, bd_init_isolation_flags_supported):
     """Test that init creates .beads directory in current working directory.
 
     This is a critical test for the bug where init was using --db flag
@@ -481,12 +437,8 @@ async def test_init_creates_beads_directory(
     from beads_mcp.bd_client import BdClient
     from beads_mcp.models import InitParams
 
-    temp_path = tmp_path / "init-workspace"
-    temp_path.mkdir()
+    temp_path = temp_workspace
     beads_dir = temp_path / ".beads"
-    monkeypatch.setenv("BD_NON_INTERACTIVE", "1")
-    monkeypatch.delenv("BEADS_DIR", raising=False)
-    monkeypatch.delenv("BEADS_DB", raising=False)
 
     # Ensure .beads doesn't exist yet
     assert not beads_dir.exists()
