@@ -157,16 +157,23 @@ func testMainInner(m *testing.M) int {
 	_ = os.Setenv("BEADS_TEST_CIRCUIT_DIR", filepath.Join(tmp, "circuit"))
 	defer os.Unsetenv("BEADS_TEST_CIRCUIT_DIR")
 
-	// Clear BEADS_DIR to prevent tests from accidentally picking up the project's
-	// .beads directory via git repo detection when there's a redirect file.
-	// Each test that needs a .beads directory should set BEADS_DIR explicitly.
-	origBeadsDir := os.Getenv("BEADS_DIR")
-	os.Unsetenv("BEADS_DIR")
-	defer func() {
-		if origBeadsDir != "" {
-			os.Setenv("BEADS_DIR", origBeadsDir)
+	// Inherited workspace/database overrides can redirect subprocesses outside
+	// their disposable fixtures. Tests that exercise overrides set them explicitly
+	// after this shared startup boundary, including the legacy BD_DB alias.
+	for _, key := range []string{"BEADS_DIR", "BEADS_DB", "BD_DB"} {
+		original, present := os.LookupEnv(key)
+		if err := os.Unsetenv(key); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to isolate %s for tests: %v\n", key, err)
+			return 1
 		}
-	}()
+		defer func() {
+			if present {
+				_ = os.Setenv(key, original)
+			} else {
+				_ = os.Unsetenv(key)
+			}
+		}()
+	}
 
 	// Clear BD_BACKUP_ENABLED / BEADS_BACKUP_ENABLED (legacy alias) so tests
 	// asserting on backup.enabled's auto-detected default aren't overridden by

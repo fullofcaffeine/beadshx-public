@@ -1008,7 +1008,9 @@ func init() {
 	// fallback panics with "cannot find main module" — which is what six
 	// Main integration shards reported at cd25e0919. The helper never uses
 	// testBD, so skip the work entirely in that child.
-	if os.Getenv(worktreeRemoveHelperEnv) != "" {
+	// The environment-isolation observer also re-execs in a disposable cwd
+	// without invoking the CLI. Its actual TestMain must still run normally.
+	if os.Getenv(worktreeRemoveHelperEnv) != "" || os.Getenv(databaseLocationProbeEnv) == "1" {
 		return
 	}
 	// Prebuilt fast path (scripts/test.sh and CI export this), else build
