@@ -3,14 +3,15 @@ title: JSON Output Schema Contract
 description: The stable JSON output contract for bd --json commands, covering the schema_version envelope, per-command fields, and consumer guidelines.
 ---
 
-Last reviewed: 2026-08-07
+Last reviewed: 2026-11-11
 
 Freshness source: `cmd/bd/output.go`, `cmd/bd/errors.go`, and
 `cmd/bd/protocol/json_contract_test.go`.
 
-All `bd` commands that support `--json` output can wrap their response in
+Commands that use the shared JSON formatter can wrap their response in
 a uniform envelope by setting `BD_JSON_ENVELOPE=1`. This will become the
-default format in v2.0.
+default format in v2.0. Interchange streams such as `export` keep their own
+format, as described below.
 
 ## Migration Guide
 
@@ -22,7 +23,7 @@ export BD_JSON_ENVELOPE=1
 
 ### Envelope format (BD_JSON_ENVELOPE=1, default in v2.0)
 
-Every `--json` command wraps output as:
+The shared formatter wraps command output as:
 
 ```json
 {"schema_version": 1, "data": <original-payload>}
@@ -80,7 +81,7 @@ Additive changes (new optional fields) do NOT bump the version.
 
 ### Envelope mode (BD_JSON_ENVELOPE=1)
 
-All commands emit a uniform envelope:
+Commands that use the shared formatter emit a uniform envelope:
 
 ```json
 {
@@ -200,6 +201,10 @@ items, plus:
 - `revision` (number): guarded-write optimistic-concurrency token; always
   present, including a legacy `0`
 - `dependencies` (object[]): Full dependency records
+- `dependency_count`, `dependent_count`, `comment_count` (number): Always
+  present, including zero
+- `dependents` (object[]): Present only with `--include-dependents`;
+  the default response returns `dependent_count` only
 - `comments` (object[]): Comment thread — present only with `--include-comments`;
   the default response returns `comment_count` only (count-only, be-ijck6q)
 - `comments_omitted` (boolean, optional): `true` only when `comment_count` is
@@ -251,7 +256,8 @@ as a read-side legacy alias.
    higher than expected, log a warning but attempt to parse anyway
    (additive changes are backward-compatible).
 
-2. **For list commands**, parse the output as a JSON array directly.
+2. **For list commands**, parse the legacy output as a JSON array. In envelope
+   mode, parse the array inside `data`.
 
 3. **Ignore unknown fields**. New fields may be added without bumping
    the schema version.
