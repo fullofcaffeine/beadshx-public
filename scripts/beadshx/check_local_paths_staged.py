@@ -137,13 +137,12 @@ def outside_reference(root: Path, source_path: bytes, reference: bytes) -> bool:
         return True
 
 
-def scan(root: Path, revision_range: str | None) -> list[str]:
-    findings: list[str] = []
+def private_patterns(root: Path) -> list[bytes]:
+    """Share the same local-only policy across linked worktrees and scan modes."""
     common = Path(os.fsdecode(git(root, ["rev-parse", "--git-common-dir"]).strip()))
     if not common.is_absolute():
         common = root / common
     policy_path = common / "info/private-content-patterns.json"
-    private_patterns: list[bytes] = []
     if policy_path.exists():
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
         patterns = policy.get("patterns") if isinstance(policy, dict) else None
@@ -151,47 +150,123 @@ def scan(root: Path, revision_range: str | None) -> list[str]:
             not isinstance(value, str) or not value.strip() for value in patterns
         ):
             raise ScanError("invalid local private-content policy")
-        private_patterns = [value.casefold().encode("utf-8") for value in patterns]
+        return [value.casefold().encode("utf-8") for value in patterns]
+    return []
 
-    def has_private_value(value: bytes) -> bool:
-        folded = value.decode("utf-8", "replace").casefold().encode("utf-8")
-        return any(pattern in folded for pattern in private_patterns)
 
-    if revision_range is None and private_patterns:
+def has_private_value(value: bytes, patterns: list[bytes]) -> bool:
+    folded = value.decode("utf-8", "replace").casefold().encode("utf-8")
+    return any(pattern in folded for pattern in patterns)
+
+
+def commit_identities(root: Path, revision: str, patterns: list[bytes]) -> list[str]:
+    """Read stored identities, including empty commits and all merge parents."""
+    if git(root, ["rev-parse", "--is-shallow-repository"]).strip() == b"true":
+        return ["commit metadata: incomplete history; fetch full history before scanning a range"]
+    metadata = git(root, [
+        "--no-replace-objects", "log", "-z", "--encoding=UTF-8",
+        "--format=%H%x00%an%x00%ae%x00%cn%x00%ce",
+        "--end-of-options", revision, "--",
+    ])
+    fields = metadata.split(b"\0")
+    if fields.pop() != b"" or len(fields) % 5:
+        raise ScanError("Git returned malformed commit metadata")
+    findings: list[str] = []
+    for index in range(0, len(fields), 5):
+        oid, author_name, author_email, committer_name, committer_email = fields[index:index + 5]
+        for role, name, email in [
+            ("AUTHOR", author_name, author_email),
+            ("COMMITTER", committer_name, committer_email),
+        ]:
+            if has_private_value(name, patterns) or has_private_value(email, patterns):
+                findings.append(
+                    f"commit {oid.decode('ascii')}: {role}: private identity; "
+                    "use approved public attribution"
+                )
+    return findings
+
+
+def tag_target(root: Path, oid: str, patterns: list[bytes], oid_pattern: re.Pattern[bytes]) \
+        -> tuple[str | None, list[str]]:
+    """Check every annotated tagger before peeling to a commit, tree, or blob."""
+    findings: list[str] = []
+    while True:
+        kind = git(root, ["--no-replace-objects", "cat-file", "-t", oid]).strip()
+        if kind == b"commit":
+            return oid, findings
+        if kind in {b"tree", b"blob"}:
+            return None, findings
+        if kind != b"tag":
+            raise ScanError("unsupported outgoing object type")
+        headers = git(root, ["--no-replace-objects", "cat-file", "tag", oid]).split(b"\n\n", 1)[0]
+        targets = [line[7:] for line in headers.splitlines() if line.startswith(b"object ")]
+        taggers = [line[7:] for line in headers.splitlines() if line.startswith(b"tagger ")]
+        if len(targets) != 1 or not oid_pattern.fullmatch(targets[0]) or len(taggers) > 1:
+            raise ScanError("malformed outgoing tag")
+        if any(has_private_value(tagger, patterns) for tagger in taggers):
+            findings.append(f"tag {oid}: TAGGER: private identity; use approved public attribution")
+        oid = targets[0].decode("ascii")
+
+
+def outgoing_identities(root: Path, ref_input: bytes) -> list[str]:
+    """Check Git's actual push tuples without trusting HEAD or other remotes."""
+    oid_size = len(git(root, ["hash-object", "--stdin"], input_bytes=b"").strip())
+    oid_pattern = re.compile(rb"[0-9a-f]{" + str(oid_size).encode("ascii") + rb"}")
+    updates: list[tuple[str, str]] = []
+    # The shell hook's existing capture/replay yields one blank line for no refs.
+    for line in ref_input.splitlines() if ref_input.strip() else []:
+        fields = line.split()
+        if len(fields) != 4:
+            raise ScanError("malformed pre-push ref tuple")
+        local_ref, local_oid, remote_ref, remote_oid = fields
+        if not oid_pattern.fullmatch(local_oid) or not oid_pattern.fullmatch(remote_oid) \
+                or not remote_ref.startswith(b"refs/"):
+            raise ScanError("malformed pre-push object or ref")
+        if any(ref.startswith(b"refs/dolt/") or ref.split(b"/")[-1] == b"__dolt_remote_info__"
+               for ref in (local_ref, remote_ref)):
+            return ["outgoing ref: private Beads data must not be pushed from the code repository"]
+        if ZERO_OID.fullmatch(local_oid):
+            if local_ref != b"(delete)" or ZERO_OID.fullmatch(remote_oid):
+                raise ScanError("malformed deleted ref")
+            continue
+        if local_oid != remote_oid:
+            updates.append((local_oid.decode("ascii"), remote_oid.decode("ascii")))
+    if not updates:
+        return []
+    patterns = private_patterns(root)
+    if not patterns:
+        return []
+    findings: list[str] = []
+    for local_oid, remote_oid in updates:
+        local_commit, tag_findings = tag_target(root, local_oid, patterns, oid_pattern)
+        findings.extend(tag_findings)
+        if local_commit is None:
+            continue
+        remote_commit = None
+        if not ZERO_OID.fullmatch(remote_oid.encode("ascii")):
+            remote_commit, _ = tag_target(root, remote_oid, [], oid_pattern)
+        # An all-zero old OID gives no proven remote baseline. Scan only this
+        # new ref's ancestry; unrelated local refs must never exempt a commit.
+        revision = remote_commit + ".." + local_commit if remote_commit else local_commit
+        findings.extend(commit_identities(root, revision, patterns))
+    return list(dict.fromkeys(findings))
+
+
+def scan(root: Path, revision_range: str | None) -> list[str]:
+    findings: list[str] = []
+    patterns = private_patterns(root)
+    if revision_range is None and patterns:
         for identity in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"]:
-            if has_private_value(git(root, ["var", identity])):
+            if has_private_value(git(root, ["var", identity]), patterns):
                 findings.append(f"{identity}: private identity; use approved public attribution")
 
-    if revision_range is not None and private_patterns:
-        if git(root, ["rev-parse", "--is-shallow-repository"]).strip() == b"true":
-            return ["commit metadata: incomplete history; fetch full history before scanning a range"]
-        # Inspect stored metadata, not the current Git configuration or mailmap.
-        # Replacement refs must not substitute metadata for outgoing objects.
-        # Include empty and merge commits: their identities can disclose private
-        # values even when the range has no file changes.
-        metadata = git(root, [
-            "--no-replace-objects", "log", "-z", "--format=%H%x00%an%x00%ae%x00%cn%x00%ce",
-            "--end-of-options", revision_range, "--",
-        ])
-        fields = metadata.split(b"\0")
-        if fields.pop() != b"" or len(fields) % 5:
-            raise ScanError("Git returned malformed commit metadata")
-        for index in range(0, len(fields), 5):
-            oid, author_name, author_email, committer_name, committer_email = fields[index:index + 5]
-            for role, name, email in [
-                ("AUTHOR", author_name, author_email),
-                ("COMMITTER", committer_name, committer_email),
-            ]:
-                if has_private_value(name) or has_private_value(email):
-                    findings.append(
-                        f"commit {oid.decode('ascii')}: {role}: private identity; "
-                        "use approved public attribution"
-                    )
+    if revision_range is not None and patterns:
+        findings.extend(commit_identities(root, revision_range, patterns))
 
     for path, old_oid, new_oid in changed_blobs(root, revision_range):
         old = blob(root, old_oid)
         new = blob(root, new_oid)
-        display_path = "[private filename]" if has_private_value(path) else repr(os.fsdecode(path))
+        display_path = "[private filename]" if has_private_value(path, patterns) else repr(os.fsdecode(path))
         parts = Path(os.fsdecode(path)).parts
         if (
             (".beads" in parts and not (
@@ -204,7 +279,7 @@ def scan(root: Path, revision_range: str | None) -> list[str]:
             or path == b"issues.jsonl"
         ):
             findings.append(f"{display_path}: private runtime or credential file")
-        if has_private_value(path) or has_private_value(new):
+        if has_private_value(path, patterns) or has_private_value(new, patterns):
             findings.append(f"{display_path}: matches local private-content policy (value redacted)")
         for line_number, line in added_lines(old, new):
             for match in UNIX_PATH.finditer(line):
@@ -223,11 +298,14 @@ def scan(root: Path, revision_range: str | None) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True, type=Path)
-    parser.add_argument("--range", dest="revision_range")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--range", dest="revision_range")
+    mode.add_argument("--pre-push", action="store_true")
     arguments = parser.parse_args()
     root = arguments.repository.resolve(strict=True)
     try:
-        findings = scan(root, arguments.revision_range)
+        findings = outgoing_identities(root, sys.stdin.buffer.read()) if arguments.pre_push \
+            else scan(root, arguments.revision_range)
     except (OSError, ValueError, ScanError, subprocess.SubprocessError):
         print("privacy guard could not complete; check Git and the local privacy policy", file=sys.stderr)
         return 2

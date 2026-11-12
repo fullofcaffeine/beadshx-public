@@ -57,6 +57,31 @@ The file is shared by linked worktrees and is never committed or uploaded.
 A malformed policy blocks the commit; an absent policy leaves only the shared
 path and runtime-file checks active. CI cannot check local-only private values.
 
+The pre-push hook uses this same local policy to check stored author and
+committer identities for every outgoing ref. It checks annotated tagger
+identities, including nested tags. It reads the actual object IDs supplied by
+Git, so pushing another branch or several refs does not borrow the checkout's
+`HEAD` identity. Deletions and unchanged refs add no commit identities.
+
+For an existing destination, the check walks commits reachable from the new
+object but not its previous remote object. For a new destination, it checks
+that ref's complete ancestry. This conservative check can reject an older
+private identity and take longer on a large history. It never excludes commits
+merely because another local ref or remote contains them. With an active policy,
+incomplete history or an unreadable object blocks the push; fetch the required
+history before retrying. Local replacement objects cannot substitute identities.
+
+The hook rejects private Beads data refs before calling Beads. Its release-tag
+version check and Beads stdin, arguments, and timeout handling stay in place.
+A privacy check failure blocks the push even when Beads would skip its own
+hook. Without a local policy, personal identity checks remain unavailable.
+File-content checks remain the staged and CI scans described above.
+Tag messages, commit messages, hosting-service text, and identities created by
+a hosting-service merge require separate review. Use a reviewed local merge
+and verify its stored metadata before publication; then verify the published
+default branch. Local checks do not override branch protection or grant merge
+permission.
+
 Hooks can be bypassed by a user and cannot recognize every kind of personal
 information. Before making a private repository public, separately audit all
 reachable refs, author metadata, PR text, logs, and artifacts. Do not push
