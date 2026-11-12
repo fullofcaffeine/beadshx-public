@@ -340,5 +340,311 @@ class CommitIdentityGuards(unittest.TestCase):
         self.assertEqual(self.scan(base + "..HEAD").returncode, 0)
 
 
+class PrePushPrivacyGuards(unittest.TestCase):
+    """Use the real hook and an owned bare remote, never a database or network."""
+
+    private_name = "Synthetic Private Display"
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="beadshx-push-privacy-")
+        self.addCleanup(self.temporary.cleanup)
+        self.fixture = Path(self.temporary.name)
+        self.root = self.fixture / "checkout"
+        self.root.mkdir()
+        (self.fixture / ".beadshx-disposable-fixture").touch()
+        self.environment = os.environ.copy()
+        for key in list(self.environment):
+            if key.startswith(("GIT_", "BEADS_", "BD_")):
+                self.environment.pop(key)
+        home = self.fixture / "home"
+        home.mkdir()
+        self.environment.update(HOME=str(home), GIT_CONFIG_NOSYSTEM="1",
+                                GIT_CONFIG_GLOBAL=os.devnull)
+        self.receipt = self.fixture / "bd-receipt.json"
+        binary = self.fixture / "bin"
+        binary.mkdir()
+        recorder = binary / "bd"
+        recorder.write_text("#!/usr/bin/env python3\nimport json, os, sys\n"
+                            "with open(os.environ['HOOK_BD_RECEIPT'], 'w') as output:\n"
+                            "    json.dump({'args': sys.argv[1:], 'stdin': sys.stdin.read(), "
+                            "'hook': os.environ.get('BD_GIT_HOOK')}, output)\n"
+                            "sys.exit(int(os.environ.get('HOOK_BD_EXIT', '0')))\n")
+        recorder.chmod(0o755)
+        self.environment.update(PATH=str(binary) + os.pathsep + os.environ["PATH"],
+                                HOOK_BD_RECEIPT=str(self.receipt))
+        self.git("init", "--quiet")
+        self.git("config", "user.name", "Public fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("config", "core.hooksPath", ".githooks")
+        for relative in [".githooks/pre-push", "scripts/beadshx/check-local-paths-staged.sh",
+                         "scripts/beadshx/check_local_paths_staged.py"]:
+            destination = self.root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, destination)
+        self.write("README.md", "safe\n")
+        self.git("add", ".")
+        self.commit("baseline")
+        self.remote = self.fixture / "remote.git"
+        subprocess.run(["git", "init", "--quiet", "--bare", str(self.remote)],
+                       check=True, env=self.environment, capture_output=True)
+        self.git("remote", "add", "origin", str(self.remote))
+
+    def git(self, *args, environment=None):
+        return subprocess.check_output(["git", "-C", str(self.root), *args],
+                                       env=environment or self.environment,
+                                       stderr=subprocess.PIPE)
+
+    def write(self, name, text):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def commit(self, message, role=None):
+        environment = self.environment.copy()
+        if role:
+            environment["GIT_" + role + "_NAME"] = self.private_name
+            environment["GIT_" + role + "_EMAIL"] = "fixture@users.noreply.github.com"
+        # Deliberately construct invalid inputs without running unrelated hooks.
+        self.git("-c", "core.hooksPath=" + os.devnull, "commit", "--quiet",
+                 "--allow-empty", "-m", message, environment=environment)
+        return self.git("rev-parse", "HEAD").decode().strip()
+
+    def policy(self):
+        common = Path(self.git("rev-parse", "--git-common-dir").decode().strip())
+        if not common.is_absolute():
+            common = self.root / common
+        path = common / "info/private-content-patterns.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"patterns": [self.private_name]}))
+
+    def push(self, *refs):
+        return subprocess.run(["git", "-C", str(self.root), "push", "origin", *refs],
+                              env=self.environment, capture_output=True, text=True)
+
+    def remote_oid(self, ref):
+        return subprocess.check_output(["git", "--git-dir", str(self.remote),
+                                        "rev-parse", "--verify", ref],
+                                       env=self.environment, stderr=subprocess.PIPE).decode().strip()
+
+    def assert_remote_missing(self, ref):
+        result = subprocess.run(["git", "--git-dir", str(self.remote),
+                                 "rev-parse", "--verify", ref], env=self.environment,
+                                capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+
+    def hook(self, tuples):
+        return subprocess.run([str(self.root / ".githooks/pre-push"), "origin", str(self.remote)],
+                              cwd=self.root, env=self.environment, input=tuples,
+                              capture_output=True, text=True)
+
+    def assert_blocked(self, result):
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.receipt.exists())
+        self.assertNotIn(self.private_name, result.stdout + result.stderr)
+
+    def test_real_push_rejects_unsafe_stored_author_before_beads(self):
+        baseline = self.git("rev-parse", "HEAD").decode().strip()
+        result = self.push("HEAD:refs/heads/main")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.policy()
+        self.commit("unsafe metadata", "AUTHOR")
+        self.receipt.unlink()
+        result = self.push("HEAD:refs/heads/main")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.remote_oid("refs/heads/main"), baseline)
+        self.assertFalse(self.receipt.exists())
+        self.assertNotIn(self.private_name, result.stdout + result.stderr)
+
+    def test_safe_contributor_and_missing_policy_keep_normal_push_behavior(self):
+        self.policy()
+        self.git("config", "user.name", "External contributor")
+        self.git("config", "user.email", "contributor@example.invalid")
+        head = self.commit("safe contributor")
+        result = self.push("HEAD:refs/heads/main")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = json.loads(self.receipt.read_text())
+        self.assertEqual(receipt, {"args": ["hooks", "run", "pre-push", "origin", str(self.remote)],
+                                   "stdin": "HEAD " + head + " refs/heads/main " + "0" * len(head) + "\n",
+                                   "hook": "1"})
+        (self.root / ".git/info/private-content-patterns.json").unlink()
+        head = self.commit("missing local policy", "COMMITTER")
+        result = self.push("HEAD:refs/heads/main")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.remote_oid("refs/heads/main"), head)
+
+    def test_multiple_refs_include_unsafe_non_head_and_publish_nothing(self):
+        baseline = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("checkout", "--quiet", "-b", "unsafe")
+        self.commit("unsafe side", "COMMITTER")
+        self.git("checkout", "--quiet", "--detach", baseline)
+        self.commit("safe head")
+        self.policy()
+        result = self.push("HEAD:refs/heads/safe", "unsafe:refs/heads/unsafe")
+        self.assert_blocked(result)
+        self.assert_remote_missing("refs/heads/safe")
+        self.assert_remote_missing("refs/heads/unsafe")
+
+    def test_new_branch_walks_ancestors_without_exempting_private_backup_refs(self):
+        baseline = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("checkout", "--quiet", "-b", "unsafe")
+        unsafe = self.commit("unsafe ancestor", "AUTHOR")
+        self.commit("safe tip")
+        self.git("update-ref", "refs/remotes/private-backup/saved", unsafe)
+        self.git("checkout", "--quiet", "--detach", baseline)
+        self.policy()
+        result = self.push("HEAD:refs/heads/safe")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.receipt.unlink()
+        result = self.push("unsafe:refs/heads/new")
+        self.assert_blocked(result)
+        self.assert_remote_missing("refs/heads/new")
+
+    def test_forced_replacement_scans_new_side_of_diverged_history(self):
+        baseline = self.git("rev-parse", "HEAD").decode().strip()
+        old = self.commit("old public tip")
+        self.assertEqual(self.push("HEAD:refs/heads/main").returncode, 0)
+        self.git("checkout", "--quiet", "--detach", baseline)
+        self.commit("unsafe divergent tip", "COMMITTER")
+        self.policy()
+        self.receipt.unlink()
+        result = self.push("+HEAD:refs/heads/main")
+        self.assert_blocked(result)
+        self.assertEqual(self.remote_oid("refs/heads/main"), old)
+
+    def test_deletion_empty_and_unchanged_updates_preserve_beads_input(self):
+        head = self.commit("already public without policy", "AUTHOR")
+        self.assertEqual(self.push("HEAD:refs/heads/main").returncode, 0)
+        self.policy()
+        result = self.push(":refs/heads/main")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_remote_missing("refs/heads/main")
+        receipt = json.loads(self.receipt.read_text())
+        self.assertEqual(receipt["stdin"], "(delete) " + "0" * len(head) +
+                         " refs/heads/main " + head + "\n")
+        for tuples in ["", "HEAD " + head + " refs/heads/main " + head + "\n"]:
+            with self.subTest(tuples=tuples):
+                result = self.hook(tuples)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(self.receipt.read_text())["stdin"], tuples or "\n")
+
+    def test_annotated_and_nested_tags_check_taggers_without_rewriting(self):
+        self.policy()
+        environment = self.environment.copy()
+        environment.update(GIT_COMMITTER_NAME=self.private_name,
+                           GIT_COMMITTER_EMAIL="fixture@users.noreply.github.com")
+        self.git("tag", "-a", "inner", "-m", "fixture", environment=environment)
+        self.git("tag", "-a", "outer", "inner", "-m", "nested fixture")
+        for tag in ["inner", "outer"]:
+            with self.subTest(tag=tag):
+                before = self.git("rev-parse", tag)
+                result = self.push("refs/tags/" + tag)
+                self.assert_blocked(result)
+                self.assertIn("TAGGER", result.stderr)
+                self.assertEqual(self.git("rev-parse", tag), before)
+                self.assert_remote_missing("refs/tags/" + tag)
+        self.git("tag", "lightweight")
+        self.git("tag", "-a", "safe-annotated", "-m", "safe fixture")
+        result = self.push("refs/tags/lightweight", "refs/tags/safe-annotated")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_local_merge_metadata_is_checked_even_without_file_changes(self):
+        baseline = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("checkout", "--quiet", "-b", "side")
+        self.commit("side")
+        self.git("checkout", "--quiet", "--detach", baseline)
+        environment = self.environment.copy()
+        environment["GIT_COMMITTER_NAME"] = self.private_name
+        self.git("merge", "--no-ff", "side", "-m", "merge fixture", environment=environment)
+        self.policy()
+        result = self.push("HEAD:refs/heads/main")
+        self.assert_blocked(result)
+        self.assertIn("COMMITTER", result.stderr)
+        self.assert_remote_missing("refs/heads/main")
+
+    def test_worktree_uses_its_code_and_shared_private_policy(self):
+        self.policy()
+        worktree = self.fixture / "linked"
+        self.git("worktree", "add", "--quiet", "--detach", str(worktree), "HEAD")
+        self.root = worktree
+        self.assertTrue((self.root / ".git").is_file())
+        self.commit("linked unsafe author", "AUTHOR")
+        result = self.push("HEAD:refs/heads/main")
+        self.assert_blocked(result)
+        self.assert_remote_missing("refs/heads/main")
+
+    def test_pre_push_replacement_ref_cannot_hide_unsafe_stored_identity(self):
+        baseline = self.git("rev-parse", "HEAD").decode().strip()
+        unsafe = self.commit("unsafe raw metadata", "AUTHOR")
+        self.git("checkout", "--quiet", "--detach", baseline)
+        replacement = self.commit("safe replacement")
+        self.git("replace", unsafe, replacement)
+        self.policy()
+        result = self.push(unsafe + ":refs/heads/main")
+        self.assert_blocked(result)
+        self.assertIn(unsafe, result.stderr)
+        self.assertIn("AUTHOR", result.stderr)
+        self.assert_remote_missing("refs/heads/main")
+
+    def test_malformed_input_missing_objects_and_policy_fail_closed(self):
+        self.policy()
+        head = self.git("rev-parse", "HEAD").decode().strip()
+        zero = "0" * len(head)
+        for tuples in ["unexpected fields\n", "HEAD invalid refs/heads/main " + zero + "\n",
+                       "HEAD " + "1" * len(head) + " refs/heads/main " + zero + "\n",
+                       "HEAD " + head + " refs/heads/main " + "1" * len(head) + "\n"]:
+            with self.subTest(tuples=tuples):
+                self.assert_blocked(self.hook(tuples))
+        (self.root / ".git/info/private-content-patterns.json").write_text('{"patterns": [""]}')
+        self.assert_blocked(self.push("HEAD:refs/heads/main"))
+        self.assert_remote_missing("refs/heads/main")
+
+    def test_private_data_refs_never_reach_beads_or_disposable_remote(self):
+        for destination in ["refs/dolt/data", "refs/heads/__dolt_remote_info__"]:
+            with self.subTest(destination=destination):
+                self.assert_blocked(self.push("HEAD:" + destination))
+                self.assert_remote_missing(destination)
+        head = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("update-ref", "refs/dolt/data", head)
+        self.assert_blocked(self.push("refs/dolt/data:refs/heads/disguised"))
+        self.assert_remote_missing("refs/heads/disguised")
+
+    def test_release_check_still_blocks_before_beads_and_preserves_stdin(self):
+        self.policy()
+        helper = self.root / "scripts/check-versions.sh"
+        helper.write_text("#!/bin/sh\necho release-fixture-checked >&2\nexit 7\n")
+        helper.chmod(0o755)
+        self.git("tag", "v0.0.0")
+        result = self.push("refs/tags/v0.0.0")
+        self.assert_blocked(result)
+        self.assertIn("release-fixture-checked", result.stderr)
+        self.assert_remote_missing("refs/tags/v0.0.0")
+        helper.write_text("#!/bin/sh\nexit 0\n")
+        result = self.push("refs/tags/v0.0.0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(self.receipt.read_text())["stdin"].startswith("refs/tags/v0.0.0 "))
+
+    def test_beads_exit_and_timeout_contracts_are_unchanged(self):
+        self.policy()
+        timeout = self.fixture / "bin/timeout"
+        timeout.write_text("#!/bin/sh\nif [ \"$1\" = --version ]; then\n"
+                           "  echo 'timeout (GNU coreutils) fixture'; exit 0\nfi\n"
+                           "printf '%s\\n' \"$2\" > \"$HOOK_TIMEOUT_RECEIPT\"\n"
+                           "shift; shift\n\"$@\"\n")
+        timeout.chmod(0o755)
+        timeout_receipt = self.fixture / "timeout-seconds"
+        self.environment.update(BEADS_HOOK_TIMEOUT="17", HOOK_TIMEOUT_RECEIPT=str(timeout_receipt))
+        for status in [37, 3, 124]:
+            with self.subTest(status=status):
+                self.commit("beads status fixture")
+                self.environment["HOOK_BD_EXIT"] = str(status)
+                result = self.push("HEAD:refs/heads/main")
+                self.assertEqual(result.returncode == 0, status in {3, 124}, result.stderr)
+                self.assertEqual(timeout_receipt.read_text(), "17\n")
+                self.assertEqual(json.loads(self.receipt.read_text())["args"],
+                                 ["hooks", "run", "pre-push", "origin", str(self.remote)])
+                if status == 37:
+                    self.assert_remote_missing("refs/heads/main")
+
+
 if __name__ == "__main__":
     unittest.main()
