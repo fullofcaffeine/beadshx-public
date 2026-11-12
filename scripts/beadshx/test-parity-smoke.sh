@@ -6,14 +6,21 @@ oracle="${1:-$repository_root/build/bin/bd-upstream}"
 candidate="${2:-$repository_root/build/bin/bdhx}"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-parity-smoke.XXXXXX")"
 cleanup() {
+	local status=$?
 	while IFS= read -r pid_file; do
 		watch_pid="$(cat "$pid_file")"
 		kill -TERM "$watch_pid" 2>/dev/null || true
 	done < <(find "$test_root" -name '*.watch.pid' -type f)
+	if [[ "$status" -ne 0 ]]; then
+		printf 'parity failed (exit %s); disposable evidence retained: %s\n' "$status" "$test_root" >&2
+		return "$status"
+	fi
 	find "$test_root" -mindepth 1 -delete
 	rmdir "$test_root"
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 if [[ ! -x "$oracle" ]]; then
 	printf 'upstream oracle is missing: %s\n' "$oracle" >&2
@@ -42,8 +49,11 @@ if [[ "$candidate_identity" != "$expected_candidate" ]]; then
 	exit 1
 fi
 
+no_workspace_case_count=0
 compare_no_workspace() {
 	local name="$1"
+	no_workspace_case_count=$((no_workspace_case_count + 1))
+	printf 'parity [%ss]: START no-workspace/%s\n' "$SECONDS" "$name"
 	shift
 	local case_root="$test_root/$name"
 	local oracle_root="$case_root/oracle"
@@ -114,6 +124,7 @@ compare_no_workspace() {
 		printf '%s candidate command persisted files in an empty workspace\n' "$name" >&2
 		return 1
 	fi
+	printf 'parity [%ss]: PASS no-workspace/%s\n' "$SECONDS" "$name"
 }
 
 compare_no_workspace where where
@@ -171,7 +182,8 @@ fingerprint_tree() {
 	(
 		cd "$root"
 		find . -mindepth 1 -print | LC_ALL=C sort
-		find . -type f -exec shasum -a 256 {} \; | LC_ALL=C sort
+		# Batch file arguments while preserving the same sorted per-file digests.
+		find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort
 	) | shasum -a 256 | awk '{print $1}'
 }
 
@@ -195,7 +207,7 @@ fingerprint_task_state_tree() {
 			! -path '*/.beads/dolt.gate.lock' \
 			! -path '*/.beads/.local_version' \
 			! -name 'nbs_manifest_*' \
-			-exec shasum -a 256 {} \; | LC_ALL=C sort
+			-exec shasum -a 256 {} + | LC_ALL=C sort
 	) | shasum -a 256 | awk '{print $1}'
 }
 
@@ -231,6 +243,7 @@ copy_fixture_tree() {
 compare_store_failure() {
 	local scenario="$1"
 	local case_name="$2"
+	printf 'parity [%ss]: START store-failure/%s/%s\n' "$SECONDS" "$scenario" "$case_name"
 	shift 2
 	local case_root="$test_root/$scenario-$case_name"
 	local oracle_root="$case_root/oracle"
@@ -313,15 +326,16 @@ compare_store_failure() {
 	if [[ "$oracle_before" != "$oracle_after" ]]; then
 		printf '%s/%s upstream command changed its fixture\n' "$scenario" "$case_name" >&2
 		find "$oracle_root" -mindepth 1 -print | LC_ALL=C sort >&2
-		find "$oracle_root" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >&2
+		find "$oracle_root" -type f -exec shasum -a 256 {} + | LC_ALL=C sort >&2
 		return 1
 	fi
 	if [[ "$candidate_before" != "$candidate_after" ]]; then
 		printf '%s/%s candidate command changed its fixture\n' "$scenario" "$case_name" >&2
 		find "$candidate_root" -mindepth 1 -print | LC_ALL=C sort >&2
-		find "$candidate_root" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >&2
+		find "$candidate_root" -type f -exec shasum -a 256 {} + | LC_ALL=C sort >&2
 		return 1
 	fi
+	printf 'parity [%ss]: PASS store-failure/%s/%s\n' "$SECONDS" "$scenario" "$case_name"
 }
 
 for command in info ping status; do
@@ -333,6 +347,7 @@ compare_store_failure missing-embedded info-whats-new-global info --whats-new --
 compare_store_failure unavailable-server info info
 
 real_database_seed="$test_root/real-database-seed"
+printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
 mkdir -p "$real_database_seed/home" "$real_database_seed/config" "$real_database_seed/work"
 touch "$real_database_seed/work/.beadshx-disposable-fixture"
 "$repository_root/scripts/beadshx/assert-disposable-workspace.sh" "$real_database_seed/work" >/dev/null
@@ -437,9 +452,11 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config=""
 real_database_extra_import=""
 real_database_case_count=0
+printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
 compare_real_database() {
 	local name="$1"
+	printf 'parity [%ss]: START database/%s\n' "$SECONDS" "$name"
 	local comparison="$2"
 	shift 2
 	real_database_case_count=$((real_database_case_count + 1))
@@ -568,6 +585,7 @@ compare_real_database() {
 		return 2
 		;;
 	esac
+	printf 'parity [%ss]: PASS database/%s\n' "$SECONDS" "$name"
 }
 
 compare_real_database_config() {
@@ -920,6 +938,7 @@ normalize_watch_stderr() {
 
 compare_watch_refresh() {
 	local name="$1"
+	printf 'parity [%ss]: START watch/%s\n' "$SECONDS" "$name"
 	local mutation="$2"
 	shift 2
 	watch_case_count=$((watch_case_count + 1))
@@ -1033,6 +1052,7 @@ compare_watch_refresh() {
 		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
 		return 1
 	fi
+	printf 'parity [%ss]: PASS watch/%s\n' "$SECONDS" "$name"
 }
 
 compare_watch_refresh show update show "$real_database_content_id" --watch
@@ -1043,6 +1063,7 @@ json_deprecation='NOTE: bd --json output format will change in v2.0. Set BD_JSON
 
 run_json_stderr_terminal() {
 	local name="$1"
+	printf 'parity [%ss]: START terminal/%s\n' "$SECONDS" "$name"
 	local binary="$2"
 	local envelope="$3"
 	local output="$test_root/$name.terminal"
@@ -1109,6 +1130,7 @@ for implementation in oracle candidate; do
 			"$implementation" "$note_count" >&2
 		exit 1
 	fi
+	printf 'parity [%ss]: PASS terminal/%s-json-legacy\n' "$SECONDS" "$implementation"
 
 	run_json_stderr_terminal "$implementation-json-envelope" "$binary" 1
 	if tr -d '\r' <"$test_root/$implementation-json-envelope.terminal" | \
@@ -1117,12 +1139,13 @@ for implementation in oracle candidate; do
 			"$implementation" >&2
 		exit 1
 	fi
+	printf 'parity [%ss]: PASS terminal/%s-json-envelope\n' "$SECONDS" "$implementation"
 done
 
 printf 'oracle: %s\n' "$oracle_identity"
 printf 'candidate: %s\n' "$candidate_identity"
 printf 'parity identity smoke: PASS\n'
-printf 'no-workspace differential: PASS (42 command forms)\n'
+printf 'no-workspace differential: PASS (%s command forms)\n' "$no_workspace_case_count"
 printf 'store-failure differentials: PASS (7 cases)\n'
 printf 'real-database differentials: PASS (%s cases; ping timings normalized)\n' "$real_database_case_count"
 printf 'watch differentials: PASS (%s cases; poll change, refresh error, and signal lifecycle)\n' "$watch_case_count"

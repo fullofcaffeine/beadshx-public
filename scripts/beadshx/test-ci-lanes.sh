@@ -45,7 +45,7 @@ fi
 
 for parity_result in \
     'parity identity smoke: PASS' \
-	'no-workspace differential: PASS (42 command forms)' \
+	'no-workspace differential: PASS (%s command forms)' \
     'store-failure differentials: PASS (7 cases)' \
 	'real-database differentials: PASS (%s cases; ping timings normalized)' \
 	'watch differentials: PASS (%s cases; poll change, refresh error, and signal lifecycle)' \
