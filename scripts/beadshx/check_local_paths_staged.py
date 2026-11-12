@@ -163,11 +163,14 @@ def scan(root: Path, revision_range: str | None) -> list[str]:
                 findings.append(f"{identity}: private identity; use approved public attribution")
 
     if revision_range is not None and private_patterns:
+        if git(root, ["rev-parse", "--is-shallow-repository"]).strip() == b"true":
+            return ["commit metadata: incomplete history; fetch full history before scanning a range"]
         # Inspect stored metadata, not the current Git configuration or mailmap.
+        # Replacement refs must not substitute metadata for outgoing objects.
         # Include empty and merge commits: their identities can disclose private
         # values even when the range has no file changes.
         metadata = git(root, [
-            "log", "-z", "--format=%H%x00%an%x00%ae%x00%cn%x00%ce",
+            "--no-replace-objects", "log", "-z", "--format=%H%x00%an%x00%ae%x00%cn%x00%ce",
             "--end-of-options", revision_range, "--",
         ])
         fields = metadata.split(b"\0")

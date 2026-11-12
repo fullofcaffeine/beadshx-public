@@ -288,6 +288,39 @@ class CommitIdentityGuards(unittest.TestCase):
                        env=self.identity_environment("COMMITTER"))
         self.assert_private_rejected(self.scan(base + "..HEAD"), "COMMITTER")
 
+    def test_replacement_ref_cannot_hide_stored_private_identity(self):
+        self.baseline()
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.policy()
+        subprocess.run(["git", "-C", str(self.root), "commit", "--allow-empty",
+                        "-m", "private metadata fixture"], check=True, capture_output=True,
+                       env=self.identity_environment("AUTHOR"))
+        private_commit = self.git("rev-parse", "HEAD").decode().strip()
+        tree = self.git("rev-parse", "HEAD^{tree}").decode().strip()
+        replacement = self.git("commit-tree", tree, "-p", base,
+                               "-m", "safe replacement fixture").decode().strip()
+        self.git("replace", private_commit, replacement)
+        self.assert_private_rejected(self.scan(base + "..HEAD"), "AUTHOR")
+
+    def test_shallow_range_fails_closed_only_with_local_policy(self):
+        self.baseline()
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.policy()
+        subprocess.run(["git", "-C", str(self.root), "commit", "--allow-empty",
+                        "-m", "private ancestor fixture"], check=True, capture_output=True,
+                       env=self.identity_environment("AUTHOR"))
+        self.git("commit", "--quiet", "--allow-empty", "-m", "safe tip fixture")
+        head = self.git("rev-parse", "HEAD").decode().strip()
+        self.assert_private_rejected(self.scan(base + "..HEAD"), "AUTHOR")
+        self.write(".git/shallow", head + "\n")
+        result = self.scan(base + "..HEAD")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("incomplete history", result.stderr)
+        self.assertNotIn(self.private_name, result.stdout + result.stderr)
+        self.assertNotIn(base, result.stderr)
+        (self.root / ".git/info/private-content-patterns.json").unlink()
+        self.assertEqual(self.scan(base + "..HEAD").returncode, 0)
+
     def test_empty_range_with_local_policy_passes(self):
         self.baseline()
         self.policy()
