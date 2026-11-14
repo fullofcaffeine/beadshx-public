@@ -19,7 +19,7 @@ buildGoModule {
   # proxyVendor avoids vendor/modules.txt consistency checks when the vendored
   # tree lags go.mod/go.sum.
   proxyVendor = true;
-  vendorHash = "sha256-bUyKVTYmKq+VcCGZqjglKIYApvBbY6zzqvY7lb1j2KI=";
+  vendorHash = "sha256-C8xBbTKPWR+FbgV4GPLlJD61oZ6SMnwhcDxM8wmoX+U=";
 
   # The overlay supplies the security-patched compiler from the toolchain lock.
   # Do not lower go.mod to accommodate an older compiler.
