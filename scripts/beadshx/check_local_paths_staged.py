@@ -159,15 +159,19 @@ def has_private_value(value: bytes, patterns: list[bytes]) -> bool:
     return any(pattern in folded for pattern in patterns)
 
 
-def commit_identities(root: Path, revision: str, patterns: list[bytes]) -> list[str]:
-    """Read stored identities, including empty commits and all merge parents."""
+def commit_identities(root: Path, revisions: list[str], patterns: list[bytes]) -> list[str]:
+    """Read stored identities, including empty commits and all merge parents.
+
+    Revisions travel on standard input, so a long list of published exclusions
+    cannot exceed the command-line limit or be read as an option.
+    """
     if git(root, ["rev-parse", "--is-shallow-repository"]).strip() == b"true":
         return ["commit metadata: incomplete history; fetch full history before scanning a range"]
     metadata = git(root, [
         "--no-replace-objects", "log", "-z", "--encoding=UTF-8",
         "--format=%H%x00%an%x00%ae%x00%cn%x00%ce",
-        "--end-of-options", revision, "--",
-    ])
+        "--stdin", "--",
+    ], input_bytes="".join(revision + "\n" for revision in revisions).encode("ascii"))
     fields = metadata.split(b"\0")
     if fields.pop() != b"" or len(fields) % 5:
         raise ScanError("Git returned malformed commit metadata")
@@ -208,8 +212,38 @@ def tag_target(root: Path, oid: str, patterns: list[bytes], oid_pattern: re.Patt
         oid = targets[0].decode("ascii")
 
 
-def outgoing_identities(root: Path, ref_input: bytes) -> list[str]:
-    """Check Git's actual push tuples without trusting HEAD or other remotes."""
+def published_commits(root: Path, destination: str, oid_pattern: re.Pattern[bytes]) -> list[str]:
+    """List local commits that the push destination itself already advertises.
+
+    Commits that the destination already has are already public there, so a
+    push cannot newly expose them. Only the destination's own answer counts:
+    local refs, including remote-tracking refs, never exempt a commit. If the
+    destination cannot be read, the push fails closed.
+    """
+    if not destination or destination.startswith("-"):
+        raise ScanError("invalid push destination")
+    advertised = git(root, ["ls-remote", destination])
+    oids: list[bytes] = []
+    for line in advertised.splitlines():
+        fields = line.split(b"\t")
+        if len(fields) != 2 or not oid_pattern.fullmatch(fields[0]):
+            raise ScanError("malformed destination ref advertisement")
+        oids.append(fields[0])
+    if not oids:
+        return []
+    # A peeled tag line (`ref^{}`) names its commit, so commits alone suffice.
+    kinds = git(root, ["--no-replace-objects", "cat-file", "--batch-check=%(objectname) %(objecttype)"],
+                input_bytes=b"\n".join(dict.fromkeys(oids)) + b"\n")
+    commits: list[str] = []
+    for line in kinds.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[1] == b"commit" and oid_pattern.fullmatch(fields[0]):
+            commits.append(fields[0].decode("ascii"))
+    return commits
+
+
+def outgoing_identities(root: Path, ref_input: bytes, destination: str) -> list[str]:
+    """Check Git's actual push tuples without trusting HEAD or local refs."""
     oid_size = len(git(root, ["hash-object", "--stdin"], input_bytes=b"").strip())
     oid_pattern = re.compile(rb"[0-9a-f]{" + str(oid_size).encode("ascii") + rb"}")
     updates: list[tuple[str, str]] = []
@@ -236,19 +270,21 @@ def outgoing_identities(root: Path, ref_input: bytes) -> list[str]:
     patterns = private_patterns(root)
     if not patterns:
         return []
+    published = published_commits(root, destination, oid_pattern)
     findings: list[str] = []
     for local_oid, remote_oid in updates:
         local_commit, tag_findings = tag_target(root, local_oid, patterns, oid_pattern)
         findings.extend(tag_findings)
         if local_commit is None:
             continue
-        remote_commit = None
+        exclusions = list(published)
         if not ZERO_OID.fullmatch(remote_oid.encode("ascii")):
             remote_commit, _ = tag_target(root, remote_oid, [], oid_pattern)
-        # An all-zero old OID gives no proven remote baseline. Scan only this
-        # new ref's ancestry; unrelated local refs must never exempt a commit.
-        revision = remote_commit + ".." + local_commit if remote_commit else local_commit
-        findings.extend(commit_identities(root, revision, patterns))
+            if remote_commit:
+                exclusions.append(remote_commit)
+        # Scan only what the destination does not already have.
+        revisions = [local_commit, *("^" + commit for commit in exclusions)]
+        findings.extend(commit_identities(root, revisions, patterns))
     return list(dict.fromkeys(findings))
 
 
@@ -261,7 +297,7 @@ def scan(root: Path, revision_range: str | None) -> list[str]:
                 findings.append(f"{identity}: private identity; use approved public attribution")
 
     if revision_range is not None and patterns:
-        findings.extend(commit_identities(root, revision_range, patterns))
+        findings.extend(commit_identities(root, [revision_range], patterns))
 
     for path, old_oid, new_oid in changed_blobs(root, revision_range):
         old = blob(root, old_oid)
@@ -300,12 +336,13 @@ def main() -> int:
     parser.add_argument("--repository", required=True, type=Path)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--range", dest="revision_range")
-    mode.add_argument("--pre-push", action="store_true")
+    mode.add_argument("--pre-push", metavar="DESTINATION", dest="push_destination",
+                      help="check push tuples on stdin against this push destination URL")
     arguments = parser.parse_args()
     root = arguments.repository.resolve(strict=True)
     try:
-        findings = outgoing_identities(root, sys.stdin.buffer.read()) if arguments.pre_push \
-            else scan(root, arguments.revision_range)
+        findings = outgoing_identities(root, sys.stdin.buffer.read(), arguments.push_destination) \
+            if arguments.push_destination is not None else scan(root, arguments.revision_range)
     except (OSError, ValueError, ScanError, subprocess.SubprocessError):
         print("privacy guard could not complete; check Git and the local privacy policy", file=sys.stderr)
         return 2
