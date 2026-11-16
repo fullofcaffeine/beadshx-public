@@ -16,8 +16,10 @@ set -euo pipefail
 push_refs="$(cat)"
 
 repo_root="$(git rev-parse --show-toplevel)"
+# Git passes the remote name and the push destination URL. The guard asks that
+# destination which commits it already has and checks only the others.
 printf '%s\n' "$push_refs" | \
-    "$repo_root/scripts/beadshx/check-local-paths-staged.sh" --pre-push
+    "$repo_root/scripts/beadshx/check-local-paths-staged.sh" --pre-push "${2:-}"
 
 pushing_version_tag=0
 while read -r local_ref _local_sha _remote_ref _remote_sha; do

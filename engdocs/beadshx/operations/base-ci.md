@@ -63,13 +63,17 @@ identities, including nested tags. It reads the actual object IDs supplied by
 Git, so pushing another branch or several refs does not borrow the checkout's
 `HEAD` identity. Deletions and unchanged refs add no commit identities.
 
-For an existing destination, the check walks commits reachable from the new
-object but not its previous remote object. For a new destination, it checks
-that ref's complete ancestry. This conservative check can reject an older
-private identity and take longer on a large history. It never excludes commits
-merely because another local ref or remote contains them. With an active policy,
-incomplete history or an unreadable object blocks the push; fetch the required
-history before retrying. Local replacement objects cannot substitute identities.
+The check walks only commits that the push destination does not already have.
+Before it scans, the hook asks the destination for its current refs with
+`git ls-remote`. It then excludes every local commit reachable from a ref that
+the destination advertises, and the previous object of an updated ref. A push
+cannot newly expose a commit that the destination already serves, so older
+published history does not block new work. Only the destination's own answer
+counts: other local refs, remote-tracking refs, and other remotes never exempt
+a commit. If the destination cannot be read, the push is blocked. With an
+active policy, incomplete history or an unreadable object also blocks the push;
+fetch the required history before retrying. Local replacement objects cannot
+substitute identities.
 
 The hook rejects private Beads data refs before calling Beads. Its release-tag
 version check and Beads stdin, arguments, and timeout handling stay in place.

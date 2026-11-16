@@ -499,6 +499,31 @@ class PrePushPrivacyGuards(unittest.TestCase):
         self.assert_blocked(result)
         self.assert_remote_missing("refs/heads/new")
 
+    def test_new_branch_skips_history_the_destination_already_has(self):
+        self.commit("already public without policy", "AUTHOR")
+        self.assertEqual(self.push("HEAD:refs/heads/main").returncode, 0)
+        self.policy()
+        self.commit("safe follow-up")
+        self.receipt.unlink()
+        result = self.push("HEAD:refs/heads/feature")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.receipt.unlink()
+        self.commit("new unsafe follow-up", "COMMITTER")
+        result = self.push("HEAD:refs/heads/second-feature")
+        self.assert_blocked(result)
+        self.assert_remote_missing("refs/heads/second-feature")
+
+    def test_unreadable_destination_blocks_push(self):
+        self.policy()
+        head = self.commit("safe tip")
+        zero = "0" * len(head)
+        missing = self.fixture / "missing.git"
+        result = subprocess.run([str(self.root / ".githooks/pre-push"), "origin", str(missing)],
+                                cwd=self.root, env=self.environment,
+                                input="HEAD " + head + " refs/heads/main " + zero + "\n",
+                                capture_output=True, text=True)
+        self.assert_blocked(result)
+
     def test_forced_replacement_scans_new_side_of_diverged_history(self):
         baseline = self.git("rev-parse", "HEAD").decode().strip()
         old = self.commit("old public tip")
