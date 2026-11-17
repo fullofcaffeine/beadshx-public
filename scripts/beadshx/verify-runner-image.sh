@@ -7,18 +7,27 @@ actual="${ImageVersion:-missing}"
 
 # Hosted image rollouts overlap. Admit only enumerated, independently reviewed
 # immutable manifests; native tool versions remain checked by both callers.
+# Tools that differ between admitted images, such as Git, are locked per image.
 if ! jq -e --arg actual "$actual" '
-    .schemaVersion == 2 and
+    .schemaVersion == 3 and
     (.linuxCi.images as $images |
         ($images | type == "array" and length > 0) and
         all($images[];
             (.version | test("^[0-9]{8}\\.[0-9]+\\.[0-9]+$")) and
             (.manifest | test("^https://github.com/actions/runner-images/blob/[0-9a-f]{40}/images/ubuntu/Ubuntu2404-Readme\\.md$")) and
-            (.reviewedAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))) and
+            (.reviewedAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) and
+            (.git | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) and
         ([$images[].version] | length == (unique | length)) and
         any($images[]; .version == $actual))
 ' "$locks" >/dev/null; then
     printf 'runner-image is not admitted with reviewed immutable provenance: %s\n' "$actual" >&2
     exit 1
+fi
+
+# Callers read the admitted image's own Git version through this script, so the
+# version check cannot drift from the admission rule.
+if [[ "${1:-}" == "--print-git" ]]; then
+    jq -er --arg actual "$actual" '.linuxCi.images[] | select(.version == $actual) | .git' "$locks"
+    exit 0
 fi
 printf 'runner-image: %s\n' "$actual"
