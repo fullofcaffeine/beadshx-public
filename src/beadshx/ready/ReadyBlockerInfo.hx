@@ -5,5 +5,5 @@ typedef ReadyBlockerInfo = {
 	final id:String;
 	final title:String;
 	final status:String;
-	final priority:Int;
+	final priority:beadshx.store.JsonInteger;
 }

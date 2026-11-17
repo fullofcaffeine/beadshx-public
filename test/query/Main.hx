@@ -18,7 +18,7 @@ import beadshx.query.QueryTimePort.QueryTimeInput;
 import beadshx.query.QueryTimePort.QueryTimeOutcome;
 import beadshx.store.IssueQueryRow;
 import beadshx.store.JsonInteger;
-import beadshx.store.JsonValue;
+import beadshx.store.StoredMetadata;
 import beadshx.store.OptionalInt;
 import beadshx.store.OptionalQueryInstant;
 import beadshx.store.QueryInstant;
@@ -42,8 +42,27 @@ class Main {
 		predicateContracts();
 		filterContracts();
 		pageContracts();
+		widePriorityContracts();
 		metadataContracts();
 		Sys.println("query Haxe contracts: PASS");
+	}
+
+	static function widePriorityContracts():Void {
+		final maximum = switch JsonInteger.parse("9223372036854775807") {
+			case Success(value): value;
+			case Failure(message): throw message;
+		};
+		final minimum = switch JsonInteger.parse("-9223372036854775808") {
+			case Success(value): value;
+			case Failure(message): throw message;
+		};
+		final high = row("high", "High", "open", maximum, [], "{}");
+		final low = row("low", "Low", "open", minimum, [], "{}");
+		// workapi display sorting uses numeric comparison, unlike storage merge subtraction.
+		final ordered = QueryPage.finish([high, low], page(0, 0, "priority", false), false);
+		equal([for (entry in ordered.rows) entry.item.id].join(","), "low,high");
+		isFalse(QueryFilter.matches(exactFilter("priority<=1"), high), "wide positive priority filter");
+		isTrue(QueryFilter.matches(exactFilter("priority<=1"), low), "wide negative priority filter");
 	}
 
 	static function filterContracts():Void {
@@ -92,6 +111,8 @@ class Main {
 		isTrue(QueryPredicate.matches(test(MetadataTest("score", "7")), issue), "numeric metadata");
 		isTrue(QueryPredicate.matches(test(MetadataTest("owner", "Alice")), issue), "string metadata");
 		isTrue(QueryPredicate.matches(test(HasMetadataKeyTest("present")), issue), "null metadata presence");
+		isTrue(QueryPredicate.matches(test(MetadataTest("present", "")), issue), "null metadata compares as empty string");
+		isFalse(QueryPredicate.matches(test(MetadataTest("present", "null")), issue), "null metadata is not literal null text");
 		isTrue(QueryPredicate.matches(test(FlagTest(PinnedFlag, Equal, true)), issue), "typed flag");
 
 		final target = instant("100", 5, 2026, 8, 24);
@@ -116,12 +137,24 @@ class Main {
 	}
 
 	static function metadataContracts():Void {
-		final metadata = JsonValue.fromValidatedNative('{"text":"a\\nvalue","number":1.50,"object":{"x":1},"absent":null}');
+		final metadata = StoredMetadata.fromSql('{"text":"a\\nvalue","number":1.50,"object":{"x":1},"absent":null}');
 		isTrue(metadata.hasTopLevelKey("absent"), "metadata null key is present");
 		isFalse(metadata.hasTopLevelKey("missing"), "missing metadata key");
+		isTrue(metadata.topLevelQueryEquals("absent", ""), "null value compares as empty string");
+		isFalse(metadata.topLevelQueryEquals("absent", "null"), "null value is not the string null");
+		final strings = StoredMetadata.fromSql('{"empty":"","literal":"null"}');
+		isTrue(strings.topLevelQueryEquals("empty", ""), "empty string control");
+		isTrue(strings.topLevelQueryEquals("literal", "null"), "literal null string control");
+		isFalse(strings.topLevelQueryEquals("literal", ""), "literal null string is not empty");
 		isTrue(metadata.topLevelQueryEquals("text", "a\nvalue"), "decoded metadata string");
 		isTrue(metadata.topLevelQueryEquals("number", "1.50"), "raw metadata number");
 		isTrue(metadata.topLevelQueryEquals("object", '{"x":1}'), "raw metadata object");
+		for (raw in ["{", " ", "[]", "null", '"text"']) {
+			final retained = StoredMetadata.fromSql(raw);
+			isFalse(retained.hasTopLevelKey("present"), "malformed/non-object metadata has no queried key");
+			isFalse(retained.topLevelQueryEquals("present", ""), "malformed/non-object metadata cannot match a field");
+			equal(retained.wireValue(), raw);
+		}
 	}
 
 	static inline function test(value:QueryPredicateTest):QueryPredicateExpression {
@@ -177,7 +210,7 @@ class Main {
 		};
 	}
 
-	static function row(id:String, title:String, status:String, priority:Int, labels:Array<String>, metadata:String):IssueQueryRow {
+	static function row(id:String, title:String, status:String, priority:JsonInteger, labels:Array<String>, metadata:String):IssueQueryRow {
 		return {
 			item: {
 				id: id,
@@ -192,7 +225,7 @@ class Main {
 				issueType: "bug",
 				assignee: "Alice",
 				owner: "Owner",
-				estimatedMinutes: IntAbsent,
+				estimatedMinutes: beadshx.store.OptionalIssueInteger.IntegerAbsent,
 				createdAt: "2026-08-24T00:00:00Z",
 				createdBy: "tester",
 				updatedAt: "2026-08-24T00:00:00Z",
@@ -202,9 +235,9 @@ class Main {
 				closedBySession: "",
 				dueAt: "",
 				deferUntil: "",
-				externalRef: "",
+				externalRef: null,
 				sourceSystem: "",
-				metadata: JsonValue.fromValidatedNative(metadata),
+				metadata: StoredMetadata.fromSql(metadata),
 				wispType: "",
 				moleculeType: "",
 				longFields: emptyLongFields(),
@@ -241,7 +274,7 @@ class Main {
 			leaseGrantedNode: "",
 			compactionLevel: 0,
 			compactedAt: "",
-			compactedAtCommit: "",
+			compactedAtCommit: null,
 			originalSize: 0,
 			sender: "",
 			ephemeral: false,

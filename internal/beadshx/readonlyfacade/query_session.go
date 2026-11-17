@@ -212,11 +212,7 @@ func (s *QuerySession) ReadIssueDependents(id string) (*IssueDependencyRows, err
 	if err != nil {
 		return nil, err
 	}
-	projected, err := projectIssueDependencies(details.Dependents)
-	if err != nil {
-		return nil, err
-	}
-	return &IssueDependencyRows{items: projected}, nil
+	return &IssueDependencyRows{items: projectIssueDependencies(details.Dependents)}, nil
 }
 
 // FindAssignedIssue returns the first store-ordered issue for an actor and status.

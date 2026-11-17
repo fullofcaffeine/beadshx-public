@@ -1,5 +1,6 @@
 package beadshx.cli;
 
+import beadshx.cli.DepListSelection.selectDepList;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.IssueListMetadataFilter;
@@ -1302,7 +1303,8 @@ final class Parser {
 				showIncludeComments: showIncludeComments,
 				showBriefDependencies: showBriefDependencies,
 				showIds: showIds,
-				depType: depTypeRaw
+				depType: depTypeRaw,
+				depListSelection: selectDepList(depDirection, showIds.length)
 			});
 		}
 		var helpCommand = false;
@@ -1321,8 +1323,6 @@ final class Parser {
 			} else if (!showHelp && positional.length < 3) {
 				return UsageFailure("requires at least 1 arg(s), only received 0");
 			}
-			if (depDirection == "up")
-				return OutputFailure(output, "dep list --direction=up is not yet available in the read-only profile");
 			showIds = positional.length > 2 ? positional.slice(2) : [];
 		}
 		if (name == "children" && !showHelp) {
@@ -1594,7 +1594,8 @@ final class Parser {
 				showIncludeComments: showIncludeComments,
 				showBriefDependencies: showBriefDependencies,
 				showIds: showIds,
-				depType: depTypeRaw
+				depType: depTypeRaw,
+				depListSelection: selectDepList(depDirection, showIds.length)
 			});
 		}
 		if (name == "version")

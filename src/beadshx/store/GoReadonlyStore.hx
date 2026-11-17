@@ -1,6 +1,9 @@
 package beadshx.store;
 
 import beadshx.store.WorkspaceState.readLastTouchedId;
+import beadshx.relation.RelatedIssue;
+import beadshx.relation.RelationRead.RelationReadPlan;
+import beadshx.store.TransitionalRelationReader.readTransitionalRelations;
 import beadshx.query.QueryTimePort.QueryNormalizedTime;
 import beadshx.query.QueryTimePort.QueryTimeInput;
 import beadshx.query.QueryTimePort.QueryTimeOutcome;
@@ -52,6 +55,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public function close():StoreResult<Bool> {
 		return Success(true);
+	}
+
+	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.relatedIssues(beadsDir, databaseName, plan);
+			if (embedded != null)
+				return embedded;
+		}
+		return readTransitionalRelations(this, beadsDir, plan, global);
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
@@ -756,11 +768,11 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				notes: native.notes(),
 				specId: native.specId(),
 				status: native.status(),
-				priority: native.priority(),
+				priority: NativeIntegers.fromInt(native.priority()),
 				issueType: native.issueType(),
 				assignee: native.assignee(),
 				owner: native.owner(),
-				estimatedMinutes: native.hasEstimatedMinutes() ? OptionalInt.IntPresent(native.estimatedMinutes()) : OptionalInt.IntAbsent,
+				estimatedMinutes: native.hasEstimatedMinutes() ? OptionalIssueInteger.IntegerPresent(NativeIntegers.fromInt(native.estimatedMinutes())) : OptionalIssueInteger.IntegerAbsent,
 				createdAt: native.createdAt(),
 				createdBy: native.createdBy(),
 				updatedAt: native.updatedAt(),
@@ -772,7 +784,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				deferUntil: native.deferUntil(),
 				externalRef: native.externalRef(),
 				sourceSystem: native.sourceSystem(),
-				metadata: JsonValue.fromValidatedNative(native.metadata()),
+				metadata: StoredMetadata.fromSql(native.metadata()),
 				wispType: native.wispType(),
 				moleculeType: native.moleculeType(),
 				longFields: longFields,
@@ -810,10 +822,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					leaseExpiresAt: native.leaseExpiresAt(),
 					heartbeatAt: native.heartbeatAt(),
 					leaseGrantedNode: native.leaseGrantedNode(),
-					compactionLevel: native.compactionLevel(),
+					compactionLevel: NativeIntegers.fromInt(native.compactionLevel()),
 					compactedAt: native.compactedAt(),
 					compactedAtCommit: native.compactedAtCommit(),
-					originalSize: native.originalSize(),
+					originalSize: NativeIntegers.fromInt(native.originalSize()),
 					sender: native.sender(),
 					ephemeral: native.ephemeral(),
 					noHistory: native.noHistory(),
@@ -884,11 +896,11 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					notes: item.notes(),
 					specId: item.specId(),
 					status: item.status(),
-					priority: item.priority(),
+					priority: NativeIntegers.fromInt(item.priority()),
 					issueType: item.issueType(),
 					assignee: item.assignee(),
 					owner: item.owner(),
-					estimatedMinutes: item.hasEstimatedMinutes() ? OptionalInt.IntPresent(item.estimatedMinutes()) : OptionalInt.IntAbsent,
+					estimatedMinutes: item.hasEstimatedMinutes() ? OptionalIssueInteger.IntegerPresent(NativeIntegers.fromInt(item.estimatedMinutes())) : OptionalIssueInteger.IntegerAbsent,
 					createdAt: item.createdAt(),
 					createdBy: item.createdBy(),
 					updatedAt: item.updatedAt(),
@@ -900,7 +912,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					deferUntil: item.deferUntil(),
 					externalRef: item.externalRef(),
 					sourceSystem: item.sourceSystem(),
-					metadata: JsonValue.fromValidatedNative(item.metadata()),
+					metadata: StoredMetadata.fromSql(item.metadata()),
 					wispType: item.wispType(),
 					moleculeType: item.moleculeType(),
 					longFields: longFields,
@@ -938,14 +950,14 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			id: native.id(),
 			title: native.title(),
 			status: parseIssueStatus(native.status()),
-			priority: native.priority(),
+			priority: NativeIntegers.fromInt(native.priority()),
 			issueType: parseIssueType(native.issueType())
 		}));
 	}
 
 	public function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest, global:Bool):StoreResult<IssueDetailsLookup> {
 		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
-			final embedded = EmbeddedStoreAccess.issueDetails(beadsDir, id);
+			final embedded = EmbeddedStoreAccess.issueDetails(beadsDir, id, request);
 			if (embedded != null)
 				return embedded;
 		}
@@ -990,7 +1002,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				createdAt: comment.createdAt()
 			});
 		}
-		final estimatedMinutes:OptionalInt = native.hasEstimatedMinutes() ? OptionalInt.IntPresent(native.estimatedMinutes()) : OptionalInt.IntAbsent;
+		final estimatedMinutes:OptionalIssueInteger = native.hasEstimatedMinutes() ? OptionalIssueInteger.IntegerPresent(NativeIntegers.fromInt(native.estimatedMinutes())) : OptionalIssueInteger.IntegerAbsent;
 		var longFields:Null<IssueLongFields> = null;
 		switch copyIssueLongFields(native.record()) {
 			case Failure(message):
@@ -1014,7 +1026,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					notes: native.notes(),
 					specId: native.specId(),
 					status: native.status(),
-					priority: native.priority(),
+					priority: NativeIntegers.fromInt(native.priority()),
 					issueType: native.issueType(),
 					assignee: native.assignee(),
 					owner: native.owner(),
@@ -1030,7 +1042,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					deferUntil: native.deferUntil(),
 					externalRef: native.externalRef(),
 					sourceSystem: native.sourceSystem(),
-					metadata: JsonValue.fromValidatedNative(native.metadata()),
+					metadata: StoredMetadata.fromSql(native.metadata()),
 					wispType: native.wispType(),
 					moleculeType: native.moleculeType(),
 					labels: labels,
@@ -1040,7 +1052,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					parent: native.parent(),
 					dependentCount: native.dependentCount(),
 					dependencyCount: native.dependencyCount(),
-					commentCount: native.commentCount(),
+					commentCount: NativeIntegers.fromInt64(native.nativeCommentCount()),
 					commentsOmitted: native.commentsOmitted(),
 					epicProgress: epicProgress,
 					revision: revision,
@@ -1064,7 +1076,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public static function copyIssueDependency(native:NativeIssueDependency):IssueDependency {
-		final estimatedMinutes:OptionalInt = native.hasEstimatedMinutes() ? OptionalInt.IntPresent(native.estimatedMinutes()) : OptionalInt.IntAbsent;
+		final estimatedMinutes:OptionalIssueInteger = native.hasEstimatedMinutes() ? OptionalIssueInteger.IntegerPresent(NativeIntegers.fromInt(native.estimatedMinutes())) : OptionalIssueInteger.IntegerAbsent;
 		return {
 			id: native.id(),
 			title: native.title(),
@@ -1074,7 +1086,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			notes: native.notes(),
 			specId: native.specId(),
 			status: native.status(),
-			priority: native.priority(),
+			priority: NativeIntegers.fromInt(native.priority()),
 			issueType: native.issueType(),
 			assignee: native.assignee(),
 			owner: native.owner(),
@@ -1090,7 +1102,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			deferUntil: native.deferUntil(),
 			externalRef: native.externalRef(),
 			sourceSystem: native.sourceSystem(),
-			metadata: JsonValue.fromValidatedNative(native.metadata()),
+			metadata: StoredMetadata.fromSql(native.metadata()),
 			wispType: native.wispType(),
 			moleculeType: native.moleculeType(),
 			dependencyType: native.dependencyType()
@@ -1168,6 +1180,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 /** Typed Haxe owner of one strict proxied native query session. */
 @:goNative
 private final class GoProxiedQuerySession implements IssueQueryPort {
+	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
+		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
 	final native:NativeQuerySession;
 
 	public function new(native:NativeQuerySession) {
@@ -1527,14 +1543,14 @@ extern class NativeIssueRecord {
 	@:go.name("LeaseGrantedNode") function leaseGrantedNode():String;
 	@:go.name("DueAt") function dueAt():String;
 	@:go.name("DeferUntil") function deferUntil():String;
-	@:go.name("ExternalRef") function externalRef():String;
+	@:go.name("ExternalRef") function externalRef():Null<String>;
 	@:go.name("SourceSystem") function sourceSystem():String;
 	@:go.name("Metadata") function metadata():String;
 	@:go.name("WispType") function wispType():String;
 	@:go.name("MoleculeType") function moleculeType():String;
 	@:go.name("CompactionLevel") function compactionLevel():Int;
 	@:go.name("CompactedAt") function compactedAt():String;
-	@:go.name("CompactedAtCommit") function compactedAtCommit():String;
+	@:go.name("CompactedAtCommit") function compactedAtCommit():Null<String>;
 	@:go.name("OriginalSize") function originalSize():Int;
 	@:go.name("Sender") function sender():String;
 	@:go.name("Ephemeral") function ephemeral():Bool;
@@ -1605,7 +1621,7 @@ extern class NativeIssueDetails extends NativeIssueRecord {
 	@:go.name("Parent") function parent():String;
 	@:go.name("DependentCount") function dependentCount():Int;
 	@:go.name("DependencyCount") function dependencyCount():Int;
-	@:go.name("CommentCount") function commentCount():Int;
+	@:go.name("NativeCommentCount") function nativeCommentCount():go.NativeInt64;
 	@:go.name("CommentsOmitted") function commentsOmitted():Bool;
 	@:go.name("HasEpicProgress") function hasEpicProgress():Bool;
 	@:go.name("EpicTotalChildren") function epicTotalChildren():Int;

@@ -4,6 +4,8 @@ import beadshx.query.QueryTimePort;
 
 /** Command-scoped issue queries with an explicit native-resource lifetime. */
 interface IssueQueryPort extends QueryTimePort {
+	function relatedIssues(beadsDir:String, databaseName:String, plan:beadshx.relation.RelationRead.RelationReadPlan,
+		global:Bool):StoreResult<Array<beadshx.relation.RelatedIssue>>;
 	function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult;
 	function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult>;
 	function issueReady(beadsDir:String, request:ReadyRequest, global:Bool):ReadyLoadResult;

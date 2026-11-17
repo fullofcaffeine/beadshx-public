@@ -68,13 +68,13 @@ final class QueryFilter {
 		return filter.hasMetadataKey == "" || issue.metadata.hasTopLevelKey(filter.hasMetadataKey);
 	}
 
-	static function matchesInt(expected:OptionalInt, actual:Int, comparison:IntFilterComparison):Bool {
+	static function matchesInt(expected:OptionalInt, actual:beadshx.store.JsonInteger, comparison:IntFilterComparison):Bool {
 		return switch expected {
 			case IntAbsent: true;
 			case IntPresent(value): switch comparison {
-					case EqualInt: actual == value;
-					case MinimumInt: actual >= value;
-					case MaximumInt: actual <= value;
+					case EqualInt: actual.compare(beadshx.store.JsonInteger.fromInt(value)) == 0;
+					case MinimumInt: actual.compare(beadshx.store.JsonInteger.fromInt(value)) >= 0;
+					case MaximumInt: actual.compare(beadshx.store.JsonInteger.fromInt(value)) <= 0;
 				};
 		};
 	}

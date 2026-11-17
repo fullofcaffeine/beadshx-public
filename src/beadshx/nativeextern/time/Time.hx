@@ -6,6 +6,9 @@ package beadshx.nativeextern.time;
 @:go.name("Time")
 @:go.struct
 extern class Time {
+	/** Allocate an addressable zero time for standard-library scan destinations. */
+	public function new();
+
 	@:go.valueArgs("0")
 	@:go.valueReturn
 	@:go.name("Add")

@@ -776,6 +776,20 @@ compare_real_database dep-list-batch-json exact dep list "$real_database_gated_s
 compare_real_database dep-list-batch-filter-json exact dep list "$real_database_gated_step_id" "$real_database_issue_id" --type blocks --json
 compare_real_database dep-list-batch-missing-json exact dep list "$real_database_gated_step_id" test-missing --json
 compare_real_database dep-list-batch-invalid-type-json exact dep list "$real_database_gated_step_id" "$real_database_issue_id" --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
+# Incoming reads always return related issues, including caller-supplied batches.
+# Preserve anchor order and duplicates rather than flattening into raw edge rows.
+compare_real_database dep-list-up-human exact dep list "$real_database_gated_molecule_id" --direction up
+compare_real_database dep-list-up-json exact dep list "$real_database_gated_molecule_id" --direction=up --json
+compare_real_database dep-list-up-filter-json exact dep list "$real_database_gated_molecule_id" --direction up --type parent-child --json
+compare_real_database dep-list-up-filter-empty-json exact dep list "$real_database_gated_molecule_id" --direction up --type tracks --json
+compare_real_database dep-list-up-empty-human exact dep list "$real_database_bug_id" --direction up
+compare_real_database dep-list-up-empty-json exact dep list "$real_database_bug_id" --direction up --json
+compare_real_database dep-list-up-batch-json exact dep list "$real_database_gated_molecule_id" "$real_database_epic_id" --direction up --json
+compare_real_database dep-list-up-duplicate-json exact dep list "$real_database_epic_id" "$real_database_epic_id" --direction up --json
+compare_real_database dep-list-up-batch-missing-json exact dep list "$real_database_epic_id" test-missing --direction up --json
+compare_real_database dep-list-up-missing-json exact dep list test-missing --direction up --json
+compare_real_database dep-list-up-all-missing-json exact dep list test-missing test-also-missing --direction up --json
+compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json
 compare_real_database list-title-contains-json exact list --title-contains parity --json

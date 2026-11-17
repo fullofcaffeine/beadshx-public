@@ -5,7 +5,6 @@ package readonlyfacade
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -474,14 +473,14 @@ type IssueRecord struct {
 	leaseGrantedNode   string
 	dueAt              string
 	deferUntil         string
-	externalRef        string
+	externalRef        *string
 	sourceSystem       string
 	metadata           string
 	wispType           string
 	moleculeType       string
 	compactionLevel    int
 	compactedAt        string
-	compactedAtCommit  string
+	compactedAtCommit  *string
 	originalSize       int
 	sender             string
 	ephemeral          bool
@@ -524,35 +523,35 @@ func (v IssueRecord) EstimatedMinutes() int {
 	}
 	return *v.estimatedMinutes
 }
-func (v IssueRecord) CreatedAt() string         { return v.createdAt }
-func (v IssueRecord) CreatedBy() string         { return v.createdBy }
-func (v IssueRecord) UpdatedAt() string         { return v.updatedAt }
-func (v IssueRecord) UpdatedAtMillis() float64  { return v.updatedAtMillis }
-func (v IssueRecord) StartedAt() string         { return v.startedAt }
-func (v IssueRecord) ClosedAt() string          { return v.closedAt }
-func (v IssueRecord) CloseReason() string       { return v.closeReason }
-func (v IssueRecord) ClosedBySession() string   { return v.closedBySession }
-func (v IssueRecord) LeaseExpiresAt() string    { return v.leaseExpiresAt }
-func (v IssueRecord) HeartbeatAt() string       { return v.heartbeatAt }
-func (v IssueRecord) LeaseGrantedNode() string  { return v.leaseGrantedNode }
-func (v IssueRecord) DueAt() string             { return v.dueAt }
-func (v IssueRecord) DeferUntil() string        { return v.deferUntil }
-func (v IssueRecord) ExternalRef() string       { return v.externalRef }
-func (v IssueRecord) SourceSystem() string      { return v.sourceSystem }
-func (v IssueRecord) Metadata() string          { return v.metadata }
-func (v IssueRecord) WispType() string          { return v.wispType }
-func (v IssueRecord) MoleculeType() string      { return v.moleculeType }
-func (v IssueRecord) CompactionLevel() int      { return v.compactionLevel }
-func (v IssueRecord) CompactedAt() string       { return v.compactedAt }
-func (v IssueRecord) CompactedAtCommit() string { return v.compactedAtCommit }
-func (v IssueRecord) OriginalSize() int         { return v.originalSize }
-func (v IssueRecord) Sender() string            { return v.sender }
-func (v IssueRecord) Ephemeral() bool           { return v.ephemeral }
-func (v IssueRecord) NoHistory() bool           { return v.noHistory }
-func (v IssueRecord) StorageClass() string      { return v.storageClass }
-func (v IssueRecord) Pinned() bool              { return v.pinned }
-func (v IssueRecord) Template() bool            { return v.template }
-func (v IssueRecord) BondedFromCount() int      { return len(v.bondedFrom) }
+func (v IssueRecord) CreatedAt() string          { return v.createdAt }
+func (v IssueRecord) CreatedBy() string          { return v.createdBy }
+func (v IssueRecord) UpdatedAt() string          { return v.updatedAt }
+func (v IssueRecord) UpdatedAtMillis() float64   { return v.updatedAtMillis }
+func (v IssueRecord) StartedAt() string          { return v.startedAt }
+func (v IssueRecord) ClosedAt() string           { return v.closedAt }
+func (v IssueRecord) CloseReason() string        { return v.closeReason }
+func (v IssueRecord) ClosedBySession() string    { return v.closedBySession }
+func (v IssueRecord) LeaseExpiresAt() string     { return v.leaseExpiresAt }
+func (v IssueRecord) HeartbeatAt() string        { return v.heartbeatAt }
+func (v IssueRecord) LeaseGrantedNode() string   { return v.leaseGrantedNode }
+func (v IssueRecord) DueAt() string              { return v.dueAt }
+func (v IssueRecord) DeferUntil() string         { return v.deferUntil }
+func (v IssueRecord) ExternalRef() *string       { return v.externalRef }
+func (v IssueRecord) SourceSystem() string       { return v.sourceSystem }
+func (v IssueRecord) Metadata() string           { return v.metadata }
+func (v IssueRecord) WispType() string           { return v.wispType }
+func (v IssueRecord) MoleculeType() string       { return v.moleculeType }
+func (v IssueRecord) CompactionLevel() int       { return v.compactionLevel }
+func (v IssueRecord) CompactedAt() string        { return v.compactedAt }
+func (v IssueRecord) CompactedAtCommit() *string { return v.compactedAtCommit }
+func (v IssueRecord) OriginalSize() int          { return v.originalSize }
+func (v IssueRecord) Sender() string             { return v.sender }
+func (v IssueRecord) Ephemeral() bool            { return v.ephemeral }
+func (v IssueRecord) NoHistory() bool            { return v.noHistory }
+func (v IssueRecord) StorageClass() string       { return v.storageClass }
+func (v IssueRecord) Pinned() bool               { return v.pinned }
+func (v IssueRecord) Template() bool             { return v.template }
+func (v IssueRecord) BondedFromCount() int       { return len(v.bondedFrom) }
 func (v IssueRecord) BondedFrom(index int) *IssueBondReference {
 	if index < 0 || index >= len(v.bondedFrom) {
 		return &IssueBondReference{}
@@ -685,11 +684,14 @@ func (v IssueDetails) Comment(index int) *IssueComment {
 	}
 	return &v.comments[index]
 }
-func (v IssueDetails) Parent() string        { return v.parent }
-func (v IssueDetails) DependentCount() int   { return int(v.dependentCount) }
-func (v IssueDetails) DependencyCount() int  { return int(v.dependencyCount) }
-func (v IssueDetails) CommentCount() int     { return int(v.commentCount) }
-func (v IssueDetails) CommentsOmitted() bool { return v.commentsOmitted }
+func (v IssueDetails) Parent() string       { return v.parent }
+func (v IssueDetails) DependentCount() int  { return int(v.dependentCount) }
+func (v IssueDetails) DependencyCount() int { return int(v.dependencyCount) }
+func (v IssueDetails) CommentCount() int    { return int(v.commentCount) }
+
+// NativeCommentCount transports the stored int64 without applying rendering policy.
+func (v IssueDetails) NativeCommentCount() int64 { return v.commentCount }
+func (v IssueDetails) CommentsOmitted() bool     { return v.commentsOmitted }
 func (v IssueDetails) HasEpicProgress() bool {
 	return v.epicTotalChildren != nil && v.epicClosedChildren != nil && v.epicCloseable != nil
 }
@@ -733,22 +735,23 @@ func optionalTime(value *time.Time) string {
 	return value.Format(time.RFC3339Nano)
 }
 
-func projectIssueRecord(issue types.Issue) (IssueRecord, error) {
-	if len(issue.Metadata) > 0 && !json.Valid(issue.Metadata) {
-		return IssueRecord{}, fmt.Errorf("issue %s contains invalid metadata JSON", issue.ID)
-	}
-	externalRef := ""
+func projectIssueRecord(issue types.Issue) IssueRecord {
+	// Preserve ScanIssueFrom's raw metadata bytes. Haxe owns tolerant queries
+	// and strict JSON output validation; projection must not reject the read.
+	var externalRef *string
 	if issue.ExternalRef != nil {
-		externalRef = *issue.ExternalRef
+		value := *issue.ExternalRef
+		externalRef = &value
 	}
 	var estimatedMinutes *int
 	if issue.EstimatedMinutes != nil {
 		value := *issue.EstimatedMinutes
 		estimatedMinutes = &value
 	}
-	compactedAtCommit := ""
+	var compactedAtCommit *string
 	if issue.CompactedAtCommit != nil {
-		compactedAtCommit = *issue.CompactedAtCommit
+		value := *issue.CompactedAtCommit
+		compactedAtCommit = &value
 	}
 	bondedFrom := make([]IssueBondReference, len(issue.BondedFrom))
 	for index, reference := range issue.BondedFrom {
@@ -818,32 +821,25 @@ func projectIssueRecord(issue types.Issue) (IssueRecord, error) {
 		actor:              issue.Actor,
 		target:             issue.Target,
 		payload:            issue.Payload,
-	}, nil
+	}
 }
 
-func projectIssueDependencies(items []*types.IssueWithDependencyMetadata) ([]IssueDependency, error) {
+func projectIssueDependencies(items []*types.IssueWithDependencyMetadata) []IssueDependency {
 	projected := make([]IssueDependency, 0, len(items))
 	for _, item := range items {
-		record, err := projectIssueRecord(item.Issue)
-		if err != nil {
-			return nil, err
-		}
 		projected = append(projected, IssueDependency{
-			IssueRecord:    record,
+			IssueRecord:    projectIssueRecord(item.Issue),
 			dependencyType: string(item.DependencyType),
 		})
 	}
-	return projected, nil
+	return projected
 }
 
 func projectIssueListItem(item *types.IssueWithCounts) (IssueListItem, error) {
 	if item == nil || item.Issue == nil {
 		return IssueListItem{}, errors.New("issue list contains an empty row")
 	}
-	record, err := projectIssueRecord(*item.Issue)
-	if err != nil {
-		return IssueListItem{}, err
-	}
+	record := projectIssueRecord(*item.Issue)
 	parent := ""
 	if item.Parent != nil {
 		parent = *item.Parent
@@ -1009,23 +1005,14 @@ func readIssueDetailsWithReader(ctx context.Context, reader issueops.Reader, id 
 	if err != nil {
 		return nil, err
 	}
-	record, err := projectIssueRecord(details.Issue)
-	if err != nil {
-		return nil, err
-	}
+	record := projectIssueRecord(details.Issue)
 	parent := ""
 	if details.Parent != nil {
 		parent = *details.Parent
 	}
 	commentsOmitted := details.CommentsOmitted != nil && *details.CommentsOmitted
-	dependencies, err := projectIssueDependencies(details.Dependencies)
-	if err != nil {
-		return nil, err
-	}
-	dependents, err := projectIssueDependencies(details.Dependents)
-	if err != nil {
-		return nil, err
-	}
+	dependencies := projectIssueDependencies(details.Dependencies)
+	dependents := projectIssueDependencies(details.Dependents)
 	comments := make([]IssueComment, 0, len(details.Comments))
 	for _, comment := range details.Comments {
 		comments = append(comments, IssueComment{
@@ -1071,11 +1058,7 @@ func ReadIssueDependents(beadsDir, id string, global bool) (rows *IssueDependenc
 	if err != nil {
 		return nil, err
 	}
-	projected, err := projectIssueDependencies(items)
-	if err != nil {
-		return nil, err
-	}
-	return &IssueDependencyRows{items: projected}, nil
+	return &IssueDependencyRows{items: projectIssueDependencies(items)}, nil
 }
 
 // FindAssignedIssue returns the first store-ordered issue for one actor and status.

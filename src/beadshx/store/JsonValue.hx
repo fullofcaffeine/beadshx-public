@@ -23,11 +23,12 @@ private enum JsonParseResult {
 }
 
 /**
-	A validated JSON value copied from the native metadata boundary.
+	A validated JSON value used after an explicit JSON consumer boundary.
 
-	The Go facade rejects invalid bytes with encoding/json before it exposes this
-	value. Keeping the constructor here avoids parsing into Dynamic in domain code
-	while still preserving arbitrary compatibility metadata byte for byte.
+	StoredMetadata retains raw storage bytes, including malformed JSON. Its strict
+	output path validates a copy before using this value; query and human observers
+	can inspect raw metadata without rejecting a storage read. The native constructor
+	is reserved for callers that already proved JSON validity.
 **/
 abstract JsonValue(String) {
 	private inline function new(value:String) {
@@ -41,7 +42,8 @@ abstract JsonValue(String) {
 	/** Validates arbitrary JSON before it enters Haxe-owned domain values. */
 	public static function parse(raw:String, context:String):StoreResult<JsonValue> {
 		final value = StringTools.trim(raw);
-		return switch new TypedJsonParser(value).parse() {
+		// Validate before trimming so non-JSON whitespace cannot disappear.
+		return switch new TypedJsonParser(raw).parse() {
 			case Parsed(_): Success(new JsonValue(value));
 			case Invalid: Failure('$context contains invalid JSON');
 		};
@@ -49,14 +51,28 @@ abstract JsonValue(String) {
 
 	/** Decodes a JSON string array without exposing an untyped JSON shape. */
 	public static function parseStringArray(raw:String, context:String):StoreResult<Array<String>> {
+		return decodeStringArray(raw, context, false);
+	}
+
+	/** Match Go's `[]string` JSON decoding when a caller opts into null elements as empty strings. */
+	public static function parseStringArrayNullAsEmpty(raw:String, context:String):StoreResult<Array<String>> {
+		return decodeStringArray(raw, context, true);
+	}
+
+	static function decodeStringArray(raw:String, context:String, nullAsEmpty:Bool):StoreResult<Array<String>> {
 		if (StringTools.trim(raw) == "")
 			return Success([]);
-		return switch new TypedJsonParser(StringTools.trim(raw)).parse() {
+		// Trimming before validation would accept non-JSON whitespace around arrays.
+		return switch new TypedJsonParser(raw).parse() {
 			case Parsed(ArrayValue(values)):
 				final strings = new Array<String>();
 				for (value in values)
 					switch value {
 						case StringValue(text): strings.push(text);
+						case NullValue:
+							if (!nullAsEmpty)
+								return Failure('$context must be a JSON string array');
+							strings.push("");
 						case _: return Failure('$context must be a JSON string array');
 					}
 				Success(strings);
@@ -197,8 +213,8 @@ abstract JsonValue(String) {
 	/**
 		Applies the pinned query comparison to one top-level metadata value.
 
-		JSON strings compare by their decoded text. Other JSON values compare by
-		their original token spelling, which preserves the upstream RawMessage
+		JSON strings compare by their decoded text; null compares as an empty
+		string. Other values compare by their original token spelling, preserving RawMessage
 		contract without exposing an untyped JSON object to query policy.
 	**/
 	public function topLevelQueryEquals(key:String, expected:String):Bool {
@@ -207,6 +223,8 @@ abstract JsonValue(String) {
 				final field = findField(fields, key);
 				if (field == null) false; else switch field.value {
 					case StringValue(value): value == expected;
+					// Go unmarshals JSON null into a string without changing its zero value.
+					case NullValue: expected == "";
 					case _: trimQuotes(field.raw) == expected;
 				}
 			case Parsed(_) | Invalid: false;
@@ -439,6 +457,10 @@ private final class TypedJsonParser {
 			if (character == '"')
 				return output.toString();
 			if (character != "\\") {
+				if (source.charCodeAt(index - 1) < 32) {
+					failed = true;
+					return output.toString();
+				}
 				output.add(character);
 				continue;
 			}
@@ -459,7 +481,7 @@ private final class TypedJsonParser {
 				case "t":
 					output.add("\t");
 				case "u":
-					final code = parseHexCodeUnit();
+					final code = parseUnicodeCodePoint();
 					if (code >= 0)
 						output.add(String.fromCharCode(code));
 				case _:
@@ -469,6 +491,28 @@ private final class TypedJsonParser {
 		}
 		failed = true;
 		return output.toString();
+	}
+
+	/** Match encoding/json: combine UTF-16 pairs and retain the next escape after an unpaired unit. */
+	function parseUnicodeCodePoint():Int {
+		final first = parseHexCodeUnit();
+		if (first < 0)
+			return -1;
+		if (first >= 0xDC00 && first <= 0xDFFF)
+			return 0xFFFD;
+		if (first < 0xD800 || first > 0xDBFF)
+			return first;
+		final nextEscape = index;
+		if (source.substr(index, 2) == "\\u") {
+			index += 2;
+			final second = parseHexCodeUnit();
+			if (second < 0)
+				return -1;
+			if (second >= 0xDC00 && second <= 0xDFFF)
+				return 0x10000 + ((first - 0xD800) << 10) + second - 0xDC00;
+			index = nextEscape;
+		}
+		return 0xFFFD;
 	}
 
 	function parseHexCodeUnit():Int {
@@ -498,9 +542,47 @@ private final class TypedJsonParser {
 				break;
 			index++;
 		}
-		if (start == index)
+		final token = source.substring(start, index);
+		if (!isJsonNumber(token))
 			failed = true;
-		return NumberValue(source.substring(start, index));
+		return NumberValue(token);
+	}
+
+	/** Validate JSON number spelling without converting or narrowing its value. */
+	static function isJsonNumber(token:String):Bool {
+		var position = token.charAt(0) == "-" ? 1 : 0;
+		if (token.charAt(position) == "0") {
+			position++;
+		} else {
+			final first = token.charAt(position);
+			if (first < "1" || first > "9")
+				return false;
+			while (isNumberDigit(token.charAt(position)))
+				position++;
+		}
+		if (token.charAt(position) == ".") {
+			position++;
+			final fractionStart = position;
+			while (isNumberDigit(token.charAt(position)))
+				position++;
+			if (position == fractionStart)
+				return false;
+		}
+		if (token.charAt(position) == "e" || token.charAt(position) == "E") {
+			position++;
+			if (token.charAt(position) == "+" || token.charAt(position) == "-")
+				position++;
+			final exponentStart = position;
+			while (isNumberDigit(token.charAt(position)))
+				position++;
+			if (position == exponentStart)
+				return false;
+		}
+		return position == token.length;
+	}
+
+	static inline function isNumberDigit(character:String):Bool {
+		return character >= "0" && character <= "9";
 	}
 
 	function consumeLiteral(token:String, value:ParsedJsonValue):ParsedJsonValue {

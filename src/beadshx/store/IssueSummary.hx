@@ -5,6 +5,6 @@ typedef IssueSummary = {
 	final id:String;
 	final title:String;
 	final status:IssueStatus;
-	final priority:Int;
+	final priority:beadshx.store.JsonInteger;
 	final issueType:IssueType;
 }

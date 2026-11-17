@@ -24,7 +24,7 @@ final class QueryPredicate {
 		final issue = row.item;
 		return switch test {
 			case StatusTest(comparison, value): compareEquality(issue.status == value, comparison);
-			case PriorityTest(comparison, value): compareOrder(compareInts(issue.priority, value), comparison);
+			case PriorityTest(comparison, value): compareOrder(issue.priority.compare(beadshx.store.JsonInteger.fromInt(value)), comparison);
 			case IssueTypeTest(comparison, value): compareEquality(issue.issueType == value, comparison);
 			case AssigneeTest(comparison, value, none):
 				compareEquality(none ? issue.assignee == "" : equalFold(issue.assignee, value), comparison);

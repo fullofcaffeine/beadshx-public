@@ -7,7 +7,7 @@ import beadshx.ready.ReadyExplain;
 import beadshx.store.IssueListDependency;
 import beadshx.store.IssueListItem;
 import beadshx.store.JsonInteger;
-import beadshx.store.JsonValue;
+import beadshx.store.StoredMetadata;
 import beadshx.store.OptionalInt;
 import beadshx.store.StoreResult;
 
@@ -187,7 +187,7 @@ final class Main {
 			issueType: issueType,
 			assignee: "",
 			owner: "fixture",
-			estimatedMinutes: IntAbsent,
+			estimatedMinutes: beadshx.store.OptionalIssueInteger.IntegerAbsent,
 			createdAt: "2026-08-25T00:00:00Z",
 			createdBy: "tester",
 			updatedAt: "2026-08-25T00:00:00Z",
@@ -197,9 +197,9 @@ final class Main {
 			closedBySession: "",
 			dueAt: "",
 			deferUntil: "",
-			externalRef: "",
+			externalRef: null,
 			sourceSystem: "",
-			metadata: JsonValue.fromValidatedNative(""),
+			metadata: StoredMetadata.fromSql(""),
 			wispType: "",
 			moleculeType: "",
 			longFields: {
@@ -209,7 +209,7 @@ final class Main {
 				leaseGrantedNode: "",
 				compactionLevel: 0,
 				compactedAt: "",
-				compactedAtCommit: "",
+				compactedAtCommit: null,
 				originalSize: 0,
 				sender: "",
 				ephemeral: false,

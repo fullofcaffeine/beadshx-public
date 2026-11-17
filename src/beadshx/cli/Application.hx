@@ -1,5 +1,8 @@
 package beadshx.cli;
 
+import beadshx.relation.RelationRead.prepareRelationRead;
+import beadshx.relation.RelationRead.RelationDirection;
+import beadshx.relation.RelatedIssue;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
@@ -321,6 +324,16 @@ final class Application {
 		}
 	}
 
+	/** Complete every nested issue encoding before stdout or the deprecation note. */
+	function writeRenderedJsonStdout(document:StoreResult<String>):Int {
+		return switch document {
+			case Failure(message): runStoreFailure('encoding JSON: $message');
+			case Success(value):
+				writeJsonStdout(value);
+				0;
+		};
+	}
+
 	/**
 		Wraps one already-serialized top-level object at the JSON output boundary.
 		Every caller supplies pretty JSON with a top-level schema_version field;
@@ -602,10 +615,6 @@ final class Application {
 
 	function runDepListQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final batch = invocation.showIds.length > 1;
-		if (invocation.depType != "" && haxe.io.Bytes.ofString(invocation.depType).length > 32) {
-			final role = batch ? "read edges" : "related";
-			return runModeAwareFailure(invocation.output, 'validation failed: ${role} type 0 is not a usable dependency type (non-empty, max 32 chars)');
-		}
 		final resolved = new Array<String>();
 		for (id in invocation.showIds)
 			switch lookupIssueSummary(location, id, invocation.global, query) {
@@ -628,36 +637,47 @@ final class Application {
 				output.writeStderr("no resolvable issues in batch\n");
 			return 0;
 		}
+		if (invocation.depType != "" && haxe.io.Bytes.ofString(invocation.depType).length > 32) {
+			final role = invocation.depListSelection == BatchEdges ? "read edges" : "related";
+			return runModeAwareFailure(invocation.output, 'validation failed: ${role} type 0 is not a usable dependency type (non-empty, max 32 chars)');
+		}
 		final dependencyTypes = invocation.depType == "" ? [] : [invocation.depType];
-		if (!batch)
-			return switch query.issueDetails(location.path, resolved[0], {
-				includeDependents: false,
-				includeComments: false,
-				briefDependencies: false
-			}, invocation.global) {
-				case Failure(message): runModeAwareFailure(invocation.output, message);
-				case Success(DetailsMissing): runModeAwareFailure(invocation.output, 'no issue found: ${resolved[0]}');
-				case Success(DetailsFound(details)):
-					final dependencies = [
-						for (dependency in details.dependencies)
-							if (dependencyTypes.length == 0 || dependencyTypes.indexOf(dependency.dependencyType) >= 0) dependency
-					];
-					renderSingleDepList(invocation, resolved[0], dependencies);
-			};
-		return switch query.dependencyEdges(location.path, location.databaseName, resolved, dependencyTypes, invocation.global) {
-			case DependencyEdgeFailure(message): runModeAwareFailure(invocation.output, message);
-			case DependencyEdges(anchors): renderDepList(invocation, anchors);
+		return switch invocation.depListSelection {
+			case RelatedIssues(direction):
+				final neighbors = new Array<RelatedIssue>();
+				for (id in resolved) {
+					final plan = switch prepareRelationRead(id, direction == Incoming ? "in" : "out", dependencyTypes) {
+						case RelationPlanInvalid(message): return runModeAwareFailure(invocation.output, message);
+						case RelationPlanReady(value): value;
+					};
+					switch query.relatedIssues(location.path, location.databaseName, plan, invocation.global) {
+						case Failure(message): return runModeAwareFailure(invocation.output, message);
+						case Success(rows):
+							for (row in rows)
+								neighbors.push(row);
+					}
+				}
+				renderRelatedDepList(invocation, resolved, neighbors, direction);
+			case BatchEdges:
+				switch query.dependencyEdges(location.path, location.databaseName, resolved, dependencyTypes, invocation.global) {
+					case DependencyEdgeFailure(message): runModeAwareFailure(invocation.output, message);
+					case DependencyEdges(anchors): renderDepList(invocation, anchors);
+				}
 		};
 	}
 
-	function renderSingleDepList(invocation:Invocation, id:String, dependencies:Array<IssueDependency>):Int {
-		dependencies.sort((left, right) -> DependencyRead.compareTargetAndType(left.id, left.dependencyType, right.id, right.dependencyType));
+	function renderRelatedDepList(invocation:Invocation, ids:Array<String>, dependencies:Array<RelatedIssue>, direction:RelationDirection):Int {
 		switch invocation.output {
 			case Json:
-				writeJsonStdout(renderDependencyIssuesJson(dependencies));
+				return writeRenderedJsonStdout(renderDependencyIssuesJson(dependencies));
 			case Human:
 				if (dependencies.length == 0) {
-					output.writeStdout('\n${id} has no dependencies\n');
+					if (ids.length != 1)
+						output.writeStdout("\nNo dependencies found\n");
+					else if (direction == Incoming)
+						output.writeStdout('\nNo issues depend on ${ids[0]}\n');
+					else
+						output.writeStdout('\n${ids[0]} has no dependencies\n');
 				} else {
 					for (dependency in dependencies)
 						output.writeStdout('  ${dependency.id}: ${dependency.title} [P${dependency.priority}] (${dependency.status}) via ${dependency.dependencyType}\n');
@@ -667,13 +687,16 @@ final class Application {
 		return 0;
 	}
 
-	static function renderDependencyIssuesJson(dependencies:Array<IssueDependency>):String {
+	static function renderDependencyIssuesJson(dependencies:Array<RelatedIssue>):StoreResult<String> {
 		if (dependencies.length == 0)
-			return "[]\n";
+			return Success("[]\n");
 		final lines = ["["];
 		for (index in 0...dependencies.length) {
 			final dependency = dependencies[index];
-			final fields = renderIssueRecordFields(dependency, "    ");
+			final fields = switch renderRawIssueFields(dependency, false, "    ", dependency.labels) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			fields.push('"dependency_type": ${Json.stringify(dependency.dependencyType)}');
 			lines.push("  {");
 			for (fieldIndex in 0...fields.length)
@@ -681,7 +704,7 @@ final class Application {
 			lines.push(index == dependencies.length - 1 ? "  }" : "  },");
 		}
 		lines.push("]");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	function renderDepList(invocation:Invocation, anchors:Array<beadshx.relation.DependencyAnchor>):Int {
@@ -816,7 +839,7 @@ final class Application {
 					case ListSuccess(candidates):
 						final molecules = GatedReady.discover(ready.page.items, candidates.items);
 						if (invocation.output == Json)
-							writeJsonStdout(renderGatedReadyJson(molecules));
+							return writeRenderedJsonStdout(renderGatedReadyJson(molecules));
 						else
 							output.writeStdout(renderGatedReadyHuman(molecules));
 						0;
@@ -835,7 +858,7 @@ final class Application {
 					case ListSuccess(candidates):
 						final explanation = ReadyExplain.build(ready.page.items, candidates.items);
 						if (invocation.output == Json)
-							writeJsonStdout(renderReadyExplanationJson(explanation));
+							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation));
 						else
 							output.writeStdout(renderReadyExplanationHuman(explanation));
 						0;
@@ -899,8 +922,7 @@ final class Application {
 						}
 						final analysis = MoleculeReady.analyze(root.id, steps, dependencies);
 						if (invocation.output == Json) {
-							writeJsonStdout(renderMoleculeReadyJson(root.title, page.items, analysis));
-							0;
+							writeRenderedJsonStdout(renderMoleculeReadyJson(root.title, page.items, analysis));
 						} else {
 							output.writeStdout(renderMoleculeReadyHuman(root.title, page.items, analysis));
 							0;
@@ -1044,7 +1066,9 @@ final class Application {
 	function renderQuery(invocation:Invocation, rows:Array<beadshx.store.IssueQueryRow>, hasMore:Bool):Int {
 		final items = [for (row in rows) row.item];
 		if (invocation.output == Json) {
-			writeJsonStdout(renderListJsonArray({items: items, hasMore: hasMore, formatted: ""}, false, false));
+			final status = writeRenderedJsonStdout(renderListJsonArray({items: items, hasMore: hasMore, formatted: ""}, false, false));
+			if (status != 0)
+				return status;
 		} else if (items.length == 0) {
 			output.writeStdout('No issues found matching query: ${invocation.queryRequest.expression}\n');
 		} else if (invocation.queryRequest.longFormat) {
@@ -1077,8 +1101,7 @@ final class Application {
 
 	function renderSearch(invocation:Invocation, page:IssueListPage):Int {
 		if (invocation.output == Json) {
-			writeJsonStdout(renderListJsonArray(page, false, false, false));
-			return 0;
+			return writeRenderedJsonStdout(renderListJsonArray(page, false, false, false));
 		}
 		if (page.items.length == 0) {
 			output.writeStdout('No issues found matching \'${invocation.searchQuery}\'\n');
@@ -1144,8 +1167,7 @@ final class Application {
 
 	function renderStale(invocation:Invocation, issues:Array<StaleIssue>):Int {
 		if (invocation.output == Json) {
-			writeJsonStdout(renderRawIssuesJson(issues));
-			return 0;
+			return writeRenderedJsonStdout(renderRawIssuesJson(issues));
 		}
 		if (issues.length == 0) {
 			output.writeStdout("\n✨ No stale issues found (all active)\n\n");
@@ -1334,7 +1356,7 @@ final class Application {
 		return rendered.toString();
 	}
 
-	static function renderMoleculeReadyJson(title:String, items:Array<IssueListItem>, analysis:MoleculeReadyAnalysis):String {
+	static function renderMoleculeReadyJson(title:String, items:Array<IssueListItem>, analysis:MoleculeReadyAnalysis):StoreResult<String> {
 		final byId = new Map<String, IssueListItem>();
 		for (item in items)
 			byId.set(item.id, item);
@@ -1354,7 +1376,10 @@ final class Application {
 				continue;
 			lines.push("    {");
 			lines.push('      "issue": {');
-			final issueFields = renderRawIssueFields(issue);
+			final issueFields = switch renderRawIssueFields(issue) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			for (fieldIndex in 0...issueFields.length) {
 				final suffix = fieldIndex == issueFields.length - 1 ? "" : ",";
 				lines.push('        ${issueFields[fieldIndex]}${suffix}');
@@ -1382,7 +1407,7 @@ final class Application {
 		lines.push("  },");
 		lines.push('  "schema_version": 1');
 		lines.push("}");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	static function renderReadyExplanationHuman(explanation:ReadyExplanation):String {
@@ -1440,15 +1465,23 @@ final class Application {
 		return rendered.toString();
 	}
 
-	static function renderGatedReadyJson(molecules:Array<GatedMolecule>):String {
+	static function renderGatedReadyJson(molecules:Array<GatedMolecule>):StoreResult<String> {
 		final lines = ["{", '  "count": ${molecules.length},', '  "molecules": ['];
 		for (index in 0...molecules.length) {
 			final molecule = molecules[index];
+			final closedGate = switch renderGatedIssueField("closed_gate", molecule.closedGate) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			final readyStep = switch renderGatedIssueField("ready_step", molecule.readyStep) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			final fields = [
-				renderGatedIssueField("closed_gate", molecule.closedGate),
+				closedGate,
 				'"molecule_id": ${Json.stringify(molecule.moleculeId)}',
 				'"molecule_title": ${Json.stringify(molecule.moleculeTitle)}',
-				renderGatedIssueField("ready_step", molecule.readyStep)
+				readyStep
 			];
 			fields.sort(compareJsonFields);
 			lines.push("    {");
@@ -1461,11 +1494,14 @@ final class Application {
 		lines.push("  ],");
 		lines.push('  "schema_version": 1');
 		lines.push("}");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
-	static function renderGatedIssueField(name:String, issue:IssueListItem):String {
-		final fields = renderRawIssueFields(issue, true, "        ");
+	static function renderGatedIssueField(name:String, issue:IssueListItem):StoreResult<String> {
+		final fields = switch renderRawIssueFields(issue, true, "        ") {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
 		if (issue.labels.length > 0)
 			fields.push(renderRawStringArray("labels", issue.labels, "        "));
 		fields.sort(compareJsonFields);
@@ -1475,15 +1511,18 @@ final class Application {
 			lines.push('        ${fields[index]}${suffix}');
 		}
 		lines.push("      }");
-		return lines.join("\n");
+		return Success(lines.join("\n"));
 	}
 
-	static function renderReadyExplanationJson(explanation:ReadyExplanation):String {
+	static function renderReadyExplanationJson(explanation:ReadyExplanation):StoreResult<String> {
 		final lines = ["{"];
 		lines.push('  "blocked": [');
 		for (index in 0...explanation.blocked.length) {
 			final item = explanation.blocked[index];
-			final fields = renderRawIssueFields(item.issue, true, "      ");
+			final fields = switch renderRawIssueFields(item.issue, true, "      ") {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			if (item.issue.labels.length > 0)
 				fields.push(renderRawStringArray("labels", item.issue.labels, "      "));
 			final blockerLines = ['"blocked_by": ['];
@@ -1524,7 +1563,10 @@ final class Application {
 		lines.push('  "ready": [');
 		for (index in 0...explanation.ready.length) {
 			final item = explanation.ready[index];
-			final fields = renderRawIssueFields(item.issue, true, "      ");
+			final fields = switch renderRawIssueFields(item.issue, true, "      ") {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			if (item.issue.labels.length > 0)
 				fields.push(renderRawStringArray("labels", item.issue.labels, "      "));
 			fields.push('"reason": ${Json.stringify(item.reason)}');
@@ -1559,7 +1601,7 @@ final class Application {
 		lines.push('    "total_ready": ${explanation.ready.length}');
 		lines.push("  }");
 		lines.push("}");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	static function appendJsonStringArray(lines:Array<String>, indent:String, name:String, values:Array<String>, comma:Bool):Void {
@@ -1585,7 +1627,10 @@ final class Application {
 
 	function renderReady(invocation:Invocation, proxied:Bool, result:ReadyResult, query:IssueQueryPort, location:WorkspaceLocation):Int {
 		if (invocation.output == Json) {
-			final legacy = renderListJsonArray(result.page, false, false);
+			final legacy = switch renderListJsonArray(result.page, false, false) {
+				case Failure(message): return runStoreFailure('encoding JSON: $message');
+				case Success(value): value;
+			};
 			if (result.truncated && output.usesJsonEnvelope()) {
 				output.writeStdout(renderReadyEnvelope(legacy, result));
 			} else {
@@ -1653,9 +1698,9 @@ final class Application {
 			final issue = page.items[index];
 			rendered += '${index + 1}. [P${issue.priority}] [${issue.issueType}] ${issue.id}: ${issue.title}\n';
 			switch issue.estimatedMinutes {
-				case IntPresent(value):
+				case IntegerPresent(value):
 					rendered += '   Estimate: ${value} min\n';
-				case IntAbsent:
+				case IntegerAbsent:
 			}
 			if (issue.assignee != "")
 				rendered += '   Assignee: ${issue.assignee}\n';
@@ -1879,7 +1924,7 @@ final class Application {
 								&& !invocation.listRequest.ready) output.writeStdout('Issue \'${invocation.listRequest.parentId}\' has no children\n'); else
 								output.writeStdout(invocation.listFlat ? renderListFlat(page, invocation.listLong, invocation.listRequest.skipLabels,
 								invocation.listRequest.brief) : renderListHuman(page, invocation.listRequest.skipLabels, invocation.listDepsMode));
-						case Json: writeJsonStdout(renderListJson(page, invocation.listRequest.skipLabels));
+						case Json: return writeRenderedJsonStdout(renderListJson(page, invocation.listRequest.skipLabels));
 					}
 				0;
 		};
@@ -2004,7 +2049,8 @@ final class Application {
 	}
 
 	static function compareListItems(left:IssueListItem, right:IssueListItem):Int {
-		return left.priority != right.priority ? (left.priority < right.priority ? -1 : 1) : compareIssueIds(left.id, right.id);
+		final priority = left.priority.compare(right.priority);
+		return priority != 0 ? priority : compareIssueIds(left.id, right.id);
 	}
 
 	static function sortedListItems(items:Array<IssueListItem>):Array<IssueListItem> {
@@ -2132,10 +2178,13 @@ final class Application {
 		};
 	}
 
-	static function renderListJson(page:IssueListPage, skipLabels:Bool):String {
-		final array = renderListJsonArray(page, skipLabels, skipLabels);
+	static function renderListJson(page:IssueListPage, skipLabels:Bool):StoreResult<String> {
+		final array = switch renderListJsonArray(page, skipLabels, skipLabels) {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
 		if (!skipLabels)
-			return array;
+			return Success(array);
 		final rows = array.split("\n");
 		final lines = ['{', '  "issues": ${rows[0]}'];
 		for (index in 1...(rows.length - 1))
@@ -2148,7 +2197,7 @@ final class Application {
 		lines[lines.length - 1] += ",";
 		lines.push('  "schema_version": 1');
 		lines.push("}");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	static function appendSkipLabelsFooter(rendered:String, skipLabels:Bool):String {
@@ -2203,7 +2252,7 @@ final class Application {
 				rendered.add("  Labels: (suppressed by --skip-labels)\n");
 			else if (issue.labels.length > 0)
 				rendered.add('  Labels: [${issue.labels.join(" ")}]\n');
-			if (!issue.metadata.isAbsent()) {
+			if (issue.metadata.hasHumanValue()) {
 				final count = issue.metadata.topLevelFieldCount();
 				rendered.add(count > 0 ? '  Metadata: ${count} keys\n' : "  Metadata: set\n");
 			}
@@ -2212,13 +2261,16 @@ final class Application {
 		return appendSkipLabelsFooter(rendered.toString(), skipLabels);
 	}
 
-	static function renderListJsonArray(page:IssueListPage, forceLabels:Bool, sortFields:Bool, includeRelations:Bool = true):String {
+	static function renderListJsonArray(page:IssueListPage, forceLabels:Bool, sortFields:Bool, includeRelations:Bool = true):StoreResult<String> {
 		if (page.items.length == 0)
-			return "[]\n";
+			return Success("[]\n");
 		final lines = ["["];
 		for (index in 0...page.items.length) {
 			final item = page.items[index];
-			final fields = renderIssueRecordFields(item, "    ", sortFields);
+			final fields = switch renderIssueRecordFields(item, "    ", sortFields) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			if (forceLabels) {
 				fields.push('"labels": []');
 			} else if (item.labels.length > 0) {
@@ -2249,7 +2301,7 @@ final class Application {
 			lines.push(index == page.items.length - 1 ? "  }" : "  },");
 		}
 		lines.push("]");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	static function renderListDependencies(item:IssueListItem, sortFields:Bool):String {
@@ -2317,7 +2369,12 @@ final class Application {
 		if (current == null)
 			return 0;
 
-		output.writeStdout(renderIssueHuman(current, false, WatchedShow));
+		switch renderIssueHuman(current, false, WatchedShow) {
+			case Failure(message):
+				return runStoreFailure(message);
+			case Success(rendered):
+				output.writeStdout(rendered);
+		}
 		var snapshot = issueWatchSnapshot(current);
 		output.writeStderr("\nWatching for changes... (Press Ctrl+C to exit)\n");
 		watch.start();
@@ -2331,8 +2388,14 @@ final class Application {
 				case Success(DetailsFound(issue)):
 					final nextSnapshot = issueWatchSnapshot(issue);
 					if (nextSnapshot != snapshot) {
-						snapshot = nextSnapshot;
-						output.writeStdout(renderIssueHuman(issue, false, WatchedShow));
+						switch renderIssueHuman(issue, false, WatchedShow) {
+							case Failure(message):
+								watch.close();
+								return runStoreFailure(message);
+							case Success(rendered):
+								snapshot = nextSnapshot;
+								output.writeStdout(rendered);
+						}
 						output.writeStderr("\nWatching for changes... (Press Ctrl+C to exit)\n");
 					}
 			}
@@ -2438,7 +2501,7 @@ final class Application {
 			case Human:
 				output.writeStdout(renderThreadHuman(root.title, entries));
 			case Json:
-				writeJsonStdout(renderThreadJson(entries));
+				return writeRenderedJsonStdout(renderThreadJson(entries));
 		}
 		return 0;
 	}
@@ -2516,7 +2579,7 @@ final class Application {
 		}
 		switch invocation.output {
 			case Json:
-				writeJsonStdout(renderShowDependencyMapJson(groups, output.usesJsonEnvelope(), true));
+				return writeRenderedJsonStdout(renderShowDependencyMapJson(groups, output.usesJsonEnvelope(), true));
 			case Human:
 				for (group in groups)
 					output.writeStdout(renderShowRefsGroup(group));
@@ -2613,7 +2676,7 @@ final class Application {
 		}
 		switch invocation.output {
 			case Json:
-				writeJsonStdout(renderShowDependencyMapJson(groups, output.usesJsonEnvelope(), false));
+				return writeRenderedJsonStdout(renderShowDependencyMapJson(groups, output.usesJsonEnvelope(), false));
 			case Human:
 				for (group in groups) {
 					if (group.items.length == 0) {
@@ -2649,7 +2712,7 @@ final class Application {
 		return '${statusIcon(child.status)} ${child.id} P${child.priority} ${typeBadge}${child.title}';
 	}
 
-	static function renderShowDependencyMapJson(groups:Array<ShowDependencyGroup>, envelope:Bool, emptyAsNull:Bool):String {
+	static function renderShowDependencyMapJson(groups:Array<ShowDependencyGroup>, envelope:Bool, emptyAsNull:Bool):StoreResult<String> {
 		final orderedGroups = groups.copy();
 		orderedGroups.sort((left, right) -> compareIssueIds(left.issueId, right.issueId));
 		final keys = ["schema_version"];
@@ -2678,7 +2741,10 @@ final class Application {
 			lines.push('  ${Json.stringify(key)}: [');
 			for (childIndex in 0...children.length) {
 				final child = children[childIndex];
-				final fields = renderIssueRecordFields(child, "      ", !envelope);
+				final fields = switch renderIssueRecordFields(child, "      ", !envelope) {
+					case Failure(message): return Failure(message);
+					case Success(value): value;
+				};
 				fields.push('"dependency_type": ${Json.stringify(child.dependencyType)}');
 				if (!envelope)
 					fields.sort(compareJsonFields);
@@ -2692,7 +2758,7 @@ final class Application {
 			lines.push('  ]${topSuffix}');
 		}
 		lines.push("}");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	function runShowHuman(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
@@ -2728,9 +2794,13 @@ final class Application {
 			}
 		}
 		for (index in 0...found.length) {
+			final rendered = switch renderIssueHuman(found[index], invocation.showLong) {
+				case Failure(message): return runStoreFailure(message);
+				case Success(value): value;
+			};
 			if (index > 0)
 				output.writeStdout("\n" + StringTools.rpad("", "─", 60) + "\n\n");
-			output.writeStdout(renderIssueHuman(found[index], invocation.showLong));
+			output.writeStdout(rendered);
 		}
 		return found.length == 0 ? 1 : 0;
 	}
@@ -2813,8 +2883,7 @@ final class Application {
 		}
 		if (found.length == 0)
 			return runModeAwareFailure(invocation.output, "no issues found matching the provided IDs");
-		writeJsonStdout(renderShowJson(found));
-		return 0;
+		return writeRenderedJsonStdout(renderShowJson(found));
 	}
 
 	function lookupIssueSummary(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):StoreResult<IssueLookup> {
@@ -2919,15 +2988,15 @@ final class Application {
 		return '${icon} ${issue.id} P${issue.priority} ${typeBadge}${issue.title}';
 	}
 
-	function renderIssueHuman(issue:IssueDetails, longMode:Bool, mode:HumanShowMode = StandardShow):String {
+	function renderIssueHuman(issue:IssueDetails, longMode:Bool, mode:HumanShowMode = StandardShow):StoreResult<String> {
 		final typeBadge = switch issue.issueType {
 			case "epic": " [EPIC]";
 			case "bug": " [BUG]";
 			case _: "";
 		};
-		final compactionMarker = switch issue.longFields.compactionLevel {
-			case 1: " 🗜️";
-			case 2: " 📦";
+		final compactionMarker = switch issue.longFields.compactionLevel.wireValue() {
+			case "1": " 🗜️";
+			case "2": " 📦";
 			case _: "";
 		};
 		var rendered = '${statusIcon(issue.status)} ${issue.id}${typeBadge} · ${issue.title}${compactionMarker}   [P${issue.priority} · ${issue.status.toUpperCase()}]\n';
@@ -2949,13 +3018,16 @@ final class Application {
 		rendered += dates.join(" · ") + "\n";
 		if (issue.status == "closed" && issue.closeReason != "")
 			rendered += 'Close reason: ${StringTools.trim(issue.closeReason)}\n';
-		if (issue.externalRef != "")
+		if (issue.externalRef != null && issue.externalRef != "")
 			rendered += 'External: ${issue.externalRef}\n';
 		if (issue.specId != "")
 			rendered += 'Spec: ${issue.specId}\n';
 		if (issue.longFields.ephemeral && issue.wispType != "")
 			rendered += 'Wisp type: ${issue.wispType}\n';
-		final savings = compactionSavingsLine(issue);
+		final savings = switch compactionSavingsLine(issue) {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
 		if (savings != "")
 			rendered += savings + "\n";
 		if (issue.description != "" || mode == StandardShow) {
@@ -2987,7 +3059,7 @@ final class Application {
 		}
 		if (longMode)
 			rendered += renderIssueLongExtras(issue);
-		return rendered + "\n";
+		return Success(rendered + "\n");
 	}
 
 	static function renderIssueLongExtras(issue:IssueDetails):String {
@@ -2998,8 +3070,8 @@ final class Application {
 		if (issue.closedBySession != "")
 			details.push('  Closed by session: ${issue.closedBySession}');
 		switch issue.estimatedMinutes {
-			case IntAbsent:
-			case IntPresent(value):
+			case IntegerAbsent:
+			case IntegerPresent(value):
 				details.push('  Estimated: ${value} minutes');
 		}
 		if (issue.sourceSystem != "")
@@ -3019,13 +3091,13 @@ final class Application {
 		final sections = new Array<String>();
 		if (details.length > 0)
 			sections.push("EXTENDED DETAILS\n" + details.join("\n"));
-		if (rare.compactionLevel > 0) {
+		if (rare.compactionLevel.compare(0) > 0) {
 			final compaction = ['  Level: ${rare.compactionLevel}'];
 			if (rare.compactedAt != "")
 				compaction.push('  Compacted at: ${formatHumanTime(rare.compactedAt)}');
-			if (rare.compactedAtCommit != "")
+			if (rare.compactedAtCommit != null)
 				compaction.push('  Compacted at commit: ${rare.compactedAtCommit}');
-			if (rare.originalSize > 0)
+			if (rare.originalSize.compare(0) > 0)
 				compaction.push('  Original size: ${rare.originalSize} bytes');
 			sections.push("COMPACTION\n" + compaction.join("\n"));
 		}
@@ -3067,17 +3139,15 @@ final class Application {
 		return sections.length == 0 ? "" : "\n" + sections.join("\n\n") + "\n";
 	}
 
-	static function compactionSavingsLine(issue:IssueDetails):String {
-		final original = issue.longFields.originalSize;
-		if (issue.longFields.compactionLevel == 0 || original <= 0)
-			return "";
-		final current = haxe.io.Bytes.ofString(issue.description).length + haxe.io.Bytes.ofString(issue.design).length
-			+ haxe.io.Bytes.ofString(issue.notes).length + haxe.io.Bytes.ofString(issue.acceptanceCriteria).length;
-		final saved = original - current;
-		if (saved <= 0)
-			return "";
-		final reduction = Math.round(saved / original * 100);
-		return '📊 ${original} → ${current} bytes (${reduction}% reduction)';
+	static function compactionSavingsLine(issue:IssueDetails):StoreResult<String> {
+		return beadshx.store.NativeIssueMath.compactionSavingsLine({
+			level: issue.longFields.compactionLevel,
+			original: issue.longFields.originalSize,
+			description: issue.description,
+			design: issue.design,
+			notes: issue.notes,
+			acceptance: issue.acceptanceCriteria
+		});
 	}
 
 	static function renderHumanDependencySections(issue:IssueDetails):String {
@@ -3224,10 +3294,13 @@ final class Application {
 		};
 	}
 
-	static function renderThreadJson(entries:Array<ThreadEntry>):String {
+	static function renderThreadJson(entries:Array<ThreadEntry>):StoreResult<String> {
 		final lines = ["["];
 		for (index in 0...entries.length) {
-			final fields = renderRawIssueFields(entries[index].issue);
+			final fields = switch renderRawIssueFields(entries[index].issue) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			lines.push("  {");
 			for (fieldIndex in 0...fields.length) {
 				final suffix = fieldIndex == fields.length - 1 ? "" : ",";
@@ -3236,13 +3309,16 @@ final class Application {
 			lines.push(index == entries.length - 1 ? "  }" : "  },");
 		}
 		lines.push("]");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
-	static function renderRawIssuesJson(issues:Array<StaleIssue>):String {
+	static function renderRawIssuesJson(issues:Array<StaleIssue>):StoreResult<String> {
 		final lines = ["["];
 		for (index in 0...issues.length) {
-			final fields = renderRawIssueFields(issues[index]);
+			final fields = switch renderRawIssueFields(issues[index]) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			lines.push("  {");
 			for (fieldIndex in 0...fields.length) {
 				final suffix = fieldIndex == fields.length - 1 ? "" : ",";
@@ -3251,11 +3327,12 @@ final class Application {
 			lines.push(index == issues.length - 1 ? "  }" : "  },");
 		}
 		lines.push("]");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
 	/** Renders the pinned generic Issue JSON used by `show --thread --json`. */
-	static function renderRawIssueFields(issue:RawIssueRecord, sortMetadata:Bool = false, fieldIndent:String = "    "):Array<String> {
+	static function renderRawIssueFields(issue:RawIssueRecord, sortMetadata:Bool = false, fieldIndent:String = "    ",
+			?labels:Array<String>):StoreResult<Array<String>> {
 		final rare = issue.longFields;
 		final fields = new Array<String>();
 		fields.push('"id": ${Json.stringify(issue.id)}');
@@ -3282,8 +3359,8 @@ final class Application {
 		if (issue.owner != "")
 			fields.push('"owner": ${Json.stringify(issue.owner)}');
 		switch issue.estimatedMinutes {
-			case IntAbsent:
-			case IntPresent(value):
+			case IntegerAbsent:
+			case IntegerPresent(value):
 				fields.push('"estimated_minutes": ${value}');
 		}
 		fields.push('"created_at": ${Json.stringify(issue.createdAt)}');
@@ -3308,22 +3385,27 @@ final class Application {
 			fields.push('"due_at": ${Json.stringify(issue.dueAt)}');
 		if (issue.deferUntil != "")
 			fields.push('"defer_until": ${Json.stringify(issue.deferUntil)}');
-		if (issue.externalRef != "")
+		if (issue.externalRef != null)
 			fields.push('"external_ref": ${Json.stringify(issue.externalRef)}');
 		if (issue.sourceSystem != "")
 			fields.push('"source_system": ${Json.stringify(issue.sourceSystem)}');
-		if (!issue.metadata.isAbsent() && issue.metadata.topLevelFieldCount() > 0) {
-			final metadata = sortMetadata ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ");
+		if (!issue.metadata.isAbsent()) {
+			final metadata = switch (sortMetadata ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ")) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			fields.push('"metadata": ${metadata}');
 		}
-		if (rare.compactionLevel != 0)
+		if (rare.compactionLevel.compare(0) != 0)
 			fields.push('"compaction_level": ${rare.compactionLevel}');
 		if (rare.compactedAt != "")
 			fields.push('"compacted_at": ${Json.stringify(rare.compactedAt)}');
-		if (rare.compactedAtCommit != "")
+		if (rare.compactedAtCommit != null)
 			fields.push('"compacted_at_commit": ${Json.stringify(rare.compactedAtCommit)}');
-		if (rare.originalSize != 0)
+		if (rare.originalSize.compare(0) != 0)
 			fields.push('"original_size": ${rare.originalSize}');
+		if (labels != null && labels.length > 0)
+			fields.push(renderRawStringArray("labels", labels, fieldIndent));
 		if (rare.sender != "")
 			fields.push('"sender": ${Json.stringify(rare.sender)}');
 		if (rare.ephemeral)
@@ -3364,7 +3446,7 @@ final class Application {
 			fields.push('"target": ${Json.stringify(rare.target)}');
 		if (rare.payload != "")
 			fields.push('"payload": ${Json.stringify(rare.payload)}');
-		return fields;
+		return Success(fields);
 	}
 
 	static function renderRawBondedFrom(references:Array<beadshx.store.IssueBondReference>, fieldIndent:String):String {
@@ -3396,11 +3478,14 @@ final class Application {
 	}
 
 	/** Renders the pinned Beads field order and zero-value omission rules. */
-	static function renderShowJson(issues:Array<IssueDetails>):String {
+	static function renderShowJson(issues:Array<IssueDetails>):StoreResult<String> {
 		final lines = ["["];
 		for (index in 0...issues.length) {
 			final issue = issues[index];
-			final fields = renderIssueRecordFields(issue, "    ");
+			final fields = switch renderIssueRecordFields(issue, "    ") {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			if (issue.labels.length > 0) {
 				final labelLines = ['"labels": ['];
 				for (labelIndex in 0...issue.labels.length) {
@@ -3410,17 +3495,27 @@ final class Application {
 				labelLines.push("    ]");
 				fields.push(labelLines.join("\n"));
 			}
-			if (issue.dependencies.length > 0)
-				fields.push(renderIssueRelations("dependencies", issue.dependencies));
-			if (issue.dependents.length > 0)
-				fields.push(renderIssueRelations("dependents", issue.dependents));
+			if (issue.dependencies.length > 0) {
+				final rendered = switch renderIssueRelations("dependencies", issue.dependencies) {
+					case Failure(message): return Failure(message);
+					case Success(value): value;
+				};
+				fields.push(rendered);
+			}
+			if (issue.dependents.length > 0) {
+				final rendered = switch renderIssueRelations("dependents", issue.dependents) {
+					case Failure(message): return Failure(message);
+					case Success(value): value;
+				};
+				fields.push(rendered);
+			}
 			if (issue.comments.length > 0)
 				fields.push(renderIssueComments(issue.comments));
 			if (issue.parent != "")
 				fields.push('"parent": ${Json.stringify(issue.parent)}');
 			fields.push('"dependent_count": ${issue.dependentCount}');
 			fields.push('"dependency_count": ${issue.dependencyCount}');
-			fields.push('"comment_count": ${issue.commentCount}');
+			fields.push('"comment_count": ${issue.commentCount.wireValue()}');
 			if (issue.commentsOmitted)
 				fields.push('"comments_omitted": true');
 			switch issue.epicProgress {
@@ -3440,10 +3535,10 @@ final class Application {
 			lines.push('  }${suffix}');
 		}
 		lines.push("]");
-		return lines.join("\n") + "\n";
+		return Success(lines.join("\n") + "\n");
 	}
 
-	static function renderIssueRecordFields(issue:IssueRecord, fieldIndent:String, sortMetadata:Bool = false):Array<String> {
+	static function renderIssueRecordFields(issue:IssueRecord, fieldIndent:String, sortMetadata:Bool = false):StoreResult<Array<String>> {
 		final fields = new Array<String>();
 		fields.push('"id": ${Json.stringify(issue.id)}');
 		fields.push('"title": ${Json.stringify(issue.title)}');
@@ -3467,8 +3562,8 @@ final class Application {
 		if (issue.owner != "")
 			fields.push('"owner": ${Json.stringify(issue.owner)}');
 		switch issue.estimatedMinutes {
-			case IntAbsent:
-			case IntPresent(value):
+			case IntegerAbsent:
+			case IntegerPresent(value):
 				fields.push('"estimated_minutes": ${value}');
 		}
 		fields.push('"created_at": ${Json.stringify(issue.createdAt)}');
@@ -3487,26 +3582,32 @@ final class Application {
 			fields.push('"due_at": ${Json.stringify(issue.dueAt)}');
 		if (issue.deferUntil != "")
 			fields.push('"defer_until": ${Json.stringify(issue.deferUntil)}');
-		if (issue.externalRef != "")
+		if (issue.externalRef != null)
 			fields.push('"external_ref": ${Json.stringify(issue.externalRef)}');
 		if (issue.sourceSystem != "")
 			fields.push('"source_system": ${Json.stringify(issue.sourceSystem)}');
-		if (!issue.metadata.isAbsent() && issue.metadata.topLevelFieldCount() > 0) {
-			final metadata = sortMetadata ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ");
+		if (!issue.metadata.isAbsent()) {
+			final metadata = switch (sortMetadata ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ")) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			fields.push('"metadata": ${metadata}');
 		}
 		if (issue.wispType != "")
 			fields.push('"wisp_type": ${Json.stringify(issue.wispType)}');
 		if (issue.moleculeType != "")
 			fields.push('"mol_type": ${Json.stringify(issue.moleculeType)}');
-		return fields;
+		return Success(fields);
 	}
 
-	static function renderIssueRelations(fieldName:String, relations:Array<IssueDependency>):String {
+	static function renderIssueRelations(fieldName:String, relations:Array<IssueDependency>):StoreResult<String> {
 		final lines = ['${Json.stringify(fieldName)}: ['];
 		for (index in 0...relations.length) {
 			final dependency = relations[index];
-			final fields = renderIssueRecordFields(dependency, "        ");
+			final fields = switch renderIssueRecordFields(dependency, "        ") {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
 			fields.push('"dependency_type": ${Json.stringify(dependency.dependencyType)}');
 			lines.push("      {");
 			for (fieldIndex in 0...fields.length) {
@@ -3517,7 +3618,7 @@ final class Application {
 			lines.push('      }${suffix}');
 		}
 		lines.push("    ]");
-		return lines.join("\n");
+		return Success(lines.join("\n"));
 	}
 
 	static function renderIssueComments(comments:Array<IssueComment>):String {
@@ -3872,7 +3973,7 @@ final class Application {
 			+ "Usage:\n  bdhx dep list [issue-id...] [flags]\n\n"
 			+ "Flags:\n  -h, --help               help for list\n"
 			+ "  -t, --type string        Filter by dependency type\n"
-			+ "      --direction string   Dependency direction (down only in this read-only slice) (default \"down\")\n\n"
+			+ "      --direction string   Direction: 'down' (dependencies), 'up' (dependents) (default \"down\")\n\n"
 			+ supportedGlobalFlags();
 	}
 

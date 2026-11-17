@@ -3,6 +3,8 @@ package beadshx.store;
 import beadshx.relation.DependencyRead;
 import beadshx.relation.DependencyRead.DependencyFinishResult;
 import beadshx.relation.DependencyRead.DependencyReadPlan;
+import beadshx.relation.RelationRead.RelationReadPlan;
+import beadshx.relation.RelatedIssue;
 
 /** Installs the Haxe-authored embedded Dolt implementation in CGO builds. */
 @:goBuildConstraint("cgo")
@@ -12,6 +14,10 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 	static final installed:Bool = EmbeddedStoreAccess.install(new EmbeddedCgoStore());
 
 	public function new() {}
+
+	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
+		return EmbeddedRelationReader.read(beadsDir, databaseName, plan);
+	}
 
 	public function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return switch new EmbeddedDependencyReader(beadsDir, databaseName).read(plan.anchors) {
@@ -32,8 +38,8 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		};
 	}
 
-	public function issueDetails(beadsDir:String, id:String):Null<StoreResult<IssueDetailsLookup>> {
-		return switch new EmbeddedScalarIssueDetailsReader(beadsDir).read(id) {
+	public function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
+		return switch new EmbeddedScalarIssueDetailsReader(beadsDir).read(id, request) {
 			case EmbeddedScalarDetailsFailure(message): Failure(message);
 			case EmbeddedScalarDetailsMissing: Success(DetailsMissing);
 			case EmbeddedScalarDetailsFound(details): Success(DetailsFound(details));
