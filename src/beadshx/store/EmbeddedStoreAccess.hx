@@ -1,6 +1,8 @@
 package beadshx.store;
 
 import beadshx.relation.DependencyRead.DependencyReadPlan;
+import beadshx.relation.RelationRead.RelationReadPlan;
+import beadshx.relation.RelatedIssue;
 
 /**
 	Owns platform selection for Haxe-authored embedded storage.
@@ -20,12 +22,16 @@ final class EmbeddedStoreAccess {
 		return implementation.dependencyEdges(beadsDir, databaseName, plan);
 	}
 
+	public static function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
+		return implementation.relatedIssues(beadsDir, databaseName, plan);
+	}
+
 	public static function issueSummary(beadsDir:String, databaseName:String, id:String):Null<StoreResult<IssueLookup>> {
 		return implementation.issueSummary(beadsDir, databaseName, id);
 	}
 
-	public static function issueDetails(beadsDir:String, id:String):Null<StoreResult<IssueDetailsLookup>> {
-		return implementation.issueDetails(beadsDir, id);
+	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
+		return implementation.issueDetails(beadsDir, id, request);
 	}
 
 	public static function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:String):Null<StoreResult<String>> {
@@ -40,6 +46,10 @@ final class EmbeddedStoreAccess {
 private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	public function new() {}
 
+	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
+		return null;
+	}
+
 	public function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return null;
 	}
@@ -48,7 +58,7 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 		return null;
 	}
 
-	public function issueDetails(beadsDir:String, id:String):Null<StoreResult<IssueDetailsLookup>> {
+	public function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return null;
 	}
 

@@ -56,4 +56,5 @@ typedef Invocation = {
 	final showBriefDependencies:Bool;
 	final showIds:Array<String>;
 	final depType:String;
+	final depListSelection:DepListSelection;
 }

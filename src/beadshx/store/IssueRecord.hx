@@ -10,11 +10,11 @@ typedef IssueRecord = {
 	final notes:String;
 	final specId:String;
 	final status:String;
-	final priority:Int;
+	final priority:JsonInteger;
 	final issueType:String;
 	final assignee:String;
 	final owner:String;
-	final estimatedMinutes:OptionalInt;
+	final estimatedMinutes:OptionalIssueInteger;
 	final createdAt:String;
 	final createdBy:String;
 	final updatedAt:String;
@@ -24,9 +24,12 @@ typedef IssueRecord = {
 	final closedBySession:String;
 	final dueAt:String;
 	final deferUntil:String;
-	final externalRef:String;
+
+	/** NULL omits the wire field; an empty string remains present. */
+	final externalRef:Null<String>;
+
 	final sourceSystem:String;
-	final metadata:JsonValue;
+	final metadata:StoredMetadata;
 	final wispType:String;
 	final moleculeType:String;
 }

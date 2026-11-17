@@ -15,7 +15,7 @@ typedef IssueDetails = {
 	final parent:String;
 	final dependentCount:Int;
 	final dependencyCount:Int;
-	final commentCount:Int;
+	final commentCount:JsonInteger;
 	final commentsOmitted:Bool;
 	final epicProgress:EpicProgress;
 	final revision:JsonInteger;

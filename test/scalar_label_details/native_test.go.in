@@ -1,0 +1,136 @@
+package main
+
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
+	"github.com/DATA-DOG/go-sqlmock"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
+
+var pinnedColumns = strings.Split("id,content_hash,title,description,design,acceptance_criteria,notes,status,priority,issue_type,assignee,estimated_minutes,created_at,created_by,owner,updated_at,started_at,closed_at,external_ref,spec_id,compaction_level,compacted_at,compacted_at_commit,original_size,source_repo,close_reason,closed_by_session,sender,ephemeral,no_history,wisp_type,pinned,is_template,await_type,await_id,timeout_ns,waiters,mol_type,event_kind,actor,target,payload,due_at,defer_until,work_type,source_system,metadata,row_lock,storage_class,lease_expires_at,heartbeat_at,granted_node", ",")
+
+func pinnedValues() []driver.Value {
+	return []driver.Value{
+		"id-sentinel", "content-hash-sentinel", "title-sentinel", "description-sentinel", "design-sentinel", "acceptance-sentinel", "notes-sentinel", "in_progress", int64(7), "task",
+		"assignee-sentinel", int64(101), "2026-01-02 03:04:05", "created-by-sentinel", "owner-sentinel", "2026-01-03T04:05:06.123456789+02:00",
+		time.Date(2026, 1, 4, 5, 6, 7, 0, time.UTC), time.Date(2026, 1, 5, 6, 7, 8, 0, time.UTC), "external-ref-sentinel", "spec-sentinel",
+		int64(8), time.Date(2026, 1, 6, 7, 8, 9, 0, time.UTC), "commit-sentinel", int64(303), "source-repo-sentinel", "close-reason-sentinel", "closed-by-sentinel",
+		"sender-sentinel", int64(1), int64(9007199254740993), "wisp-sentinel", int64(-1), int64(2), "await-type-sentinel", "await-id-sentinel",
+		int64(9007199254740993), `[null,"waiter-sentinel"]`, "mol-sentinel", "event-sentinel", "actor-sentinel", "target-sentinel", "payload-sentinel",
+		time.Date(2026, 1, 7, 8, 9, 10, 0, time.UTC), time.Date(2026, 1, 8, 9, 10, 11, 0, time.UTC), "work-sentinel", "source-system-sentinel",
+		`{"source":"oracle"}`, int64(9007199254740995), "storage-sentinel",
+		time.Date(2026, 1, 9, 10, 11, 12, 0, time.UTC), time.Date(2026, 1, 10, 11, 12, 13, 0, time.UTC), "grant-sentinel",
+	}
+}
+
+func expectLabels(m sqlmock.Sqlmock, kind string) {
+	q := m.ExpectQuery("SELECT label FROM labels WHERE issue_id = ")
+	switch kind {
+	case "query":
+		q.WillReturnError(errors.New("label denied"))
+	case "null":
+		q.WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow(nil))
+	case "good-null":
+		q.WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("kept").AddRow(nil))
+	case "row":
+		q.WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("kept").AddRow("not-read").RowError(1, errors.New("label stream failed")))
+	case "close":
+		q.WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("kept").CloseError(errors.New("deferred close failed")), sqlmock.NewRows([]string{"label"}))
+	case "empty":
+		q.WillReturnRows(sqlmock.NewRows([]string{"label"}))
+	case "success":
+		q.WillReturnRows(sqlmock.NewRows([]string{"label"}).AddRow("").AddRow("kept"))
+	}
+	if kind != "query" {
+		q.RowsWillBeClosed()
+	}
+}
+
+func TestScalarLabelAssembly(t *testing.T) {
+	cases := []struct {
+		name  string
+		want  []string
+		fatal bool
+	}{
+		{"query", nil, true}, {"null", nil, true}, {"good-null", nil, true}, {"row", []string{"kept"}, true}, {"close", []string{"kept"}, false}, {"empty", nil, false}, {"success", []string{"", "kept"}, false},
+	}
+	for _, tc := range cases {
+		for _, phase := range []string{"first", "second"} {
+			t.Run(phase+"/"+tc.name, func(t *testing.T) {
+				db, m, e := sqlmock.New()
+				if e != nil {
+					t.Fatal(e)
+				}
+				defer db.Close()
+				m.ExpectBegin()
+				tx, e := db.Begin()
+				if e != nil {
+					t.Fatal(e)
+				}
+				m.ExpectQuery("SELECT .* FROM issues ").WillReturnRows(sqlmock.NewRows(pinnedColumns).AddRow(pinnedValues()...))
+				if phase == "first" {
+					expectLabels(m, tc.name)
+				} else {
+					expectLabels(m, "success")
+				}
+				fatal := phase == "first" && tc.fatal
+				if !fatal {
+					// Second label route is resolved independently; durable issue has no active wisp.
+					m.ExpectQuery("SELECT 1 FROM wisps WHERE id").WillReturnRows(sqlmock.NewRows([]string{"1"}))
+					if phase == "second" {
+						expectLabels(m, tc.name)
+					} else {
+						expectLabels(m, "success")
+					}
+					m.ExpectQuery("SELECT 'dependencies', COUNT").WillReturnRows(sqlmock.NewRows([]string{"kind", "count"}))
+					m.ExpectQuery("SELECT count\\(\\*\\) FROM comments WHERE issue_id = ").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+				}
+				m.ExpectRollback()
+				raw := observeLabels(tx)
+				if raw == nil {
+					t.Fatal("nil observation")
+				}
+				var got struct {
+					Error  string
+					Labels []string
+				}
+				if e = json.Unmarshal([]byte(*raw), &got); e != nil {
+					t.Fatal(e)
+				}
+				if fatal {
+					wantError := "get issue labels: get labels: label denied"
+					if tc.name == "null" || tc.name == "good-null" {
+						wantError = `get issue labels: get labels: scan: sql: Scan error on column index 0, name "label": converting NULL to string is unsupported`
+					}
+					if tc.name == "row" {
+						wantError = "get issue labels: label stream failed"
+					}
+					if got.Error != wantError {
+						t.Errorf("first-phase error%q want%q", got.Error, wantError)
+					}
+				} else {
+					if got.Error != "" {
+						t.Errorf("detail must survive second-phase label error: %s", got.Error)
+					}
+					want := tc.want
+					if phase == "first" {
+						want = []string{"", "kept"}
+					}
+					if len(got.Labels) != len(want) || (len(want) > 0 && !reflect.DeepEqual(got.Labels, want)) {
+						t.Errorf("labels%q want%q", got.Labels, want)
+					}
+				}
+				if e = tx.Rollback(); e != nil {
+					t.Error(e)
+				}
+				if e = m.ExpectationsWereMet(); e != nil {
+					t.Error(e)
+				}
+			})
+		}
+	}
+}

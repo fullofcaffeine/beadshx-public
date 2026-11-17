@@ -61,7 +61,7 @@ final class QueryPage {
 
 	static function compareRows(left:IssueQueryRow, right:IssueQueryRow, sortBy:String):Int {
 		return switch sortBy {
-			case "priority": compareInts(left.item.priority, right.item.priority);
+			case "priority": left.item.priority.compare(right.item.priority);
 			case "created": -compareInstants(left.created, right.created);
 			case "updated": -compareInstants(left.updated, right.updated);
 			case "closed": compareClosed(left.closed, right.closed);

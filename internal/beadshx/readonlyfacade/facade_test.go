@@ -17,7 +17,7 @@ func TestIssueRecordCopiesRareLongFields(t *testing.T) {
 	leaseExpiresAt := time.Date(2026, 8, 21, 15, 0, 0, 0, time.UTC)
 	heartbeatAt := time.Date(2026, 8, 21, 14, 59, 0, 0, time.UTC)
 	compactedCommit := "abc123"
-	record, err := projectIssueRecord(types.Issue{
+	record := projectIssueRecord(types.Issue{
 		ID:                "test-rare",
 		Metadata:          []byte(`{"valid":true}`),
 		IsBlocked:         true,
@@ -49,11 +49,8 @@ func TestIssueRecordCopiesRareLongFields(t *testing.T) {
 		Target:         "bead://b",
 		Payload:        `{"k":1}`,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if record.compactionLevel != 2 || record.compactedAt != "2026-08-21T14:00:00Z" ||
-		record.compactedAtCommit != "abc123" || record.originalSize != 100 {
+		record.compactedAtCommit == nil || *record.compactedAtCommit != "abc123" || record.originalSize != 100 {
 		t.Fatalf("compaction projection = %+v", record)
 	}
 	if !record.isBlocked || record.leaseExpiresAt != "2026-08-21T15:00:00Z" ||
@@ -79,6 +76,28 @@ func TestIssueRecordCopiesRareLongFields(t *testing.T) {
 	if record.eventKind != "agent.started" || record.actor != "agent://a" ||
 		record.target != "bead://b" || record.payload != `{"k":1}` {
 		t.Fatalf("event projection = %+v", record)
+	}
+}
+
+func TestIssueRecordPreservesRawMetadata(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "empty", raw: ""},
+		{name: "exact empty object", raw: "{}"},
+		{name: "whitespace", raw: " \t\r\n"},
+		{name: "malformed object", raw: "{"},
+		{name: "invalid token", raw: "oops"},
+		{name: "valid surrounding whitespace", raw: " { } "},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// Raw storage metadata must reach Haxe output validation unchanged.
+			record := projectIssueRecord(types.Issue{ID: "metadata-fixture", Metadata: []byte(testCase.raw)})
+			if got := record.Metadata(); got != testCase.raw {
+				t.Fatalf("metadata = %q, want retained bytes %q", got, testCase.raw)
+			}
+		})
 	}
 }
 

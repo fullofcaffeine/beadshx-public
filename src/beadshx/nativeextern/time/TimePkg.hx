@@ -15,6 +15,11 @@ extern class TimePkg {
 
 	@:go.tupleReturn
 	@:go.tupleValueResults("0")
+	@:go.name("Parse")
+	public static function parse(layout:String, value:String):ParseTimeResult;
+
+	@:go.tupleReturn
+	@:go.tupleValueResults("0")
 	@:go.name("ParseDuration")
 	public static function parseDuration(value:String):ParseDurationResult;
 }

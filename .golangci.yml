@@ -328,9 +328,9 @@ linters:
   exclusions:
     rules:
       # Generated Haxe storage adapters are the BeadsHX equivalent of the
-      # inherited internal/storage boundary. Keep the exception to the six
+      # inherited internal/storage boundary. Keep the exception to the seven
       # files whose typed externs directly consume the Dolt driver API.
-      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|store_embedded(assignedissuereader|dependencyreader|issueidsearch|issuesummaryreader|scalarissuedetailsreader))\.go$'
+      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|store_embedded(assignedissuereader|dependencyreader|issueidsearch|issuesummaryreader|relationreader|scalarissuedetailsreader))\.go$'
         linters:
           - depguard
       # Haxe Std.random intentionally implements a non-cryptographic random
@@ -349,6 +349,14 @@ linters:
           - unparam
       - path: '^generated/go/bdhx/haxego_generated_module_sys_io_file\.go$'
         text: 'binary is unused'
+        linters:
+          - unparam
+      # CallStack retains the Haxe ABI when native stack tracing is disabled;
+      # fullStack is used only by the native-stack-trace implementation.
+      # Remove this exception when compiler task haxe_go-39hn emits
+      # zero-finding Go for standard runtime paths.
+      - path: '^generated/go/bdhx/haxego_generated_module_haxe_callstack\.go$'
+        text: 'fullStack is unused'
         linters:
           - unparam
       # forbidigo holds TWO rules - the filter-construction guard and the

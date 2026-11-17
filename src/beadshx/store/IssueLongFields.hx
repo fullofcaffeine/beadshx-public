@@ -6,10 +6,13 @@ typedef IssueLongFields = {
 	final leaseExpiresAt:String;
 	final heartbeatAt:String;
 	final leaseGrantedNode:String;
-	final compactionLevel:Int;
+	final compactionLevel:JsonInteger;
 	final compactedAt:String;
-	final compactedAtCommit:String;
-	final originalSize:Int;
+
+	/** A present empty commit differs from SQL NULL in JSON and long human output. */
+	final compactedAtCommit:Null<String>;
+
+	final originalSize:JsonInteger;
 	final sender:String;
 	final ephemeral:Bool;
 	final noHistory:Bool;

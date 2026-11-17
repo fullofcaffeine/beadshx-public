@@ -46,9 +46,16 @@ run_command() {
 			"$repository_root/scripts/beadshx/test-toolchain-locks.sh" &&
 			"$repository_root/scripts/beadshx/test-bdhx-entrypoint.sh" &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/query/compile.hxml) &&
+			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/stored_metadata/compile.hxml) &&
+			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/json_integer/compile.hxml) &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/ready/compile.hxml) &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/relation/compile.hxml) &&
+			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/dep_list/compile.hxml) &&
 			"$repository_root/scripts/beadshx/test-storage-transaction-tracer.sh" &&
+			"$repository_root/scripts/beadshx/test-sql-error-contracts.sh" &&
+			"$repository_root/scripts/beadshx/test-sql-error-contracts.sh" --scalar-labels &&
+			"$repository_root/scripts/beadshx/test-sql-error-contracts.sh" --embedded-comments &&
+			"$repository_root/scripts/beadshx/test-storage-relation-tracer.sh" "${BEADSHX_CANDIDATE_BIN:-$repository_root/build/bin/bdhx}" &&
 			(cd "$repository_root" && go test -tags gms_pure_go \
 				./internal/beadshx/... ./generated/go/bdhx)
 		;;

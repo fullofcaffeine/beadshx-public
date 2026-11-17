@@ -1,0 +1,392 @@
+package main
+
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/steveyegge/beads/generated/go/hxrt"
+)
+
+// Independent pinned ScanIssueFrom order; deliberately not derived from the consumer SELECT.
+var completeColumns = strings.Split("id,content_hash,title,description,design,acceptance_criteria,notes,status,priority,issue_type,assignee,estimated_minutes,created_at,created_by,owner,updated_at,started_at,closed_at,external_ref,spec_id,compaction_level,compacted_at,compacted_at_commit,original_size,source_repo,close_reason,closed_by_session,sender,ephemeral,no_history,wisp_type,pinned,is_template,await_type,await_id,timeout_ns,waiters,mol_type,event_kind,actor,target,payload,due_at,defer_until,work_type,source_system,metadata,row_lock,storage_class,lease_expires_at,heartbeat_at,granted_node", ",")
+
+func completeValues() []driver.Value {
+	values := make([]driver.Value, 52)
+	for i := range values {
+		values[i] = ""
+	}
+	values[0] = "row-contract"
+	values[1] = "internal-hash"
+	values[2] = "row title"
+	values[7] = "open"
+	values[8] = int64(2)
+	values[9] = "task"
+	values[12] = "2026-01-02T03:04:05Z"
+	values[15] = "2026-01-02T03:04:05Z"
+	for _, i := range []int{11, 16, 17, 18, 21, 22, 23, 28, 29, 31, 32, 35, 42, 43, 47, 49, 50} {
+		values[i] = nil
+	}
+	values[20] = int64(0)
+	values[24] = "internal-repo"
+	values[46] = " { } "
+	values[49] = time.Date(2026, 1, 2, 4, 5, 6, 0, time.UTC)
+	values[50] = time.Date(2026, 1, 2, 3, 5, 6, 0, time.UTC)
+	values[51] = "replica-contract"
+	return values
+}
+
+func decodeValues(t *testing.T, columns []string, values []driver.Value) *DecodedRow {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT complete-row").WillReturnRows(sqlmock.NewRows(columns).AddRow(values...))
+	rows, err := db.Query("SELECT complete-row")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("expected row")
+	}
+	result := decode(rows)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+// Reflection is limited to this independent native observer, allowing an absent
+// internal field to fail behaviorally instead of preventing baseline compilation.
+func observedField(t *testing.T, value hxrt.Anonymous, name string) reflect.Value {
+	t.Helper()
+	field := hxrt.AnonymousLookup(value, name)
+	if !field.Found {
+		t.Fatalf("decoded row omitted internal field %s", name)
+	}
+	v := reflect.ValueOf(field.Value)
+	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
+		if v.IsNil() {
+			t.Fatalf("nil %s", name)
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() {
+		t.Fatalf("invalid %s", name)
+	}
+	return v
+}
+
+func TestCompleteRow(t *testing.T) {
+	row := decodeValues(t, completeColumns, completeValues())
+	if *row.error != "" {
+		t.Fatalf("valid pinned52 row rejected: %s", *row.error)
+	}
+	for name, want := range map[string]string{"contentHash": "internal-hash", "sourceRepo": "internal-repo", "leaseGrantedNode": "replica-contract"} {
+		if got := observedField(t, row.fields, name).String(); got != want {
+			t.Errorf("%s=%q want%q", name, got, want)
+		}
+	}
+}
+
+func TestNativeFlags(t *testing.T) {
+	cases := []struct {
+		name  string
+		value driver.Value
+		want  bool
+	}{{"null", nil, false}, {"zero", int64(0), false}, {"one", int64(1), true}, {"wide", int64(9007199254740993), true}, {"two", int64(2), true}, {"negative", int64(-1), true}, {"max", int64(9223372036854775807), true}, {"min", int64(-9223372036854775808), true}}
+	for _, field := range []struct {
+		name  string
+		index int
+	}{{"ephemeral", 28}, {"noHistory", 29}, {"pinned", 31}, {"template", 32}} {
+		for _, c := range cases {
+			t.Run(field.name+"/"+c.name, func(t *testing.T) {
+				values := completeValues()
+				values[field.index] = c.value
+				row := decodeValues(t, completeColumns, values)
+				if *row.error != "" {
+					t.Fatal(*row.error)
+				}
+				if got := observedField(t, row.fields, field.name).Bool(); got != c.want {
+					t.Fatalf("got%v want%v", got, c.want)
+				}
+			})
+		}
+	}
+}
+
+func TestNativeConversionAndWidth(t *testing.T) {
+	for _, raw := range []string{"12x", "1.5", "9223372036854775808", "-9223372036854775809"} {
+		t.Run(raw, func(t *testing.T) {
+			v := completeValues()
+			v[28] = raw
+			r := decodeValues(t, completeColumns, v)
+			if !strings.Contains(*r.error, `column index 28, name "ephemeral"`) || !strings.Contains(*r.error, "converting driver.Value") {
+				t.Fatalf("native conversion diagnostic lost: %s", *r.error)
+			}
+		})
+	}
+	for _, width := range []int{51, 53} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			cols := append([]string{}, completeColumns...)
+			v := completeValues()
+			if width == 51 {
+				cols = cols[:51]
+				v = v[:51]
+			} else {
+				cols = append(cols, "extra")
+				v = append(v, nil)
+			}
+			r := decodeValues(t, cols, v)
+			want := fmt.Sprintf("sql: expected %d destination arguments in Scan, not 52", width)
+			if !strings.Contains(*r.error, want) {
+				t.Fatalf("arity diagnostic %q want%q", *r.error, want)
+			}
+		})
+	}
+}
+
+func TestPinnedExactDiagnostics(t *testing.T) {
+	cases := []struct {
+		name  string
+		index int
+		input driver.Value
+		want  string
+	}{
+		{"null_required_id", 0, nil, "scan scalar issue \"row-contract\": sql: Scan error on column index 0, name \"id\": converting NULL to string is unsupported"},
+		{"null_required_title", 2, nil, "scan scalar issue \"row-contract\": sql: Scan error on column index 2, name \"title\": converting NULL to string is unsupported"},
+		{"null_native_priority", 8, nil, "scan scalar issue \"row-contract\": sql: Scan error on column index 8, name \"priority\": converting NULL to int is unsupported"},
+		{"null_native_compaction", 20, nil, "scan scalar issue \"row-contract\": sql: Scan error on column index 20, name \"compaction_level\": converting NULL to int is unsupported"},
+		{"bad_native_priority", 8, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 8, name \"priority\": converting driver.Value type string (\"bad\") to a int: invalid syntax"},
+		{"overflow_native_priority", 8, "9223372036854775808", "scan scalar issue \"row-contract\": sql: Scan error on column index 8, name \"priority\": converting driver.Value type string (\"9223372036854775808\") to a int: value out of range"},
+		{"bad_nullable_estimate", 11, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 11, name \"estimated_minutes\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"overflow_nullable_estimate", 11, "9223372036854775808", "scan scalar issue \"row-contract\": sql: Scan error on column index 11, name \"estimated_minutes\": converting driver.Value type string (\"9223372036854775808\") to a int64: value out of range"},
+		{"bad_flag_ephemeral", 28, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 28, name \"ephemeral\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"overflow_flag_ephemeral", 28, "9223372036854775808", "scan scalar issue \"row-contract\": sql: Scan error on column index 28, name \"ephemeral\": converting driver.Value type string (\"9223372036854775808\") to a int64: value out of range"},
+		{"bad_flag_no_history", 29, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 29, name \"no_history\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"bad_flag_pinned", 31, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 31, name \"pinned\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"bad_flag_template", 32, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 32, name \"is_template\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"bad_timeout", 35, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 35, name \"timeout_ns\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"bad_row_lock", 47, "bad", "scan scalar issue \"row-contract\": sql: Scan error on column index 47, name \"row_lock\": converting driver.Value type string (\"bad\") to a int64: invalid syntax"},
+		{"bad_nullable_started_at", 16, "not-time", "scan scalar issue \"row-contract\": sql: Scan error on column index 16, name \"started_at\": unsupported Scan, storing driver.Value type string into type *time.Time"},
+		{"bad_nullable_lease_expires_at", 49, "not-time", "scan scalar issue \"row-contract\": sql: Scan error on column index 49, name \"lease_expires_at\": unsupported Scan, storing driver.Value type string into type *time.Time"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v := completeValues()
+			v[c.index] = c.input
+			r := decodeValues(t, completeColumns, v)
+			if *r.error != c.want {
+				t.Fatalf("got %q want %q", *r.error, c.want)
+			}
+		})
+	}
+}
+
+// Sentinel values and expected mapping come from the independently executed pinned oracle.
+func TestPinnedAll52Sentinels(t *testing.T) {
+	values := make([]driver.Value, 52)
+	values[0] = "id-sentinel"
+	values[1] = "content-hash-sentinel"
+	values[2] = "title-sentinel"
+	values[3] = "description-sentinel"
+	values[4] = "design-sentinel"
+	values[5] = "acceptance-sentinel"
+	values[6] = "notes-sentinel"
+	values[7] = "in_progress"
+	values[8] = int64(7)
+	values[9] = "task"
+	values[10] = "assignee-sentinel"
+	values[11] = int64(101)
+	values[12] = "2026-01-02T03:04:05Z"
+	values[13] = "created-by-sentinel"
+	values[14] = "owner-sentinel"
+	values[15] = "2026-01-03T04:05:06.123456789+02:00"
+	values[16] = mustOracleTime(t, "2026-01-04T05:06:07Z")
+	values[17] = mustOracleTime(t, "2026-01-05T06:07:08Z")
+	values[18] = "external-ref-sentinel"
+	values[19] = "spec-sentinel"
+	values[20] = int64(8)
+	values[21] = mustOracleTime(t, "2026-01-06T07:08:09Z")
+	values[22] = "commit-sentinel"
+	values[23] = int64(303)
+	values[24] = "source-repo-sentinel"
+	values[25] = "close-reason-sentinel"
+	values[26] = "closed-by-sentinel"
+	values[27] = "sender-sentinel"
+	values[28] = int64(2)
+	values[29] = int64(2)
+	values[30] = "wisp-sentinel"
+	values[31] = int64(2)
+	values[32] = int64(2)
+	values[33] = "await-type-sentinel"
+	values[34] = "await-id-sentinel"
+	values[35] = int64(9007199254740993)
+	values[36] = "[\"\",\"waiter-sentinel\"]"
+	values[37] = "mol-sentinel"
+	values[38] = "event-sentinel"
+	values[39] = "actor-sentinel"
+	values[40] = "target-sentinel"
+	values[41] = "payload-sentinel"
+	values[42] = mustOracleTime(t, "2026-01-07T08:09:10Z")
+	values[43] = mustOracleTime(t, "2026-01-08T09:10:11Z")
+	values[44] = "work-sentinel"
+	values[45] = "source-system-sentinel"
+	values[46] = "{\"source\":\"oracle\"}"
+	values[47] = int64(9007199254740995)
+	values[48] = "storage-sentinel"
+	values[49] = mustOracleTime(t, "2026-01-09T10:11:12Z")
+	values[50] = mustOracleTime(t, "2026-01-10T11:12:13Z")
+	values[51] = "grant-sentinel"
+	row := decodeValues(t, completeColumns, values)
+	if *row.error != "" {
+		t.Fatal(*row.error)
+	}
+	expected := map[string]string{
+		"id":                 "id-sentinel",
+		"contentHash":        "content-hash-sentinel",
+		"title":              "title-sentinel",
+		"description":        "description-sentinel",
+		"design":             "design-sentinel",
+		"acceptanceCriteria": "acceptance-sentinel",
+		"notes":              "notes-sentinel",
+		"status":             "in_progress",
+		"priority":           "7",
+		"issueType":          "task",
+		"assignee":           "assignee-sentinel",
+		"createdAt":          "2026-01-02T03:04:05Z",
+		"createdBy":          "created-by-sentinel",
+		"owner":              "owner-sentinel",
+		"updatedAt":          "2026-01-03T04:05:06.123456789+02:00",
+		"startedAt":          "2026-01-04T05:06:07Z",
+		"closedAt":           "2026-01-05T06:07:08Z",
+		"externalRef":        "external-ref-sentinel",
+		"specId":             "spec-sentinel",
+		"compactionLevel":    "8",
+		"compactedAt":        "2026-01-06T07:08:09Z",
+		"compactedAtCommit":  "commit-sentinel",
+		"originalSize":       "303",
+		"sourceRepo":         "source-repo-sentinel",
+		"closeReason":        "close-reason-sentinel",
+		"closedBySession":    "closed-by-sentinel",
+		"sender":             "sender-sentinel",
+		"wispType":           "wisp-sentinel",
+		"awaitType":          "await-type-sentinel",
+		"awaitId":            "await-id-sentinel",
+		"timeoutNanos":       "9007199254740993",
+		"moleculeType":       "mol-sentinel",
+		"eventKind":          "event-sentinel",
+		"actor":              "actor-sentinel",
+		"target":             "target-sentinel",
+		"payload":            "payload-sentinel",
+		"dueAt":              "2026-01-07T08:09:10Z",
+		"deferUntil":         "2026-01-08T09:10:11Z",
+		"workType":           "work-sentinel",
+		"sourceSystem":       "source-system-sentinel",
+		"metadata":           "{\"source\":\"oracle\"}",
+		"revision":           "9007199254740995",
+		"storageClass":       "storage-sentinel",
+		"leaseExpiresAt":     "2026-01-09T10:11:12Z",
+		"heartbeatAt":        "2026-01-10T11:12:13Z",
+		"leaseGrantedNode":   "grant-sentinel",
+	}
+	for name, want := range expected {
+		if got := observedField(t, row.fields, name).String(); got != want {
+			t.Errorf("%s=%q want %q", name, got, want)
+		}
+	}
+	for _, name := range []string{"ephemeral", "noHistory", "pinned", "template"} {
+		if !observedField(t, row.fields, name).Bool() {
+			t.Errorf("%s lost nonzero native flag", name)
+		}
+	}
+	estimate, ok := hxrt.AnonymousLookup(row.fields, "estimatedMinutes").Value.(*beadshx__store__OptionalIssueInteger)
+	if !ok || estimate.tag != 1 {
+		t.Fatal("estimate presence lost")
+	}
+	if got := *estimate.params[0].(*string); got != "101" {
+		t.Errorf("estimate=%q", got)
+	}
+	waiters, ok := hxrt.AnonymousLookup(row.fields, "waiters").Value.(*hxrt.Array)
+	if !ok {
+		t.Fatal("waiters carrier lost")
+	}
+	if waiters.Len() != 2 {
+		t.Fatal("waiter count")
+	}
+	if got := *hxrt.StdString(waiters.Get(0)); got != "" {
+		t.Errorf("first waiter=%q", got)
+	}
+	if got := *hxrt.StdString(waiters.Get(1)); got != "waiter-sentinel" {
+		t.Errorf("second waiter=%q", got)
+	}
+}
+func mustOracleTime(t *testing.T, text string) time.Time {
+	t.Helper()
+	v, err := time.Parse(time.RFC3339Nano, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestApplicationWideWireAndInternalOmissions(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Fatal("this admitted native-width contract requires 64-bit Go int")
+	}
+	for _, value := range []int64{9007199254740993, 9223372036854775807, -9223372036854775808} {
+		t.Run(strconv.FormatInt(value, 10), func(t *testing.T) {
+			values := completeValues()
+			for _, index := range []int{8, 11, 20, 23} {
+				values[index] = value
+			}
+			row := decodeValues(t, completeColumns, values)
+			if *row.error != "" {
+				t.Fatal(*row.error)
+			}
+			text := renderDecoded(row.fields)
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(*text), &object); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"priority", "estimated_minutes", "compaction_level", "original_size"} {
+				if got := string(object[key]); got != strconv.FormatInt(value, 10) {
+					t.Errorf("%s=%s", key, got)
+				}
+			}
+			for _, key := range []string{"content_hash", "source_repo", "row_lock", "row_version"} {
+				if _, present := object[key]; present {
+					t.Errorf("internal key exposed: %s", key)
+				}
+			}
+		})
+	}
+}
+
+func TestAllNullableTimeSlots(t *testing.T) {
+	for _, slot := range []struct {
+		index int
+		field string
+	}{{16, "startedAt"}, {17, "closedAt"}, {21, "compactedAt"}, {42, "dueAt"}, {43, "deferUntil"}, {49, "leaseExpiresAt"}, {50, "heartbeatAt"}} {
+		t.Run(slot.field, func(t *testing.T) {
+			values := completeValues()
+			values[slot.index] = nil
+			row := decodeValues(t, completeColumns, values)
+			if *row.error != "" {
+				t.Fatal(*row.error)
+			}
+			if got := observedField(t, row.fields, slot.field).String(); got != "" {
+				t.Errorf("NULL became %q", got)
+			}
+		})
+	}
+}

@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `c141ac6df83bff1e2a420f18146ce68e4d7a87c7`.
+Required BeadsHX compiler revision: `34e82512e4672436911167c74a97a1620f4d252b`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -71,6 +71,16 @@ independent third-party packages are precise extern targets. Reusable interop
 gaps must be fixed in haxe.go before a consumer retains native glue.
 Those changes were reviewed and merged through reflaxe.go PRs #28, #29, #36,
 #38, #39, #41, #42, #43, #45, #46, #47, #48, #49, #53, and #54.
+
+The current pin also includes lossless `go.NativeError` boundaries, result-only
+native generic calls, concrete generic field reads, optional boolean conditions,
+and local generic callable adaptation from reviewed compiler PR #73.
+Compiler PR #79 adds the typed native carriers that the SQL row readers need:
+`go.NativePointer` scan destinations, exact `go.NativeInt64` values, and
+`go.NativeByte` byte and byte-slice values. It also adds string-abstract
+storage with content equality, and local names that cannot shadow imported Go
+packages. Its merged source tree matches the revision that passed all required
+hosted checks.
 
 Reviewed current authority:
 

@@ -1,0 +1,162 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	embedded "github.com/dolthub/driver/v2"
+	"github.com/steveyegge/beads/generated/go/hxrt"
+	"github.com/steveyegge/beads/internal/beadshx/readonlyfacade"
+	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
+)
+
+type embeddedComment struct {
+	ID        string `json:"id"`
+	Author    string `json:"author"`
+	Text      string `json:"text"`
+	CreatedAt string `json:"createdAt"`
+}
+type embeddedCommentResult struct {
+	Error    string            `json:"error"`
+	Count    int64             `json:"count"`
+	Omitted  bool              `json:"omitted"`
+	Comments []embeddedComment `json:"comments"`
+}
+
+// All setup writes are owned by this fresh marked directory. The product is read-only.
+func commentDatabase(t *testing.T) (string, func()) {
+	t.Helper()
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, ".beadshx-disposable-fixture"), []byte("embedded comment contract\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	beadsDir := filepath.Join(workspace, ".beads")
+	directory := filepath.Join(beadsDir, "embeddeddolt")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".beadshx-disposable-fixture")); err != nil {
+		t.Fatal("missing disposable marker")
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(`{"dolt_database":"beads"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Native authority owns schema creation in this fresh marked workspace.
+	store, err := embeddeddolt.Open(context.Background(), beadsDir, "beads", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, connector := openCommentDatabase(t, directory, "beads")
+	connection, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute := func(query string, args ...any) {
+		t.Helper()
+		if _, err := connection.ExecContext(context.Background(), query, args...); err != nil {
+			t.Fatalf("setup %s: %v", query, err)
+		}
+	}
+	for _, row := range []struct{ table, id string }{{"issues", "durable-id"}, {"wisps", "durable-id"}, {"wisps", "wisp-id"}} {
+		execute("INSERT INTO "+row.table+" (id,title,description,design,acceptance_criteria,notes,status,priority,issue_type,created_at,updated_at) VALUES (?,?,'','','','','open',2,'task','2026-01-02 03:04:05','2026-01-02 03:04:05')", row.id, "comment fixture")
+	}
+	for _, row := range []struct{ table, id, issue string }{{"comments", "d-1", "durable-id"}, {"comments", "d-2", "durable-id"}, {"wisp_comments", "wrong-d", "durable-id"}, {"wisp_comments", "w-1", "wisp-id"}, {"wisp_comments", "w-2", "wisp-id"}} {
+		execute("INSERT INTO "+row.table+" (id,issue_id,author,text,created_at) VALUES (?,?,? ,?,'2026-01-02 03:04:05')", row.id, row.issue, "fixture author", row.id+" body")
+	}
+	if err := connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := connector.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Read back through the same independent native authority after all Haxe reads.
+	verify := func() {
+		db, connector := openCommentDatabase(t, directory, "beads")
+		defer connector.Close()
+		defer db.Close()
+		for _, row := range []struct {
+			table, id string
+			count     int
+		}{{"comments", "durable-id", 2}, {"wisp_comments", "durable-id", 1}, {"wisp_comments", "wisp-id", 2}, {"comments", "wisp-id", 0}} {
+			var count int
+			if err := db.QueryRow("SELECT COUNT(*) FROM "+row.table+" WHERE issue_id = ?", row.id).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != row.count {
+				t.Fatalf("read-only count %s/%s=%d want%d", row.table, row.id, count, row.count)
+			}
+		}
+	}
+	return beadsDir, verify
+}
+func openCommentDatabase(t *testing.T, directory, database string) (*sql.DB, *embedded.Connector) {
+	t.Helper()
+	connector, err := embedded.NewConnector(embedded.Config{Directory: directory, CommitName: "fixture", CommitEmail: "fixture@invalid", Database: database, MultiStatements: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := sql.OpenDB(connector)
+	db.SetMaxOpenConns(1)
+	return db, connector
+}
+func TestEmbeddedCommentDetails(t *testing.T) {
+	beadsDir, verify := commentDatabase(t)
+	for _, viaStore := range []bool{false, true} {
+		for _, id := range []string{"durable-id", "wisp-id"} {
+			for _, include := range []bool{false, true} {
+				label := id + "/omit"
+				if include {
+					label = id + "/include"
+				}
+				if viaStore {
+					label = "store/" + label
+				} else {
+					label = "scalar/" + label
+				}
+				t.Run(label, func(t *testing.T) {
+					var got embeddedCommentResult
+					raw := *observeEmbeddedComments(hxrt.StringFromLiteral(beadsDir), hxrt.StringFromLiteral(id), include, viaStore)
+					if err := json.Unmarshal([]byte(raw), &got); err != nil {
+						t.Fatalf("%v: %s", err, raw)
+					}
+					if got.Error != "" {
+						t.Fatal(got.Error)
+					}
+					options := readonlyfacade.NewIssueDetailsOptions()
+					if include {
+						options.EnableComments()
+					}
+					lookup, err := readonlyfacade.ReadIssueDetails(beadsDir, id, options, false)
+					if err != nil {
+						t.Fatalf("native facade: %v", err)
+					}
+					if !lookup.Found() {
+						t.Fatal("native facade: missing")
+					}
+					detail := lookup.Details()
+					want := embeddedCommentResult{Count: detail.NativeCommentCount(), Omitted: detail.CommentsOmitted(), Comments: []embeddedComment{}}
+					for index := 0; index < detail.CommentRowCount(); index++ {
+						c := detail.Comment(index)
+						want.Comments = append(want.Comments, embeddedComment{c.ID(), c.Author(), c.Text(), c.CreatedAt()})
+					}
+					if !reflect.DeepEqual(got, want) {
+						t.Errorf("Haxe=%+v native=%+v", got, want)
+					}
+
+				})
+			}
+		}
+	}
+	verify()
+}

@@ -18,11 +18,7 @@ func projectStalePage(items []*types.Issue) (*IssueListPage, error) {
 		if item == nil {
 			return nil, errors.New("stale query returned a nil issue")
 		}
-		record, err := projectIssueRecord(*item)
-		if err != nil {
-			return nil, err
-		}
-		projected = append(projected, IssueListItem{IssueRecord: record})
+		projected = append(projected, IssueListItem{IssueRecord: projectIssueRecord(*item)})
 	}
 	return &IssueListPage{items: projected}, nil
 }
