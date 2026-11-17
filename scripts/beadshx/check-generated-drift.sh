@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The fixture lists generated files in sorted order. Sort by bytes on every host:
+# locale collation (for example en_US.UTF-8 on macOS) orders '.' and '_'
+# differently from the C locale used on Linux CI runners.
+export LC_ALL=C
+
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 fixture="${BEADSHX_GENERATED_FIXTURE:-$repository_root/engdocs/beadshx/generated/bootstrap-fixture.json}"
 evidence_root="$repository_root/build/evidence/generated-drift"

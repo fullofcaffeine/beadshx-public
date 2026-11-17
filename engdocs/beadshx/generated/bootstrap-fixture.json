@@ -1248,12 +1248,12 @@
       "sha256": "08b8a5018fe4d7eeb2314465264a690b725c38cd9a23030a53ca24ec096c04d4"
     },
     {
-      "path": "hxrt/array_sort.go",
-      "sha256": "06632e1a86b6be21772bda6a0f53e0e7fa4b4d6e9551590e3379ac7a5b4a0de6"
-    },
-    {
       "path": "hxrt/array.go",
       "sha256": "e592d46475022939b1649556d8c0709b62d85c7edaf0e5dc4caa92a31276419b"
+    },
+    {
+      "path": "hxrt/array_sort.go",
+      "sha256": "06632e1a86b6be21772bda6a0f53e0e7fa4b4d6e9551590e3379ac7a5b4a0de6"
     },
     {
       "path": "hxrt/bytes.go",
@@ -1320,12 +1320,12 @@
       "sha256": "2d47f742669a8523a5eb2b6c9dc19cea360c7516ea0f2c85e09394fea04dfbf6"
     },
     {
-      "path": "hxrt/string_compare.go",
-      "sha256": "8415d483104eb54182e058f5b1c94d2256e7fdd492512ebe017a7ad7100c3241"
-    },
-    {
       "path": "hxrt/string.go",
       "sha256": "ed8da7a7e3cb30f0252edf02a0fe93cfba8a64c9d04c727a8be859c24927ed71"
+    },
+    {
+      "path": "hxrt/string_compare.go",
+      "sha256": "8415d483104eb54182e058f5b1c94d2256e7fdd492512ebe017a7ad7100c3241"
     },
     {
       "path": "hxrt/sys.go",
