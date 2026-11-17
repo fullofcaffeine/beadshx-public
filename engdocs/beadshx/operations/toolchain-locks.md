@@ -34,9 +34,12 @@ The Linux profile does not admit macOS, Windows, or another architecture.
 Each later release profile must add its own compiler, linker, native library,
 and packaging-tool locks before it can publish artifacts.
 
-The current build uses Go 1.26.10 for its security fixes. This patch update
-supersedes the initial Go 1.26.5 build pin in the port PRD. The Beads v1.2.1
-compatibility target and database format remain unchanged.
+The current build uses Go 1.26.11, released on 2026-11-10 with security fixes
+listed in the [Go release history](https://go.dev/doc/devel/release#go1.26.11).
+This patch update supersedes Go 1.26.10 and the initial Go 1.26.5 build pin in
+the port PRD. The Beads v1.2.1 compatibility target and database format remain
+unchanged. The source archive checksum in the shared lock also pins Nix builds
+and development shells through `overlay.nix`.
 
 Historical command and native-boundary inventories still use the original
 Go version from `upstream/locks/beads-v1.2.1.json`. Their policies and evidence
