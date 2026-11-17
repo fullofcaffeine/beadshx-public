@@ -143,7 +143,8 @@ if [[ "$profile" == "linux-ci" ]]; then
     expect_exact pkg-config "$(locked '.linuxCi.pkgConfig')" "$(pkg-config --version)"
     expect_exact Make "$(locked '.linuxCi.make')" \
         "$(make --version | sed -n -E '1s/^GNU Make ([0-9.]+)$/\1/p')"
-    expect_exact Git "$(locked '.linuxCi.git')" "$(git --version | sed 's/^git version //')"
+    expect_exact Git "$("$repository_root/scripts/beadshx/verify-runner-image.sh" --print-git)" \
+        "$(git --version | sed 's/^git version //')"
     expect_exact jq "$(locked '.linuxCi.jq')" "$(jq --version)"
     expect_exact ShellCheck "$(locked '.linuxCi.shellcheck')" \
         "$(shellcheck --version | sed -n 's/^version: //p')"

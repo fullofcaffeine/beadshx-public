@@ -24,7 +24,11 @@ new image manifest and updates the lock.
 
 The Linux values come from GitHub's Ubuntu 24.04 runner manifest. The lock
 records the reviewed image version and review date because the manifest moves
-when GitHub publishes a new image.
+when GitHub publishes a new image. GitHub rolls a new image out gradually, so
+a job can still land on an older admitted image. A tool whose version differs
+between admitted images is locked on each image entry instead. Git is such a
+tool: image 20261111.370.1 ships Git 2.56.1, while the two earlier images ship
+2.56.0.
 
 The Linux profile does not admit macOS, Windows, or another architecture.
 Each later release profile must add its own compiler, linker, native library,

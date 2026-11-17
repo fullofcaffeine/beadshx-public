@@ -29,7 +29,7 @@ expect_exact kernel Linux "$(uname -s)"
 expect_exact runner "$(locked '.linuxCi.imageOS')" "${ImageOS:-missing}"
 "$repository_root/scripts/beadshx/verify-runner-image.sh"
 expect_exact Bash "$(locked '.linuxCi.bash')" "$BASH_VERSION"
-expect_exact Git "$(locked '.linuxCi.git')" \
+expect_exact Git "$("$repository_root/scripts/beadshx/verify-runner-image.sh" --print-git)" \
     "$(git --version | sed 's/^git version //')"
 expect_exact jq "$(locked '.linuxCi.jq')" "$(jq --version)"
 

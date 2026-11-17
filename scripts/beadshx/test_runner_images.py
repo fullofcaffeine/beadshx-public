@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class RunnerImagesTest(unittest.TestCase):
-    def verify(self, image, *, manifest=None, wrong_git=False):
+    def verify(self, image, *, manifest=None, wrong_git=False, image_git=None, drop_git=False):
         with tempfile.TemporaryDirectory(prefix="beadshx-runner-images-") as temp:
             root = Path(temp)
             scripts = root / "scripts/beadshx"
@@ -23,7 +23,11 @@ class RunnerImagesTest(unittest.TestCase):
             # Match local native tools; only the image admission is under test.
             profile = lock["linuxCi"]
             profile["bash"] = subprocess.check_output(["bash", "-c", 'printf "%s" "$BASH_VERSION"'], text=True)
-            profile["git"] = subprocess.check_output(["git", "--version"], text=True).strip().removeprefix("git version ")
+            local_git = subprocess.check_output(["git", "--version"], text=True).strip().removeprefix("git version ")
+            for item in profile["images"]:
+                item["git"] = (image_git or {}).get(item["version"], local_git)
+                if drop_git:
+                    del item["git"]
             profile["jq"] = subprocess.check_output(["jq", "--version"], text=True).strip()
             if manifest is not None:
                 if "images" in profile:
@@ -32,7 +36,8 @@ class RunnerImagesTest(unittest.TestCase):
                 else:
                     profile["manifest"] = manifest
             if wrong_git:
-                profile["git"] = "0.0.0"
+                for item in profile["images"]:
+                    item["git"] = "0.0.0"
             locks = root / "engdocs/beadshx/program"
             locks.mkdir(parents=True)
             (locks / "toolchain-locks.json").write_text(json.dumps(lock))
@@ -48,7 +53,7 @@ class RunnerImagesTest(unittest.TestCase):
             return subprocess.run(["bash", str(scripts / "verify-runner.sh"), "--profile=linux-ci"], env=env, capture_output=True, text=True, timeout=15)
 
     def test_each_reviewed_rollout_image_is_admitted(self):
-        for image in ("20261026.354.1", "20261101.360.1"):
+        for image in ("20261026.354.1", "20261101.360.1", "20261111.370.1"):
             with self.subTest(image=image):
                 result = self.verify(image)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -71,6 +76,18 @@ class RunnerImagesTest(unittest.TestCase):
 
     def test_mutable_manifest_reference_is_rejected(self):
         result = self.verify("20261101.360.1", manifest="https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner-image", result.stderr)
+
+    def test_each_image_is_checked_against_its_own_git(self):
+        other = {"20261111.370.1": "0.0.0"}
+        self.assertEqual(self.verify("20261101.360.1", image_git=other).returncode, 0)
+        result = self.verify("20261111.370.1", image_git=other)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Git mismatch", result.stderr)
+
+    def test_image_without_locked_git_is_rejected(self):
+        result = self.verify("20261111.370.1", drop_git=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runner-image", result.stderr)
 
