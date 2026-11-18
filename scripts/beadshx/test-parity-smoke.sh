@@ -1311,9 +1311,115 @@ compare_real_database_sql graph-cycle-html graph-html "$dep_cycle_sql" graph tes
 compare_real_database_sql graph-external-html graph-html "$graph_external_sql" graph "$real_database_issue_id" --html
 compare_real_database_import graph-wisp-html graph-html "$graph_wisp_record" graph test-graph-wisp --html
 compare_real_database_import graph-tree-html graph-html "$graph_compact_records" graph test-gc-root --html
+# graph --all searches the open, in_progress and blocked issues (and wisps), joins them into
+# connected groups and prints every group, the largest first and then by the priority of the
+# group's first issue. Upstream orders the groups with Go's sort.Slice, which is not stable for
+# more than 12 groups. The shared seed has more than 12 groups, but its random IDs and creation
+# times change the search order on every run, so graph_all_records adds 19 groups with fixed IDs
+# and times, and graph_all_sql takes every other issue out. They cover tied groups, an epic root,
+# a wisp that the search merges between the issues by priority and creation time, labels, a row
+# with metadata, other dependency types joining a group, a row to a closed issue that is left
+# out, and an external row that names a loaded issue next to a direct row to the same issue,
+# which only --open drops. Only --open outranks --html, and --html outranks --dot; --html joins
+# the groups into one page.
+graph_all_record() {
+	local id="$1" title="$2" status="$3" priority="$4" type="$5" created="$6"
+	shift 6
+	jq -nc --arg id "$id" --arg title "$title" --arg status "$status" --argjson priority "$priority" --arg type "$type" \
+		--arg created "$created" '{
+		id: $id, title: $title, status: $status, priority: $priority, issue_type: $type,
+		created_at: $created, updated_at: "2026-08-21T13:00:00Z",
+		dependencies: [$ARGS.positional[] | split("=") | {issue_id: $id, depends_on_id: .[1], type: .[0],
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}' --args "$@"
+}
+graph_all_records="$(
+	graph_all_record test-ga-epic "All epic root" open 3 epic 2026-08-20T12:00:00Z
+	graph_all_record test-ga-e1 "Epic child in progress" in_progress 0 task 2026-08-20T12:00:01Z parent-child=test-ga-epic
+	graph_all_record test-ga-e2 "Epic child blocked" blocked 1 task 2026-08-20T12:00:02Z parent-child=test-ga-epic blocks=test-ga-e1
+	graph_all_record test-ga-b1 "Chain start" open 3 task 2026-08-20T12:00:03Z
+	graph_all_record test-ga-b2 "Chain middle" open 1 task 2026-08-20T12:00:04Z blocks=test-ga-b1
+	graph_all_record test-ga-b3 "Chain end" open 1 bug 2026-08-20T12:00:05Z blocks=test-ga-b2
+	graph_all_record test-ga-c1 "Created with the wisp" open 2 task 2026-08-20T12:00:06Z
+	graph_all_record test-ga-r1 "Related one" open 2 task 2026-08-20T12:00:07Z relates-to=test-ga-r2
+	graph_all_record test-ga-r2 "Related two" in_progress 2 feature 2026-08-20T12:00:08Z
+	graph_all_record test-ga-x "Blocked by a closed issue" open 2 task 2026-08-20T12:00:09Z blocks=test-ga-closed
+	graph_all_record test-ga-closed "Closed and left out" closed 2 task 2026-08-20T12:00:10Z |
+		jq -c '. + {closed_at: "2026-08-21T12:00:00Z"}'
+	graph_all_record test-ga-y "Also blocked by the closed issue" open 2 task 2026-08-20T12:00:11Z blocks=test-ga-closed
+	for index in 1 2 3 4 5 6 7 8 9 10 11 12; do
+		priorities=(2 1 3 2 1 0 2 2 1 3 2 2)
+		statuses=(open open blocked open in_progress open open blocked open open in_progress open)
+		graph_all_record "test-ga-s$index" "Singleton $index" "${statuses[index - 1]}" "${priorities[index - 1]}" task \
+			"2026-08-20T11:00:$(printf '%02d' "$((index % 5))")Z"
+	done
+	jq -nc '{id: "test-ga-wisp", title: "Wisp among tied singletons", status: "open", priority: 2, issue_type: "task",
+		created_at: "2026-08-20T12:00:06Z", updated_at: "2026-08-21T13:00:00Z", ephemeral: true, labels: ["wisp-label"]}'
+	jq -nc '{id: "test-ga-labeled", title: "Labeled singleton <b>", status: "open", priority: 2, issue_type: "task",
+		created_at: "2026-08-20T11:00:00Z", updated_at: "2026-08-21T13:00:00Z", labels: ["zeta", "alpha"],
+		description: "Body & more", metadata: {"z": 1, "a": [true, null]}}'
+)"
+graph_all_sql="UPDATE issues SET status = 'deferred', updated_at = updated_at WHERE id NOT LIKE 'test-ga-%' AND status IN ('open', 'in_progress', 'blocked')
+UPDATE wisps SET status = 'deferred', updated_at = updated_at WHERE id NOT LIKE 'test-ga-%' AND status IN ('open', 'in_progress', 'blocked')
+$graph_external_row ('fixture-ga-1', 'test-ga-b3', 'external:other:test-ga-b2', 'blocks', '2026-08-21 10:00:00', 'fixture')
+INSERT INTO dependencies (id, issue_id, depends_on_issue_id, type, created_at, created_by, metadata, thread_id) VALUES ('fixture-ga-2', 'test-ga-r2', 'test-ga-y', 'replies-to', '2026-08-21 11:00:00', 'fixture', '{\"note\":\"<x>\"}', 'thread-1')"
+graph_all_empty_sql="UPDATE issues SET status = 'deferred', updated_at = updated_at WHERE status IN ('open', 'in_progress', 'blocked')
+UPDATE wisps SET status = 'deferred', updated_at = updated_at WHERE status IN ('open', 'in_progress', 'blocked')"
+# compare_graph_all NAME COMPARISON ARGS... runs a case on graph_all_records after graph_all_sql.
+compare_graph_all() {
+	local name="$1" comparison="$2"
+	shift 2
+	real_database_extra_sql="$graph_all_sql"
+	compare_real_database_import "$name" "$comparison" "$graph_all_records" "$@"
+	real_database_extra_sql=""
+}
+compare_graph_all graph-all-groups-json exact graph --all --json
+compare_graph_all graph-all-groups-visual exact graph --all
+compare_graph_all graph-all-groups-compact exact graph --all --compact
+compare_graph_all graph-all-groups-box exact graph --all --box
+compare_graph_all graph-all-groups-dot exact graph --all --dot
+compare_graph_all graph-all-groups-html graph-html graph --all --html
+compare_graph_all graph-all-groups-open exact graph --all --open
+compare_graph_all graph-all-groups-open-json exact graph --all --open --json
+compare_graph_all graph-all-html-over-dot graph-html graph --all --dot --html --box
+compare_graph_all graph-all-dot-over-compact exact graph --all --compact --box --dot=true
+compare_graph_all graph-all-compact-over-box exact graph --all --box --compact
+compare_graph_all graph-all-open-over-html exact graph --all --html --dot --open
+compare_graph_all graph-all-json-over-views exact graph --all --html --open --json
+compare_graph_all graph-all-groups-max-rows exact graph --all --max-rows 17
+compare_graph_all graph-all-groups-max-rows-fits-json exact graph --all --max-rows=18 --json
+compare_real_database graph-all-json exact graph --all --json
+compare_real_database graph-all-visual exact graph --all
+compare_real_database graph-all-compact exact graph --all --compact
+compare_real_database graph-all-box exact graph --all --box
+compare_real_database graph-all-dot exact graph --all --dot
+compare_real_database graph-all-html graph-html graph --all --html
+compare_real_database graph-all-open exact graph --all --open
+compare_real_database_env graph-all-json-envelope exact BD_JSON_ENVELOPE=1 graph --all --json
+compare_real_database_import graph-all-wisp-json exact "$graph_wisp_record" graph --all --json
+compare_real_database_sql graph-all-views-json exact "$graph_views_sql" graph --all --json
+compare_real_database_sql graph-all-views-visual exact "$graph_views_sql" graph --all
+compare_real_database_sql graph-all-cycle-compact exact "$dep_cycle_sql" graph --all --compact
+compare_real_database_sql graph-all-cycle-json exact "$dep_cycle_sql" graph --all --json
+compare_real_database_sql graph-all-empty exact "$graph_all_empty_sql" graph --all
+compare_real_database_sql graph-all-empty-json exact "$graph_all_empty_sql" graph --all --json
+compare_real_database_sql graph-all-empty-html exact "$graph_all_empty_sql" graph --all --html
+compare_real_database graph-all-max-rows exact graph --all --max-rows 2
+compare_real_database graph-all-max-rows-json exact graph --all --max-rows 2 --json
+compare_real_database graph-all-max-rows-negative exact graph --all --max-rows -1
+compare_real_database graph-all-max-rows-negative-json exact graph --all --max-rows=-1 --json
+compare_real_database_env graph-all-max-rows-env exact BEADS_MAX_ROWS=1 graph --all --dot
+compare_real_database_env graph-all-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 graph --all --max-rows 0 --compact
+compare_real_database_env graph-all-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph --all --open
+compare_real_database graph-all-two-args exact graph --all "$real_database_epic_id" "$real_database_child_id"
+compare_real_database graph-check-all-flag exact graph check --all
 # The views that are not ported yet must fail the same way every time; upstream prints them.
 graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
-expect_candidate_failure graph-all-unported "" "Error: graph --all is not available yet in this build" "" graph --all
+expect_candidate_failure graph-all-other-repository-unported "" \
+	"Error: loading all issues: graph of an issue with a dependency on another repository is not available yet in this build" \
+	"$graph_unported_sql" graph --all
+expect_candidate_failure graph-all-other-repository-json-unported \
+	'{"error":"loading all issues: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
+	"$graph_unported_sql" graph --all --json
 expect_candidate_failure graph-other-repository-unported \
 	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
 	"$graph_unported_sql" graph "$real_database_issue_id" --json

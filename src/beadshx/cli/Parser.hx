@@ -1317,7 +1317,9 @@ final class Parser {
 
 		function makeGraphInvocation():GraphInvocation {
 			var view = "";
-			for (flag in ["--open", "--dot", "--html", "--compact", "--box"])
+			// Upstream renders --all in another branch, where --html outranks --dot.
+			final order = listAll ? ["--open", "--html", "--dot", "--compact", "--box"] : ["--open", "--dot", "--html", "--compact", "--box"];
+			for (flag in order)
 				if (view == "" && graphViews.get(flag) == true)
 					view = flag;
 			return {

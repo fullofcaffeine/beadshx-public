@@ -8,17 +8,23 @@ import beadshx.relation.DependencyTree.TreeDirection;
 import beadshx.relation.DependencyTree.TreeNode;
 import beadshx.relation.DependencyTree.parseTreeDirection;
 import beadshx.relation.DependencyRead.compareUtf8;
+import beadshx.relation.AllGraphs.AllGraphIssue;
+import beadshx.relation.AllGraphs.groupAllGraphs;
 import beadshx.relation.GraphLayout;
+import beadshx.relation.GraphLayout.GraphEdge;
 import beadshx.relation.GraphLayout.computeGraphLayout;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.OpenGraph.isOpenGraphStatus;
+import beadshx.cli.GraphViews.renderAllGraphViews;
 import beadshx.cli.GraphViews.renderGraphBox;
 import beadshx.cli.GraphViews.renderGraphCompact;
 import beadshx.cli.GraphViews.renderGraphDot;
 import beadshx.cli.GraphViews.renderGraphHtml;
 import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
+import beadshx.store.SqlGraphReader.AllGraphLoad;
+import beadshx.store.SqlGraphReader.GraphDependency;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
 import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
@@ -82,6 +88,13 @@ import beadshx.relation.DependencyRead;
 import beadshx.profile.ProfilePort;
 import haxe.Json;
 import haxe.ds.StringMap;
+
+/** One group of `bd graph --all`: its root, its issues in walk order and its complete rows. */
+private typedef AllGraph = {
+	final root:RelatedIssue;
+	final issues:Array<RelatedIssue>;
+	final dependencies:Array<GraphDependency>;
+}
 
 private typedef CompatibilityIdentity = {
 	final project:String;
@@ -1114,15 +1127,15 @@ final class Application {
 
 	/**
 		Checks the arguments, resolves the root, loads its subgraph and checks the row cap,
-		in the order upstream graphCmd does. Then `--open` filters the subgraph. Every view
-		of one issue is ported; `--all` fails where upstream would start to differ.
+		in the order upstream graphCmd does. Then `--open` filters the subgraph. `--all`
+		goes to runGraphAll.
 	**/
 	function runGraphQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final request = invocation.graph;
 		if (request.all && request.ids.length > 0)
 			return runModeAwareFailure(invocation.output, "cannot specify issue ID with --all flag");
 		if (request.all)
-			return runModeAwareFailure(invocation.output, "graph --all is not available yet in this build");
+			return runGraphAll(invocation, location, query);
 		if (request.ids.length == 0) {
 			if (invocation.output == Json) {
 				writeJsonStdout('{\n  "error": "issue ID required",\n  "hint": "Use --all for all open issues",\n  "schema_version": 1\n}\n');
@@ -1179,6 +1192,142 @@ final class Application {
 				output.writeStdout(renderGraphVisual(graph, layout));
 				return 0;
 		}
+	}
+
+	/**
+		Upstream graph --all: reads the row cap first, then loads the open issues (see
+		readAllGraphs), groups them (see groupAllGraphs) and prints every group. With no
+		group it prints "No open issues found", even with --json.
+	**/
+	function runGraphAll(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final request = invocation.graph;
+		final maxRows = switch request.maxRows {
+			case IntPresent(value): value;
+			case IntAbsent: 0;
+		};
+		if (maxRows < 0)
+			return runModeAwareFailure(invocation.output, '--max-rows must be non-negative; got ${maxRows}');
+		if (request.maxRowsWarning != "")
+			output.writeStderr(request.maxRowsWarning);
+		final graphs = switch query.graphAll(location.path, location.databaseName, maxRows, invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'loading all issues: ${message}');
+			case Success(AllGraphRowLimitExceeded(found, cap)): return runListRowLimitExceeded(found, request.maxRowsSource, cap);
+			case Success(AllGraphRows(issues, dependencies)): assembleAllGraphs(issues, dependencies, request.view == "--open");
+		};
+		if (graphs.length == 0) {
+			output.writeStdout("No open issues found\n");
+			return 0;
+		}
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderAllGraphsJson(graphs));
+		final views:Array<GraphSubgraph> = [
+			for (graph in graphs)
+				{
+					root: graph.root,
+					issues: graph.issues,
+					edges: [
+						for (row in graph.dependencies)
+							{issueId: row.issueId, dependsOnId: row.dependsOnId, type: row.type}
+					]
+				}
+		];
+		output.writeStdout(renderAllGraphViews(views, request.view));
+		return 0;
+	}
+
+	/**
+		The groups of `bd graph --all` with their issues and complete rows. Every issue
+		that --all loads is open, so upstream filterSubgraphOpen keeps each group whole
+		under `--open`: it only drops a repeated `blocks` row from one issue to another,
+		which an `external:` row rewritten to a loaded ID can make.
+	**/
+	static function assembleAllGraphs(issues:Array<RelatedIssue>, dependencies:Array<GraphDependency>, open:Bool):Array<AllGraph> {
+		final summaries:Array<AllGraphIssue> = [for (issue in issues) issue];
+		final edges:Array<GraphEdge> = [for (row in dependencies) row];
+		final byId = [for (issue in issues) issue.id => issue];
+		final graphs = new Array<AllGraph>();
+		for (group in groupAllGraphs(summaries, edges)) {
+			final rows = new Array<GraphDependency>();
+			final keptBlocks = new Map<String, Bool>();
+			for (index in group.edgeIndexes) {
+				final row:GraphDependency = dependencies[index];
+				// The length prefix keeps two different ID pairs from making one key.
+				final key = '${row.dependsOnId.length}:${row.dependsOnId}${row.issueId}';
+				if (open && row.type == "blocks" && keptBlocks.exists(key))
+					continue;
+				if (row.type == "blocks")
+					keptBlocks.set(key, true);
+				rows.push(row);
+			}
+			graphs.push({root: byId.get(group.rootId), issues: [for (id in group.issueIds) byId.get(id)], dependencies: rows});
+		}
+		return graphs;
+	}
+
+	/**
+		Prints the groups as upstream outputJSON prints its []*TemplateSubgraph. A list
+		skips the schema_version round trip, so every object keeps its Go struct field
+		order; only IssueMap, a Go map, prints its keys in byte order. The template fields
+		that a graph never sets print their zero values, and no rows print as null.
+	**/
+	static function renderAllGraphsJson(graphs:Array<AllGraph>):StoreResult<String> {
+		function renderIssue(issue:RelatedIssue, indent:String):StoreResult<String> {
+			return switch renderRawIssueFields(issue, false, indent + "  ", issue.labels) {
+				case Failure(message): Failure(message);
+				case Success(fields): Success(renderJsonObject(fields, indent));
+			};
+		}
+		final rendered = new Array<String>();
+		for (graph in graphs) {
+			final root = switch renderIssue(graph.root, "    ") {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			final issues = new Map<String, String>();
+			for (issue in graph.issues)
+				switch renderIssue(issue, "      ") {
+					case Failure(message):
+						return Failure(message);
+					case Success(value):
+						issues.set(issue.id, value);
+				}
+			final ids = [for (issue in graph.issues) issue.id];
+			final list = [for (id in ids) '      ${issues.get(id)}'];
+			ids.sort(compareUtf8);
+			final entries = [for (id in ids) '      ${Json.stringify(id)}: ${issues.get(id)}'];
+			final rows = [
+				for (row in graph.dependencies)
+					'      ${renderJsonObject(renderDependencyFields(row), "      ")}'
+			];
+			final dependencies = rows.length == 0 ? "null" : "[\n" + rows.join(",\n") + "\n    ]";
+			rendered.push("  " + renderJsonObject([
+				'"Root": ${root}',
+				'"Issues": [\n${list.join(",\n")}\n    ]',
+				'"Dependencies": ${dependencies}',
+				'"IssueMap": {\n${entries.join(",\n")}\n    }',
+				'"VarDefs": null',
+				'"Phase": ""',
+				'"Pour": false'
+			], "  "));
+		}
+		return Success("[\n" + rendered.join(",\n") + "\n]\n");
+	}
+
+	/** A types.Dependency in struct order; a dependency read leaves its `id` empty, so it is left out. */
+	static function renderDependencyFields(row:GraphDependency):Array<String> {
+		final fields = [
+			'"issue_id": ${Json.stringify(row.issueId)}',
+			'"depends_on_id": ${Json.stringify(row.dependsOnId)}',
+			'"type": ${Json.stringify(row.type)}',
+			'"created_at": ${Json.stringify(row.createdAt)}'
+		];
+		if (row.createdBy != "")
+			fields.push('"created_by": ${Json.stringify(row.createdBy)}');
+		if (row.metadata != "")
+			fields.push('"metadata": ${Json.stringify(row.metadata)}');
+		if (row.threadId != "")
+			fields.push('"thread_id": ${Json.stringify(row.threadId)}');
+		return fields;
 	}
 
 	/** Upstream filterSubgraphOpen (see filterOpenGraph): the open issues in load order; null when there is none. */
@@ -4638,10 +4787,10 @@ final class Application {
 	}
 
 	function graphHelp():String {
-		return "Display issue dependency graph. This build prints the graph of one issue; --all is not available yet.\n\n"
+		return "Display a visualization of an issue's dependency graph.\n\nWith --all, shows all open issues grouped by connected component.\n\n"
 			+ "Usage:\n  bdhx graph [issue-id] [flags]\n\n"
 			+ "Flags:\n"
-			+ "      --all            Show graph for all open issues (not available yet in this build)\n"
+			+ "      --all            Show graph for all open issues\n"
 			+ "      --box            ASCII boxes showing layers\n"
 			+ "      --compact        Tree format, one line per issue, more scannable\n"
 			+ "      --dot            Output Graphviz DOT format (pipe to: dot -Tsvg > graph.svg)\n"

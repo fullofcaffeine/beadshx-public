@@ -43,7 +43,7 @@ final DEP_TREE_ROUTE_UNAVAILABLE = "dep tree is not available yet for server-mod
 /** `bd graph check` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
 final GRAPH_CHECK_ROUTE_UNAVAILABLE = "graph check is not available yet for server-mode or proxied workspaces in this build";
 
-/** `bd graph <id>` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
+/** `bd graph <id>` and `bd graph --all` have the same embedded-only Haxe SQL route as `bd dep cycles`. */
 final GRAPH_ROUTE_UNAVAILABLE = "graph is not available yet for server-mode or proxied workspaces in this build";
 
 /**
@@ -125,6 +125,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
 		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
 			final embedded = EmbeddedStoreAccess.graphSubgraph(beadsDir, databaseName, rootId);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(GRAPH_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.graphAll(beadsDir, databaseName, maxRows);
 			if (embedded != null)
 				return embedded;
 		}
@@ -1271,6 +1280,10 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 	}
 
 	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
+		return Failure(GRAPH_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad> {
 		return Failure(GRAPH_ROUTE_UNAVAILABLE);
 	}
 

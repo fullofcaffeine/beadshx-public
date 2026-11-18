@@ -72,7 +72,10 @@ typedef GraphInvocation = {
 
 	final all:Bool;
 
-	/** The first of `--open`, `--dot`, `--html`, `--compact` and `--box` that is set, in upstream's order, or "". */
+	/**
+		The first of `--open`, `--dot`, `--html`, `--compact` and `--box` that is set, in
+		upstream's order, or "". With `--all`, `--html` comes before `--dot`.
+	**/
 	final view:String;
 
 	final maxRows:OptionalInt;

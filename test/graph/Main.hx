@@ -15,6 +15,24 @@ import beadshx.cli.GraphDrawing.renderCompactGraph;
 import beadshx.cli.GraphHtmlPage.graphHtmlPage;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
+import beadshx.relation.AllGraphs.AllGraphIssue;
+import beadshx.relation.AllGraphs.groupAllGraphs;
+import beadshx.relation.GoSort.goPdqsort;
+import beadshx.relation.GoSort.goSortSlice;
+
+/** Generated keys for one Go sort.Slice oracle case, and the labels the oracle prints for them. */
+private typedef SortCase = {
+	final n:Int;
+	final seed:Int;
+	final distinct:Int;
+	final pattern:String;
+	final labels:String;
+}
+
+private typedef SortItem = {
+	final key:Int;
+	final label:Int;
+}
 
 /**
 	Pins the `bd graph check` cycle walk against upstream issueops.DetectCyclesInTx,
@@ -34,6 +52,8 @@ class Main {
 		compactContracts();
 		openContracts();
 		htmlContracts();
+		goSortContracts();
+		allGraphContracts();
 		Sys.println("graph Haxe contracts: PASS");
 	}
 
@@ -313,6 +333,190 @@ class Main {
 		equal(page.indexOf('<script>\nconst nodes = [N];\nconst links = [L];\nconst statusColors = {') > 0, true);
 		equal(page.indexOf('d.title.substring(0,17) + "\\u2026"') > 0, true);
 		equal(StringTools.endsWith(page, "</script>\n</body>\n</html>\n"), true);
+	}
+
+	/**
+		Each case lists the labels that Go's sort.Slice leaves for generated keys, as the
+		git-ignored one-off oracle `.toolchains/gosort-oracle/main.go` prints them: in full
+		up to 64 elements, and as two rolling hashes `#a/b` above. Equal keys show where
+		pdqsort leaves equal elements. The cases reach every branch but heapsort, which
+		the oracle's copy of pdqsort reaches when no bad pivots are left.
+	**/
+	static function goSortContracts():Void {
+		final cases = [
+			"0 7 3 random|",
+			"0 23 1 reversed|",
+			"1 7 3 random|0",
+			"1 23 1 reversed|0",
+			"12 7 3 random|3 7 8 5 6 9 0 1 2 4 10 11",
+			"12 23 1 reversed|11 10 9 8 7 6 5 4 3 2 1 0",
+			"13 7 3 random|3 8 7 6 5 9 4 0 2 1 10 11 12",
+			"13 11 1000 random|4 2 11 9 12 7 3 6 8 5 0 10 1",
+			"13 3 2 sorted|0 1 2 3 4 5 6 7 8 9 10 11 12",
+			"13 5 2 reversed|12 11 10 8 9 6 7 5 4 3 2 0 1",
+			"13 9 1 equal|0 1 2 3 4 5 6 7 8 9 10 11 12",
+			"13 13 3 organ|0 1 2 12 11 9 8 5 10 4 3 6 7",
+			"13 17 4 sawtooth|8 12 4 0 1 9 5 6 10 2 7 3 11",
+			"13 19 7 nearly|0 1 2 3 7 4 10 5 6 12 8 9 11",
+			"13 23 1 reversed|12 11 10 9 8 7 6 5 4 3 2 1 0",
+			"20 7 3 random|7 17 15 3 14 8 5 16 18 9 6 13 12 11 4 2 10 1 0 19",
+			"20 11 1000 random|4 2 17 14 16 11 9 12 7 3 15 6 18 13 19 8 5 0 10 1",
+			"20 3 2 sorted|0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19",
+			"20 5 2 reversed|19 18 17 16 15 14 13 11 12 10 9 8 7 6 5 4 3 2 1 0",
+			"20 9 1 equal|0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19",
+			"20 13 3 organ|0 1 2 19 18 15 5 3 4 17 16 12 6 13 14 8 7 11 10 9",
+			"20 17 4 sawtooth|0 16 4 12 8 1 17 5 13 9 10 6 14 2 18 11 7 15 3 19",
+			"20 19 7 nearly|0 1 2 3 4 7 5 6 8 9 11 12 13 14 15 16 17 10 18 19",
+			"20 23 1 reversed|19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0",
+			"51 7 3 random|15 47 46 3 43 42 39 7 8 38 36 30 26 17 14 35 29 13 18 49 20 21 5 23 24 41 6 9 16 32 40 31 28 33 34 0 10 37 27 12 11 25 22 4 44 45 2 1 48 19 50",
+			"51 11 1000 random|48 25 42 44 4 49 47 2 31 17 50 41 30 14 45 22 16 26 11 34 9 20 28 12 21 29 24 23 37 39 7 32 3 15 6 18 13 19 8 33 40 5 46 27 38 0 43 10 35 36 1",
+			"51 3 2 sorted|0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50",
+			"51 5 2 reversed|50 49 48 47 46 45 44 43 42 40 41 39 38 37 36 34 35 33 32 31 30 29 28 26 27 25 24 23 22 21 20 19 18 17 16 14 15 13 12 11 10 8 9 7 6 5 4 3 2 0 1",
+			"51 9 1 equal|0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50",
+			"51 13 3 organ|50 1 2 0 49 3 4 5 46 47 48 44 8 43 6 45 7 10 9 11 42 41 40 12 14 13 39 38 37 35 34 15 36 16 17 20 31 32 33 18 19 29 23 22 21 28 30 24 25 26 27",
+			"51 17 4 sawtooth|16 48 44 40 4 36 32 28 8 0 24 20 12 25 29 49 13 17 1 45 41 21 37 5 33 9 6 42 50 26 30 18 14 10 34 46 2 22 38 39 3 11 27 43 23 19 35 47 31 15 7",
+			"51 19 7 nearly|0 1 2 3 4 5 6 8 12 9 10 11 13 14 15 38 16 17 18 19 20 21 22 23 24 43 25 26 27 28 29 30 31 7 32 33 34 35 46 37 36 40 41 42 39 44 45 47 48 49 50",
+			"51 23 1 reversed|50 49 48 47 46 45 44 43 42 41 40 39 38 37 36 35 34 33 32 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0",
+			"100 7 3 random|#33045/19146",
+			"100 11 1000 random|#4666/27720",
+			"100 3 2 sorted|#63475/42752",
+			"100 5 2 reversed|#13559/46961",
+			"100 9 1 equal|#63475/42752",
+			"100 13 3 organ|#61689/634",
+			"100 17 4 sawtooth|#26548/63484",
+			"100 19 7 nearly|#22085/17725",
+			"100 23 1 reversed|#43340/27533",
+			"1000 7 3 random|#37176/53465",
+			"1000 11 1000 random|#24648/11159",
+			"1000 3 2 sorted|#64505/49179",
+			"1000 5 2 reversed|#899/41243",
+			"1000 9 1 equal|#64505/49179",
+			"1000 13 3 organ|#50582/20777",
+			"1000 17 4 sawtooth|#52020/3387",
+			"1000 19 7 nearly|#22408/28724",
+			"1000 23 1 reversed|#63616/60859"
+		];
+		final heapCases = [
+			"13 7 3 random|8 7 3 6 5 9 11 2 10 4 1 12 0",
+			"20 11 1000 random|4 2 17 14 16 11 9 12 7 3 15 6 18 13 19 8 5 0 10 1",
+			"64 13 3 organ|62 1 63 2 0 60 5 59 3 61 4 56 58 6 8 7 57 55 54 53 11 9 10 14 13 12 50 52 51 49 48 47 17 16 15 46 44 45 20 19 18 23 22 43 21 42 41 26 25 24 40 39 38 29 28 27 37 36 35 30 34 33 32 31"
+		];
+		for (line in cases) {
+			final sample = sortCase(line);
+			final items = sortInput(sample);
+			goSortSlice(items, (left, right) -> left.key < right.key);
+			equal(sortLabels(items), sample.labels);
+		}
+		for (line in heapCases) {
+			final sample = sortCase(line);
+			final items = sortInput(sample);
+			goPdqsort({
+				less: (i, j) -> {
+					final left:SortItem = items[i];
+					final right:SortItem = items[j];
+					return left.key < right.key;
+				},
+				swap: (i, j) -> {
+					final left:SortItem = items[i];
+					items[i] = items[j];
+					items[j] = left;
+				}
+			}, 0, items.length, 0);
+			equal(sortLabels(items), sample.labels);
+		}
+	}
+
+	/** One case written as `n seed distinct pattern|labels`. */
+	static function sortCase(line:String):SortCase {
+		final parts = line.split("|");
+		final fields = parts[0].split(" ");
+		return {
+			n: Std.parseInt(fields[0]),
+			seed: Std.parseInt(fields[1]),
+			distinct: Std.parseInt(fields[2]),
+			pattern: fields[3],
+			labels: parts[1]
+		};
+	}
+
+	/** The oracle's key generator. */
+	static function sortInput(sample:SortCase):Array<SortItem> {
+		final items = new Array<SortItem>();
+		var x = sample.seed;
+		for (i in 0...sample.n) {
+			x = (x * 75 + 74) % 65537;
+			final key = switch sample.pattern {
+				case "random": x % sample.distinct;
+				case "sorted": Std.int(i / sample.distinct);
+				case "reversed": Std.int((sample.n - i) / sample.distinct);
+				case "organ": i < Std.int(sample.n / 2) ? Std.int(i / sample.distinct) : Std.int((sample.n - i) / sample.distinct);
+				case "sawtooth": i % sample.distinct;
+				case "nearly": x % sample.distinct == 0 ? x % sample.n : i;
+				case _: 0;
+			};
+			items.push({key: key, label: i});
+		}
+		return items;
+	}
+
+	static function sortLabels(items:Array<SortItem>):String {
+		if (items.length <= 64)
+			return [for (item in items) Std.string(item.label)].join(" ");
+		var first = 0;
+		var second = 0;
+		for (item in items) {
+			first = (first * 31 + item.label + 1) % 65521;
+			second = (second * 37 + item.label + 1) % 65519;
+		}
+		return '#${first}/${second}';
+	}
+
+	/**
+		The groups follow upstream assembleAllSubgraphs by hand, except the order of the
+		tied singletons, which the sort oracle printed from Go's sort.Slice.
+	**/
+	static function allGraphContracts():Void {
+		// Walks start in issue order and visit neighbors in row order; larger groups come
+		// first. An epic outranks any other root; among equals a lower priority number wins.
+		expectGroups([
+			graphIssue("a", 2, "task"),
+			graphIssue("b", 1, "task"),
+			graphIssue("c", 3, "epic"),
+			graphIssue("d", 3, "task"),
+			graphIssue("e", 1, "task"),
+			graphIssue("f", 1, "bug"),
+			graphIssue("g", 0, "task"),
+			graphIssue("h", 1, "epic")
+		], [
+			edge("b", "a", "blocks"),
+			edge("e", "d", "blocks"),
+			edge("c", "a", "parent-child"),
+			edge("g", "c", "relates-to"),
+			edge("h", "g", "blocks")
+		], "h:[a b c g h]<0 2 3 4> e:[d e]<1> f:[f]");
+		// Two groups of one size keep the priority order of their first members.
+		expectGroups([graphIssue("x", 3, "task"), graphIssue("y", 1, "task"), graphIssue("z", 2, "task")], [], "y:[y] z:[z] x:[x]");
+		// More than 12 groups: sort.Slice does not keep tied groups in issue order.
+		final priorities = [2, 2, 1, 3, 2, 1, 0, 2, 2, 1, 3, 2, 2, 1];
+		final singletons = [
+			for (index in 0...priorities.length)
+				graphIssue('s${index}', priorities[index], "task")
+		];
+		equal([for (group in groupAllGraphs(singletons, [])) group.rootId].join(" "), "s6 s9 s2 s5 s13 s4 s1 s7 s8 s0 s11 s12 s3 s10");
+		expectGroups([], [], "");
+	}
+
+	static function expectGroups(issues:Array<AllGraphIssue>, edges:Array<GraphEdge>, expected:String):Void {
+		equal([
+			for (group in groupAllGraphs(issues, edges)) {
+				final rows = group.edgeIndexes.length == 0 ? "" : '<${group.edgeIndexes.join(" ")}>';
+				'${group.rootId}:[${group.issueIds.join(" ")}]${rows}';
+			}
+		].join(" "), expected);
+	}
+
+	static function graphIssue(id:String, priority:Int, issueType:String):AllGraphIssue {
+		return {id: id, priority: priority, issueType: issueType};
 	}
 
 	static function openIssue(id:String, status:String, priority:Int):OpenGraphIssue {

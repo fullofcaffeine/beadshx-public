@@ -40,6 +40,10 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedGraphReader.readSubgraph(beadsDir, databaseName, rootId);
 	}
 
+	public function graphAll(beadsDir:String, databaseName:String, maxRows:Int):Null<StoreResult<SqlGraphReader.AllGraphLoad>> {
+		return EmbeddedGraphReader.readAll(beadsDir, databaseName, maxRows);
+	}
+
 	public function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return switch new EmbeddedDependencyReader(beadsDir, databaseName).read(plan.anchors) {
 			case EmbeddedDependencyFailure(message): DependencyEdgeFailure(message);

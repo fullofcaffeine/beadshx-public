@@ -37,5 +37,8 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The connected subgraph of an exact root ID, as `bd graph <id>` loads it. */
 	function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph>;
 
+	/** The open issues and the rows between them, as `bd graph --all` loads them; a positive `maxRows` caps each status. */
+	function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad>;
+
 	function close():StoreResult<Bool>;
 }

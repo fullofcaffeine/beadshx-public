@@ -14,7 +14,10 @@ import beadshx.cli.GraphDrawing.repeat;
 import beadshx.cli.GraphDrawing.truncateTitle;
 import beadshx.cli.GraphHtmlPage.graphHtmlPage;
 import beadshx.cli.StatusIcon.statusIcon;
+import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.relation.GraphLayout;
+import beadshx.relation.GraphLayout.GraphEdge;
+import beadshx.relation.GraphLayout.computeGraphLayout;
 import beadshx.relation.RelatedIssue;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
 
@@ -195,21 +198,68 @@ function renderGraphCompact(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	lists them in load order, the root first.
 **/
 function renderGraphHtml(subgraph:GraphSubgraph, layout:GraphLayout):String {
+	return renderHtmlPage('Beads: ${subgraph.root.title} (${subgraph.root.id})', subgraph.issues, subgraph.edges, layout);
+}
+
+/**
+	The views of `bd graph --all`, like upstream renderGraphAllSubgraphs. Its flags
+	outrank one another in another order than for one issue: --open, --html, --dot,
+	--compact, then --box. `--html` prints one page for every group (see
+	renderMergedGraphHtml). Each other view prints the groups in turn, with a rule of 60
+	`─` between two groups, except in `--dot`.
+**/
+function renderAllGraphViews(graphs:Array<GraphSubgraph>, view:String):String {
+	if (view == "--html")
+		return renderMergedGraphHtml(graphs);
+	final rendered = new StringBuf();
+	for (index in 0...graphs.length) {
+		final graph = graphs[index];
+		final layout = computeGraphLayout([for (issue in graph.issues) issue.id], graph.edges);
+		rendered.add(switch view {
+			case "--open" | "--compact": renderGraphCompact(graph, layout);
+			case "--dot": renderGraphDot(graph, layout);
+			case "--box": renderGraphBox(graph, layout);
+			case _: renderGraphVisual(graph, layout);
+		});
+		if (view != "--dot" && index < graphs.length - 1)
+			rendered.add(repeat("─", 60) + "\n");
+	}
+	return rendered.toString();
+}
+
+/**
+	Upstream mergeSubgraphsForHTML, then renderGraphHTML. One group prints as the page of
+	one issue. Upstream joins two or more groups into one graph with no root, so the page
+	gets a generic title; its issues are in ID byte order, and its rows are those of
+	each group in turn.
+**/
+function renderMergedGraphHtml(graphs:Array<GraphSubgraph>):String {
+	if (graphs.length == 1) {
+		final graph = graphs[0];
+		return renderGraphHtml(graph, computeGraphLayout([for (issue in graph.issues) issue.id], graph.edges));
+	}
+	final issues = [for (graph in graphs) for (issue in graph.issues) issue];
+	issues.sort((left, right) -> compareUtf8(left.id, right.id));
+	final edges = [for (graph in graphs) for (edge in graph.edges) edge];
+	return renderHtmlPage("Beads Dependency Graph", issues, edges, computeGraphLayout([for (issue in issues) issue.id], edges));
+}
+
+/** The page of renderGraphHtml: `title` is HTML-escaped here. */
+private function renderHtmlPage(title:String, issues:Array<RelatedIssue>, edges:Array<GraphEdge>, layout:GraphLayout):String {
 	final nodes = new Array<String>();
-	for (issue in subgraph.issues) {
+	for (issue in issues) {
 		final assignee = issue.assignee == "" ? "" : ',"assignee":${goJsonString(issue.assignee)}';
 		nodes.push('{"id":${goJsonString(issue.id)},"title":${goJsonString(issue.title)},"status":${goJsonString(issue.status)},'
 			+ '"priority":${issue.priority},"type":${goJsonString(issue.issueType)},"layer":${layout.nodes.get(issue.id).layer}${assignee}}');
 	}
 	final links = [
-		for (edge in subgraph.edges)
+		for (edge in edges)
 			if ((edge.type == "blocks" || edge.type == "parent-child")
 				&& layout.nodes.exists(edge.issueId)
 				&& layout.nodes.exists(edge.dependsOnId))
 				'{"source":${goJsonString(edge.dependsOnId)},"target":${goJsonString(edge.issueId)},"type":"${edge.type}"}'
 	];
-	final title = escapeHtml('Beads: ${subgraph.root.title} (${subgraph.root.id})');
-	return graphHtmlPage(title, '[${nodes.join(",")}]', '[${links.join(",")}]');
+	return graphHtmlPage(escapeHtml(title), '[${nodes.join(",")}]', '[${links.join(",")}]');
 }
 
 /** Upstream renderNodeBoxWithDeps; the counts line appears only when a count is not zero. */

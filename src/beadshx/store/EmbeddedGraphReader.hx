@@ -10,7 +10,7 @@ import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
 
-/** Own one read transaction for `bd graph` and `bd graph check`; the graph semantics are authored Haxe. */
+/** Own one read transaction for `bd graph`, `bd graph --all` and `bd graph check`; the graph semantics are authored Haxe. */
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedGraphReader {
@@ -20,6 +20,10 @@ final class EmbeddedGraphReader {
 
 	public static function readSubgraph(beadsDir:String, databaseName:String, rootId:String):StoreResult<GraphSubgraph> {
 		return read(beadsDir, databaseName, (context, transaction) -> SqlGraphReader.readGraphSubgraph(context, transaction, rootId));
+	}
+
+	public static function readAll(beadsDir:String, databaseName:String, maxRows:Int):StoreResult<SqlGraphReader.AllGraphLoad> {
+		return read(beadsDir, databaseName, (context, transaction) -> SqlGraphReader.readAllGraphs(context, transaction, maxRows));
 	}
 
 	static function read<T>(beadsDir:String, databaseName:String, reader:(Context, Tx) -> StoreResult<T>):StoreResult<T> {

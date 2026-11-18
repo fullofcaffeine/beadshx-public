@@ -23,4 +23,5 @@ interface EmbeddedStorePort {
 		request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>>;
 	function graphCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<Array<String>>>>;
 	function graphSubgraph(beadsDir:String, databaseName:String, rootId:String):Null<StoreResult<SqlGraphReader.GraphSubgraph>>;
+	function graphAll(beadsDir:String, databaseName:String, maxRows:Int):Null<StoreResult<SqlGraphReader.AllGraphLoad>>;
 }
