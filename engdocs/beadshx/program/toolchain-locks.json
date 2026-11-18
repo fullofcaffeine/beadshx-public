@@ -42,6 +42,12 @@
         "manifest": "https://github.com/actions/runner-images/blob/fb099341ddaf44a428fb17495341cb7c2300faf2/images/ubuntu/Ubuntu2404-Readme.md",
         "reviewedAt": "2026-11-16",
         "git": "2.56.1"
+      },
+      {
+        "version": "20261116.376.1",
+        "manifest": "https://github.com/actions/runner-images/blob/27322eb5268668e27e64007fdd1353ec7387dc0b/images/ubuntu/Ubuntu2404-Readme.md",
+        "reviewedAt": "2026-11-18",
+        "git": "2.56.1"
       }
     ]
   },

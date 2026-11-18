@@ -27,8 +27,10 @@ records the reviewed image version and review date because the manifest moves
 when GitHub publishes a new image. GitHub rolls a new image out gradually, so
 a job can still land on an older admitted image. A tool whose version differs
 between admitted images is locked on each image entry instead. Git is such a
-tool: image 20261111.370.1 ships Git 2.56.1, while the two earlier images ship
-2.56.0.
+tool: images 20261111.370.1 and 20261116.376.1 ship Git 2.56.1, while the two
+earlier images ship 2.56.0. GitHub also assigns unpublished builds, such as
+20261116.133.1, that have no published manifest; they stay unadmitted
+(beadshx-s0x4).
 
 The Linux profile does not admit macOS, Windows, or another architecture.
 Each later release profile must add its own compiler, linker, native library,

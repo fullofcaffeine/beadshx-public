@@ -53,7 +53,7 @@ class RunnerImagesTest(unittest.TestCase):
             return subprocess.run(["bash", str(scripts / "verify-runner.sh"), "--profile=linux-ci"], env=env, capture_output=True, text=True, timeout=15)
 
     def test_each_reviewed_rollout_image_is_admitted(self):
-        for image in ("20261026.354.1", "20261101.360.1", "20261111.370.1"):
+        for image in ("20261026.354.1", "20261101.360.1", "20261111.370.1", "20261116.376.1"):
             with self.subTest(image=image):
                 result = self.verify(image)
                 self.assertEqual(result.returncode, 0, result.stderr)
