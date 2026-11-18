@@ -27,6 +27,11 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedCycleReader.read(beadsDir, databaseName);
 	}
 
+	public function dependencyTree(beadsDir:String, databaseName:String,
+			request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>> {
+		return EmbeddedTreeReader.read(beadsDir, databaseName, request);
+	}
+
 	public function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return switch new EmbeddedDependencyReader(beadsDir, databaseName).read(plan.anchors) {
 			case EmbeddedDependencyFailure(message): DependencyEdgeFailure(message);

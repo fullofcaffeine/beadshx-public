@@ -1,6 +1,7 @@
 package beadshx.cli;
 
 import beadshx.cli.DepListSelection.selectDepList;
+import beadshx.cli.Invocation.DepTreeInvocation;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.IssueListMetadataFilter;
@@ -66,6 +67,7 @@ private enum ExpectedValue {
 	SearchQuery;
 	StaleDays;
 	DepDirection;
+	DepTreeMaxDepth(shorthand:Bool);
 }
 
 /** Parses the bounded read-only command profile without Cobra or process-global access. */
@@ -182,6 +184,9 @@ final class Parser {
 		var orphansFixUsed = false;
 		var depDirection = "down";
 		var depDirectionUsed = false;
+		var depTreeMaxDepth = 50;
+		var depTreeMaxRowsWarning = "";
+		final depTreeOnlyFlags = new Array<String>();
 		var readyAwareUsageFailure = "";
 		function rememberReadyAwareUsageFailure(message:String):Void {
 			if (readyAwareUsageFailure == "")
@@ -201,6 +206,10 @@ final class Parser {
 		final issueFlagIds = new Array<String>();
 		var flagsEnded = false;
 		final positional = new Array<String>();
+		// Like `-a` for query, `-d` and a negative `--max-rows` depend on the command typed so far.
+		function inDepTree():Bool {
+			return positional.length > 1 && positional[0] == "dep" && positional[1] == "tree";
+		}
 		for (argument in args) {
 			if (expectedValue != null) {
 				switch expectedValue {
@@ -314,7 +323,8 @@ final class Parser {
 						final maxRows = parseSignedInt(argument);
 						if (maxRows == null)
 							return UsageFailure('invalid argument "${argument}" for "--max-rows" flag: expected an integer');
-						if (maxRows < 0)
+						// dep tree reports a negative cap itself, after its other flag checks.
+						if (maxRows < 0 && !inDepTree())
 							return UsageFailure('--max-rows must be non-negative; got ${maxRows}');
 						listMaxRows = IntPresent(maxRows);
 						listMaxRowsSource = "--max-rows";
@@ -329,6 +339,11 @@ final class Parser {
 						staleDays = days;
 					case DepDirection:
 						depDirection = argument;
+					case DepTreeMaxDepth(_):
+						final depth = parseSignedInt(argument);
+						if (depth == null)
+							return UsageFailure(invalidIntegerFlag("-d, --max-depth", argument));
+						depTreeMaxDepth = depth;
 				}
 				expectedValue = null;
 				continue;
@@ -604,10 +619,26 @@ final class Parser {
 				final maxRows = parseSignedInt(raw);
 				if (maxRows == null)
 					return UsageFailure('invalid argument "${raw}" for "--max-rows" flag: expected an integer');
-				if (maxRows < 0)
+				if (maxRows < 0 && !inDepTree())
 					return UsageFailure('--max-rows must be non-negative; got ${maxRows}');
 				listMaxRows = IntPresent(maxRows);
 				listMaxRowsSource = "--max-rows";
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--max-depth=")) {
+				depTreeOnlyFlags.push("--max-depth");
+				final raw = argument.substr(12);
+				final depth = parseSignedInt(raw);
+				if (depth == null)
+					return UsageFailure(invalidIntegerFlag("-d, --max-depth", raw));
+				depTreeMaxDepth = depth;
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--show-all-paths=")) {
+				depTreeOnlyFlags.push("--show-all-paths");
+				final value = argument.substr(17);
+				if (!isBooleanFlagValue(value))
+					return UsageFailure('invalid argument "${value}" for "--show-all-paths" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--deps=")) {
@@ -901,9 +932,17 @@ final class Parser {
 				case "--parse-only":
 					queryParseOnlyUsed = true;
 					queryParseOnly = true;
+				case "-d" if (inDepTree()):
+					expectedValue = DepTreeMaxDepth(true);
 				case "--days" | "-d":
 					staleDaysUsed = true;
 					expectedValue = StaleDays;
+				case "--max-depth":
+					depTreeOnlyFlags.push(argument);
+					expectedValue = DepTreeMaxDepth(false);
+				case "--show-all-paths":
+					// Deprecated upstream no-op: accepted and ignored.
+					depTreeOnlyFlags.push(argument);
 				case "--has-metadata-key":
 					markListOnly(argument);
 					expectedValue = ListHasMetadataKey;
@@ -1124,6 +1163,7 @@ final class Parser {
 				case SearchQuery: UsageFailure("flag needs an argument: --query");
 				case StaleDays: UsageFailure("flag needs an argument: --days");
 				case DepDirection: UsageFailure("flag needs an argument: --direction");
+				case DepTreeMaxDepth(shorthand): UsageFailure(shorthand ? "flag needs an argument: 'd' in -d" : "flag needs an argument: --max-depth");
 			};
 		}
 
@@ -1238,6 +1278,21 @@ final class Parser {
 			};
 		}
 
+		function makeDepTreeInvocation():DepTreeInvocation {
+			// Upstream applies --reverse only when --direction is empty.
+			final explicitDirection = depDirectionUsed ? depDirection : "";
+			return {
+				root: positional.length > 2 ? positional[2] : "",
+				direction: explicitDirection != "" ? explicitDirection : (listReverse ? "up" : "down"),
+				maxDepth: depTreeMaxDepth,
+				status: listStatus,
+				format: listFormat,
+				maxRows: listMaxRows,
+				maxRowsSource: listMaxRowsSource,
+				maxRowsWarning: depTreeMaxRowsWarning
+			};
+		}
+
 		if (positional.length == 0 || (positional.length == 1 && positional[0] == "help")) {
 			return Parsed({
 				command: Command.RootHelp,
@@ -1304,7 +1359,8 @@ final class Parser {
 				showBriefDependencies: showBriefDependencies,
 				showIds: showIds,
 				depType: depTypeRaw,
-				depListSelection: selectDepList(depDirection, showIds.length)
+				depListSelection: selectDepList(depDirection, showIds.length),
+				depTree: makeDepTreeInvocation()
 			});
 		}
 		var helpCommand = false;
@@ -1315,12 +1371,13 @@ final class Parser {
 		}
 		final name = positional[0];
 		final depCycles = name == "dep" && positional.length > 1 && positional[1] == "cycles";
-		if (name == "dep" && !depCycles) {
+		final depTree = name == "dep" && positional.length > 1 && positional[1] == "tree";
+		if (name == "dep" && !depCycles && !depTree) {
 			if (positional.length < 2) {
 				if (!showHelp)
-					return UsageFailure("dep requires the read-only subcommand 'list' or 'cycles'");
+					return UsageFailure("dep requires the read-only subcommand 'list', 'cycles' or 'tree'");
 			} else if (positional[1] != "list") {
-				return UsageFailure("dep requires the read-only subcommand 'list' or 'cycles'");
+				return UsageFailure("dep requires the read-only subcommand 'list', 'cycles' or 'tree'");
 			} else if (!showHelp && positional.length < 3) {
 				return UsageFailure("requires at least 1 arg(s), only received 0");
 			}
@@ -1374,6 +1431,8 @@ final class Parser {
 			return UsageFailure("unknown flag: --fix");
 		if (name != "dep" && depDirectionUsed)
 			return UsageFailure("unknown flag: --direction");
+		if (!depTree && depTreeOnlyFlags.length > 0)
+			return UsageFailure('unknown flag: ${depTreeOnlyFlags[0]}');
 		if (name == "count" && countGroupConflict)
 			return UsageFailure("only one --by-* flag can be specified");
 		if (name != "list") {
@@ -1387,7 +1446,8 @@ final class Parser {
 					&& !(name == "query" && isQueryFilterFlag(flag))
 					&& !(name == "stale" && isStaleFilterFlag(flag))
 					&& !(name == "orphans" && isOrphansFilterFlag(flag))
-					&& !(name == "dep" && (flag == "--type" || flag == "-t"))
+					&& !(name == "dep" && !depTree && (flag == "--type" || flag == "-t"))
+					&& !(depTree && isDepTreeFilterFlag(flag))
 					&& !(name == "blocked" && flag == "--parent")) {
 					incompatibleListFlag = flag;
 					break;
@@ -1396,6 +1456,25 @@ final class Parser {
 				if (StringTools.startsWith(incompatibleListFlag, "--"))
 					return UsageFailure('unknown flag: ${incompatibleListFlag}');
 				return UsageFailure('unknown shorthand flag: \'${incompatibleListFlag.charAt(1)}\' in ${incompatibleListFlag}');
+			}
+		}
+		if (depTree && !showHelp) {
+			final received = positional.length - 2;
+			if (received != 1)
+				return UsageFailure('accepts 1 arg(s), received ${received}');
+			switch listMaxRows {
+				case IntPresent(_):
+				case IntAbsent:
+					final rawMaxRows = environment.value("BEADS_MAX_ROWS");
+					if (rawMaxRows != "") {
+						final parsedMaxRows = parseSignedInt(rawMaxRows);
+						if (parsedMaxRows == null || parsedMaxRows < 0) {
+							depTreeMaxRowsWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
+						} else {
+							listMaxRows = IntPresent(parsedMaxRows);
+							listMaxRowsSource = "BEADS_MAX_ROWS";
+						}
+					}
 			}
 		}
 		if (name == "list") {
@@ -1597,7 +1676,8 @@ final class Parser {
 				showBriefDependencies: showBriefDependencies,
 				showIds: showIds,
 				depType: depTypeRaw,
-				depListSelection: selectDepList(depDirection, showIds.length)
+				depListSelection: selectDepList(depDirection, showIds.length),
+				depTree: makeDepTreeInvocation()
 			});
 		}
 		if (name == "version")
@@ -1625,7 +1705,7 @@ final class Parser {
 		if (name == "children")
 			return parsedCommand(Command.Children);
 		if (name == "dep")
-			return parsedCommand(depCycles ? Command.DepCycles : Command.DepList);
+			return parsedCommand(depCycles ? Command.DepCycles : (depTree ? Command.DepTree : Command.DepList));
 		if (name == "blocked")
 			return parsedCommand(Command.Blocked);
 		if (name == "list")
@@ -1705,6 +1785,16 @@ final class Parser {
 			case "--status" | "-s" | "--limit" | "-n": true;
 			case _: false;
 		};
+	}
+
+	static function isDepTreeFilterFlag(flag:String):Bool {
+		return flag == "--status" || flag == "--reverse" || flag == "--max-rows";
+	}
+
+	/** Upstream's pflag message for an int flag whose value strconv.ParseInt rejects. */
+	static function invalidIntegerFlag(flag:String, value:String):String {
+		final quoted = haxe.Json.stringify(value);
+		return 'invalid argument ${quoted} for "${flag}" flag: strconv.ParseInt: parsing ${quoted}: invalid syntax';
 	}
 
 	static function isOrphansFilterFlag(flag:String):Bool {

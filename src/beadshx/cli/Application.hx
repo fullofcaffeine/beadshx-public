@@ -4,6 +4,9 @@ import beadshx.relation.RelationRead.prepareRelationRead;
 import beadshx.relation.RelationRead.RelationDirection;
 import beadshx.relation.RelatedIssue;
 import beadshx.relation.DependencyCycle;
+import beadshx.relation.DependencyTree.TreeDirection;
+import beadshx.relation.DependencyTree.TreeNode;
+import beadshx.relation.DependencyTree.parseTreeDirection;
 import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
@@ -249,7 +252,7 @@ final class Application {
 
 	static function usesStore(command:Command):Bool {
 		return switch command {
-			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | Blocked | List | Show: true;
+			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | Blocked | List | Show: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -268,6 +271,7 @@ final class Application {
 			case Children: "children";
 			case DepList: "dep-list";
 			case DepCycles: "dep-cycles";
+			case DepTree: "dep-tree";
 			case Blocked: "blocked";
 			case List: "list";
 			case Show: "show";
@@ -315,6 +319,8 @@ final class Application {
 				runDepList(invocation);
 			case DepCycles:
 				runDepCycles(invocation);
+			case DepTree:
+				runDepTree(invocation);
 			case Blocked:
 				runBlocked(invocation);
 			case List:
@@ -773,6 +779,221 @@ final class Application {
 			lines.push("    ],");
 			lines.push('    "partial": ${cycle.partial}');
 			lines.push(cycleIndex == cycles.length - 1 ? "  }" : "  },");
+		}
+		lines.push("]");
+		return Success(lines.join("\n") + "\n");
+	}
+
+	function runDepTree(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = runDepTreeQuery(invocation, location, query);
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/** Checks the flags, resolves the root and walks, in the order upstream runDepTree does. */
+	function runDepTreeQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final request = invocation.depTree;
+		final direction = parseTreeDirection(request.direction);
+		if (direction == null)
+			return runModeAwareFailure(invocation.output, "--direction must be 'down', 'up', or 'both'");
+		if (request.maxDepth < 1)
+			return runModeAwareFailure(invocation.output, "--max-depth must be >= 1");
+		final maxRows = switch request.maxRows {
+			case IntPresent(value): value;
+			case IntAbsent: 0;
+		};
+		if (maxRows < 0)
+			return runModeAwareFailure(invocation.output, '--max-rows must be non-negative; got ${maxRows}');
+		if (request.maxRowsWarning != "")
+			output.writeStderr(request.maxRowsWarning);
+		final rootId = switch lookupIssueSummary(location, request.root, invocation.global, query) {
+			case Failure(message):
+				return runModeAwareFailure(invocation.output, 'resolving issue ID ${request.root}: ${message}');
+			case Success(IssueMissing):
+				return runModeAwareFailure(invocation.output, 'resolving issue ID ${request.root}: no issue found matching "${request.root}"');
+			case Success(IssueFound(summary)): summary.id;
+		};
+		final nodes = switch query.dependencyTree(location.path, location.databaseName, {
+			rootId: rootId,
+			direction: direction,
+			maxDepth: request.maxDepth,
+			status: request.status
+		}, invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, message);
+			case Success(value): value;
+		};
+		// Upstream checks the cap after the walk, on the nodes it would print.
+		if (maxRows > 0 && nodes.length > maxRows)
+			return runListRowLimitExceeded(nodes.length, request.maxRowsSource, maxRows);
+		if (request.format == "mermaid") {
+			// The argument as typed, not the resolved ID: it is used only for an empty tree.
+			output.writeStdout(renderDepTreeMermaid(nodes, request.root));
+			return 0;
+		}
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderDepTreeJson(nodes));
+		output.writeStdout(renderDepTreeHuman(nodes, rootId, direction, request.maxDepth));
+		return 0;
+	}
+
+	/** Matches upstream runDepTree and renderTree with colors off; the root badge stays bold. */
+	static function renderDepTreeHuman(nodes:Array<TreeNode<RelatedIssue>>, rootId:String, direction:TreeDirection, maxDepth:Int):String {
+		if (nodes.length == 0)
+			return switch direction {
+				case TreeUp: '\n${rootId} has no dependents\n';
+				case TreeBoth: '\n${rootId} has no dependencies or dependents\n';
+				case TreeDown: '\n${rootId} has no dependencies\n';
+			};
+		final rendered = new StringBuf();
+		rendered.add(switch direction {
+			case TreeUp: '\n🌲 Dependent tree for ${rootId}:\n\n';
+			case TreeBoth: '\n🌲 Full dependency graph for ${rootId}:\n\n';
+			case TreeDown: '\n🌲 Dependency tree for ${rootId}:\n\n';
+		});
+		final children = new Map<String, Array<TreeNode<RelatedIssue>>>();
+		var root:Null<TreeNode<RelatedIssue>> = null;
+		for (node in nodes) {
+			if (node.depth == 0) {
+				root = node;
+				continue;
+			}
+			var siblings = children.get(node.parentId);
+			if (siblings == null) {
+				siblings = [];
+				children.set(node.parentId, siblings);
+			}
+			siblings.push(node);
+		}
+		final top = root == null ? nodes[0] : root;
+		// Only genuine blockers that are still open mark an open root as blocked (GH#3565).
+		var rootBlocked = false;
+		final rootChildren = children.get(top.id);
+		if (rootChildren != null)
+			for (child in rootChildren)
+				if ((child.status == "open" || child.status == "in_progress") && isBlockingTreeEdge(child.edgeFromParent)) {
+					rootBlocked = true;
+					break;
+				}
+		final seen = new Map<String, Bool>();
+		final activeConnectors = new Map<Int, Bool>();
+		function renderNode(node:TreeNode<RelatedIssue>, depth:Int, isLast:Bool):Void {
+			final prefix = new StringBuf();
+			for (level in 0...depth)
+				prefix.add(activeConnectors.get(level) == true ? "│   " : "    ");
+			if (depth > 0)
+				prefix.add(isLast ? "└── " : "├── ");
+			// A node reached again, such as one on both sides of a `both` walk.
+			if (seen.exists(node.id)) {
+				rendered.add('${prefix.toString()}${node.id} (shown above)\n');
+				return;
+			}
+			seen.set(node.id, true);
+			final nodeChildren = children.get(node.id);
+			var line = formatDepTreeNode(node, depth == 0 && rootBlocked);
+			if (depth == maxDepth && nodeChildren != null && nodeChildren.length > 0)
+				line += " …";
+			rendered.add('${prefix.toString()}${line}\n');
+			if (nodeChildren == null)
+				return;
+			for (index in 0...nodeChildren.length) {
+				// The root has no siblings, so depth 0 never draws a vertical connector.
+				if (depth > 0)
+					activeConnectors.set(depth, index < nodeChildren.length - 1);
+				renderNode(nodeChildren[index], depth + 1, index == nodeChildren.length - 1);
+			}
+		}
+		renderNode(top, 0, true);
+		rendered.add("\n");
+		return rendered.toString();
+	}
+
+	/** Upstream formatTreeNode with colors off. `isBlocked` replaces the root's [READY] badge. */
+	static function formatDepTreeNode(node:TreeNode<RelatedIssue>, isBlocked:Bool):String {
+		if (StringTools.startsWith(node.id, "external:"))
+			return '${node.issue.title} (external)';
+		var line = '${node.id}: ${node.issue.title} [P${node.issue.priority}] (${node.status})';
+		if (node.depth > 0 && node.edgeFromParent != "")
+			line += ' [${node.edgeFromParent}]';
+		if (node.status == "open" && node.depth == 0)
+			line += isBlocked ? " \x1b[1m[BLOCKED]\x1b[m" : " \x1b[1m[READY]\x1b[m";
+		return line;
+	}
+
+	/** Upstream DependencyType.IsBlockingEdge: parent-child and other links do not block. */
+	static function isBlockingTreeEdge(edge:String):Bool {
+		return edge == "blocks" || edge == "conditional-blocks" || edge == "waits-for";
+	}
+
+	/** Upstream outputMermaidTree: each node once, then one edge per node with a parent. */
+	static function renderDepTreeMermaid(nodes:Array<TreeNode<RelatedIssue>>, rootArgument:String):String {
+		if (nodes.length == 0)
+			return 'flowchart TD\n  ${rootArgument}["No dependencies"]\n';
+		final rendered = new StringBuf();
+		rendered.add("flowchart TD\n");
+		final seen = new Map<String, Bool>();
+		for (node in nodes) {
+			if (seen.exists(node.id))
+				continue;
+			seen.set(node.id, true);
+			var label = '${mermaidStatusSymbol(node.status)} ${node.id}: ${node.issue.title}';
+			label = StringTools.replace(label, "\\", "\\\\");
+			label = StringTools.replace(label, "\"", "\\\"");
+			rendered.add('  ${node.id}["${label}"]\n');
+		}
+		rendered.add("\n");
+		for (node in nodes)
+			if (node.parentId != "" && node.parentId != node.id)
+				rendered.add('  ${node.parentId} --> ${node.id}\n');
+		return rendered.toString();
+	}
+
+	/** Upstream getStatusEmoji. */
+	static function mermaidStatusSymbol(status:String):String {
+		return switch status {
+			case "open": "☐";
+			case "in_progress": "◧";
+			case "blocked": "⚠";
+			case "deferred": "❄";
+			case "closed": "☑";
+			case _: "?";
+		};
+	}
+
+	/** Upstream prints the bare node list: each issue, then depth, parent_id, edge_from_parent and truncated. */
+	static function renderDepTreeJson(nodes:Array<TreeNode<RelatedIssue>>):StoreResult<String> {
+		if (nodes.length == 0)
+			return Success("[]\n");
+		final lines = ["["];
+		for (index in 0...nodes.length) {
+			final node = nodes[index];
+			final fields = switch renderRawIssueFields(node.issue, false, "    ", node.issue.labels) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			fields.push('"depth": ${node.depth}');
+			fields.push('"parent_id": ${Json.stringify(node.parentId)}');
+			if (node.edgeFromParent != "")
+				fields.push('"edge_from_parent": ${Json.stringify(node.edgeFromParent)}');
+			// Upstream never sets Truncated; it is kept for the JSON shape.
+			fields.push('"truncated": false');
+			lines.push("  {");
+			for (fieldIndex in 0...fields.length)
+				lines.push('    ${fields[fieldIndex]}${fieldIndex == fields.length - 1 ? "" : ","}');
+			lines.push(index == nodes.length - 1 ? "  }" : "  },");
 		}
 		lines.push("]");
 		return Success(lines.join("\n") + "\n");
@@ -4142,10 +4363,27 @@ final class Application {
 			case Children: childrenHelp();
 			case DepList: depListHelp();
 			case DepCycles: basicCommandHelp("Detect dependency cycles", "dep cycles", "");
+			case DepTree: depTreeHelp();
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case List: listHelp();
 			case Show: showHelp();
 		};
+	}
+
+	function depTreeHelp():String {
+		return "Show dependency tree rooted at the given issue.\n\n"
+			+ "Usage:\n  bdhx dep tree [issue-id] [flags]\n\n"
+			+ "Flags:\n"
+			+ "      --direction string   Tree direction: 'down' (dependencies), 'up' (dependents), or 'both'\n"
+			+ "      --format string      Output format: 'mermaid' for Mermaid.js flowchart\n"
+			+ "  -h, --help               help for tree\n"
+			+
+			"      --max-rows int       Hard upper bound on rows returned. Returns a non-zero exit (code 2) and an error to stderr if exceeded. 0 disables (the default). Overrides BEADS_MAX_ROWS for this invocation.\n"
+			+ "  -d, --max-depth int      Maximum tree depth to display (safety limit) (default 50)\n"
+			+ "      --reverse            Show dependent tree (deprecated: use --direction=up)\n"
+			+ "      --show-all-paths     Deprecated no-op: accepted and ignored. A node reached by two paths is shown once, under the first.\n"
+			+ "      --status string      Filter to only show issues with this status (open, in_progress, blocked, deferred, closed)\n\n"
+			+ supportedGlobalFlags();
 	}
 
 	function depListHelp():String {

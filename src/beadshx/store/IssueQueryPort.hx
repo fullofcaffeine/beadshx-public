@@ -27,5 +27,9 @@ interface IssueQueryPort extends QueryTimePort {
 	function dependencyCycles(beadsDir:String, databaseName:String,
 		global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<beadshx.relation.RelatedIssue>>>;
 
+	/** The flattened dependency tree of an exact root ID, as `bd dep tree` walks it. */
+	function dependencyTree(beadsDir:String, databaseName:String, request:beadshx.relation.DependencyTree.DependencyTreeRequest,
+		global:Bool):StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<beadshx.relation.RelatedIssue>>>;
+
 	function close():StoreResult<Bool>;
 }

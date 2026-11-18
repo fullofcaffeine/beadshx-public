@@ -52,6 +52,7 @@ run_command() {
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/relation/compile.hxml) &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/dep_list/compile.hxml) &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/dep_cycles/compile.hxml) &&
+			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/dep_tree/compile.hxml) &&
 			"$repository_root/scripts/beadshx/test-storage-transaction-tracer.sh" &&
 			"$repository_root/scripts/beadshx/test-sql-error-contracts.sh" &&
 			"$repository_root/scripts/beadshx/test-sql-error-contracts.sh" --scalar-labels &&

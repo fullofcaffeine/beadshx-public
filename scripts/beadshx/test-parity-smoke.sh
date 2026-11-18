@@ -860,6 +860,59 @@ UPDATE issues SET is_blocked = 1, updated_at = updated_at WHERE id IN ('$real_da
 compare_real_database_sql blocked-flags-human exact "$blocked_flags_sql" blocked
 compare_real_database_sql blocked-flags-json exact "$blocked_flags_sql" blocked --json
 compare_real_database_sql blocked-flags-parent-json exact "$blocked_flags_sql" blocked --parent "$real_database_molecule_id" --json
+# dep tree walks parent-child chains (grandchild -> child -> epic), a molecule whose second step
+# blocks on the first, and a gated step whose gate is closed. Cycles come from dep_cycle_sql.
+real_database_grandchild_id="$(jq -er '.id' "$real_database_seed/grandchild.json")"
+molecule_step_two_id="$(jq -er '.id' "$real_database_seed/molecule-step-two.json")"
+compare_real_database dep-tree-down-human exact dep tree "$real_database_grandchild_id"
+compare_real_database dep-tree-down-json exact dep tree "$real_database_grandchild_id" --json
+compare_real_database dep-tree-blocked-root-human exact dep tree "$molecule_step_two_id"
+compare_real_database dep-tree-ready-root-human exact dep tree "$real_database_gated_step_id"
+compare_real_database dep-tree-up-human exact dep tree "$real_database_epic_id" --direction up
+compare_real_database dep-tree-up-json exact dep tree "$real_database_epic_id" --direction=up --json
+compare_real_database dep-tree-reverse-human exact dep tree "$real_database_molecule_id" --reverse
+compare_real_database dep-tree-reverse-direction-wins exact dep tree "$real_database_molecule_id" --reverse --direction down
+compare_real_database dep-tree-both-human exact dep tree "$real_database_child_id" --direction both
+compare_real_database dep-tree-both-json exact dep tree "$real_database_child_id" --direction both --json
+compare_real_database dep-tree-depth-one-human exact dep tree "$real_database_grandchild_id" -d 1 --show-all-paths
+compare_real_database dep-tree-depth-two-json exact dep tree "$real_database_grandchild_id" --max-depth=2 --json
+compare_real_database dep-tree-depth-zero-human exact dep tree "$real_database_grandchild_id" --max-depth 0
+compare_real_database dep-tree-depth-zero-json exact dep tree "$real_database_grandchild_id" --max-depth 0 --json
+compare_real_database dep-tree-direction-bogus-human exact dep tree "$real_database_grandchild_id" --direction sideways
+compare_real_database dep-tree-direction-bogus-json exact dep tree "$real_database_grandchild_id" --direction sideways --json
+compare_real_database dep-tree-status-open-human exact dep tree "$real_database_gated_step_id" --status open
+compare_real_database dep-tree-status-closed-json exact dep tree "$real_database_gated_step_id" --status closed --json
+compare_real_database dep-tree-status-none-down exact dep tree "$real_database_gated_step_id" --status deferred
+compare_real_database dep-tree-status-none-up exact dep tree "$real_database_epic_id" --direction up --status deferred
+compare_real_database dep-tree-status-none-both-json exact dep tree "$real_database_child_id" --direction both --status deferred --json
+compare_real_database dep-tree-status-both-root-restored exact dep tree "$real_database_gated_molecule_id" --direction both --status closed
+compare_real_database dep-tree-mermaid exact dep tree "$molecule_step_two_id" --format mermaid
+compare_real_database dep-tree-mermaid-both exact dep tree "$real_database_child_id" --direction both --format mermaid --json
+compare_real_database dep-tree-mermaid-empty exact dep tree abcd1 --format mermaid --status deferred
+compare_real_database dep-tree-format-json exact dep tree "$real_database_molecule_id" --reverse --format JSON
+compare_real_database dep-tree-missing-human exact dep tree test-missing
+compare_real_database dep-tree-missing-json exact dep tree test-missing --json
+compare_real_database dep-tree-partial-human exact dep tree abcd1
+compare_real_database dep-tree-ambiguous-json exact dep tree abcd --json
+compare_real_database dep-tree-no-args exact dep tree
+compare_real_database dep-tree-two-args exact dep tree "$real_database_epic_id" "$real_database_child_id"
+compare_real_database dep-tree-type-flag exact dep tree "$real_database_epic_id" --type blocks
+compare_real_database_sql dep-tree-cycle-human exact "$dep_cycle_sql" dep tree "$real_database_issue_id"
+compare_real_database_sql dep-tree-cycle-both-human exact "$dep_cycle_sql" dep tree test-abcd11 --direction both
+compare_real_database_sql dep-tree-cycle-both-json exact "$dep_cycle_sql" dep tree test-abcd11 --direction both --json
+# A first child with two dependencies of its own: upstream sets the vertical connector state one
+# level late, so the root's sibling list draws no vertical line and the child's list does.
+compare_real_database_sql dep-tree-connectors-human exact \
+	"$dependency_row ('fixture-tree-1', '$real_database_molecule_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-tree-2', '$real_database_molecule_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')" \
+	dep tree "$molecule_step_two_id"
+compare_real_database_env dep-tree-json-envelope exact BD_JSON_ENVELOPE=1 dep tree "$real_database_grandchild_id" --json
+compare_real_database dep-tree-max-rows-human exact dep tree "$real_database_grandchild_id" --max-rows 2
+compare_real_database dep-tree-max-rows-json exact dep tree "$real_database_grandchild_id" --max-rows 3 --json
+compare_real_database dep-tree-max-rows-negative-json exact dep tree "$real_database_grandchild_id" --max-rows -1 --json
+compare_real_database_env dep-tree-max-rows-env exact BEADS_MAX_ROWS=1 dep tree "$real_database_grandchild_id"
+compare_real_database_env dep-tree-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 dep tree "$real_database_grandchild_id" --max-rows 0
+compare_real_database_env dep-tree-max-rows-env-malformed exact BEADS_MAX_ROWS=banana dep tree test-missing
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

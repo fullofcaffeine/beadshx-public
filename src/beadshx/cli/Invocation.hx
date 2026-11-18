@@ -1,6 +1,7 @@
 package beadshx.cli;
 
 import beadshx.store.IssueListRequest;
+import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.CountRequest;
 import beadshx.store.ReadyRequest;
@@ -57,4 +58,29 @@ typedef Invocation = {
 	final showIds:Array<String>;
 	final depType:String;
 	final depListSelection:DepListSelection;
+	final depTree:DepTreeInvocation;
+}
+
+/**
+	The `bd dep tree` flags as typed. The direction, depth and row cap are checked by the
+	command itself, after the store opens, in upstream's order.
+**/
+typedef DepTreeInvocation = {
+	/** The issue ID argument as typed; it can be a partial ID. */
+	final root:String;
+
+	/** `--direction`, or `up` for `--reverse` without it, or `down`. */
+	final direction:String;
+
+	final maxDepth:Int;
+	final status:String;
+
+	/** A `--format` value other than `json`; only `mermaid` changes the output. */
+	final format:String;
+
+	final maxRows:OptionalInt;
+	final maxRowsSource:String;
+
+	/** The warning for a malformed BEADS_MAX_ROWS, printed when upstream reads the cap. */
+	final maxRowsWarning:String;
 }
