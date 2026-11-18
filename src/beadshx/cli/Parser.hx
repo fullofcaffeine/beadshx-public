@@ -1314,12 +1314,13 @@ final class Parser {
 			helpCommand = true;
 		}
 		final name = positional[0];
-		if (name == "dep") {
+		final depCycles = name == "dep" && positional.length > 1 && positional[1] == "cycles";
+		if (name == "dep" && !depCycles) {
 			if (positional.length < 2) {
 				if (!showHelp)
-					return UsageFailure("dep requires the read-only subcommand 'list'");
+					return UsageFailure("dep requires the read-only subcommand 'list' or 'cycles'");
 			} else if (positional[1] != "list") {
-				return UsageFailure("dep requires the read-only subcommand 'list'");
+				return UsageFailure("dep requires the read-only subcommand 'list' or 'cycles'");
 			} else if (!showHelp && positional.length < 3) {
 				return UsageFailure("requires at least 1 arg(s), only received 0");
 			}
@@ -1623,7 +1624,7 @@ final class Parser {
 		if (name == "children")
 			return parsedCommand(Command.Children);
 		if (name == "dep")
-			return parsedCommand(Command.DepList);
+			return parsedCommand(depCycles ? Command.DepCycles : Command.DepList);
 		if (name == "list")
 			return parsedCommand(Command.List);
 		if (name == "show" || name == "view")

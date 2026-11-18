@@ -5,6 +5,9 @@ repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 oracle="${1:-$repository_root/build/bin/bd-upstream}"
 candidate="${2:-$repository_root/build/bin/bdhx}"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-parity-smoke.XXXXXX")"
+# Writes rows that bd refuses to create (such as dependency cycles) into marked fixtures.
+fixture_sql="$test_root/bin/fixture-sql"
+(cd "$repository_root" && go build -tags gms_pure_go -o "$fixture_sql" ./scripts/beadshx/fixture-sql)
 cleanup() {
 	local status=$?
 	while IFS= read -r pid_file; do
@@ -464,6 +467,7 @@ real_database_labeled_relation_id="$(jq -er '.id' "$real_database_seed/labeled-r
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config=""
 real_database_extra_import=""
+real_database_extra_sql=""
 real_database_case_count=0
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
@@ -494,6 +498,9 @@ compare_real_database() {
 						"${real_database_env[@]}" \
 						"$oracle" import - --json >/dev/null 2>&1
 			)
+		fi
+		if [[ -n "$real_database_extra_sql" ]]; then
+			printf '%s\n' "$real_database_extra_sql" | "$fixture_sql" "$state_root/work" >/dev/null
 		fi
 	done
 	candidate_before="$(fingerprint_tree "$candidate_root")"
@@ -619,6 +626,16 @@ compare_real_database_env() {
 	real_database_extra_env=("$environment")
 	compare_real_database "$name" "$comparison" "$@"
 	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+}
+
+compare_real_database_sql() {
+	local name="$1"
+	local comparison="$2"
+	local statements="$3"
+	shift 3
+	real_database_extra_sql="$statements"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_extra_sql=""
 }
 
 compare_real_database_import() {
@@ -802,6 +819,22 @@ compare_real_database dep-list-up-duplicate-json exact dep list "$real_database_
 compare_real_database dep-list-up-batch-missing-json exact dep list "$real_database_epic_id" test-missing --direction up --json
 compare_real_database dep-list-up-missing-json exact dep list test-missing --direction up --json
 compare_real_database dep-list-up-all-missing-json exact dep list test-missing test-also-missing --direction up --json
+# bd refuses cycle-closing edges, so the cycle cases write them directly into each case's fixture copy.
+dependency_row="INSERT INTO dependencies (id, issue_id, depends_on_issue_id, type, created_at, created_by) VALUES"
+dep_cycle_sql="$dependency_row ('fixture-cycle-1', 'test-abcd22', 'test-abcd11', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-cycle-2', '$real_database_issue_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-cycle-3', '$real_database_bug_id', '$real_database_content_id', 'conditional-blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-cycle-4', '$real_database_content_id', '$real_database_issue_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-cycle-5', '$real_database_epic_id', 'test-abcd11', 'relates-to', '2026-08-21 10:00:00', 'fixture')"
+dep_partial_cycle_sql="SET FOREIGN_KEY_CHECKS = 0
+$dependency_row ('fixture-ghost-1', '$real_database_child_id', 'test-ghost', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-ghost-2', 'test-ghost', '$real_database_child_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_real_database dep-cycles-none exact dep cycles
+compare_real_database dep-cycles-none-json exact dep cycles --json
+compare_real_database_sql dep-cycles-human exact "$dep_cycle_sql" dep cycles
+compare_real_database_sql dep-cycles-json exact "$dep_cycle_sql" dep cycles --json
+compare_real_database_sql dep-cycles-partial-human exact "$dep_partial_cycle_sql" dep cycles
+compare_real_database_sql dep-cycles-partial-json exact "$dep_partial_cycle_sql" dep cycles --json
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

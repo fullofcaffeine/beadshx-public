@@ -119,7 +119,8 @@ final class DependencyRead {
 		return target != 0 ? target : compareUtf8(leftType, rightType);
 	}
 
-	static function compareUtf8(left:String, right:String):Int {
+	/** Orders strings by their UTF-8 bytes, the way Go compares strings. */
+	public static function compareUtf8(left:String, right:String):Int {
 		final leftBytes = Bytes.ofString(left);
 		final rightBytes = Bytes.ofString(right);
 		final shared = leftBytes.length < rightBytes.length ? leftBytes.length : rightBytes.length;

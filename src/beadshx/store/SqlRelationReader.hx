@@ -3,11 +3,50 @@ package beadshx.store;
 import beadshx.nativeextern.context.Context;
 import beadshx.store.DatabaseErrors.isTableNotExist;
 import beadshx.nativeextern.database.sql.Tx;
+import beadshx.relation.RelatedIssue;
+import beadshx.relation.RelatedIssue.relatedIssue;
 import beadshx.relation.RelationRead.RelationReadPlan;
 import beadshx.store.SqlIssueRow.SqlIssueFields;
 import beadshx.store.SqlIssueRow.SqlIssueScanOrigin;
 import beadshx.store.SqlIssueRow.SQL_ISSUE_COLUMNS;
 import beadshx.store.SqlIssueRow.scanSqlIssueFields;
+
+/**
+	Builds the full related-issue record from one scanned SQL issue row and its labels.
+	Bonds and formula sources are not part of the issue row, so they stay empty here.
+**/
+function relatedIssueFromSql(fields:SqlIssueFields, labels:Array<String>, dependencyType:String):RelatedIssue {
+	final extended:IssueLongFields = {
+		isBlocked: fields.isBlocked,
+		leaseExpiresAt: fields.leaseExpiresAt,
+		heartbeatAt: fields.heartbeatAt,
+		leaseGrantedNode: fields.leaseGrantedNode,
+		compactionLevel: fields.compactionLevel,
+		compactedAt: fields.compactedAt,
+		compactedAtCommit: fields.compactedAtCommit,
+		originalSize: fields.originalSize,
+		sender: fields.sender,
+		ephemeral: fields.ephemeral,
+		noHistory: fields.noHistory,
+		storageClass: fields.storageClass,
+		pinned: fields.pinned,
+		template: fields.template,
+		bondedFrom: [],
+		awaitType: fields.awaitType,
+		awaitId: fields.awaitId,
+		timeout: fields.timeout,
+		timeoutNanos: fields.timeoutNanos,
+		waiters: fields.waiters,
+		sourceFormula: "",
+		sourceLocation: "",
+		workType: fields.workType,
+		eventKind: fields.eventKind,
+		actor: fields.actor,
+		target: fields.target,
+		payload: fields.payload
+	};
+	return relatedIssue(fields, labels, extended, dependencyType);
+}
 
 /** Complete scalar neighbor and labels; the edge contributes only its relation type. */
 typedef SqlRelatedIssue = {

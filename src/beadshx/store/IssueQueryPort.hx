@@ -19,5 +19,10 @@ interface IssueQueryPort extends QueryTimePort {
 	function issueDependents(beadsDir:String, id:String, global:Bool):StoreResult<Array<IssueDependency>>;
 	function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String>;
 	function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>>;
+
+	/** Every dependency cycle, as `bd dep cycles` reports it. */
+	function dependencyCycles(beadsDir:String, databaseName:String,
+		global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<beadshx.relation.RelatedIssue>>>;
+
 	function close():StoreResult<Bool>;
 }

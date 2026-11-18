@@ -16,6 +16,7 @@ enum Command {
 	Orphans;
 	Children;
 	DepList;
+	DepCycles;
 	List;
 	Show;
 }

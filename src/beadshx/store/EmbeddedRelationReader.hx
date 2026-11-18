@@ -6,11 +6,11 @@ import beadshx.nativeextern.database.sql.TxOptions;
 import beadshx.nativeextern.doltdriver.Config;
 import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.relation.RelatedIssue;
-import beadshx.relation.RelatedIssue.relatedIssue;
 import beadshx.relation.RelationRead.RelationReadPlan;
 import beadshx.relation.RelationRead.finishRelationRead;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.SqlRelationReader.readSqlRelations;
+import beadshx.store.SqlRelationReader.relatedIssueFromSql;
 
 /** Own one read transaction; all relation semantics are authored Haxe over independent APIs. */
 @:goBuildConstraint("cgo")
@@ -49,38 +49,8 @@ final class EmbeddedRelationReader {
 			case Failure(message): Failure(message);
 			case Success(rows):
 				final neighbors = new Array<RelatedIssue>();
-				for (row in rows) {
-					final extended:IssueLongFields = {
-						isBlocked: row.fields.isBlocked,
-						leaseExpiresAt: row.fields.leaseExpiresAt,
-						heartbeatAt: row.fields.heartbeatAt,
-						leaseGrantedNode: row.fields.leaseGrantedNode,
-						compactionLevel: row.fields.compactionLevel,
-						compactedAt: row.fields.compactedAt,
-						compactedAtCommit: row.fields.compactedAtCommit,
-						originalSize: row.fields.originalSize,
-						sender: row.fields.sender,
-						ephemeral: row.fields.ephemeral,
-						noHistory: row.fields.noHistory,
-						storageClass: row.fields.storageClass,
-						pinned: row.fields.pinned,
-						template: row.fields.template,
-						bondedFrom: [],
-						awaitType: row.fields.awaitType,
-						awaitId: row.fields.awaitId,
-						timeout: row.fields.timeout,
-						timeoutNanos: row.fields.timeoutNanos,
-						waiters: row.fields.waiters,
-						sourceFormula: "",
-						sourceLocation: "",
-						workType: row.fields.workType,
-						eventKind: row.fields.eventKind,
-						actor: row.fields.actor,
-						target: row.fields.target,
-						payload: row.fields.payload
-					};
-					neighbors.push(relatedIssue(row.fields, row.labels, extended, row.dependencyType));
-				}
+				for (row in rows)
+					neighbors.push(relatedIssueFromSql(row.fields, row.labels, row.dependencyType));
 				Success(finishRelationRead(plan, neighbors));
 		};
 	}

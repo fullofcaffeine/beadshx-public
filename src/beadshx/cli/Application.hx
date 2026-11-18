@@ -3,6 +3,7 @@ package beadshx.cli;
 import beadshx.relation.RelationRead.prepareRelationRead;
 import beadshx.relation.RelationRead.RelationDirection;
 import beadshx.relation.RelatedIssue;
+import beadshx.relation.DependencyCycle;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
@@ -247,7 +248,7 @@ final class Application {
 
 	static function usesStore(command:Command):Bool {
 		return switch command {
-			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | List | Show: true;
+			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | List | Show: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -265,6 +266,7 @@ final class Application {
 			case Orphans: "orphans";
 			case Children: "children";
 			case DepList: "dep-list";
+			case DepCycles: "dep-cycles";
 			case List: "list";
 			case Show: "show";
 			case RootHelp: "bd";
@@ -309,6 +311,8 @@ final class Application {
 				runList(invocation);
 			case DepList:
 				runDepList(invocation);
+			case DepCycles:
+				runDepCycles(invocation);
 			case List:
 				runList(invocation);
 			case Show:
@@ -679,6 +683,95 @@ final class Application {
 					case DependencyEdges(anchors): renderDepList(invocation, anchors);
 				}
 		};
+	}
+
+	function runDepCycles(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = switch query.dependencyCycles(location.path, location.databaseName, invocation.global) {
+									case Failure(message): runModeAwareFailure(invocation.output, message);
+									case Success(cycles): renderDepCycles(invocation, cycles);
+								};
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/** Matches upstream `bd dep cycles` output with colors off. */
+	function renderDepCycles(invocation:Invocation, cycles:Array<DependencyCycle<RelatedIssue>>):Int {
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderDepCyclesJson(cycles));
+		if (cycles.length == 0) {
+			output.writeStdout("\n✓ No dependency cycles detected\n\n");
+			return 0;
+		}
+		final rendered = new StringBuf();
+		rendered.add('\n⚠ Found ${cycles.length} dependency cycles:\n\n');
+		for (index in 0...cycles.length) {
+			final cycle = cycles[index];
+			var missing = 0;
+			for (member in cycle.members)
+				if (member.issue == null)
+					missing++;
+			if (missing > 0)
+				rendered.add('${index + 1}. Cycle involving (${missing} of ${cycle.members.length} members have no record in this database):\n');
+			else
+				rendered.add('${index + 1}. Cycle involving:\n');
+			for (member in cycle.members) {
+				final issue = member.issue;
+				rendered.add('   - ${member.id}: ${issue == null ? "(no record in this database)" : issue.title}\n');
+			}
+			rendered.add("\n");
+		}
+		output.writeStdout(rendered.toString());
+		return 0;
+	}
+
+	/** Upstream prints the bare cycle list; a member without a record has no "issue" key. */
+	static function renderDepCyclesJson(cycles:Array<DependencyCycle<RelatedIssue>>):StoreResult<String> {
+		if (cycles.length == 0)
+			return Success("[]\n");
+		final lines = ["["];
+		for (cycleIndex in 0...cycles.length) {
+			final cycle = cycles[cycleIndex];
+			lines.push("  {");
+			lines.push('    "members": [');
+			for (memberIndex in 0...cycle.members.length) {
+				final member = cycle.members[memberIndex];
+				final issue = member.issue;
+				lines.push("      {");
+				if (issue == null) {
+					lines.push('        "id": ${Json.stringify(member.id)}');
+				} else {
+					lines.push('        "id": ${Json.stringify(member.id)},');
+					final fields = switch renderRawIssueFields(issue, false, "          ", issue.labels) {
+						case Failure(message): return Failure(message);
+						case Success(value): value;
+					};
+					lines.push('        "issue": {');
+					for (fieldIndex in 0...fields.length)
+						lines.push('          ${fields[fieldIndex]}${fieldIndex == fields.length - 1 ? "" : ","}');
+					lines.push("        }");
+				}
+				lines.push(memberIndex == cycle.members.length - 1 ? "      }" : "      },");
+			}
+			lines.push("    ],");
+			lines.push('    "partial": ${cycle.partial}');
+			lines.push(cycleIndex == cycles.length - 1 ? "  }" : "  },");
+		}
+		lines.push("]");
+		return Success(lines.join("\n") + "\n");
 	}
 
 	function renderRelatedDepList(invocation:Invocation, ids:Array<String>, dependencies:Array<RelatedIssue>, direction:RelationDirection):Int {
@@ -3980,6 +4073,7 @@ final class Application {
 			case Orphans: orphansHelp();
 			case Children: childrenHelp();
 			case DepList: depListHelp();
+			case DepCycles: basicCommandHelp("Detect dependency cycles", "dep cycles", "");
 			case List: listHelp();
 			case Show: showHelp();
 		};

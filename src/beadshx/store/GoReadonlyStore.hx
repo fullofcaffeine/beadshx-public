@@ -28,6 +28,13 @@ import go.Result;
 import beadshx.store.InfoSnapshot.ConfigEntry;
 
 /**
+	`bd dep cycles` reads the graph with Haxe-owned SQL, which exists only for embedded
+	workspaces today. Server and proxied routes wait for a Haxe-owned server
+	connection (beadshx-m08-07.5) instead of borrowing first-party Go semantics.
+**/
+final DEP_CYCLES_ROUTE_UNAVAILABLE = "dep cycles is not available yet for server-mode or proxied workspaces in this build";
+
+/**
 	Typed adapter over the narrow native read-only facade.
 
 	The Go package owns storage selection and lifetime. This adapter narrows its
@@ -64,6 +71,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
+	public function dependencyCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.dependencyCycles(beadsDir, databaseName);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(DEP_CYCLES_ROUTE_UNAVAILABLE);
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
@@ -1186,6 +1202,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
 		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
+	public function dependencyCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>> {
+		return Failure(DEP_CYCLES_ROUTE_UNAVAILABLE);
 	}
 
 	final native:NativeQuerySession;
