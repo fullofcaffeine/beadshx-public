@@ -980,7 +980,7 @@ compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql"
 compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
 # graph <id> walks every dependency type both ways from the root, then lays the nodes out by
 # `blocks` edges only, lifts children to their parent's layer and sorts each layer, so upstream's
-# Go map order never reaches the output. The JSON, DOT and box views are ported so far.
+# Go map order never reaches the output. The JSON, DOT, box and default views are ported so far.
 graph_lift_sql="$dependency_row ('fixture-graph-1', '$real_database_epic_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 graph_external_row="INSERT INTO dependencies (id, issue_id, depends_on_external, type, created_at, created_by) VALUES"
 graph_external_sql="$graph_external_row ('fixture-graph-2', '$real_database_issue_id', 'external:other:$real_database_labeled_relation_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
@@ -1098,10 +1098,83 @@ compare_real_database_sql graph-lift-box exact "$graph_lift_sql" graph "$real_da
 compare_real_database_sql graph-cycle-box exact "$dep_cycle_sql" graph test-abcd11 --box
 compare_real_database_sql graph-external-box exact "$graph_external_sql" graph "$real_database_issue_id" --box
 compare_real_database_import graph-wisp-box exact "$graph_wisp_record" graph test-graph-wisp --box
+# Without a view flag, graph draws each layer as a column of boxes and routes each blocks row
+# from an earlier layer through the six-column gutters to its right, one channel per row change.
+# A box fits the longest title cut to 22 characters (counted in runes) and the longest ID
+# (counted in bytes) with its priority, and is at least 18 wide. The records below give the
+# gutters fixed IDs, so each shape is the same on every run: edges that cross, several edges
+# that merge into one node, edges that skip a layer (also past an empty row), and a wide fan-out
+# whose channels share columns.
+# graph_record ID TITLE STATUS PRIORITY [BLOCKER...] prints one issue that each BLOCKER blocks.
+graph_record() {
+	local id="$1" title="$2" status="$3" priority="$4"
+	shift 4
+	jq -nc --arg id "$id" --arg title "$title" --arg status "$status" --argjson priority "$priority" '{
+		id: $id, title: $title, status: $status, priority: $priority, issue_type: "task",
+		created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z",
+		dependencies: [$ARGS.positional[] | {issue_id: $id, depends_on_id: ., type: "blocks",
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}' --args "$@"
+}
+graph_crossing_records="$(
+	graph_record test-gv-a "Cross source A" open 1
+	graph_record test-gv-b "Cross source B" in_progress 2
+	graph_record test-gv-c "Cross target C" open 2 test-gv-b test-gv-a
+	graph_record test-gv-d "Cross target D" blocked 3 test-gv-a
+	graph_record test-gv-e "Cross target E" deferred 4 test-gv-b
+)"
+graph_merge_records="$(
+	graph_record test-gm-s1 "Merge source one" open 2
+	graph_record test-gm-s2 "Merge source two" open 2
+	graph_record test-gm-s3 "Merge source three" open 2
+	graph_record test-gm-s4 "Merge source four" open 2
+	graph_record test-gm-t "Merge target" open 1 test-gm-s1 test-gm-s2 test-gm-s3 test-gm-s4
+	graph_record test-gm-u "Second merge target" open 1 test-gm-s4 test-gm-s1
+)"
+graph_skip_records="$(
+	graph_record test-gs-a "Skip start" open 2
+	graph_record test-gs-z "Skip other start" open 2
+	graph_record test-gs-b "Skip middle" open 2 test-gs-a
+	graph_record test-gs-y "Skip other middle" open 2 test-gs-z
+	graph_record test-gs-c "Skip end" open 2 test-gs-b test-gs-z
+	graph_record test-gs-x "Skip other end" open 2 test-gs-y test-gs-a
+	graph_record test-gs-xz "Skip past an empty row" open 2 test-gs-y test-gs-a
+	graph_record test-gs-w "Skip three layers" open 2 test-gs-c test-gs-z
+)"
+graph_fan_records="$(
+	graph_record test-gf-0 "Fan root" open 0
+	graph_record test-gf-9 "Second fan source" open 1
+	graph_record test-gf-1 "Fan target one with a title long enough to cut" open 2 test-gf-0 test-gf-9
+	graph_record test-gf-2 "Fan target two" open 2 test-gf-0
+	graph_record test-gf-3 "Fan target three" open 2 test-gf-0
+	graph_record test-gf-4 "Fan target four" open 2 test-gf-0
+	graph_record test-gf-5 "Fan target five" open 2 test-gf-0
+	graph_record test-gf-6 "Fan target six" open 2 test-gf-0 test-gf-9
+)"
+compare_real_database graph-hierarchy-visual exact graph "$real_database_child_id"
+compare_real_database graph-epic-visual exact graph "$real_database_epic_id"
+compare_real_database graph-blockers-visual exact graph "$molecule_step_two_id"
+compare_real_database graph-molecule-visual exact graph "$real_database_molecule_id"
+compare_real_database graph-gated-visual exact graph "$real_database_gated_step_id"
+compare_real_database graph-metadata-visual exact graph "$real_database_issue_id"
+compare_real_database graph-isolated-visual exact graph "$real_database_bug_id"
+compare_real_database graph-escaping-visual exact graph "$real_database_escaping_id"
+compare_real_database graph-visual-partial exact graph abcd1
+compare_real_database graph-visual-explicit exact graph "$real_database_epic_id" --dot=false --box=false --compact=false --html=false
+compare_real_database graph-visual-max-rows exact graph "$real_database_epic_id" --max-rows 2
+compare_real_database_env graph-visual-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph "$real_database_bug_id"
+compare_real_database_sql graph-views-visual exact "$graph_views_sql" graph "$real_database_bug_id"
+compare_real_database_sql graph-empty-layer-visual exact "$graph_empty_layer_sql" graph "$real_database_bug_id"
+compare_real_database_sql graph-narrow-visual exact "$graph_narrow_sql" graph "$real_database_bug_id"
+compare_real_database_sql graph-lift-visual exact "$graph_lift_sql" graph "$real_database_grandchild_id"
+compare_real_database_sql graph-cycle-visual exact "$dep_cycle_sql" graph test-abcd11
+compare_real_database_sql graph-external-visual exact "$graph_external_sql" graph "$real_database_issue_id"
+compare_real_database_import graph-wisp-visual exact "$graph_wisp_record" graph test-graph-wisp
+compare_real_database_import graph-crossing-visual exact "$graph_crossing_records" graph test-gv-a
+compare_real_database_import graph-merge-visual exact "$graph_merge_records" graph test-gm-t
+compare_real_database_import graph-skip-visual exact "$graph_skip_records" graph test-gs-a
+compare_real_database_import graph-fan-out-visual exact "$graph_fan_records" graph test-gf-0
 # The views that are not ported yet must fail the same way every time; upstream prints them.
 graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
-expect_candidate_failure graph-human-unported "" \
-	"Error: graph without --json is not available yet in this build" "" graph "$real_database_epic_id"
 for graph_view in --compact --html; do
 	expect_candidate_failure "graph${graph_view}-unported" "" \
 		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" "$graph_view"
@@ -1116,6 +1189,9 @@ expect_candidate_failure graph-all-unported "" "Error: graph --all is not availa
 expect_candidate_failure graph-other-repository-unported \
 	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
 	"$graph_unported_sql" graph "$real_database_issue_id" --json
+expect_candidate_failure graph-other-repository-visual-unported "" \
+	"Error: loading graph: graph of an issue with a dependency on another repository is not available yet in this build" \
+	"$graph_unported_sql" graph "$real_database_issue_id"
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

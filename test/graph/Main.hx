@@ -2,10 +2,18 @@ import beadshx.relation.DependencyCycle.walkBlockingCycles;
 import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.relation.GraphLayout.GraphEdge;
 import beadshx.relation.GraphLayout.computeGraphLayout;
+import beadshx.cli.GraphDrawing.DagEdge;
+import beadshx.cli.GraphDrawing.DagNode;
+import beadshx.cli.GraphDrawing.buildDagGutterGrid;
+import beadshx.cli.GraphDrawing.collectGutterEdges;
+import beadshx.cli.GraphDrawing.computeDagNodeWidth;
+import beadshx.cli.GraphDrawing.dagMergeRune;
+import beadshx.cli.GraphDrawing.dagNodeLine;
 
 /**
 	Pins the `bd graph check` cycle walk against upstream issueops.DetectCyclesInTx,
-	and the `bd graph <id>` layers against upstream computeLayout.
+	the `bd graph <id>` layers against upstream computeLayout, and the pieces of the
+	default view against upstream graph_visual.go.
 
 	Upstream walks from the roots in Go map order, so with two or more members its
 	output can differ between runs. These values follow the same walk from the roots
@@ -16,6 +24,7 @@ class Main {
 	static function main():Void {
 		cycleContracts();
 		layoutContracts();
+		drawingContracts();
 		Sys.println("graph Haxe contracts: PASS");
 	}
 
@@ -76,6 +85,143 @@ class Main {
 		], "[c p z] [q] | c=0/0 p=0/1 q=1/0<z> z=0/2");
 		// Byte order puts upper case first; a repeated edge and a repeated issue count as given.
 		expectLayout(["b", "B", "a", "b"], [edge("b", "a", "blocks"), edge("b", "a", "blocks")], "[B a] [b] | B=0/0 a=0/1 b=1/0<a a>");
+	}
+
+	/**
+		The gutter grids are what upstream buildDAGGutterGrid prints for the same edges;
+		the other values follow upstream graph_visual.go by hand. Parity covers the real runs.
+	**/
+	static function drawingContracts():Void {
+		// Merges: crossings, arrowheads, joins, then T-junctions; anything else is overwritten.
+		equal(dagMergeRune(" ", "╮"), "╮");
+		equal(dagMergeRune("│", "─"), "┼");
+		equal(dagMergeRune("─", "│"), "┼");
+		equal(dagMergeRune("┼", "▶"), "▶");
+		equal(dagMergeRune("─", "─"), "─");
+		equal(dagMergeRune("│", "│"), "│");
+		equal(dagMergeRune("│", "╮"), "┤");
+		equal(dagMergeRune("│", "╯"), "┤");
+		equal(dagMergeRune("│", "╰"), "├");
+		equal(dagMergeRune("│", "╭"), "├");
+		equal(dagMergeRune("─", "╮"), "┬");
+		equal(dagMergeRune("─", "╭"), "┬");
+		equal(dagMergeRune("─", "╰"), "┴");
+		equal(dagMergeRune("─", "╯"), "┴");
+		equal(dagMergeRune("╮", "─"), "─");
+		equal(dagMergeRune("┤", "│"), "│");
+		// A straight edge is an arrow on the title line; a lone row change turns in the middle column.
+		expectGutter([gutterEdge(0, 0)], 2, [
+			"      ",
+			"─────▶",
+			"      ",
+			"      ",
+			"      ",
+			"      ",
+			"      ",
+			"      ",
+			"      "
+		]);
+		expectGutter([gutterEdge(0, 1)], 2, [
+			"      ",
+			"───╮  ",
+			"   │  ",
+			"   │  ",
+			"   │  ",
+			"   │  ",
+			"   ╰─▶",
+			"      ",
+			"      "
+		]);
+		expectGutter([gutterEdge(1, 0)], 2, [
+			"      ",
+			"   ╭─▶",
+			"   │  ",
+			"   │  ",
+			"   │  ",
+			"   │  ",
+			"───╯  ",
+			"      ",
+			"      "
+		]);
+		// Two row changes take columns 1 and 4; later strokes merge over earlier ones.
+		expectGutter([gutterEdge(0, 1), gutterEdge(1, 0), gutterEdge(0, 0)], 2, [
+			"      ",
+			"─────▶",
+			" │  │ ",
+			" │  │ ",
+			" │  │ ",
+			" │  │ ",
+			"────┴▶",
+			"      ",
+			"      "
+		]);
+		expectGutter([gutterEdge(2, 0), gutterEdge(1, 0), gutterEdge(0, 2), gutterEdge(0, 0)], 3, [
+			"      ", "─────▶", " ││ │ ", " ││ │ ", " ││ │ ", " ││ │ ", "─┼╯ │ ", " │  │ ", " │  │ ", " │  │ ", " │  │ ", "─╯  ╰▶", "      ", "      "
+		]);
+		// Past four row changes, channels share columns. A row past the grid is not drawn but
+		// still takes a channel.
+		expectGutter([
+			gutterEdge(0, 1),
+			gutterEdge(0, 2),
+			gutterEdge(0, 3),
+			gutterEdge(0, 4),
+			gutterEdge(0, 5),
+			gutterEdge(0, 9)
+		], 6, [
+			"      ", "───╮  ", " │││  ", " │││  ", " │││  ", " │││  ", " ││┼─▶", " │││  ", " │││  ", " │││  ", " │││  ", " ╰│┼─▶", "  ││  ", "  ││  ",
+			"  ││  ", "  ││  ", "  │┼─▶", "  ││  ", "  ││  ", "  ││  ", "  ││  ", "  ╰┼─▶", "   │  ", "   │  ", "   │  ", "   │  ", "   ╰─▶", "      ",
+			"      "
+		]);
+		// Boxes fit the title cut to 22 runes and the ID in bytes with its priority, and are at least 18 wide.
+		equal(computeDagNodeWidth([dagNode("a-1", "", "open", 2)]), 18);
+		equal(computeDagNodeWidth([dagNode("a-1", "Ünïcödé title", "open", 2)]), 18);
+		equal(computeDagNodeWidth([dagNode("a-1", "A title much longer than twenty-two runes", "open", 2)]), 27);
+		equal(computeDagNodeWidth([dagNode("a-ünïcödé-id", "x", "open", 2)]), 22);
+		final tabbed = dagNode("a-1", "Tab\there", "closed", 3);
+		equal(dagNodeLine(tabbed, 18, 0), "┌──────────────────┐");
+		equal(dagNodeLine(tabbed, 18, 1), "│ ✓ Tab    here       │");
+		equal(dagNodeLine(dagNode("a-1", "Tab\there", "open", 3), 18, 1), "│ ○ Tab\there       │");
+		equal(dagNodeLine(tabbed, 18, 2), "│ a-1 P3           │");
+		equal(dagNodeLine(tabbed, 18, 3), "└──────────────────┘");
+		equal(dagNodeLine(dagNode("a-1", "A title much longer than the box", "hooked", 0), 18, 1), "│ ◇ A title much … │");
+		equal(dagNodeLine(tabbed, 18, 4), "                    ");
+		// An edge crosses every gutter up to its target, at the target's row past the first. A repeat,
+		// a row into an earlier layer (here into a lifted child's dependent), and other types are left out.
+		final ids = ["a", "b", "c", "d", "e", "f"];
+		final edges = [
+			edge("c", "d", "blocks"),
+			edge("c", "b", "blocks"),
+			edge("b", "a", "blocks"),
+			edge("e", "d", "blocks"),
+			edge("c", "a", "blocks"),
+			edge("c", "e", "blocks"),
+			edge("b", "a", "blocks"),
+			edge("a", "c", "relates-to"),
+			edge("b", "f", "blocks"),
+			edge("f", "c", "parent-child")
+		];
+		final gutters = collectGutterEdges(computeGraphLayout(ids, edges), edges);
+		equal([
+			for (gutter in gutters) [for (row in gutter) '${row.sourceRow}>${row.targetRow}'].join(" ")
+		].join(" | "), "1>0 0>0 1>1 | 0>0 1>0");
+		equal(collectGutterEdges(computeGraphLayout(["a"], []), []).length, 0);
+	}
+
+	static function expectGutter(edges:Array<DagEdge>, rows:Int, expected:Array<String>):Void {
+		equal(buildDagGutterGrid(edges, 6, rows * 5 - 1, 5).join("|"), expected.join("|"));
+	}
+
+	static function gutterEdge(sourceRow:Int, targetRow:Int):DagEdge {
+		return {sourceRow: sourceRow, targetRow: targetRow};
+	}
+
+	static function dagNode(id:String, title:String, status:String, priority:Int):DagNode {
+		return {
+			id: id,
+			title: title,
+			status: status,
+			priority: priority
+		};
 	}
 
 	static function expectLayout(ids:Array<String>, edges:Array<GraphEdge>, expected:String):Void {

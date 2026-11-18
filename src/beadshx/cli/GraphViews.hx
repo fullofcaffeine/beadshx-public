@@ -1,6 +1,15 @@
 package beadshx.cli;
 
 import haxe.io.Bytes;
+import beadshx.cli.GraphDrawing.DagNode;
+import beadshx.cli.GraphDrawing.buildDagGutterGrid;
+import beadshx.cli.GraphDrawing.collectGutterEdges;
+import beadshx.cli.GraphDrawing.computeDagNodeWidth;
+import beadshx.cli.GraphDrawing.dagNodeLine;
+import beadshx.cli.GraphDrawing.expandTabs;
+import beadshx.cli.GraphDrawing.padRight;
+import beadshx.cli.GraphDrawing.repeat;
+import beadshx.cli.GraphDrawing.truncateTitle;
 import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.RelatedIssue;
@@ -101,6 +110,70 @@ function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	return rendered.toString();
 }
 
+/**
+	Upstream renderGraphVisual, the default view, with colors off.
+
+	Each layer is a column of node boxes, one five-line band per row, and the
+	six-column gutter right of each layer but the last routes the `blocks` rows
+	that reach a later layer (see collectGutterEdges and buildDagGutterGrid). Every
+	box has the width computeDagNodeWidth gives. Each drawn line loses its trailing
+	spaces, but the layer header line keeps them. The summary counts every `blocks`
+	row.
+**/
+function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout):String {
+	final nodeHeight = 4;
+	final bandHeight = nodeHeight + 1;
+	final gutterWidth = 6;
+	final issues = issuesById(subgraph);
+	final layerCount = layout.layers.length;
+	final nodes:Array<DagNode> = [for (layer in layout.layers) for (id in layer) issues.get(id)];
+	final nodeWidth = computeDagNodeWidth(nodes);
+	var maxRows = 0;
+	for (layer in layout.layers)
+		if (layer.length > maxRows)
+			maxRows = layer.length;
+	final totalLines = maxRows * bandHeight - 1;
+	final gutters = [
+		for (edges in collectGutterEdges(layout, subgraph.edges))
+			buildDagGutterGrid(edges, gutterWidth, totalLines, bandHeight)
+	];
+	final rendered = new StringBuf();
+	rendered.add('\n📊 Dependency graph for ${subgraph.root.id}:\n\n');
+	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n\n");
+	rendered.add("  ");
+	for (index in 0...layerCount) {
+		rendered.add(padRight(index == 0 ? "LAYER 0 (ready)" : 'LAYER ${index}', nodeWidth + 2));
+		if (index < layerCount - 1)
+			rendered.add(repeat(" ", gutterWidth));
+	}
+	rendered.add("\n\n");
+	for (y in 0...totalLines) {
+		final row = Std.int(y / bandHeight);
+		final subLine = y % bandHeight;
+		final line = new StringBuf();
+		line.add("  ");
+		for (index in 0...layerCount) {
+			final layer = layout.layers[index];
+			final hasNodeLine = subLine < nodeHeight && row < layer.length;
+			line.add(hasNodeLine ? dagNodeLine(issues.get(layer[row]), nodeWidth, subLine) : repeat(" ", nodeWidth + 2));
+			if (index < layerCount - 1) {
+				final gutter:Array<String> = gutters[index];
+				line.add(gutter[y]);
+			}
+		}
+		rendered.add(trimTrailingSpaces(line.toString()) + "\n");
+	}
+	rendered.add("\n");
+	var blockingRows = 0;
+	for (edge in subgraph.edges)
+		if (edge.type == "blocks")
+			blockingRows++;
+	if (blockingRows > 0)
+		rendered.add('  Dependencies: ${blockingRows} blocking relationships\n');
+	rendered.add('  Total: ${nodes.length} issues across ${layerCount} layers\n\n');
+	return rendered.toString();
+}
+
 /** Upstream renderNodeBoxWithDeps; the counts line appears only when a count is not zero. */
 private function renderNodeBox(issue:RelatedIssue, width:Int, blocksCount:Int, needsCount:Int):String {
 	final paddedTitle = padRight(truncateTitle(issue.title, width - 4), width - 4);
@@ -124,32 +197,18 @@ private function renderNodeBox(issue:RelatedIssue, width:Int, blocksCount:Int, n
 	return lines.join("\n") + "\n";
 }
 
-/** Upstream padRight: cuts to `width` characters or pads with spaces to it. */
-private function padRight(value:String, width:Int):String {
-	return value.length >= width ? value.substr(0, width) : value + repeat(" ", width - value.length);
-}
-
-/** What an empty lipgloss v2 style does to text when colors are off. */
-private function expandTabs(value:String):String {
-	return StringTools.replace(value, "\t", "    ");
-}
-
-/** `value` repeated `count` times; nothing when `count` is not positive. */
-private function repeat(value:String, count:Int):String {
-	final repeated = new StringBuf();
-	for (_ in 0...count)
-		repeated.add(value);
-	return repeated.toString();
+/** Go strings.TrimRight(value, " "): only spaces go, not other whitespace. A space is one UTF-8 byte. */
+private function trimTrailingSpaces(value:String):String {
+	final bytes = Bytes.ofString(value);
+	var end = bytes.length;
+	while (end > 0 && bytes.get(end - 1) == " ".code)
+		end--;
+	return bytes.getString(0, end);
 }
 
 private function countOf(counts:Map<String, Int>, id:String):Int {
 	final count = counts.get(id);
 	return count == null ? 0 : count;
-}
-
-/** Upstream truncateTitle: at most `maxLength` characters, the last one an ellipsis when cut. */
-function truncateTitle(title:String, maxLength:Int):String {
-	return title.length <= maxLength ? title : title.substr(0, maxLength - 1) + "…";
 }
 
 private function issuesById(subgraph:GraphSubgraph):Map<String, RelatedIssue> {

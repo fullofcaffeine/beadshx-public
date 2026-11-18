@@ -12,6 +12,7 @@ import beadshx.relation.GraphLayout;
 import beadshx.relation.GraphLayout.computeGraphLayout;
 import beadshx.cli.GraphViews.renderGraphBox;
 import beadshx.cli.GraphViews.renderGraphDot;
+import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
 import beadshx.store.SqlBlockedReader.BlockedIssue;
@@ -1108,8 +1109,8 @@ final class Application {
 
 	/**
 		Checks the arguments, resolves the root, loads its subgraph and checks the row cap,
-		in the order upstream graphCmd does. Only the JSON, DOT and box views are ported:
-		`--all`, `--open` and the other human views fail where upstream would start to differ.
+		in the order upstream graphCmd does. The JSON, DOT, box and default views are ported:
+		`--all`, `--open`, `--compact` and `--html` fail where upstream would start to differ.
 	**/
 	function runGraphQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final request = invocation.graph;
@@ -1160,7 +1161,8 @@ final class Application {
 				output.writeStdout(renderGraphBox(subgraph, layout));
 				return 0;
 			case "":
-				return runModeAwareFailure(invocation.output, "graph without --json is not available yet in this build");
+				output.writeStdout(renderGraphVisual(subgraph, layout));
+				return 0;
 			case view:
 				return runModeAwareFailure(invocation.output, 'graph ${view} is not available yet in this build');
 		}
@@ -4609,7 +4611,7 @@ final class Application {
 	}
 
 	function graphHelp():String {
-		return "Display issue dependency graph. This build prints it with --json, --dot or --box only.\n\n"
+		return "Display issue dependency graph. This build prints the default view, --json, --dot or --box only.\n\n"
 			+ "Usage:\n  bdhx graph [issue-id] [flags]\n\n"
 			+ "Flags:\n"
 			+ "      --all            Show graph for all open issues (not available yet in this build)\n"
