@@ -88,8 +88,8 @@ final class QueryPage {
 		return seconds == 0 ? compareInts(left.nanosecond, right.nanosecond) : seconds;
 	}
 
-	/** Numeric-aware comparison for dot- and dash-separated issue-ID segments. */
-	static function naturalCompareIds(left:String, right:String):Int {
+	/** Numeric-aware comparison for dot- and dash-separated issue-ID segments, like upstream utils.NaturalCompareIDs. */
+	public static function naturalCompareIds(left:String, right:String):Int {
 		final leftSegments = splitId(left);
 		final rightSegments = splitId(right);
 		final shared = leftSegments.length < rightSegments.length ? leftSegments.length : rightSegments.length;

@@ -9,7 +9,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "9bc1672aa537d0f75a3b9145fcff5668a55a23ffb748838d8c033492e13d55fa"
+        "sha256": "fd59680d24f0932dc080a585d413c9dabef45c73924bb27c9a374ee672414aed"
       },
       {
         "path": "src/beadshx/cli/Command.hx",
@@ -25,11 +25,11 @@
       },
       {
         "path": "src/beadshx/cli/GraphDrawing.hx",
-        "sha256": "1a5acce35baf9e27a2dfabb9870653e40035d60e98f1c0fe559a85c96278601f"
+        "sha256": "2218e01451eca8c6ffcdf19a51c360afa877d2ae99f44e08586140252abd6706"
       },
       {
         "path": "src/beadshx/cli/GraphViews.hx",
-        "sha256": "cc7a0ce3a609f72fc9b695c1cb2478c47b6b997cb41ba78de6a01e1f10994e7e"
+        "sha256": "422c891e0d4938b4ebf3bcc3853adfedd289f4ab90b11f396b9033f77e8d9532"
       },
       {
         "path": "src/beadshx/cli/InfoChanges.hx",
@@ -293,7 +293,7 @@
       },
       {
         "path": "src/beadshx/query/QueryPage.hx",
-        "sha256": "e9aa0f6860f3fb189fdd34770307d04191a5ba3df85e308d0692985cd88de078"
+        "sha256": "c6855740b046b54bfd396627434fd4de877e83d1edabcb2c7660d78db659b72d"
       },
       {
         "path": "src/beadshx/query/QueryPlan.hx",
@@ -406,6 +406,10 @@
       {
         "path": "src/beadshx/relation/GraphLayout.hx",
         "sha256": "dedfc44427faeb301193e0f1cba5435fc02057de72987593cdf108f92ab3c51e"
+      },
+      {
+        "path": "src/beadshx/relation/OpenGraph.hx",
+        "sha256": "ac8fc7f4ddbfb80e3e39d78bd6940bfab18631aed81ca58b5b67a4812c6ceafa"
       },
       {
         "path": "src/beadshx/relation/RawDependencyEdge.hx",
@@ -781,15 +785,15 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "3eaf984c4608c0c878e06de4d4272cd83257b63a14806ef9898fffcc67c1bced"
+      "sha256": "d143869ae5575c927e6a044d3f78137b644c9d49ad1362c823a826338d36d5fe"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "9bfe15de998bf90cfac3798f87ee859385e9df60f80f62fb49fda384c4059216"
+      "sha256": "a6d904b887d03d52fb4635e2e1b96217f923983f47bd63a4373a818487388631"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "7f8e55b17ba58d8220b43e1d38efa44b0ef2e902142d919e13e4b39229d32be0"
+      "sha256": "f65e1a00b721b0b1de11fed0839aa0b63be57cc3532fc7a24820bbae081cd118"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_command.go",
@@ -805,11 +809,11 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_graphdrawing.go",
-      "sha256": "2631a2c4d36391e5c2aeaa0caf0b7743012a386968d81e8713b4bb87207dea6a"
+      "sha256": "60cf90d819a67c86fda5c626be29980c2fe697a1451209d522f269d47d2f4063"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_graphviews.go",
-      "sha256": "31924be200ff6f3324c9495c90f3b5b18b66e132b2aa0827b91d7314e498488d"
+      "sha256": "5a114b68e2fd8954d84daf3b5d592703d8daac43d4e496013315dd77d45b353e"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_infochanges.go",
@@ -945,7 +949,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_ready_gatedready.go",
-      "sha256": "bdd54c390b2a4cadfc9001a7c298bb4b16a0eeb052c974bb359887aeb7e8bcfe"
+      "sha256": "86bc33ffda256889f5d3be760f06d8fd0859703de0e96f106359f58a39df9be7"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_ready_moleculeready.go",
@@ -961,7 +965,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_relation_dependencycycle.go",
-      "sha256": "bebceb151d3f2782e91f1402b4e4600aa3cce88ac7dc05778d45b9025a380879"
+      "sha256": "122ce7b48a0f7dc4eb66b51015139b7f38f1dd58ff56533d073e7f68e66ef4da"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_relation_dependencykind.go",
@@ -978,6 +982,10 @@
     {
       "path": "bdhx/haxego_generated_module_beadshx_relation_graphlayout.go",
       "sha256": "bd192df99282935bd2a193cf95ba8d3d13f12b6b02c5e388733741fade8a8d77"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_relation_opengraph.go",
+      "sha256": "7f3367b9384900b4f4a4432eefba6d57f821df0e03982744bf2d1108cff448aa"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_relation_relatedissue.go",
@@ -1161,7 +1169,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlcyclereader.go",
-      "sha256": "da64e031425f6e1dde372d3a52ca68a80f69fc22ef9685ee1c7ca2913f6f62a9"
+      "sha256": "bb79676cf89ad8a9b3842e3a12f466825700fffd1641cb0b623739928866f314"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlgraphreader.go",
@@ -1245,7 +1253,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_ds_intmap.go",
-      "sha256": "36e526ac7f4765dd7507595f339430f0b6141c311b2e9c063a0bb0b6540b2afc"
+      "sha256": "e30a3bd6f1ccc674b127ce2132e58111c52f1863c1e5a02542402ccca594d96f"
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_ds_stringmap.go",
@@ -1313,7 +1321,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_iterators_mapkeyvalueiterator.go",
-      "sha256": "953f2a53670ac699291e90ce366bd322f36a238c3e7c392bc1673529543cd587"
+      "sha256": "fa746e94c38eca413632bc9f313c103bf46a2b012fba16ee7505400f04acf8ed"
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_iterators_stringiterator.go",
@@ -1369,11 +1377,11 @@
     },
     {
       "path": "bdhx/haxego_generated_recovery_0.go",
-      "sha256": "039de5b61a5f2ec83aef5f027a5a98f4efe7ac12310b857ddcf768b115593901"
+      "sha256": "ce895e0ed4fb942c80be91d0d549029c497770e28e2746bbf821bd109cd6d2a8"
     },
     {
       "path": "bdhx/haxego_generated_recovery_1.go",
-      "sha256": "f32d7d9d83ebde2c4c4d525a07832e97934aee5a7a501b146ff33814defe3164"
+      "sha256": "9d46f623e745007a84d75f034e0c94524b35110c743c6c884563e5679628a241"
     },
     {
       "path": "hxrt/anonymous.go",

@@ -601,6 +601,18 @@ compare_real_database() {
 		done
 		cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"
 		;;
+	graph-open-json)
+		# graph --open adds the rows it joins over left-out issues in Go map order.
+		for side in oracle candidate; do
+			jq -S '(.layout.Nodes[].DependsOn) |= (if . == null then . else sort end)' \
+				"$case_root/$side.stdout" >"$case_root/$side.normalized"
+		done
+		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+			printf '%s stdout differs from upstream after sorting DependsOn\n' "$name" >&2
+			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+			return 1
+		fi
+		;;
 	*)
 		printf 'unknown real-database comparison: %s\n' "$comparison" >&2
 		return 2
@@ -980,7 +992,7 @@ compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql"
 compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
 # graph <id> walks every dependency type both ways from the root, then lays the nodes out by
 # `blocks` edges only, lifts children to their parent's layer and sorts each layer, so upstream's
-# Go map order never reaches the output. The JSON, DOT, box and default views are ported so far.
+# Go map order never reaches the output. All single-issue views but --html are ported so far.
 graph_lift_sql="$dependency_row ('fixture-graph-1', '$real_database_epic_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 graph_external_row="INSERT INTO dependencies (id, issue_id, depends_on_external, type, created_at, created_by) VALUES"
 graph_external_sql="$graph_external_row ('fixture-graph-2', '$real_database_issue_id', 'external:other:$real_database_labeled_relation_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
@@ -1173,18 +1185,100 @@ compare_real_database_import graph-crossing-visual exact "$graph_crossing_record
 compare_real_database_import graph-merge-visual exact "$graph_merge_records" graph test-gm-t
 compare_real_database_import graph-skip-visual exact "$graph_skip_records" graph test-gs-a
 compare_real_database_import graph-fan-out-visual exact "$graph_fan_records" graph test-gf-0
+# --compact prints one line per issue under its layer. Below each parent it prints the parent's
+# children again, to any depth, sorted by priority and then by ID, with numeric ID segments
+# compared as numbers. A title is cut to 50 characters, and a closed issue's tab turns into four
+# spaces. --compact outranks only --box.
+# graph_tree_record ID TITLE STATUS PRIORITY TYPE [DEPENDENCY_TYPE=TARGET...] prints one issue
+# that depends on each TARGET through DEPENDENCY_TYPE.
+graph_tree_record() {
+	local id="$1" title="$2" status="$3" priority="$4" type="$5"
+	shift 5
+	jq -nc --arg id "$id" --arg title "$title" --arg status "$status" --argjson priority "$priority" --arg type "$type" '{
+		id: $id, title: $title, status: $status, priority: $priority, issue_type: $type,
+		created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z",
+		dependencies: [$ARGS.positional[] | split("=") | {issue_id: $id, depends_on_id: .[1], type: .[0],
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}
+		+ if $status == "closed" then {closed_at: "2026-08-21T12:00:00Z"} else {} end' --args "$@"
+}
+graph_compact_records="$(
+	graph_tree_record test-gc-root "Compact root epic" open 1 epic blocks=test-gc-blocker
+	graph_tree_record test-gc-blocker "Blocks the root" open 3 task
+	graph_tree_record test-gc-2 "Child two" open 2 task parent-child=test-gc-root
+	graph_tree_record test-gc-10 "Child ten" blocked 2 task parent-child=test-gc-root
+	graph_tree_record test-gc-1 "Urgent child" in_progress 0 task parent-child=test-gc-root
+	graph_tree_record test-gc-2.1 $'Closed\tgrandchild with a tab' closed 3 task parent-child=test-gc-2
+	graph_tree_record test-gc-2.10 "Grandchild ten" open 2 task parent-child=test-gc-2
+	graph_tree_record test-gc-2.9 "Grandchild nine" deferred 2 task parent-child=test-gc-2
+	graph_tree_record test-gc-10.1 "Ünïcödé grandchild title that runs well past the fifty rune limit" open 4 task \
+		parent-child=test-gc-10
+	graph_tree_record test-gc-10.1.1 $'Open\tgreat-grandchild' open 1 task parent-child=test-gc-10.1
+)"
+compare_real_database graph-hierarchy-compact exact graph "$real_database_child_id" --compact
+compare_real_database graph-epic-compact exact graph "$real_database_epic_id" --compact
+compare_real_database graph-blockers-compact exact graph "$molecule_step_two_id" --compact
+compare_real_database graph-molecule-compact exact graph "$real_database_molecule_id" --compact
+compare_real_database graph-gated-compact exact graph "$real_database_gated_step_id" --compact
+compare_real_database graph-metadata-compact exact graph "$real_database_issue_id" --compact
+compare_real_database graph-isolated-compact exact graph "$real_database_bug_id" --compact
+compare_real_database graph-escaping-compact exact graph "$real_database_escaping_id" --compact
+compare_real_database graph-compact-over-box exact graph "$real_database_epic_id" --box --compact=true
+compare_real_database graph-compact-max-rows exact graph "$real_database_epic_id" --max-rows 2 --compact
+compare_real_database_sql graph-views-compact exact "$graph_views_sql" graph "$real_database_bug_id" --compact
+compare_real_database_sql graph-empty-layer-compact exact "$graph_empty_layer_sql" graph "$real_database_bug_id" --compact
+compare_real_database_sql graph-narrow-compact exact "$graph_narrow_sql" graph "$real_database_bug_id" --compact
+compare_real_database_sql graph-lift-compact exact "$graph_lift_sql" graph "$real_database_grandchild_id" --compact
+compare_real_database_sql graph-cycle-compact exact "$dep_cycle_sql" graph test-abcd11 --compact
+compare_real_database_sql graph-external-compact exact "$graph_external_sql" graph "$real_database_issue_id" --compact
+compare_real_database_import graph-wisp-compact exact "$graph_wisp_record" graph test-graph-wisp --compact
+compare_real_database_import graph-tree-compact exact "$graph_compact_records" graph test-gc-root --compact
+# --open keeps the open, in_progress and blocked issues and prints them as --compact does. Each
+# kept issue also blocks every kept issue that it reaches through `blocks` rows over issues left
+# out. Other rows stay when both ends are kept. When the root is left out, the first issue with
+# the lowest priority number becomes the root. --open outranks every view flag; with --json it
+# prints the filtered graph. Upstream adds the joined rows in Go map order, so an issue with two
+# or more of them lists its DependsOn in random order: graph-open-json sorts those lists.
+graph_open_records="$(
+	graph_tree_record test-go-p "Open parent epic" open 1 epic
+	graph_tree_record test-go-a "Open source A" open 2 task parent-child=test-go-p
+	graph_tree_record test-go-b "Closed middle B" closed 2 task blocks=test-go-a
+	graph_tree_record test-go-c "Open target C" open 2 task blocks=test-go-b blocks=test-go-d parent-child=test-go-p
+	graph_tree_record test-go-d "Deferred D" deferred 3 task
+	graph_tree_record test-go-e "In progress E" in_progress 1 task blocks=test-go-d
+	graph_tree_record test-go-x "Closed child X" closed 2 task parent-child=test-go-p
+	graph_tree_record test-go-f "Blocked F" blocked 1 task blocks=test-go-c blocks=test-go-a
+	graph_tree_record test-go-g "Closed chain G" closed 3 task blocks=test-go-c
+	graph_tree_record test-go-g2 "Hooked chain G2" hooked 3 task blocks=test-go-g
+	graph_tree_record test-go-h "Open after the chain" open 1 task blocks=test-go-g2
+)"
+graph_open_join_records="$(
+	graph_tree_record test-goj-a "Join source A" open 2 task
+	graph_tree_record test-goj-e "Join source E" in_progress 1 task
+	graph_tree_record test-goj-b "Closed join B" closed 2 task blocks=test-goj-a blocks=test-goj-e
+	graph_tree_record test-goj-c "Join target C" open 2 task blocks=test-goj-b
+)"
+compare_real_database_import graph-open-compact exact "$graph_open_records" graph test-go-p --open
+compare_real_database_import graph-open-json exact "$graph_open_records" graph test-go-p --open --json
+compare_real_database_import graph-open-closed-root exact "$graph_open_records" graph test-go-b --open
+compare_real_database_import graph-open-closed-root-json exact "$graph_open_records" graph test-go-b --open --json
+compare_real_database_import graph-open-over-views exact "$graph_open_records" graph test-go-p --dot --html --box --compact --open
+compare_real_database_import graph-open-join exact "$graph_open_join_records" graph test-goj-c --open
+compare_real_database_import graph-open-join-json graph-open-json "$graph_open_join_records" graph test-goj-c --open --json
+compare_real_database graph-open-epic exact graph "$real_database_epic_id" --open
+compare_real_database graph-open-gated exact graph "$real_database_gated_step_id" --open=true
+compare_real_database graph-open-none exact graph "$real_database_closed_id" --open
+compare_real_database graph-open-none-json exact graph "$real_database_closed_id" --open --json
+compare_real_database graph-open-max-rows exact graph "$real_database_epic_id" --max-rows 2 --open
+compare_real_database_env graph-open-json-envelope exact BD_JSON_ENVELOPE=1 graph "$real_database_child_id" --open --json
+compare_real_database_sql graph-views-open exact "$graph_views_sql" graph "$real_database_bug_id" --open
+compare_real_database_sql graph-views-open-json exact "$graph_views_sql" graph "$real_database_bug_id" --open --json
+compare_real_database_sql graph-cycle-open exact "$dep_cycle_sql" graph test-abcd11 --open
 # The views that are not ported yet must fail the same way every time; upstream prints them.
 graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
-for graph_view in --compact --html; do
-	expect_candidate_failure "graph${graph_view}-unported" "" \
-		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" "$graph_view"
-	expect_candidate_failure "graph${graph_view}-over-box-unported" "" \
-		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" --box "$graph_view"
-done
-expect_candidate_failure graph-open-unported \
-	'{"error":"graph --open is not available yet in this build","schema_version":1}' "" "" graph "$real_database_epic_id" --open --json
-expect_candidate_failure graph-open-over-dot-unported "" \
-	"Error: graph --open is not available yet in this build" "" graph "$real_database_epic_id" --dot --open
+expect_candidate_failure graph--html-unported "" \
+	"Error: graph --html is not available yet in this build" "" graph "$real_database_epic_id" --html
+expect_candidate_failure graph--html-over-compact-unported "" \
+	"Error: graph --html is not available yet in this build" "" graph "$real_database_epic_id" --box --compact --html
 expect_candidate_failure graph-all-unported "" "Error: graph --all is not available yet in this build" "" graph --all
 expect_candidate_failure graph-other-repository-unported \
 	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \

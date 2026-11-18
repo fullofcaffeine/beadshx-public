@@ -8,6 +8,7 @@ import beadshx.cli.GraphDrawing.computeDagNodeWidth;
 import beadshx.cli.GraphDrawing.dagNodeLine;
 import beadshx.cli.GraphDrawing.expandTabs;
 import beadshx.cli.GraphDrawing.padRight;
+import beadshx.cli.GraphDrawing.renderCompactGraph;
 import beadshx.cli.GraphDrawing.repeat;
 import beadshx.cli.GraphDrawing.truncateTitle;
 import beadshx.cli.StatusIcon.statusIcon;
@@ -172,6 +173,14 @@ function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout):String {
 		rendered.add('  Dependencies: ${blockingRows} blocking relationships\n');
 	rendered.add('  Total: ${nodes.length} issues across ${layerCount} layers\n\n');
 	return rendered.toString();
+}
+
+/** Upstream renderGraphCompact for one loaded subgraph; see renderCompactGraph. */
+function renderGraphCompact(subgraph:GraphSubgraph, layout:GraphLayout):String {
+	final nodes = new Map<String, DagNode>();
+	for (issue in subgraph.issues)
+		nodes.set(issue.id, issue);
+	return renderCompactGraph(subgraph.root.id, nodes, layout, subgraph.edges);
 }
 
 /** Upstream renderNodeBoxWithDeps; the counts line appears only when a count is not zero. */

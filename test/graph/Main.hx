@@ -9,6 +9,11 @@ import beadshx.cli.GraphDrawing.collectGutterEdges;
 import beadshx.cli.GraphDrawing.computeDagNodeWidth;
 import beadshx.cli.GraphDrawing.dagMergeRune;
 import beadshx.cli.GraphDrawing.dagNodeLine;
+import beadshx.cli.GraphDrawing.compareCompactChildren;
+import beadshx.cli.GraphDrawing.formatCompactNode;
+import beadshx.cli.GraphDrawing.renderCompactGraph;
+import beadshx.relation.OpenGraph.OpenGraphIssue;
+import beadshx.relation.OpenGraph.filterOpenGraph;
 
 /**
 	Pins the `bd graph check` cycle walk against upstream issueops.DetectCyclesInTx,
@@ -25,6 +30,8 @@ class Main {
 		cycleContracts();
 		layoutContracts();
 		drawingContracts();
+		compactContracts();
+		openContracts();
 		Sys.println("graph Haxe contracts: PASS");
 	}
 
@@ -205,6 +212,100 @@ class Main {
 			for (gutter in gutters) [for (row in gutter) '${row.sourceRow}>${row.targetRow}'].join(" ")
 		].join(" | "), "1>0 0>0 1>1 | 0>0 1>0");
 		equal(collectGutterEdges(computeGraphLayout(["a"], []), []).length, 0);
+	}
+
+	/** The compact view follows upstream renderGraphCompact by hand; parity covers the real runs. */
+	static function compactContracts():Void {
+		// Only a closed issue's tab turns into four spaces. A title is cut to 50 characters, counted in runes.
+		equal(formatCompactNode(dagNode("a-1", "Tab\there", "closed", 3)), "✓ a-1 P3 Tab    here");
+		equal(formatCompactNode(dagNode("a-1", "Tab\there", "deferred", 0)), "❄ a-1 P0 Tab\there");
+		equal(formatCompactNode(dagNode("a-1", "Ü" + StringTools.lpad("", "x", 50), "hooked", 2)), "◇ a-1 P2 Ü" + StringTools.lpad("", "x", 48) + "…");
+		// Children sort by priority, then by ID with numeric segments compared as numbers.
+		equal(compareCompactChildren(dagNode("x-9", "", "open", 1), dagNode("x-1", "", "open", 2)) < 0, true);
+		equal(compareCompactChildren(dagNode("x-10", "", "open", 2), dagNode("x-9", "", "open", 2)) > 0, true);
+		equal(compareCompactChildren(dagNode("x-2.10", "", "open", 2), dagNode("x-2.9", "", "open", 2)) > 0, true);
+		equal(compareCompactChildren(dagNode("x-1", "", "open", 2), dagNode("x-01", "", "open", 2)), 0);
+		// A child keeps its own line in its layer and shows again below each parent, to any depth.
+		final issues = [
+			dagNode("t-root", "Root", "open", 1),
+			dagNode("t-blk", "Blocker", "open", 3),
+			dagNode("t-10", "Ten", "open", 2),
+			dagNode("t-2", "Two", "closed", 2),
+			dagNode("t-2.1", "Nested", "open", 0)
+		];
+		final edges = [
+			edge("t-root", "t-blk", "blocks"),
+			edge("t-10", "t-root", "parent-child"),
+			edge("t-2", "t-root", "parent-child"),
+			edge("t-2.1", "t-2", "parent-child")
+		];
+		final nodes = [for (issue in issues) issue.id => issue];
+		equal(renderCompactGraph("t-root", nodes, computeGraphLayout([for (issue in issues) issue.id], edges), edges), [
+			"",
+			"📊 Dependency graph for t-root (5 issues, 2 layers)",
+			"",
+			"  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred",
+			"",
+			"  LAYER 0 (ready)",
+			"  └── ○ t-blk P3 Blocker",
+			"",
+			"  LAYER 1",
+			"  ├── ○ t-10 P2 Ten",
+			"  ├── ✓ t-2 P2 Two",
+			"  │   └── ○ t-2.1 P0 Nested",
+			"  ├── ○ t-2.1 P0 Nested",
+			"  └── ○ t-root P1 Root",
+			"      ├── ✓ t-2 P2 Two",
+			"      │   └── ○ t-2.1 P0 Nested",
+			"      └── ○ t-10 P2 Ten",
+			"",
+			""
+		].join("\n"));
+	}
+
+	/** The `--open` filter follows upstream filterSubgraphOpen by hand; parity covers the real runs. */
+	static function openContracts():Void {
+		final issues:Array<OpenGraphIssue> = [
+			openIssue("p", "open", 1),
+			openIssue("a", "open", 2),
+			openIssue("b", "closed", 2),
+			openIssue("c", "open", 2),
+			openIssue("d", "deferred", 3),
+			openIssue("e", "in_progress", 1),
+			openIssue("f", "blocked", 1),
+			openIssue("g", "closed", 3),
+			openIssue("g2", "hooked", 3),
+			openIssue("h", "open", 1),
+			openIssue("x", "pinned", 0)
+		];
+		final edges = [
+			edge("b", "a", "blocks"),
+			edge("c", "b", "blocks"),
+			edge("c", "d", "blocks"),
+			edge("f", "a", "blocks"),
+			edge("f", "a", "blocks"),
+			edge("f", "c", "blocks"),
+			edge("a", "p", "parent-child"),
+			edge("x", "p", "parent-child"),
+			edge("a", "c", "relates-to"),
+			edge("g", "c", "blocks"),
+			edge("g2", "g", "blocks"),
+			edge("h", "g2", "blocks"),
+			edge("e", "d", "blocks")
+		];
+		// Rows between open issues stay once; then a walk joins each open issue to the open ones it
+		// reaches over issues left out, unless a row already joins them. The walk stops at open issues.
+		final open = filterOpenGraph("b", issues, edges);
+		equal([for (row in open.edges) '${row.dependsOnId}>${row.issueId} ${row.type}'].join(", "),
+			"a>f blocks, c>f blocks, p>a parent-child, c>a relates-to, a>c blocks, c>h blocks");
+		// A left-out root gives way to the first issue with the lowest priority number.
+		equal(open.rootId, "p");
+		equal(filterOpenGraph("c", issues, edges).rootId, "c");
+		equal(filterOpenGraph("b", [openIssue("b", "closed", 0), openIssue("x", "pinned", 0), openIssue("d", "deferred", 0)], []), null);
+	}
+
+	static function openIssue(id:String, status:String, priority:Int):OpenGraphIssue {
+		return {id: id, status: status, priority: priority};
 	}
 
 	static function expectGutter(edges:Array<DagEdge>, rows:Int, expected:Array<String>):Void {

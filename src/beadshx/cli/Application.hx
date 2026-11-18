@@ -10,7 +10,11 @@ import beadshx.relation.DependencyTree.parseTreeDirection;
 import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.GraphLayout.computeGraphLayout;
+import beadshx.relation.OpenGraph.OpenGraphIssue;
+import beadshx.relation.OpenGraph.filterOpenGraph;
+import beadshx.relation.OpenGraph.isOpenGraphStatus;
 import beadshx.cli.GraphViews.renderGraphBox;
+import beadshx.cli.GraphViews.renderGraphCompact;
 import beadshx.cli.GraphViews.renderGraphDot;
 import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
@@ -1109,8 +1113,9 @@ final class Application {
 
 	/**
 		Checks the arguments, resolves the root, loads its subgraph and checks the row cap,
-		in the order upstream graphCmd does. The JSON, DOT, box and default views are ported:
-		`--all`, `--open`, `--compact` and `--html` fail where upstream would start to differ.
+		in the order upstream graphCmd does. Then `--open` filters the subgraph. Every view
+		of one issue but `--html` is ported: `--all` and `--html` fail where upstream would
+		start to differ.
 	**/
 	function runGraphQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final request = invocation.graph;
@@ -1147,25 +1152,46 @@ final class Application {
 			output.writeStderr(request.maxRowsWarning);
 		if (maxRows > 0 && subgraph.issues.length > maxRows)
 			return runListRowLimitExceeded(subgraph.issues.length, request.maxRowsSource, maxRows);
-		if (request.view == "--open")
-			return runModeAwareFailure(invocation.output, "graph --open is not available yet in this build");
-		final layout = computeGraphLayout([for (issue in subgraph.issues) issue.id], subgraph.edges);
+		final graph = request.view == "--open" ? openSubgraph(subgraph) : subgraph;
+		// Upstream prints this line even with --json.
+		if (graph == null) {
+			output.writeStdout("No open issues in subgraph\n");
+			return 0;
+		}
+		final layout = computeGraphLayout([for (issue in graph.issues) issue.id], graph.edges);
 		// With --json, upstream ignores the other view flags.
 		if (invocation.output == Json)
-			return writeRenderedJsonStdout(renderGraphJson(subgraph, layout, output.usesJsonEnvelope()));
+			return writeRenderedJsonStdout(renderGraphJson(graph, layout, output.usesJsonEnvelope()));
 		switch request.view {
+			case "--open" | "--compact":
+				output.writeStdout(renderGraphCompact(graph, layout));
+				return 0;
 			case "--dot":
-				output.writeStdout(renderGraphDot(subgraph, layout));
+				output.writeStdout(renderGraphDot(graph, layout));
 				return 0;
 			case "--box":
-				output.writeStdout(renderGraphBox(subgraph, layout));
+				output.writeStdout(renderGraphBox(graph, layout));
 				return 0;
 			case "":
-				output.writeStdout(renderGraphVisual(subgraph, layout));
+				output.writeStdout(renderGraphVisual(graph, layout));
 				return 0;
 			case view:
 				return runModeAwareFailure(invocation.output, 'graph ${view} is not available yet in this build');
 		}
+	}
+
+	/** Upstream filterSubgraphOpen (see filterOpenGraph): the open issues in load order; null when there is none. */
+	static function openSubgraph(subgraph:GraphSubgraph):Null<GraphSubgraph> {
+		final summaries:Array<OpenGraphIssue> = [for (issue in subgraph.issues) issue];
+		final open = filterOpenGraph(subgraph.root.id, summaries, subgraph.edges);
+		if (open == null)
+			return null;
+		final issues = [for (issue in subgraph.issues) if (isOpenGraphStatus(issue.status)) issue];
+		var root = subgraph.root;
+		for (issue in issues)
+			if (issue.id == open.rootId)
+				root = issue;
+		return {root: root, issues: issues, edges: open.edges};
 	}
 
 	/**
@@ -4611,18 +4637,18 @@ final class Application {
 	}
 
 	function graphHelp():String {
-		return "Display issue dependency graph. This build prints the default view, --json, --dot or --box only.\n\n"
+		return "Display issue dependency graph. This build prints every view of one issue but --html.\n\n"
 			+ "Usage:\n  bdhx graph [issue-id] [flags]\n\n"
 			+ "Flags:\n"
 			+ "      --all            Show graph for all open issues (not available yet in this build)\n"
 			+ "      --box            ASCII boxes showing layers\n"
-			+ "      --compact        Tree format, one line per issue (not available yet in this build)\n"
+			+ "      --compact        Tree format, one line per issue, more scannable\n"
 			+ "      --dot            Output Graphviz DOT format (pipe to: dot -Tsvg > graph.svg)\n"
 			+ "  -h, --help           help for graph\n"
 			+ "      --html           Output self-contained interactive HTML (not available yet in this build)\n"
 			+
 			"      --max-rows int   Hard upper bound on the number of issues in the graph. Returns a non-zero exit (code 2) and an error to stderr if exceeded. 0 disables (the default). Overrides BEADS_MAX_ROWS for this invocation.\n"
-			+ "      --open           Show only open issues (not available yet in this build)\n\n"
+			+ "      --open           Show only open issues (filters out closed/deferred), forces compact layer format\n\n"
 			+ supportedGlobalFlags();
 	}
 

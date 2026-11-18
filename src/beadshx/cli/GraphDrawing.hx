@@ -2,13 +2,14 @@ package beadshx.cli;
 
 import haxe.io.Bytes;
 import beadshx.cli.StatusIcon.statusIcon;
+import beadshx.query.QueryPage;
 import beadshx.relation.GraphLayout;
 import beadshx.store.JsonInteger;
 
 // The text pieces that upstream's human `bd graph` views draw with, with colors off.
 // They need no loaded subgraph, so the graph contracts can pin them directly.
 
-/** What the default view shows of one issue. */
+/** What the human graph views show of one issue. */
 typedef DagNode = {
 	final id:String;
 	final title:String;
@@ -167,6 +168,79 @@ function dagMergeRune(existing:String, incoming:String):String {
 	if (existing == "─" && (incoming == "╰" || incoming == "╯"))
 		return "┴";
 	return incoming;
+}
+
+/**
+	Upstream renderGraphCompact, the `--compact` and `--open` view, with colors off.
+
+	Each layer lists its issues as tree lines. Below each parent, through
+	`parent-child` rows, it lists the children again in the order
+	compareCompactChildren gives, and their children below them, to any depth.
+**/
+function renderCompactGraph(rootId:String, nodes:Map<String, DagNode>, layout:GraphLayout, edges:Array<GraphEdge>):String {
+	final children = new Map<String, Array<String>>();
+	for (edge in edges)
+		if (edge.type == "parent-child") {
+			final known = children.get(edge.dependsOnId);
+			if (known == null)
+				children.set(edge.dependsOnId, [edge.issueId]);
+			else
+				known.push(edge.issueId);
+		}
+	// haxe.go sorts an Array stably, as upstream's sort.Slice does up to 12 elements.
+	for (childIds in children)
+		childIds.sort((left, right) -> compareCompactChildren(nodes.get(left), nodes.get(right)));
+	var nodeCount = 0;
+	for (layer in layout.layers)
+		nodeCount += layer.length;
+	final rendered = new StringBuf();
+	rendered.add('\n📊 Dependency graph for ${rootId} (${nodeCount} issues, ${layout.layers.length} layers)\n\n');
+	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n\n");
+	for (index in 0...layout.layers.length) {
+		rendered.add(index == 0 ? "  LAYER 0 (ready)\n" : '  LAYER ${index}\n');
+		// Typed local: haxe.go reads a nested array element as an untyped value.
+		final layer:Array<String> = layout.layers[index];
+		addCompactTree(rendered, nodes, children, layer, "");
+		rendered.add("\n");
+	}
+	return rendered.toString();
+}
+
+/**
+	Upstream's order of the children of one parent: by priority, then by ID with
+	numeric segments compared as numbers. Upstream sort.Slice is stable up to 12
+	children; past that, two IDs that compare equal, such as `x-1` and `x-01`,
+	could swap there.
+**/
+function compareCompactChildren(left:DagNode, right:DagNode):Int {
+	final byPriority = left.priority.compare(right.priority);
+	return byPriority != 0 ? byPriority : QueryPage.naturalCompareIds(left.id, right.id);
+}
+
+/**
+	Upstream formatCompactNode with colors off: the icon, ID, priority and title cut
+	to 50 characters. A closed issue's ID, priority and title go through an empty
+	lipgloss style, which turns a tab into four spaces.
+**/
+function formatCompactNode(node:DagNode):String {
+	final title = truncateTitle(node.title, 50);
+	if (node.status != "closed")
+		return '${statusIcon(node.status)} ${node.id} P${node.priority} ${title}';
+	return '✓ ${expandTabs(node.id)} P${node.priority} ${expandTabs(title)}';
+}
+
+/** Upstream renderCompactChildren: one tree line per issue of `ids`, each followed by its children. */
+private function addCompactTree(rendered:StringBuf, nodes:Map<String, DagNode>, children:Map<String, Array<String>>, ids:Array<String>, prefix:String):Void {
+	for (index in 0...ids.length) {
+		final node = nodes.get(ids[index]);
+		if (node == null)
+			continue;
+		final last = index == ids.length - 1;
+		rendered.add('  ${prefix}${last ? "└── " : "├── "}${formatCompactNode(node)}\n');
+		final childIds = children.get(node.id);
+		if (childIds != null)
+			addCompactTree(rendered, nodes, children, childIds, prefix + (last ? "    " : "│   "));
+	}
 }
 
 /** Upstream truncateTitle: at most `maxLength` characters, the last one an ellipsis when cut. */
