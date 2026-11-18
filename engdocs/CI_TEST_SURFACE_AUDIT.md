@@ -64,7 +64,7 @@ exists only as an opt-in maintainer path.
 | `make test-migration` | Build then `scripts/migration-test/run.sh` | Migration fidelity harness across storage eras. |
 | `make bench` | `go test -bench=. ./internal/storage/dolt/` | Full Dolt benchmark suite. |
 | `make bench-quick` | Shorter benchmark run | Local performance iteration. |
-| `make fmt-check` | `gofmt -l .` | Formatting gate. |
+| `make fmt-check` | `gofmt -l` on Go files that Git tracks or would track | Formatting gate. |
 | `make check-docs` | Build no-CGO binary, then `scripts/check-doc-flags.sh` | CLI-doc flag freshness. |
 
 ### Go Test Runner

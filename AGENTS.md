@@ -53,6 +53,9 @@ specific.
   check pass.
 - Keep the upstream oracle available as an explicitly named binary. A release
   build must never delegate a command to it.
+- Keep a one-off oracle program, which calls upstream Go internals to print
+  expected output, at `.toolchains/<name>-oracle/main.go`. Git ignores that
+  folder, and the format and lint checks skip it. Never track these programs.
 
 ### Production-data safety
 
@@ -76,6 +79,12 @@ specific.
   every push. Never let `bd` derive a data remote from the public Git origin.
 - Keep the private sidecar URL and issue data out of tracked files, logs,
   pull requests, and public CI evidence.
+- Push Beads data once at session end. This repository opts in to this one
+  sync step of the team-maintainer profile. Before the push, make sure that
+  `bd dolt remote list` shows one remote, that `gh repo view` reports its
+  repository as private and not a fork, and that it is not the Git origin.
+  Then run `bd dolt pull` and `bd dolt push --no-adopt`. Never use `--force`
+  or `--yes`. If a check or the push fails, stop and report the error.
 
 ### Haxe rules
 

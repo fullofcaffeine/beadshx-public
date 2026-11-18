@@ -52,6 +52,23 @@ func TestFmtCheckPreservesGofmtFailure(t *testing.T) {
 	}
 }
 
+// Ignored folders such as .toolchains/ hold local tools and scratch programs,
+// so the check must pass gofmt only the Go files Git tracks or would track.
+func TestFmtCheckSkipsIgnoredFiles(t *testing.T) {
+	output, err := runFmtCheck(t, "printf '%s\\n' \"$@\"\n")
+	if got := processExitCode(err); got != 1 {
+		t.Fatalf("exit = %d, want 1; error=%v\n%s", got, err, output)
+	}
+	if !strings.Contains(output, "\nscripts/prlintmake/prlintmake_test.go\n") {
+		t.Fatalf("tracked Go file was not checked:\n%s", output)
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if line == "." || strings.HasPrefix(line, ".toolchains/") || strings.HasPrefix(line, "node_modules/") {
+			t.Fatalf("gofmt received ignored path %q:\n%s", line, output)
+		}
+	}
+}
+
 func runFmtCheck(t *testing.T, gofmtBody string) (string, error) {
 	t.Helper()
 	bash := testBash(t)

@@ -419,7 +419,7 @@ install: check-up-to-date
 # Format all Go files
 fmt:
 	@echo "Formatting Go files..."
-	@gofmt -w .
+	@git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 gofmt -w
 	@echo "Done"
 
 # Check that all Go files are properly formatted (for CI)
