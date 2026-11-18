@@ -980,7 +980,7 @@ compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql"
 compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
 # graph <id> walks every dependency type both ways from the root, then lays the nodes out by
 # `blocks` edges only, lifts children to their parent's layer and sorts each layer, so upstream's
-# Go map order never reaches the output. Only the JSON view is ported so far.
+# Go map order never reaches the output. The JSON and DOT views are ported so far.
 graph_lift_sql="$dependency_row ('fixture-graph-1', '$real_database_epic_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 graph_external_row="INSERT INTO dependencies (id, issue_id, depends_on_external, type, created_at, created_by) VALUES"
 graph_external_sql="$graph_external_row ('fixture-graph-2', '$real_database_issue_id', 'external:other:$real_database_labeled_relation_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
@@ -1032,16 +1032,63 @@ compare_real_database_env graph-max-rows-env exact BEADS_MAX_ROWS=2 graph "$real
 compare_real_database_env graph-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 graph "$real_database_molecule_id" --max-rows 0 --json
 compare_real_database_env graph-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph "$real_database_bug_id" --json
 compare_real_database_env graph-max-rows-env-malformed-missing exact BEADS_MAX_ROWS=banana graph test-missing
+# The human views reuse the same load and layout. graph_views_sql gives every status color, a
+# blocker that is the root, edges that the views skip, and titles with a quote, a backslash, a
+# tab, multibyte text and more than 40 characters. graph_empty_layer_sql lifts the only layer-0
+# node into its parent's layer; graph_narrow_sql makes titles shorter than the IDs.
+graph_pinned_id="$(jq -er '.id' "$real_database_seed/pinned.json")"
+graph_views_sql="$dependency_row ('fixture-view-1', '$real_database_bug_id', '$real_database_progress_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-2', '$real_database_bug_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-3', '$real_database_bug_id', '$graph_pinned_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-4', '$real_database_content_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-5', '$real_database_content_id', '$real_database_progress_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-6', '$real_database_escaping_id', '$real_database_content_id', 'parent-child', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-7', '$real_database_labeled_relation_id', '$real_database_bug_id', 'relates-to', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-8', '$real_database_progress_id', '$real_database_closed_id', 'waits-for', '2026-08-21 10:00:00', 'fixture')
+UPDATE issues SET status = 'blocked', updated_at = updated_at WHERE id = '$real_database_content_id'
+UPDATE issues SET status = 'deferred', updated_at = updated_at WHERE id = '$real_database_escaping_id'
+UPDATE issues SET status = 'hooked', updated_at = updated_at WHERE id = '$real_database_labeled_relation_id'
+UPDATE issues SET title = 'Say \"hi\" to C:\\\\temp and keep going well past forty characters', updated_at = updated_at WHERE id = '$real_database_issue_id'
+UPDATE issues SET title = 'Tab\\there in progress', updated_at = updated_at WHERE id = '$real_database_progress_id'
+UPDATE issues SET title = 'Ünïcödé closed títle with ✓ marks and many more words', updated_at = updated_at WHERE id = '$real_database_closed_id'"
+graph_empty_layer_sql="$dependency_row ('fixture-view-9', '$real_database_bug_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-10', '$real_database_closed_id', '$real_database_bug_id', 'parent-child', '2026-08-21 10:00:00', 'fixture')"
+graph_narrow_sql="$dependency_row ('fixture-view-11', '$real_database_bug_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-view-12', '$real_database_content_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+UPDATE issues SET title = '', updated_at = updated_at WHERE id IN ('$real_database_bug_id', '$real_database_content_id')
+UPDATE issues SET title = 'C', updated_at = updated_at WHERE id = '$real_database_closed_id'"
+# --dot prints one invisible cluster per layer, then each blocks and parent-child row in load
+# order. Only --open outranks it among the view flags.
+compare_real_database graph-hierarchy-dot exact graph "$real_database_child_id" --dot
+compare_real_database graph-blockers-dot exact graph "$molecule_step_two_id" --dot
+compare_real_database graph-molecule-dot exact graph "$real_database_molecule_id" --dot
+compare_real_database graph-gated-dot exact graph "$real_database_gated_step_id" --dot
+compare_real_database graph-metadata-dot exact graph "$real_database_issue_id" --dot
+compare_real_database graph-isolated-dot exact graph "$real_database_bug_id" --dot
+compare_real_database graph-escaping-dot exact graph "$real_database_escaping_id" --dot
+compare_real_database graph-dot-wins exact graph "$real_database_epic_id" --box --html --compact=true --dot
+compare_real_database graph-dot-missing exact graph test-missing --dot
+compare_real_database graph-dot-no-args exact graph --dot
+compare_real_database graph-dot-max-rows exact graph "$real_database_epic_id" --max-rows 2 --dot
+compare_real_database_sql graph-views-dot exact "$graph_views_sql" graph "$real_database_bug_id" --dot
+compare_real_database_sql graph-empty-layer-dot exact "$graph_empty_layer_sql" graph "$real_database_bug_id" --dot
+compare_real_database_sql graph-narrow-dot exact "$graph_narrow_sql" graph "$real_database_bug_id" --dot
+compare_real_database_sql graph-lift-dot exact "$graph_lift_sql" graph "$real_database_grandchild_id" --dot
+compare_real_database_sql graph-cycle-dot exact "$dep_cycle_sql" graph test-abcd11 --dot
+compare_real_database_sql graph-external-dot exact "$graph_external_sql" graph "$real_database_issue_id" --dot
+compare_real_database_import graph-wisp-dot exact "$graph_wisp_record" graph test-graph-wisp --dot
 # The views that are not ported yet must fail the same way every time; upstream prints them.
 graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 expect_candidate_failure graph-human-unported "" \
 	"Error: graph without --json is not available yet in this build" "" graph "$real_database_epic_id"
-for graph_view in --compact --box --dot --html; do
+for graph_view in --compact --box --html; do
 	expect_candidate_failure "graph${graph_view}-unported" "" \
 		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" "$graph_view"
 done
 expect_candidate_failure graph-open-unported \
 	'{"error":"graph --open is not available yet in this build","schema_version":1}' "" "" graph "$real_database_epic_id" --open --json
+expect_candidate_failure graph-open-over-dot-unported "" \
+	"Error: graph --open is not available yet in this build" "" graph "$real_database_epic_id" --dot --open
 expect_candidate_failure graph-all-unported "" "Error: graph --all is not available yet in this build" "" graph --all
 expect_candidate_failure graph-other-repository-unported \
 	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \

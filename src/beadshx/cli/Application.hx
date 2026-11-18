@@ -10,6 +10,7 @@ import beadshx.relation.DependencyTree.parseTreeDirection;
 import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.GraphLayout.computeGraphLayout;
+import beadshx.cli.GraphViews.renderGraphDot;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
 import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
@@ -1105,8 +1106,8 @@ final class Application {
 
 	/**
 		Checks the arguments, resolves the root, loads its subgraph and checks the row cap,
-		in the order upstream graphCmd does. Only the JSON view is ported: `--all`, `--open`
-		and the human views fail where upstream would start to differ.
+		in the order upstream graphCmd does. Only the JSON and DOT views are ported: `--all`,
+		`--open` and the other human views fail where upstream would start to differ.
 	**/
 	function runGraphQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final request = invocation.graph;
@@ -1145,12 +1146,19 @@ final class Application {
 			return runListRowLimitExceeded(subgraph.issues.length, request.maxRowsSource, maxRows);
 		if (request.view == "--open")
 			return runModeAwareFailure(invocation.output, "graph --open is not available yet in this build");
-		// With --json, upstream ignores the other view flags.
-		if (invocation.output == Human)
-			return runModeAwareFailure(invocation.output,
-				request.view == "" ? "graph without --json is not available yet in this build" : 'graph ${request.view} is not available yet in this build');
 		final layout = computeGraphLayout([for (issue in subgraph.issues) issue.id], subgraph.edges);
-		return writeRenderedJsonStdout(renderGraphJson(subgraph, layout, output.usesJsonEnvelope()));
+		// With --json, upstream ignores the other view flags.
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderGraphJson(subgraph, layout, output.usesJsonEnvelope()));
+		switch request.view {
+			case "--dot":
+				output.writeStdout(renderGraphDot(subgraph, layout));
+				return 0;
+			case "":
+				return runModeAwareFailure(invocation.output, "graph without --json is not available yet in this build");
+			case view:
+				return runModeAwareFailure(invocation.output, 'graph ${view} is not available yet in this build');
+		}
 	}
 
 	/**
@@ -4608,13 +4616,13 @@ final class Application {
 	}
 
 	function graphHelp():String {
-		return "Display issue dependency graph. This build prints it with --json only.\n\n"
+		return "Display issue dependency graph. This build prints it with --json or --dot only.\n\n"
 			+ "Usage:\n  bdhx graph [issue-id] [flags]\n\n"
 			+ "Flags:\n"
 			+ "      --all            Show graph for all open issues (not available yet in this build)\n"
 			+ "      --box            ASCII boxes showing layers (not available yet in this build)\n"
 			+ "      --compact        Tree format, one line per issue (not available yet in this build)\n"
-			+ "      --dot            Output Graphviz DOT format (not available yet in this build)\n"
+			+ "      --dot            Output Graphviz DOT format (pipe to: dot -Tsvg > graph.svg)\n"
 			+ "  -h, --help           help for graph\n"
 			+ "      --html           Output self-contained interactive HTML (not available yet in this build)\n"
 			+
