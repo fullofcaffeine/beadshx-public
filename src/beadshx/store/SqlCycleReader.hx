@@ -20,6 +20,18 @@ import beadshx.store.SqlIssueReader.readIssueInTx;
 @:goNative
 final class SqlCycleReader {
 	public static function readSqlCycles(context:Context, transaction:Tx):StoreResult<Array<DependencyCycle<RelatedIssue>>> {
+		return switch readBlockingGraph(context, transaction) {
+			case Failure(message): Failure(message);
+			case Success(graph): Success(buildCycles(canonicalCyclePaths(graph), id -> readMember(context, transaction, id)));
+		};
+	}
+
+	/**
+		Reads the blocking graph like upstream AppendBlockingGraphInTx: each issue ID maps to
+		the IDs it depends on through `blocks` or `conditional-blocks` edges, from the
+		dependencies table and then the wisp_dependencies table, in raw row order.
+	**/
+	public static function readBlockingGraph(context:Context, transaction:Tx):StoreResult<Map<String, Array<String>>> {
 		final graph = new Map<String, Array<String>>();
 		for (table in ["dependencies", "wisp_dependencies"]) {
 			final queried = transaction.queryContext(context,
@@ -50,7 +62,7 @@ final class SqlCycleReader {
 			if (rowError != null)
 				return Failure('dependency graph: rows $table: ${rowError.toString()}');
 		}
-		return Success(buildCycles(canonicalCyclePaths(graph), id -> readMember(context, transaction, id)));
+		return Success(graph);
 	}
 
 	/** Upstream ignores the read error here: a failed read and a miss both mean no record. */

@@ -68,6 +68,48 @@ function canonicalCyclePaths(graph:Map<String, Array<String>>):Array<Array<Strin
 }
 
 /**
+	Lists the cycles that one depth-first walk of a blocking graph meets, like upstream DetectCyclesInTx.
+
+	`bd graph check` reports these; `bd dep cycles` uses canonicalCyclePaths instead.
+	Upstream starts the walk from each node in Go map order, which is random, so a
+	cycle with two or more members can start at any of them, and a different start
+	can meet a different set of back edges. This port starts from the nodes in byte
+	order, which is one of upstream's possible outcomes. Neighbors keep edge order,
+	duplicates included, and each cycle is the walk's path from the repeated node,
+	without rotation. `graph` maps an issue ID to the IDs it depends on.
+**/
+function walkBlockingCycles(graph:Map<String, Array<String>>):Array<Array<String>> {
+	final roots = [for (node in graph.keys()) node];
+	roots.sort(compareUtf8);
+	final cycles = new Array<Array<String>>();
+	final visited = new Map<String, Bool>();
+	final onPath = new Map<String, Bool>();
+	final path = new Array<String>();
+	function walk(node:String):Void {
+		visited.set(node, true);
+		onPath.set(node, true);
+		path.push(node);
+		final neighbors = graph.get(node);
+		if (neighbors != null)
+			for (neighbor in neighbors) {
+				if (!visited.exists(neighbor)) {
+					walk(neighbor);
+				} else if (onPath.get(neighbor) == true) {
+					final start = path.indexOf(neighbor);
+					if (start >= 0)
+						cycles.push(path.slice(start));
+				}
+			}
+		path.pop();
+		onPath.set(node, false);
+	}
+	for (root in roots)
+		if (!visited.exists(root))
+			walk(root);
+	return cycles;
+}
+
+/**
 	Turns canonical cycle paths into cycles with member records, like upstream BuildCycles.
 
 	`hydrate` returns a member's record, or null when the database has none; each ID

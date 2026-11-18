@@ -252,7 +252,8 @@ final class Application {
 
 	static function usesStore(command:Command):Bool {
 		return switch command {
-			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | Blocked | List | Show: true;
+			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Blocked |
+				List | Show: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -272,6 +273,7 @@ final class Application {
 			case DepList: "dep-list";
 			case DepCycles: "dep-cycles";
 			case DepTree: "dep-tree";
+			case GraphCheck: "graph-check";
 			case Blocked: "blocked";
 			case List: "list";
 			case Show: "show";
@@ -321,6 +323,8 @@ final class Application {
 				runDepCycles(invocation);
 			case DepTree:
 				runDepTree(invocation);
+			case GraphCheck:
+				runGraphCheck(invocation);
 			case Blocked:
 				runBlocked(invocation);
 			case List:
@@ -997,6 +1001,79 @@ final class Application {
 		}
 		lines.push("]");
 		return Success(lines.join("\n") + "\n");
+	}
+
+	function runGraphCheck(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = switch query.graphCycles(location.path, location.databaseName, invocation.global) {
+									case Failure(message): runModeAwareFailure(invocation.output, 'cycle detection failed: ${message}');
+									case Success(cycles): renderGraphCheck(invocation, cycles);
+								};
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/**
+		Matches upstream renderGraphCheck with colors off. A graph with cycles exits 1 with
+		nothing on stderr, as upstream SilentExit does, in both output modes.
+	**/
+	function renderGraphCheck(invocation:Invocation, cycles:Array<Array<String>>):Int {
+		final exitCode = cycles.length == 0 ? 0 : 1;
+		if (invocation.output == Json) {
+			writeJsonStdout(renderGraphCheckJson(cycles));
+			return exitCode;
+		}
+		final rendered = new StringBuf();
+		if (cycles.length == 0) {
+			rendered.add("\n✓ Graph integrity check passed\n\n");
+			rendered.add("  ✓ No dependency cycles\n");
+		} else {
+			rendered.add("\n✗ Graph integrity issues found\n\n");
+			rendered.add('⚠ Cycles (${cycles.length}):\n\n');
+			for (cycle in cycles)
+				rendered.add('  ${cycle.join(" → ")} → ${cycle[0]}\n');
+			rendered.add("\n");
+		}
+		rendered.add("\n");
+		output.writeStdout(rendered.toString());
+		return exitCode;
+	}
+
+	/** Upstream's GraphCheckResult after the schema_version map round trip: keys sorted, `cycles` null when clean. */
+	static function renderGraphCheckJson(cycles:Array<Array<String>>):String {
+		final lines = ["{", '  "clean": ${cycles.length == 0},'];
+		if (cycles.length == 0) {
+			lines.push('  "cycles": null,');
+		} else {
+			lines.push('  "cycles": [');
+			for (index in 0...cycles.length) {
+				final cycle = cycles[index];
+				lines.push("    [");
+				for (memberIndex in 0...cycle.length)
+					lines.push('      ${Json.stringify(cycle[memberIndex])}${memberIndex == cycle.length - 1 ? "" : ","}');
+				lines.push(index == cycles.length - 1 ? "    ]" : "    ],");
+			}
+			lines.push("  ],");
+		}
+		lines.push('  "schema_version": 1,');
+		lines.push('  "summary": {');
+		lines.push('    "cycle_count": ${cycles.length}');
+		lines.push("  }");
+		lines.push("}");
+		return lines.join("\n") + "\n";
 	}
 
 	function runBlocked(invocation:Invocation):Int {
@@ -4364,6 +4441,7 @@ final class Application {
 			case DepList: depListHelp();
 			case DepCycles: basicCommandHelp("Detect dependency cycles", "dep cycles", "");
 			case DepTree: depTreeHelp();
+			case GraphCheck: basicCommandHelp("Check dependency graph integrity", "graph check", "");
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case List: listHelp();
 			case Show: showHelp();

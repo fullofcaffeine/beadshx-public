@@ -43,6 +43,10 @@ final class EmbeddedStoreAccess {
 		return implementation.dependencyTree(beadsDir, databaseName, request);
 	}
 
+	public static function graphCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<Array<String>>>> {
+		return implementation.graphCycles(beadsDir, databaseName);
+	}
+
 	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
@@ -81,6 +85,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 
 	public function dependencyTree(beadsDir:String, databaseName:String,
 			request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>> {
+		return null;
+	}
+
+	public function graphCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<Array<String>>>> {
 		return null;
 	}
 

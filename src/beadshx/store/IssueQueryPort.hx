@@ -31,5 +31,8 @@ interface IssueQueryPort extends QueryTimePort {
 	function dependencyTree(beadsDir:String, databaseName:String, request:beadshx.relation.DependencyTree.DependencyTreeRequest,
 		global:Bool):StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<beadshx.relation.RelatedIssue>>>;
 
+	/** The cycles `bd graph check` reports, as member ID lists; an empty list means a clean graph. */
+	function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>>;
+
 	function close():StoreResult<Bool>;
 }

@@ -21,4 +21,5 @@ interface EmbeddedStorePort {
 	function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>>;
 	function dependencyTree(beadsDir:String, databaseName:String,
 		request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>>;
+	function graphCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<Array<String>>>>;
 }

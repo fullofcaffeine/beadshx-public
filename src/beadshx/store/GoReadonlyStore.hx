@@ -40,6 +40,9 @@ final BLOCKED_ROUTE_UNAVAILABLE = "blocked is not available yet for server-mode 
 /** `bd dep tree` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
 final DEP_TREE_ROUTE_UNAVAILABLE = "dep tree is not available yet for server-mode or proxied workspaces in this build";
 
+/** `bd graph check` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
+final GRAPH_CHECK_ROUTE_UNAVAILABLE = "graph check is not available yet for server-mode or proxied workspaces in this build";
+
 /**
 	Typed adapter over the narrow native read-only facade.
 
@@ -105,6 +108,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return Failure(DEP_TREE_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.graphCycles(beadsDir, databaseName);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(GRAPH_CHECK_ROUTE_UNAVAILABLE);
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
@@ -1240,6 +1252,10 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function dependencyTree(beadsDir:String, databaseName:String, request:beadshx.relation.DependencyTree.DependencyTreeRequest,
 			global:Bool):StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>> {
 		return Failure(DEP_TREE_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>> {
+		return Failure(GRAPH_CHECK_ROUTE_UNAVAILABLE);
 	}
 
 	final native:NativeQuerySession;

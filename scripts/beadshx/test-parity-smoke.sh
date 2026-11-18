@@ -913,6 +913,20 @@ compare_real_database dep-tree-max-rows-negative-json exact dep tree "$real_data
 compare_real_database_env dep-tree-max-rows-env exact BEADS_MAX_ROWS=1 dep tree "$real_database_grandchild_id"
 compare_real_database_env dep-tree-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 dep tree "$real_database_grandchild_id" --max-rows 0
 compare_real_database_env dep-tree-max-rows-env-malformed exact BEADS_MAX_ROWS=banana dep tree test-missing
+# graph check walks the blocking edges from roots in Go map order, so a cycle with two or more
+# members prints in random order. A self-loop is stable, and so is a cycle whose other members
+# have no record: upstream drops them, and drops a cycle with no recorded member at all.
+graph_self_loop_sql="$dependency_row ('fixture-self-1', '$real_database_issue_id', '$real_database_issue_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+graph_ghost_cycle_sql="$dep_partial_cycle_sql
+$dependency_row ('fixture-ghost-3', 'test-ghost-self', 'test-ghost-self', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_real_database graph-check-clean-human exact graph check
+compare_real_database graph-check-clean-json exact graph check --json
+compare_real_database graph-check-extra-arg exact graph check "$real_database_issue_id"
+compare_real_database_env graph-check-json-envelope exact BD_JSON_ENVELOPE=1 graph check --json
+compare_real_database_sql graph-check-self-loop-human exact "$graph_self_loop_sql" graph check
+compare_real_database_sql graph-check-self-loop-json exact "$graph_self_loop_sql" graph check --json
+compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql" graph check
+compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

@@ -1372,6 +1372,8 @@ final class Parser {
 		final name = positional[0];
 		final depCycles = name == "dep" && positional.length > 1 && positional[1] == "cycles";
 		final depTree = name == "dep" && positional.length > 1 && positional[1] == "tree";
+		// Upstream `bd graph check` takes any arguments and ignores them.
+		final graphCheck = name == "graph" && positional.length > 1 && positional[1] == "check";
 		if (name == "dep" && !depCycles && !depTree) {
 			if (positional.length < 2) {
 				if (!showHelp)
@@ -1708,6 +1710,8 @@ final class Parser {
 			return parsedCommand(depCycles ? Command.DepCycles : (depTree ? Command.DepTree : Command.DepList));
 		if (name == "blocked")
 			return parsedCommand(Command.Blocked);
+		if (graphCheck)
+			return parsedCommand(Command.GraphCheck);
 		if (name == "list")
 			return parsedCommand(Command.List);
 		if (name == "show" || name == "view")
