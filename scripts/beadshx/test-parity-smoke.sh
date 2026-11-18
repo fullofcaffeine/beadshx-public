@@ -837,8 +837,10 @@ compare_real_database_sql dep-cycles-partial-human exact "$dep_partial_cycle_sql
 compare_real_database_sql dep-cycles-partial-json exact "$dep_partial_cycle_sql" dep cycles --json
 # Upstream sorts blocked issues by priority, then created_at, after a Go map walk, and created_at
 # has one-second precision, so ties come out in random order. Spread created_at by ID first.
-distinct_created_sql="UPDATE issues SET created_at = TIMESTAMPADD(SECOND, CONV(SUBSTRING(MD5(id), 1, 6), 16, 10), '2026-01-01 00:00:00')
-UPDATE wisps SET created_at = TIMESTAMPADD(SECOND, CONV(SUBSTRING(MD5(id), 1, 6), 16, 10), '2026-01-01 00:00:00')"
+# updated_at is ON UPDATE CURRENT_TIMESTAMP; assigning it to itself keeps the seed value, as upstream
+# does for is_blocked, so the two fixture copies cannot differ by a clock tick.
+distinct_created_sql="UPDATE issues SET created_at = TIMESTAMPADD(SECOND, CONV(SUBSTRING(MD5(id), 1, 6), 16, 10), '2026-01-01 00:00:00'), updated_at = updated_at
+UPDATE wisps SET created_at = TIMESTAMPADD(SECOND, CONV(SUBSTRING(MD5(id), 1, 6), 16, 10), '2026-01-01 00:00:00'), updated_at = updated_at"
 compare_real_database_sql blocked-human exact "$distinct_created_sql" blocked
 compare_real_database_sql blocked-json exact "$distinct_created_sql" blocked --json
 compare_real_database_sql blocked-parent-json exact "$distinct_created_sql" blocked --parent "$real_database_molecule_id" --json
@@ -854,7 +856,7 @@ blocked_flags_sql="$distinct_created_sql
 $dependency_row ('fixture-block-1', '$real_database_issue_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
 $dependency_row ('fixture-block-2', '$real_database_issue_id', '$real_database_epic_id', 'waits-for', '2026-08-21 10:00:00', 'fixture')
 $dependency_row ('fixture-block-3', '$real_database_issue_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
-UPDATE issues SET is_blocked = 1 WHERE id IN ('$real_database_issue_id', '$molecule_step_one_id')"
+UPDATE issues SET is_blocked = 1, updated_at = updated_at WHERE id IN ('$real_database_issue_id', '$molecule_step_one_id')"
 compare_real_database_sql blocked-flags-human exact "$blocked_flags_sql" blocked
 compare_real_database_sql blocked-flags-json exact "$blocked_flags_sql" blocked --json
 compare_real_database_sql blocked-flags-parent-json exact "$blocked_flags_sql" blocked --parent "$real_database_molecule_id" --json
