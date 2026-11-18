@@ -34,5 +34,8 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The cycles `bd graph check` reports, as member ID lists; an empty list means a clean graph. */
 	function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>>;
 
+	/** The connected subgraph of an exact root ID, as `bd graph <id>` loads it. */
+	function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph>;
+
 	function close():StoreResult<Bool>;
 }

@@ -1,18 +1,28 @@
 package beadshx.store;
 
+import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.context.ContextPkg;
 import beadshx.nativeextern.database.sql.SqlPkg;
+import beadshx.nativeextern.database.sql.Tx;
 import beadshx.nativeextern.database.sql.TxOptions;
 import beadshx.nativeextern.doltdriver.Config;
 import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
-import beadshx.store.SqlGraphReader.readGraphCycles;
+import beadshx.store.SqlGraphReader.GraphSubgraph;
 
-/** Own one read transaction for `bd graph check`; the graph semantics are authored Haxe. */
+/** Own one read transaction for `bd graph` and `bd graph check`; the graph semantics are authored Haxe. */
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedGraphReader {
 	public static function readCycles(beadsDir:String, databaseName:String):StoreResult<Array<Array<String>>> {
+		return read(beadsDir, databaseName, (context, transaction) -> SqlGraphReader.readGraphCycles(context, transaction));
+	}
+
+	public static function readSubgraph(beadsDir:String, databaseName:String, rootId:String):StoreResult<GraphSubgraph> {
+		return read(beadsDir, databaseName, (context, transaction) -> SqlGraphReader.readGraphSubgraph(context, transaction, rootId));
+	}
+
+	static function read<T>(beadsDir:String, databaseName:String, reader:(Context, Tx) -> StoreResult<T>):StoreResult<T> {
 		final config = new Config();
 		config.directory = haxe.io.Path.join([beadsDir, "embeddeddolt"]);
 		config.database = resolveEmbeddedDatabaseName(beadsDir, databaseName);
@@ -31,7 +41,7 @@ final class EmbeddedGraphReader {
 			connector.close();
 			return Failure('begin embedded graph transaction: ${started.value2.toString()}');
 		}
-		final outcome = readGraphCycles(context, started.value1);
+		final outcome = reader(context, started.value1);
 		final rollbackError = started.value1.rollback();
 		final closeDatabaseError = database.close();
 		final closeConnectorError = connector.close();

@@ -59,6 +59,27 @@ typedef Invocation = {
 	final depType:String;
 	final depListSelection:DepListSelection;
 	final depTree:DepTreeInvocation;
+	final graph:GraphInvocation;
+}
+
+/**
+	The `bd graph` arguments and flags as typed. The command checks them after the
+	store opens, in upstream's order, and reads the row cap only after the load.
+**/
+typedef GraphInvocation = {
+	/** The arguments after `graph`; upstream accepts at most one. */
+	final ids:Array<String>;
+
+	final all:Bool;
+
+	/** The first of `--open`, `--dot`, `--html`, `--compact` and `--box` that is set, in upstream's order, or "". */
+	final view:String;
+
+	final maxRows:OptionalInt;
+	final maxRowsSource:String;
+
+	/** The warning for a malformed BEADS_MAX_ROWS, printed when upstream reads the cap. */
+	final maxRowsWarning:String;
 }
 
 /**

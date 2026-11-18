@@ -9,11 +9,11 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "dd06792be7d6032cb0855d3e5dd6723dddd35e10f1ecb83f6f1e3996f7c52463"
+        "sha256": "0ca3fa0f5178bf07efe26c62cacfe083fbc7af8ec8e136ee53464148e1789fb9"
       },
       {
         "path": "src/beadshx/cli/Command.hx",
-        "sha256": "417dedb1a62fac2c140d9a7e229d090b066a339bcc70eac3a813355e7fdcf589"
+        "sha256": "24e99913b5c2a2378d87385c0ca27a3f9673f137b7e3280e45faa982452716ef"
       },
       {
         "path": "src/beadshx/cli/DepListSelection.hx",
@@ -29,7 +29,7 @@
       },
       {
         "path": "src/beadshx/cli/Invocation.hx",
-        "sha256": "f425a2696bb3fd4b29a2e60166c87544805cd4b2c1c291fe650e66a88480abbd"
+        "sha256": "3707762c9ad3e96130df7c2bba61598c24bae1f2e7a4b31ec9446c93dcee8e68"
       },
       {
         "path": "src/beadshx/cli/OutputMode.hx",
@@ -45,7 +45,7 @@
       },
       {
         "path": "src/beadshx/cli/Parser.hx",
-        "sha256": "27a591e2a0000d8e2a044675f837d6e156a4662b41486a40a5939e8c03fab156"
+        "sha256": "eaf0ae7bedd4f9fcf0abb1e4257553602401c9763093da24c207005937a36149"
       },
       {
         "path": "src/beadshx/cli/SystemEnvironment.hx",
@@ -392,6 +392,10 @@
         "sha256": "5614244ea12cedb89332b1ff128302b4cbce271b0f101c2c861b0c68afdcc033"
       },
       {
+        "path": "src/beadshx/relation/GraphLayout.hx",
+        "sha256": "dedfc44427faeb301193e0f1cba5435fc02057de72987593cdf108f92ab3c51e"
+      },
+      {
         "path": "src/beadshx/relation/RawDependencyEdge.hx",
         "sha256": "81f42aeef4cdffa61d3cb5d309be2715ded1a1b60726e2ad501540c37c355570"
       },
@@ -437,7 +441,7 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedCgoStore.hx",
-        "sha256": "c2932417c1a8b70b41f274b0e1bd7b370cd519a4bae7093b51dbbb941aed146b"
+        "sha256": "c371a2ce47b47330e39fbb98a822fcdb39e6b049a00e7e3e11fdb541b8cba708"
       },
       {
         "path": "src/beadshx/store/EmbeddedCycleReader.hx",
@@ -453,7 +457,7 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedGraphReader.hx",
-        "sha256": "b83ffeec364ac990f7cdd2eacd6c50bc05cb6412762760969b57cdf56c51dcf2"
+        "sha256": "1e69cc05668afeef04f69f99f3be361e90f777dcc6dfe881ab69995142331224"
       },
       {
         "path": "src/beadshx/store/EmbeddedIssueIdSearch.hx",
@@ -473,11 +477,11 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedStoreAccess.hx",
-        "sha256": "6bb456d09619afb02204174a6b082a4ec0d1855cd92476bf4b384edeee7cba8d"
+        "sha256": "e40360ad3d1f10285713fb50ec075db9356192d30d230620ca7fab3f2bd39414"
       },
       {
         "path": "src/beadshx/store/EmbeddedStorePort.hx",
-        "sha256": "c69be7162d6eba9b792237bba8e20563bfadb64cdd530df6e9c43552fe214b17"
+        "sha256": "18400af84a5163fe3d7eacda3812c1c4b63ab6bb0f598bc872f350079bd5e820"
       },
       {
         "path": "src/beadshx/store/EmbeddedTreeReader.hx",
@@ -489,7 +493,7 @@
       },
       {
         "path": "src/beadshx/store/GoReadonlyStore.hx",
-        "sha256": "039099461d2fc990926330247364ded3042a8af62d542bfb180581da70f05897"
+        "sha256": "4b9ebb68091dc7f9e317ea2876a728f8725925eba2b4c0f643b578a11ad7a90e"
       },
       {
         "path": "src/beadshx/store/InfoSnapshot.hx",
@@ -561,7 +565,7 @@
       },
       {
         "path": "src/beadshx/store/IssueQueryPort.hx",
-        "sha256": "8822b9f9616a690e3513379c6f813e95eca421c436c4bc3a60b277c6ad1ce699"
+        "sha256": "84a9e34cd228d02233e4a5fcd0e54490ab83e20dac59269e04eff76e332ed326"
       },
       {
         "path": "src/beadshx/store/IssueQueryRow.hx",
@@ -681,11 +685,11 @@
       },
       {
         "path": "src/beadshx/store/SqlGraphReader.hx",
-        "sha256": "d3cb352549b2d8c49a0f6a8d3d8977b32d33225f8c1be63f0d38c328ce8b635d"
+        "sha256": "e8a3ee3f65fdd1ae3fc0ddcae9958f93615c8b2c497c9e1d43cdf0a1e0fab846"
       },
       {
         "path": "src/beadshx/store/SqlIssueBatchReader.hx",
-        "sha256": "1f8a8b27738d934e295d8e91daba885b7284713b979376e0d7a92b7124cf2a38"
+        "sha256": "a004169093bfd176257b3106c92a5618a2094994565affb67226355d3b16d3e8"
       },
       {
         "path": "src/beadshx/store/SqlIssueReader.hx",
@@ -765,19 +769,19 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "052d37c24c9ed18c49f6f8ad201857422a463c0f16b0bd5446cf0e9f7c7d44f2"
+      "sha256": "4d451cea7e361a9ee7e776b60cd1a15d6a16ccb41fa610281e6baf46ab4c711e"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "cb1fe7dd0e2fee299bb6c0876030dae7307e611bf9f9072f3921351d60a00d9c"
+      "sha256": "9bfe15de998bf90cfac3798f87ee859385e9df60f80f62fb49fda384c4059216"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "c246b2bda279d20259c1e461d2108d0507fa22142570c5a48221c89dd57086c5"
+      "sha256": "8da6a000ce0f0b9de116446335983fd084ed81bdec190401cd2acfeba31666f4"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_command.go",
-      "sha256": "8a18353b15031e2292aa67b85a6d24eccbe02f42c67f7c9561c426352bd9f337"
+      "sha256": "a4d346f649f6b557b42ca4ab1cb481cc284a4fd160dec273a8bdd103ede4dea4"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_deplistselection.go",
@@ -797,7 +801,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parser.go",
-      "sha256": "a07c2b7831cf69d80c0b4dba79ce47e7855ea0b59e10372a430382cc1c9b59da"
+      "sha256": "a8e2945926abc388ec1bc718054deba5e2c6f216ea78f870b3f12160c1b4317e"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parseresult.go",
@@ -948,6 +952,10 @@
       "sha256": "083febd1a6868a6b432cc677ed04a2df5366948a2306cb2c63b0775fb072338f"
     },
     {
+      "path": "bdhx/haxego_generated_module_beadshx_relation_graphlayout.go",
+      "sha256": "bd192df99282935bd2a193cf95ba8d3d13f12b6b02c5e388733741fade8a8d77"
+    },
+    {
       "path": "bdhx/haxego_generated_module_beadshx_relation_relatedissue.go",
       "sha256": "6db482a35a935229da3804715e0a59b7afe67fb99ddb7846e3bd392905582e63"
     },
@@ -977,7 +985,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedcgostore.go",
-      "sha256": "8cbaec5e7945f26617cccf0b0bcef3584e1f71b231c0b53c299f9568c9a20423"
+      "sha256": "44893bd465d498928af2484b3462a47e2451ed09fe26b177d0347e7a1c65d8e3"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedcyclereader.go",
@@ -993,7 +1001,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedgraphreader.go",
-      "sha256": "6397e6c4b78a5cd82c007ca8b71496f3dd5dae87b8352baa7346e0c729238d8a"
+      "sha256": "a4bf1b268cbe13d4b21f5c7b26c181ec132b79d35809b7f539a7a36559b9d69d"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedissueidsearch.go",
@@ -1013,11 +1021,11 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedstoreaccess.go",
-      "sha256": "0279baae7f1b3dd4707abc300dcb54b34250d799b470dd99f22e0bc44ba0bf5f"
+      "sha256": "08b41056db7feba1d8ce52b877929f0c89f06d874cee81d8062489153b63936d"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedstoreport.go",
-      "sha256": "86e98bfe613e6be54dbe00790535a0694d84948c4f2dd65b85e8ce1ca48e90ad"
+      "sha256": "848f2d04d8a26ae8b9317d2f638c9e0e70a9a539ec7bd0e7a4f38388838a1479"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedtreereader.go",
@@ -1029,7 +1037,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_goreadonlystore.go",
-      "sha256": "7768512fe617416f904020ef8cd5bf1e1e11f77db3021b633c49331d8b69f8bd"
+      "sha256": "ed47904e87b2dc4578b14537996304ea09fc1c03fa3d551ece5119122b52f535"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_issuedetailslookup.go",
@@ -1053,7 +1061,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_issuequeryport.go",
-      "sha256": "3eb4b05866ff7c0adb8b6e0900c1780c019d5a220969ef8e8fe908ea1e5f259f"
+      "sha256": "5c5725398f061ed03a3bf97f8566a8f95ca25fbf91d929a9db2e02065503ff75"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_issuestatus.go",
@@ -1105,7 +1113,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_readonlystoreport.go",
-      "sha256": "4be5e55658283aa1b681307126bcb68b7674d48df8c0c550b302373d1f54b513"
+      "sha256": "d5aa924b446541b43adb05b924fd3b1534252b825e64a64a1ef745bae884fa1b"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_readyloadresult.go",
@@ -1133,7 +1141,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlgraphreader.go",
-      "sha256": "79f1fc006d816e1e754c1d280901faa1a65371c13da5729c339a75bdc81114ce"
+      "sha256": "87be321878cb051e2598c73807b6bbb05f0487da49424c1208183c6863ffe65f"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlissuebatchreader.go",
@@ -1341,7 +1349,7 @@
     },
     {
       "path": "bdhx/haxego_generated_recovery_1.go",
-      "sha256": "7e12d002189248e6f29aa7775181a3f45e098c57fbcda8be89580dd6bc33323c"
+      "sha256": "f32d7d9d83ebde2c4c4d525a07832e97934aee5a7a501b146ff33814defe3164"
     },
     {
       "path": "hxrt/anonymous.go",

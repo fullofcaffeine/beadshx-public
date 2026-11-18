@@ -2,6 +2,7 @@ package beadshx.cli;
 
 import beadshx.cli.DepListSelection.selectDepList;
 import beadshx.cli.Invocation.DepTreeInvocation;
+import beadshx.cli.Invocation.GraphInvocation;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.IssueListMetadataFilter;
@@ -185,8 +186,10 @@ final class Parser {
 		var depDirection = "down";
 		var depDirectionUsed = false;
 		var depTreeMaxDepth = 50;
-		var depTreeMaxRowsWarning = "";
+		var deferredMaxRowsWarning = "";
 		final depTreeOnlyFlags = new Array<String>();
+		final graphViews = new Map<String, Bool>();
+		final graphOnlyFlags = new Array<String>();
 		var readyAwareUsageFailure = "";
 		function rememberReadyAwareUsageFailure(message:String):Void {
 			if (readyAwareUsageFailure == "")
@@ -209,6 +212,13 @@ final class Parser {
 		// Like `-a` for query, `-d` and a negative `--max-rows` depend on the command typed so far.
 		function inDepTree():Bool {
 			return positional.length > 1 && positional[0] == "dep" && positional[1] == "tree";
+		}
+		// `bd graph <id>` declares --max-rows as a plain int flag and checks its sign after the load.
+		function inGraph():Bool {
+			return positional.length > 0 && positional[0] == "graph" && !(positional.length > 1 && positional[1] == "check");
+		}
+		function invalidMaxRows(raw:String):ParseResult {
+			return UsageFailure(inGraph() ? invalidIntegerFlag("--max-rows", raw) : 'invalid argument "${raw}" for "--max-rows" flag: expected an integer');
 		}
 		for (argument in args) {
 			if (expectedValue != null) {
@@ -322,9 +332,9 @@ final class Parser {
 					case ListMaxRows:
 						final maxRows = parseSignedInt(argument);
 						if (maxRows == null)
-							return UsageFailure('invalid argument "${argument}" for "--max-rows" flag: expected an integer');
-						// dep tree reports a negative cap itself, after its other flag checks.
-						if (maxRows < 0 && !inDepTree())
+							return invalidMaxRows(argument);
+						// dep tree and graph report a negative cap themselves, after their other checks.
+						if (maxRows < 0 && !inDepTree() && !inGraph())
 							return UsageFailure('--max-rows must be non-negative; got ${maxRows}');
 						listMaxRows = IntPresent(maxRows);
 						listMaxRowsSource = "--max-rows";
@@ -618,8 +628,8 @@ final class Parser {
 				final raw = argument.substr(11);
 				final maxRows = parseSignedInt(raw);
 				if (maxRows == null)
-					return UsageFailure('invalid argument "${raw}" for "--max-rows" flag: expected an integer');
-				if (maxRows < 0 && !inDepTree())
+					return invalidMaxRows(raw);
+				if (maxRows < 0 && !inDepTree() && !inGraph())
 					return UsageFailure('--max-rows must be non-negative; got ${maxRows}');
 				listMaxRows = IntPresent(maxRows);
 				listMaxRowsSource = "--max-rows";
@@ -639,6 +649,15 @@ final class Parser {
 				final value = argument.substr(17);
 				if (!isBooleanFlagValue(value))
 					return UsageFailure('invalid argument "${value}" for "--show-all-paths" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+				continue;
+			}
+			final graphFlag = argument.indexOf("=") > 0 ? argument.substr(0, argument.indexOf("=")) : "";
+			if (isGraphViewFlag(graphFlag)) {
+				graphOnlyFlags.push(graphFlag);
+				final value = argument.substr(graphFlag.length + 1);
+				if (!isBooleanFlagValue(value))
+					return UsageFailure('invalid argument "${value}" for "${graphFlag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+				graphViews.set(graphFlag, booleanFlagValue(value));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--deps=")) {
@@ -943,6 +962,9 @@ final class Parser {
 				case "--show-all-paths":
 					// Deprecated upstream no-op: accepted and ignored.
 					depTreeOnlyFlags.push(argument);
+				case "--open" | "--dot" | "--html" | "--compact" | "--box":
+					graphOnlyFlags.push(argument);
+					graphViews.set(argument, true);
 				case "--has-metadata-key":
 					markListOnly(argument);
 					expectedValue = ListHasMetadataKey;
@@ -1289,7 +1311,22 @@ final class Parser {
 				format: listFormat,
 				maxRows: listMaxRows,
 				maxRowsSource: listMaxRowsSource,
-				maxRowsWarning: depTreeMaxRowsWarning
+				maxRowsWarning: deferredMaxRowsWarning
+			};
+		}
+
+		function makeGraphInvocation():GraphInvocation {
+			var view = "";
+			for (flag in ["--open", "--dot", "--html", "--compact", "--box"])
+				if (view == "" && graphViews.get(flag) == true)
+					view = flag;
+			return {
+				ids: positional.length > 1 ? positional.slice(1) : [],
+				all: listAll,
+				view: view,
+				maxRows: listMaxRows,
+				maxRowsSource: listMaxRowsSource,
+				maxRowsWarning: deferredMaxRowsWarning
 			};
 		}
 
@@ -1360,7 +1397,8 @@ final class Parser {
 				showIds: showIds,
 				depType: depTypeRaw,
 				depListSelection: selectDepList(depDirection, showIds.length),
-				depTree: makeDepTreeInvocation()
+				depTree: makeDepTreeInvocation(),
+				graph: makeGraphInvocation()
 			});
 		}
 		var helpCommand = false;
@@ -1374,6 +1412,7 @@ final class Parser {
 		final depTree = name == "dep" && positional.length > 1 && positional[1] == "tree";
 		// Upstream `bd graph check` takes any arguments and ignores them.
 		final graphCheck = name == "graph" && positional.length > 1 && positional[1] == "check";
+		final graphView = name == "graph" && !graphCheck;
 		if (name == "dep" && !depCycles && !depTree) {
 			if (positional.length < 2) {
 				if (!showHelp)
@@ -1435,6 +1474,8 @@ final class Parser {
 			return UsageFailure("unknown flag: --direction");
 		if (!depTree && depTreeOnlyFlags.length > 0)
 			return UsageFailure('unknown flag: ${depTreeOnlyFlags[0]}');
+		if (!graphView && graphOnlyFlags.length > 0)
+			return UsageFailure('unknown flag: ${graphOnlyFlags[0]}');
 		if (name == "count" && countGroupConflict)
 			return UsageFailure("only one --by-* flag can be specified");
 		if (name != "list") {
@@ -1450,6 +1491,7 @@ final class Parser {
 					&& !(name == "orphans" && isOrphansFilterFlag(flag))
 					&& !(name == "dep" && !depTree && (flag == "--type" || flag == "-t"))
 					&& !(depTree && isDepTreeFilterFlag(flag))
+					&& !(graphView && (flag == "--all" || flag == "--max-rows"))
 					&& !(name == "blocked" && flag == "--parent")) {
 					incompatibleListFlag = flag;
 					break;
@@ -1460,10 +1502,11 @@ final class Parser {
 				return UsageFailure('unknown shorthand flag: \'${incompatibleListFlag.charAt(1)}\' in ${incompatibleListFlag}');
 			}
 		}
-		if (depTree && !showHelp) {
-			final received = positional.length - 2;
-			if (received != 1)
-				return UsageFailure('accepts 1 arg(s), received ${received}');
+		if (depTree && !showHelp && positional.length != 3)
+			return UsageFailure('accepts 1 arg(s), received ${positional.length - 2}');
+		if (graphView && !showHelp && positional.length > 2)
+			return UsageFailure('accepts between 0 and 1 arg(s), received ${positional.length - 1}');
+		if ((depTree || graphView) && !showHelp) {
 			switch listMaxRows {
 				case IntPresent(_):
 				case IntAbsent:
@@ -1471,7 +1514,7 @@ final class Parser {
 					if (rawMaxRows != "") {
 						final parsedMaxRows = parseSignedInt(rawMaxRows);
 						if (parsedMaxRows == null || parsedMaxRows < 0) {
-							depTreeMaxRowsWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
+							deferredMaxRowsWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
 						} else {
 							listMaxRows = IntPresent(parsedMaxRows);
 							listMaxRowsSource = "BEADS_MAX_ROWS";
@@ -1679,7 +1722,8 @@ final class Parser {
 				showIds: showIds,
 				depType: depTypeRaw,
 				depListSelection: selectDepList(depDirection, showIds.length),
-				depTree: makeDepTreeInvocation()
+				depTree: makeDepTreeInvocation(),
+				graph: makeGraphInvocation()
 			});
 		}
 		if (name == "version")
@@ -1712,6 +1756,8 @@ final class Parser {
 			return parsedCommand(Command.Blocked);
 		if (graphCheck)
 			return parsedCommand(Command.GraphCheck);
+		if (graphView)
+			return parsedCommand(Command.Graph);
 		if (name == "list")
 			return parsedCommand(Command.List);
 		if (name == "show" || name == "view")
@@ -1789,6 +1835,10 @@ final class Parser {
 			case "--status" | "-s" | "--limit" | "-n": true;
 			case _: false;
 		};
+	}
+
+	static function isGraphViewFlag(flag:String):Bool {
+		return flag == "--open" || flag == "--dot" || flag == "--html" || flag == "--compact" || flag == "--box";
 	}
 
 	static function isDepTreeFilterFlag(flag:String):Bool {

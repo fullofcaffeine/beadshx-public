@@ -113,7 +113,7 @@ final class SqlIssueBatchReader {
 	}
 
 	/** Ports upstream WispIDSetInTx: an empty or missing wisps table means no wisps. */
-	static function readWispIdSet(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Map<String, Bool>> {
+	public static function readWispIdSet(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Map<String, Bool>> {
 		final result = new Map<String, Bool>();
 		final probe = transaction.queryNativeContext(context, "SELECT 1 FROM wisps LIMIT 1");
 		if (probe.error != null)

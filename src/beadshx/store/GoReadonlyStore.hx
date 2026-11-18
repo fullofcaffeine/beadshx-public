@@ -43,6 +43,9 @@ final DEP_TREE_ROUTE_UNAVAILABLE = "dep tree is not available yet for server-mod
 /** `bd graph check` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
 final GRAPH_CHECK_ROUTE_UNAVAILABLE = "graph check is not available yet for server-mode or proxied workspaces in this build";
 
+/** `bd graph <id>` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
+final GRAPH_ROUTE_UNAVAILABLE = "graph is not available yet for server-mode or proxied workspaces in this build";
+
 /**
 	Typed adapter over the narrow native read-only facade.
 
@@ -117,6 +120,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return Failure(GRAPH_CHECK_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.graphSubgraph(beadsDir, databaseName, rootId);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(GRAPH_ROUTE_UNAVAILABLE);
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
@@ -1256,6 +1268,10 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>> {
 		return Failure(GRAPH_CHECK_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
+		return Failure(GRAPH_ROUTE_UNAVAILABLE);
 	}
 
 	final native:NativeQuerySession;

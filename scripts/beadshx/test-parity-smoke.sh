@@ -469,6 +469,7 @@ real_database_extra_config=""
 real_database_extra_import=""
 real_database_extra_sql=""
 real_database_case_count=0
+candidate_only_case_count=0
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
 compare_real_database() {
@@ -636,6 +637,56 @@ compare_real_database_sql() {
 	real_database_extra_sql="$statements"
 	compare_real_database "$name" "$comparison" "$@"
 	real_database_extra_sql=""
+}
+
+# Runs only the candidate, for a view this build does not port yet: it must exit 1 with this
+# exact output (stdout compared as compact JSON when given) and leave the fixture unchanged.
+expect_candidate_failure() {
+	local name="$1"
+	local expected_stdout="$2"
+	local expected_stderr="$3"
+	local statements="$4"
+	shift 4
+	printf 'parity [%ss]: START candidate-only/%s\n' "$SECONDS" "$name"
+	candidate_only_case_count=$((candidate_only_case_count + 1))
+	local case_root="$test_root/candidate-only-$name"
+	local state_root="$case_root/candidate-state"
+	local candidate_exit candidate_before candidate_after actual_stdout
+	mkdir -p "$state_root/user-home/.dolt" "$state_root/config"
+	printf '{}\n' >"$state_root/user-home/.dolt/config_global.json"
+	copy_fixture_tree "$real_database_seed/work" "$state_root/work"
+	chmod 700 "$state_root/work/.beads"
+	if [[ -n "$statements" ]]; then
+		printf '%s\n' "$statements" | "$fixture_sql" "$state_root/work" >/dev/null
+	fi
+	candidate_before="$(fingerprint_tree "$state_root")"
+	set +e
+	(
+		cd "$state_root/work"
+		env HOME="$state_root/user-home" \
+			XDG_CONFIG_HOME="$state_root/config" \
+			"${real_database_env[@]}" \
+			"$candidate" "$@"
+	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
+	candidate_exit=$?
+	set -e
+	candidate_after="$(fingerprint_tree "$state_root")"
+	actual_stdout="$(cat "$case_root/candidate.stdout")"
+	if [[ -n "$expected_stdout" ]]; then
+		actual_stdout="$(jq -c . "$case_root/candidate.stdout" 2>/dev/null || cat "$case_root/candidate.stdout")"
+	fi
+	if [[ "$candidate_exit" -ne 1 || "$actual_stdout" != "$expected_stdout" ||
+		"$(cat "$case_root/candidate.stderr")" != "$expected_stderr" ]]; then
+		printf '%s: expected exit 1, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
+			"$name" "$expected_stdout" "$expected_stderr" "$candidate_exit" "$actual_stdout" \
+			"$(cat "$case_root/candidate.stderr")" >&2
+		return 1
+	fi
+	if [[ "$candidate_before" != "$candidate_after" ]]; then
+		printf '%s candidate command changed the read-only fixture\n' "$name" >&2
+		return 1
+	fi
+	printf 'parity [%ss]: PASS candidate-only/%s\n' "$SECONDS" "$name"
 }
 
 compare_real_database_import() {
@@ -927,6 +978,74 @@ compare_real_database_sql graph-check-self-loop-human exact "$graph_self_loop_sq
 compare_real_database_sql graph-check-self-loop-json exact "$graph_self_loop_sql" graph check --json
 compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql" graph check
 compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
+# graph <id> walks every dependency type both ways from the root, then lays the nodes out by
+# `blocks` edges only, lifts children to their parent's layer and sorts each layer, so upstream's
+# Go map order never reaches the output. Only the JSON view is ported so far.
+graph_lift_sql="$dependency_row ('fixture-graph-1', '$real_database_epic_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+graph_external_row="INSERT INTO dependencies (id, issue_id, depends_on_external, type, created_at, created_by) VALUES"
+graph_external_sql="$graph_external_row ('fixture-graph-2', '$real_database_issue_id', 'external:other:$real_database_labeled_relation_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_real_database graph-hierarchy-json exact graph "$real_database_child_id" --json
+compare_real_database graph-epic-json exact graph "$real_database_epic_id" --json
+compare_real_database graph-blockers-json exact graph "$molecule_step_two_id" --json
+compare_real_database graph-molecule-json exact graph "$real_database_molecule_id" --json
+compare_real_database graph-gated-json exact graph "$real_database_gated_step_id" --json
+compare_real_database graph-metadata-json exact graph "$real_database_issue_id" --json
+compare_real_database graph-isolated-json exact graph "$real_database_bug_id" --json
+compare_real_database graph-escaping-json exact graph "$real_database_escaping_id" --json
+compare_real_database graph-format-json exact graph "$real_database_epic_id" --format json
+compare_real_database graph-view-flags-json exact graph "$real_database_epic_id" --json --compact --box=true --dot --html
+compare_real_database_env graph-json-envelope exact BD_JSON_ENVELOPE=1 graph "$real_database_issue_id" --json
+compare_real_database_env graph-json-envelope-layers exact BD_JSON_ENVELOPE=1 graph "$real_database_child_id" --json
+compare_real_database_sql graph-lift-json exact "$graph_lift_sql" graph "$real_database_grandchild_id" --json
+compare_real_database_sql graph-cycle-json exact "$dep_cycle_sql" graph test-abcd11 --json
+compare_real_database_sql graph-conditional-json exact "$dep_cycle_sql" graph "$real_database_issue_id" --json
+compare_real_database_sql graph-external-json exact "$graph_external_sql" graph "$real_database_issue_id" --json
+# A wisp keeps its rows in the wisp tables; the walk and the row reads route by wisp status.
+graph_wisp_record="$(jq -nc --arg bug "$real_database_bug_id" --arg epic "$real_database_epic_id" '{
+	id: "test-graph-wisp", title: "Graph wisp step", status: "open", priority: 2, issue_type: "task",
+	created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z", ephemeral: true, labels: ["wisp-label"],
+	dependencies: [
+		{issue_id: "test-graph-wisp", depends_on_id: $bug, type: "blocks", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"},
+		{issue_id: "test-graph-wisp", depends_on_id: $epic, type: "parent-child", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}
+	]}')"
+compare_real_database_import graph-wisp-json exact "$graph_wisp_record" graph test-graph-wisp --json
+compare_real_database_import graph-wisp-dependent-json exact "$graph_wisp_record" graph "$real_database_bug_id" --json
+compare_real_database graph-missing-human exact graph test-missing
+compare_real_database graph-missing-json exact graph test-missing --json
+compare_real_database graph-partial-json exact graph abcd1 --json
+compare_real_database graph-ambiguous-json exact graph abcd --json
+compare_real_database graph-no-args exact graph
+compare_real_database graph-no-args-json exact graph --json
+compare_real_database_env graph-no-args-envelope exact BD_JSON_ENVELOPE=1 graph --json
+compare_real_database graph-two-args exact graph "$real_database_epic_id" "$real_database_child_id" --json
+compare_real_database graph-all-with-id exact graph --all "$real_database_epic_id"
+compare_real_database graph-all-with-id-json exact graph "$real_database_epic_id" --all --json
+compare_real_database graph-unknown-flag exact graph "$real_database_epic_id" --status open
+compare_real_database graph-view-flag-invalid exact graph "$real_database_epic_id" --dot=maybe
+compare_real_database graph-check-view-flag exact graph check --compact
+compare_real_database graph-max-rows-json exact graph "$real_database_epic_id" --max-rows 4 --json
+compare_real_database graph-max-rows-fits-json exact graph "$real_database_molecule_id" --max-rows=3 --json
+compare_real_database graph-max-rows-negative-json exact graph "$real_database_epic_id" --max-rows -1 --json
+compare_real_database graph-max-rows-negative-missing exact graph test-missing --max-rows=-1
+compare_real_database graph-max-rows-malformed exact graph "$real_database_epic_id" --max-rows x
+compare_real_database_env graph-max-rows-env exact BEADS_MAX_ROWS=2 graph "$real_database_molecule_id" --json
+compare_real_database_env graph-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 graph "$real_database_molecule_id" --max-rows 0 --json
+compare_real_database_env graph-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph "$real_database_bug_id" --json
+compare_real_database_env graph-max-rows-env-malformed-missing exact BEADS_MAX_ROWS=banana graph test-missing
+# The views that are not ported yet must fail the same way every time; upstream prints them.
+graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+expect_candidate_failure graph-human-unported "" \
+	"Error: graph without --json is not available yet in this build" "" graph "$real_database_epic_id"
+for graph_view in --compact --box --dot --html; do
+	expect_candidate_failure "graph${graph_view}-unported" "" \
+		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" "$graph_view"
+done
+expect_candidate_failure graph-open-unported \
+	'{"error":"graph --open is not available yet in this build","schema_version":1}' "" "" graph "$real_database_epic_id" --open --json
+expect_candidate_failure graph-all-unported "" "Error: graph --all is not available yet in this build" "" graph --all
+expect_candidate_failure graph-other-repository-unported \
+	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
+	"$graph_unported_sql" graph "$real_database_issue_id" --json
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json
@@ -1308,5 +1427,6 @@ printf 'parity identity smoke: PASS\n'
 printf 'no-workspace differential: PASS (%s command forms)\n' "$no_workspace_case_count"
 printf 'store-failure differentials: PASS (7 cases)\n'
 printf 'real-database differentials: PASS (%s cases; ping timings normalized)\n' "$real_database_case_count"
+printf 'candidate-only checks: PASS (%s cases; views not ported yet fail the same way)\n' "$candidate_only_case_count"
 printf 'watch differentials: PASS (%s cases; poll change, refresh error, and signal lifecycle)\n' "$watch_case_count"
 printf 'JSON terminal notice differential: PASS\n'

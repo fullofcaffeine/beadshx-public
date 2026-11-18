@@ -19,6 +19,7 @@ enum Command {
 	DepCycles;
 	DepTree;
 	GraphCheck;
+	Graph;
 	Blocked;
 	List;
 	Show;

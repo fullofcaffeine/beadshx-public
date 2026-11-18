@@ -47,6 +47,10 @@ final class EmbeddedStoreAccess {
 		return implementation.graphCycles(beadsDir, databaseName);
 	}
 
+	public static function graphSubgraph(beadsDir:String, databaseName:String, rootId:String):Null<StoreResult<SqlGraphReader.GraphSubgraph>> {
+		return implementation.graphSubgraph(beadsDir, databaseName, rootId);
+	}
+
 	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
@@ -89,6 +93,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function graphCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<Array<String>>>> {
+		return null;
+	}
+
+	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String):Null<StoreResult<SqlGraphReader.GraphSubgraph>> {
 		return null;
 	}
 

@@ -7,6 +7,10 @@ import beadshx.relation.DependencyCycle;
 import beadshx.relation.DependencyTree.TreeDirection;
 import beadshx.relation.DependencyTree.TreeNode;
 import beadshx.relation.DependencyTree.parseTreeDirection;
+import beadshx.relation.DependencyRead.compareUtf8;
+import beadshx.relation.GraphLayout;
+import beadshx.relation.GraphLayout.computeGraphLayout;
+import beadshx.store.SqlGraphReader.GraphSubgraph;
 import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
@@ -252,8 +256,8 @@ final class Application {
 
 	static function usesStore(command:Command):Bool {
 		return switch command {
-			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Blocked |
-				List | Show: true;
+			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
+				Blocked | List | Show: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -274,6 +278,7 @@ final class Application {
 			case DepCycles: "dep-cycles";
 			case DepTree: "dep-tree";
 			case GraphCheck: "graph-check";
+			case Graph: "graph";
 			case Blocked: "blocked";
 			case List: "list";
 			case Show: "show";
@@ -325,6 +330,8 @@ final class Application {
 				runDepTree(invocation);
 			case GraphCheck:
 				runGraphCheck(invocation);
+			case Graph:
+				runGraph(invocation);
 			case Blocked:
 				runBlocked(invocation);
 			case List:
@@ -1074,6 +1081,157 @@ final class Application {
 		lines.push("  }");
 		lines.push("}");
 		return lines.join("\n") + "\n";
+	}
+
+	function runGraph(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = runGraphQuery(invocation, location, query);
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/**
+		Checks the arguments, resolves the root, loads its subgraph and checks the row cap,
+		in the order upstream graphCmd does. Only the JSON view is ported: `--all`, `--open`
+		and the human views fail where upstream would start to differ.
+	**/
+	function runGraphQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final request = invocation.graph;
+		if (request.all && request.ids.length > 0)
+			return runModeAwareFailure(invocation.output, "cannot specify issue ID with --all flag");
+		if (request.all)
+			return runModeAwareFailure(invocation.output, "graph --all is not available yet in this build");
+		if (request.ids.length == 0) {
+			if (invocation.output == Json) {
+				writeJsonStdout('{\n  "error": "issue ID required",\n  "hint": "Use --all for all open issues",\n  "schema_version": 1\n}\n');
+			} else {
+				output.writeStderr("Error: issue ID required\nHint: Use --all for all open issues\n");
+			}
+			return 1;
+		}
+		// Upstream reports every resolution failure, an ambiguous ID included, as not found.
+		final rootId = switch lookupIssueSummary(location, request.ids[0], invocation.global, query) {
+			case Success(IssueFound(summary)): summary.id;
+			case Success(IssueMissing) | Failure(_):
+				return runModeAwareFailure(invocation.output, 'issue \'${request.ids[0]}\' not found');
+		};
+		final subgraph = switch query.graphSubgraph(location.path, location.databaseName, rootId, invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'loading graph: ${message}');
+			case Success(value): value;
+		};
+		// Upstream reads the cap only now, after the whole subgraph is loaded.
+		final maxRows = switch request.maxRows {
+			case IntPresent(value): value;
+			case IntAbsent: 0;
+		};
+		if (maxRows < 0)
+			return runModeAwareFailure(invocation.output, '--max-rows must be non-negative; got ${maxRows}');
+		if (request.maxRowsWarning != "")
+			output.writeStderr(request.maxRowsWarning);
+		if (maxRows > 0 && subgraph.issues.length > maxRows)
+			return runListRowLimitExceeded(subgraph.issues.length, request.maxRowsSource, maxRows);
+		if (request.view == "--open")
+			return runModeAwareFailure(invocation.output, "graph --open is not available yet in this build");
+		// With --json, upstream ignores the other view flags.
+		if (invocation.output == Human)
+			return runModeAwareFailure(invocation.output,
+				request.view == "" ? "graph without --json is not available yet in this build" : 'graph ${request.view} is not available yet in this build');
+		final layout = computeGraphLayout([for (issue in subgraph.issues) issue.id], subgraph.edges);
+		return writeRenderedJsonStdout(renderGraphJson(subgraph, layout, output.usesJsonEnvelope()));
+	}
+
+	/**
+		Prints upstream's map of `root`, `issues` and `layout` (a GraphLayout) as outputJSON does.
+
+		Without the envelope, the schema_version round trip turns every object into a
+		map, so every key prints in byte order. With BD_JSON_ENVELOPE=1 only the outer
+		map is sorted: issues and the layout keep their Go struct field order. A nil
+		slice prints as null. Every view of one issue prints the same record.
+	**/
+	static function renderGraphJson(subgraph:GraphSubgraph, layout:GraphLayout, structOrder:Bool):StoreResult<String> {
+		function renderIssue(issue:RelatedIssue, indent:String):StoreResult<String> {
+			final fields = switch renderRawIssueFields(issue, !structOrder, indent + "  ", issue.labels) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			if (!structOrder)
+				fields.sort(compareJsonFields);
+			return Success(renderJsonObject(fields, indent));
+		}
+		final issues = new Array<String>();
+		final issueById = new Map<String, RelatedIssue>();
+		for (issue in subgraph.issues) {
+			issueById.set(issue.id, issue);
+			switch renderIssue(issue, "    ") {
+				case Failure(message):
+					return Failure(message);
+				case Success(value):
+					issues.push("    " + value);
+			}
+		}
+		final nodeIds = [for (id in layout.nodes.keys()) id];
+		nodeIds.sort(compareUtf8);
+		final nodes = new Array<String>();
+		for (id in nodeIds) {
+			final placement = layout.nodes.get(id);
+			final rendered = switch renderIssue(issueById.get(id), "        ") {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			final fields = [
+				'"Issue": ${rendered}',
+				'"Layer": ${placement.layer}',
+				'"Position": ${placement.position}',
+				'"DependsOn": ${renderJsonStrings(placement.dependsOn, "        ")}'
+			];
+			if (!structOrder)
+				fields.sort(compareJsonFields);
+			nodes.push('      ${Json.stringify(id)}: ${renderJsonObject(fields, "      ")}');
+		}
+		final layers = [for (layer in layout.layers) '      ${renderJsonStrings(layer, "      ")}'];
+		final layoutFields = [
+			'"Nodes": {\n${nodes.join(",\n")}\n    }',
+			'"Layers": [\n${layers.join(",\n")}\n    ]',
+			'"MaxLayer": ${layout.maxLayer}',
+			'"RootID": ${Json.stringify(subgraph.root.id)}'
+		];
+		if (!structOrder)
+			layoutFields.sort(compareJsonFields);
+		final root = switch renderIssue(subgraph.root, "  ") {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
+		return Success(renderJsonObject([
+			'"issues": [\n${issues.join(",\n")}\n  ]',
+			'"layout": ${renderJsonObject(layoutFields, "  ")}',
+			'"root": ${root}',
+			'"schema_version": 1'
+		], "") + "\n");
+	}
+
+	/** An indented object whose own line starts at `indent`; each field is already rendered at `indent` plus two spaces. */
+	static function renderJsonObject(fields:Array<String>, indent:String):String {
+		return "{\n" + [for (field in fields) '${indent}  ${field}'].join(",\n") + '\n${indent}}';
+	}
+
+	/** An indented string list, or null for an empty one, as Go prints a nil slice. */
+	static function renderJsonStrings(values:Array<String>, indent:String):String {
+		if (values.length == 0)
+			return "null";
+		return "[\n" + [for (value in values) '${indent}  ${Json.stringify(value)}'].join(",\n") + '\n${indent}]';
 	}
 
 	function runBlocked(invocation:Invocation):Int {
@@ -4442,10 +4600,27 @@ final class Application {
 			case DepCycles: basicCommandHelp("Detect dependency cycles", "dep cycles", "");
 			case DepTree: depTreeHelp();
 			case GraphCheck: basicCommandHelp("Check dependency graph integrity", "graph check", "");
+			case Graph: graphHelp();
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case List: listHelp();
 			case Show: showHelp();
 		};
+	}
+
+	function graphHelp():String {
+		return "Display issue dependency graph. This build prints it with --json only.\n\n"
+			+ "Usage:\n  bdhx graph [issue-id] [flags]\n\n"
+			+ "Flags:\n"
+			+ "      --all            Show graph for all open issues (not available yet in this build)\n"
+			+ "      --box            ASCII boxes showing layers (not available yet in this build)\n"
+			+ "      --compact        Tree format, one line per issue (not available yet in this build)\n"
+			+ "      --dot            Output Graphviz DOT format (not available yet in this build)\n"
+			+ "  -h, --help           help for graph\n"
+			+ "      --html           Output self-contained interactive HTML (not available yet in this build)\n"
+			+
+			"      --max-rows int   Hard upper bound on the number of issues in the graph. Returns a non-zero exit (code 2) and an error to stderr if exceeded. 0 disables (the default). Overrides BEADS_MAX_ROWS for this invocation.\n"
+			+ "      --open           Show only open issues (not available yet in this build)\n\n"
+			+ supportedGlobalFlags();
 	}
 
 	function depTreeHelp():String {
