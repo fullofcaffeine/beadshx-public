@@ -376,6 +376,11 @@ real_database_env=(
 		--description $'# Heading\n\nSome **bold** text and `code`.' \
 		--design $'## Design\n\n- typed\n- exact' --notes "Plain notes" \
 		--acceptance "Rendered output matches" --json >"$real_database_seed/content.json"
+	# Upstream JSON escapes <, > and & as <, > and &; human output does not.
+	"${seed_command[@]}" create "Escaping parity <b> & co" --priority 2 \
+		--description "Compare a < b > c & d" --design "Keep <tags> & entities" \
+		--notes "Notes <i> & more" --acceptance "Prints <, > and & alike" --json \
+		>"$real_database_seed/escaping.json"
 	"${seed_command[@]}" create "Epic parity issue" --priority 2 --type epic --json >"$real_database_seed/epic.json"
 	"${seed_command[@]}" create "Child parity issue" --priority 2 --parent "$(jq -er '.id' "$real_database_seed/epic.json")" --json \
 		>"$real_database_seed/child.json"
@@ -432,6 +437,7 @@ real_database_env=(
 		--json >/dev/null
 	"${seed_command[@]}" label add "$open_id" parity,smoke --json >/dev/null
 	"${seed_command[@]}" label add "$(jq -er '.id' "$real_database_seed/content.json")" alpha,beta --json >/dev/null
+	"${seed_command[@]}" label add "$(jq -er '.id' "$real_database_seed/escaping.json")" 'r&d,<ui>' --json >/dev/null
 	"${seed_command[@]}" comments add "$open_id" "Parity comment" --json >/dev/null
 	closed_id="$(jq -er '.id' "$real_database_seed/closed.json")"
 	"${seed_command[@]}" close "$closed_id" --reason done --json >/dev/null
@@ -441,6 +447,7 @@ real_database_env=(
 real_database_issue_id="$(jq -er '.id' "$real_database_seed/issue.json")"
 real_database_bug_id="$(jq -er '.id' "$real_database_seed/bug.json")"
 real_database_content_id="$(jq -er '.id' "$real_database_seed/content.json")"
+real_database_escaping_id="$(jq -er '.id' "$real_database_seed/escaping.json")"
 real_database_epic_id="$(jq -er '.id' "$real_database_seed/epic.json")"
 real_database_molecule_id="$(jq -er '.id' "$real_database_seed/molecule.json")"
 real_database_gated_molecule_id="$(jq -er '.id' "$real_database_seed/gated-molecule.json")"
@@ -886,6 +893,11 @@ compare_real_database show-short-missing exact show test-missing --short
 compare_real_database show-short-missing-json exact show test-missing --short --json
 compare_real_database show-short-success-json exact show "$real_database_issue_id" --short --json
 compare_real_database show-json exact show "$real_database_issue_id" --json
+compare_real_database show-json-escaping exact show "$real_database_escaping_id" --json
+compare_real_database show-human-escaping exact show "$real_database_escaping_id"
+compare_real_database show-missing-escaping-json exact show 'test-<&>' --json
+compare_real_database list-escaping-json exact list --title-contains Escaping --json
+compare_real_database ready-escaping-json exact ready --label 'r&d' --json
 compare_real_database show-json-epic exact show "$real_database_epic_id" --json
 compare_real_database show-json-progress exact show "$real_database_progress_id" --json
 compare_real_database show-json-closed exact show "$real_database_closed_id" --json

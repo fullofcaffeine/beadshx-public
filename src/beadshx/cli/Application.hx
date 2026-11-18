@@ -317,11 +317,26 @@ final class Application {
 	}
 
 	function writeJsonStdout(value:String):Void {
-		output.writeStdout(output.usesJsonEnvelope() ? wrapJsonDocument(value) : value);
+		final document = escapeJsonHtml(value);
+		output.writeStdout(output.usesJsonEnvelope() ? wrapJsonDocument(document) : document);
 		if (!jsonDeprecationEmitted && output.shouldEmitJsonDeprecation()) {
 			jsonDeprecationEmitted = true;
 			output.writeStderr(jsonDeprecation + "\n");
 		}
+	}
+
+	/**
+		Matches the default of Go's `encoding/json`, which upstream `bd` uses for
+		every JSON output: `<`, `>` and `&` print as `<`, `>` and
+		`&`. These characters can occur only inside JSON strings, so this
+		replacement over the complete document escapes each string exactly once.
+		Text that is already escaped, such as stored metadata, has none of them
+		left. Human output does not come through here and stays unchanged.
+	**/
+	static function escapeJsonHtml(json:String):String {
+		final ampersands = StringTools.replace(json, "&", "\\u0026");
+		final lessThan = StringTools.replace(ampersands, "<", "\\u003c");
+		return StringTools.replace(lessThan, ">", "\\u003e");
 	}
 
 	/** Complete every nested issue encoding before stdout or the deprecation note. */

@@ -9,7 +9,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "3365231a4b8e56c046610c327ec31f6d9343f1e53f34c61f567bd648f2988337"
+        "sha256": "9749bb90c45f7dc97c6d33ac836f7c3e84ec04479a19c34ae6be38d3772011d4"
       },
       {
         "path": "src/beadshx/cli/Command.hx",
@@ -717,7 +717,7 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "776b36122405416db79889f736d4e76c7de7abda15597e5680c883ad75dd1c92"
+      "sha256": "e9170839122709203e22d6e35e96a414fe2dc2f1a2a4e801d20b36a4c7d5988f"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -725,7 +725,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "dec11f25a189715dcea713d0d018d315251ea583fc8275b04dd3bcb7e2744722"
+      "sha256": "be3d40e6ef8f968d882d1e90932700e04d665b6e0fcdc9da053f16dddf76baff"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_command.go",
