@@ -1077,6 +1077,9 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public static function copyIssueDependency(native:NativeIssueDependency):IssueDependency {
 		final estimatedMinutes:OptionalIssueInteger = native.hasEstimatedMinutes() ? OptionalIssueInteger.IntegerPresent(NativeIntegers.fromInt(native.estimatedMinutes())) : OptionalIssueInteger.IntegerAbsent;
+		final labels = new Array<String>();
+		for (index in 0...native.labelCount())
+			labels.push(native.label(index));
 		return {
 			id: native.id(),
 			title: native.title(),
@@ -1105,6 +1108,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			metadata: StoredMetadata.fromSql(native.metadata()),
 			wispType: native.wispType(),
 			moleculeType: native.moleculeType(),
+			labels: labels,
 			dependencyType: native.dependencyType()
 		};
 	}
@@ -1587,6 +1591,8 @@ extern class NativeIssueBondReference {
 @:go.name("IssueDependency")
 extern class NativeIssueDependency extends NativeIssueRecord {
 	@:go.name("DependencyType") function dependencyType():String;
+	@:go.name("LabelCount") function labelCount():Int;
+	@:go.name("Label") function label(index:Int):String;
 }
 
 @:go.import("github.com/steveyegge/beads/internal/beadshx/readonlyfacade")

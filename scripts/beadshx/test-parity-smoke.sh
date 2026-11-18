@@ -417,6 +417,7 @@ real_database_env=(
 	"${seed_command[@]}" close "$(jq -er '.id' "$real_database_seed/gated-gate.json")" --reason satisfied --json >/dev/null
 	"${seed_command[@]}" create "Wisp classification issue" --priority 2 --wisp-type heartbeat --json >"$real_database_seed/wisp.json"
 	"${seed_command[@]}" create "Closed parity issue" --priority 3 --json >"$real_database_seed/closed.json"
+	"${seed_command[@]}" create "Labeled relation source" --priority 3 --json >"$real_database_seed/labeled-relation.json"
 	"${seed_command[@]}" create "Unique abbreviation issue" --id test-abcd11 --json >"$real_database_seed/abbreviation-one.json"
 	"${seed_command[@]}" create "Ambiguous abbreviation issue" --id test-abcd22 --json >"$real_database_seed/abbreviation-two.json"
 	printf '%s\n' \
@@ -436,6 +437,10 @@ real_database_env=(
 		--metadata '{"rank":2,"team":"port","whole":1.0,"scientific":1e3,"negative_zero":-0,"fraction":1.25,"enabled":true,"missing":null,"list":[3.0,{"z":2,"a":"x"}],"a\u0062":"decoded","nested":{"text":"a,}: [b]","flags":[true,false,null]}}' \
 		--json >/dev/null
 	"${seed_command[@]}" label add "$open_id" parity,smoke --json >/dev/null
+	# Related issues in show --json carry their own labels.
+	"${seed_command[@]}" label add "$(jq -er '.id' "$real_database_seed/labeled-relation.json")" linked --json >/dev/null
+	"${seed_command[@]}" dep add "$(jq -er '.id' "$real_database_seed/labeled-relation.json")" "$open_id" \
+		--type relates-to >/dev/null
 	"${seed_command[@]}" label add "$(jq -er '.id' "$real_database_seed/content.json")" alpha,beta --json >/dev/null
 	"${seed_command[@]}" label add "$(jq -er '.id' "$real_database_seed/escaping.json")" 'r&d,<ui>' --json >/dev/null
 	"${seed_command[@]}" comments add "$open_id" "Parity comment" --json >/dev/null
@@ -455,6 +460,7 @@ real_database_gated_step_id="$(jq -er '.id' "$real_database_seed/gated-step.json
 real_database_child_id="$(jq -er '.id' "$real_database_seed/child.json")"
 real_database_progress_id="$(jq -er '.id' "$real_database_seed/progress.json")"
 real_database_closed_id="$(jq -er '.id' "$real_database_seed/closed.json")"
+real_database_labeled_relation_id="$(jq -er '.id' "$real_database_seed/labeled-relation.json")"
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config=""
 real_database_extra_import=""
@@ -898,6 +904,9 @@ compare_real_database show-human-escaping exact show "$real_database_escaping_id
 compare_real_database show-missing-escaping-json exact show 'test-<&>' --json
 compare_real_database list-escaping-json exact list --title-contains Escaping --json
 compare_real_database ready-escaping-json exact ready --label 'r&d' --json
+compare_real_database show-json-labeled-dependency exact show "$real_database_labeled_relation_id" --json
+compare_real_database show-json-labeled-dependents exact show "$real_database_issue_id" --include-dependents --json
+compare_real_database dep-list-up-labeled-json exact dep list "$real_database_issue_id" --direction up --json
 compare_real_database show-json-epic exact show "$real_database_epic_id" --json
 compare_real_database show-json-progress exact show "$real_database_progress_id" --json
 compare_real_database show-json-closed exact show "$real_database_closed_id" --json

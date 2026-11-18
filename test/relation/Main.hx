@@ -152,6 +152,7 @@ class Main {
 			metadata: beadshx.store.StoredMetadata.fromSql(""),
 			wispType: "",
 			moleculeType: "",
+			labels: [],
 			dependencyType: kind
 		};
 	}

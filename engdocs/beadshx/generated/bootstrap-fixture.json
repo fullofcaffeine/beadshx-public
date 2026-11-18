@@ -9,7 +9,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "9749bb90c45f7dc97c6d33ac836f7c3e84ec04479a19c34ae6be38d3772011d4"
+        "sha256": "a0d9968b8a4567a365534ad2872d8fe63f1e949c40cbfa00a9971dec2b1c0f75"
       },
       {
         "path": "src/beadshx/cli/Command.hx",
@@ -465,7 +465,7 @@
       },
       {
         "path": "src/beadshx/store/GoReadonlyStore.hx",
-        "sha256": "aba5054b252e8a5cf20e6eec1cb67eb97a3d186a0a7dafd239b3d6ef76ba1da1"
+        "sha256": "199eec6af5c1c81e6c3fae0a5c44039a925c675e76a3b10ec97017752938cc76"
       },
       {
         "path": "src/beadshx/store/InfoSnapshot.hx",
@@ -481,7 +481,7 @@
       },
       {
         "path": "src/beadshx/store/IssueDependency.hx",
-        "sha256": "b9b0b04183f689f4cce89780e85e9a6b032a91c0923076f2a8723d6e1ea55f39"
+        "sha256": "c2fd9449949d49544188bb0d6a5baa55128b158183e2cbdca961a9b94d7b2a31"
       },
       {
         "path": "src/beadshx/store/IssueDetails.hx",
@@ -717,7 +717,7 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "e9170839122709203e22d6e35e96a414fe2dc2f1a2a4e801d20b36a4c7d5988f"
+      "sha256": "c0b1cf350cf58b362dd27e12c0659fd4c6d0eeae0c1ebb19d03246954487f450"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -725,7 +725,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "be3d40e6ef8f968d882d1e90932700e04d665b6e0fcdc9da053f16dddf76baff"
+      "sha256": "876518f6606c6f54deb005fb691a89428811a5e0afdb3791b4ffc643519e78b7"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_command.go",
@@ -957,7 +957,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_goreadonlystore.go",
-      "sha256": "03ede5f40ccadb3016c3a3e77f26cde707d996fdc1e6270ff3c27f6d6b9b494d"
+      "sha256": "2e5135e6d207c884e0fb02e272729197d30ecd0b11379c9b0a111d5dfab390d0"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_issuedetailslookup.go",

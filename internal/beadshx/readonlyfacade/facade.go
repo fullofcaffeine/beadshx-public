@@ -588,13 +588,22 @@ func (v IssueBondReference) SourceID() string  { return v.sourceID }
 func (v IssueBondReference) BondType() string  { return v.bondType }
 func (v IssueBondReference) BondPoint() string { return v.bondPoint }
 
-// IssueDependency is one copied dependency record and its relationship type.
+// IssueDependency is one copied related-issue record, its labels and its
+// relationship type.
 type IssueDependency struct {
 	IssueRecord
+	labels         []string
 	dependencyType string
 }
 
 func (v IssueDependency) DependencyType() string { return v.dependencyType }
+func (v IssueDependency) LabelCount() int        { return len(v.labels) }
+func (v IssueDependency) Label(index int) string {
+	if index < 0 || index >= len(v.labels) {
+		return ""
+	}
+	return v.labels[index]
+}
 
 // IssueDependencyRows owns copied full dependent records after the native
 // store has closed. Haxe narrows these rows to children or references.
@@ -829,6 +838,7 @@ func projectIssueDependencies(items []*types.IssueWithDependencyMetadata) []Issu
 	for _, item := range items {
 		projected = append(projected, IssueDependency{
 			IssueRecord:    projectIssueRecord(item.Issue),
+			labels:         append([]string(nil), item.Labels...),
 			dependencyType: string(item.DependencyType),
 		})
 	}

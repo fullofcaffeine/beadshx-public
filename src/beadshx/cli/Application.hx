@@ -3623,6 +3623,8 @@ final class Application {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
+			if (dependency.labels.length > 0)
+				fields.push(renderRawStringArray("labels", dependency.labels, "        "));
 			fields.push('"dependency_type": ${Json.stringify(dependency.dependencyType)}');
 			lines.push("      {");
 			for (fieldIndex in 0...fields.length) {
