@@ -12,6 +12,7 @@ import beadshx.cli.GraphDrawing.dagNodeLine;
 import beadshx.cli.GraphDrawing.compareCompactChildren;
 import beadshx.cli.GraphDrawing.formatCompactNode;
 import beadshx.cli.GraphDrawing.renderCompactGraph;
+import beadshx.cli.GraphHtmlPage.graphHtmlPage;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 
@@ -32,6 +33,7 @@ class Main {
 		drawingContracts();
 		compactContracts();
 		openContracts();
+		htmlContracts();
 		Sys.println("graph Haxe contracts: PASS");
 	}
 
@@ -302,6 +304,15 @@ class Main {
 		equal(open.rootId, "p");
 		equal(filterOpenGraph("c", issues, edges).rootId, "c");
 		equal(filterOpenGraph("b", [openIssue("b", "closed", 0), openIssue("x", "pinned", 0), openIssue("d", "deferred", 0)], []), null);
+	}
+
+	/** The page template keeps upstream's text, with its JavaScript escape, around the three values. */
+	static function htmlContracts():Void {
+		final page = graphHtmlPage("T &amp; t", "[N]", "[L]");
+		equal(StringTools.startsWith(page, '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>T &amp; t</title>\n'), true);
+		equal(page.indexOf('<script>\nconst nodes = [N];\nconst links = [L];\nconst statusColors = {') > 0, true);
+		equal(page.indexOf('d.title.substring(0,17) + "\\u2026"') > 0, true);
+		equal(StringTools.endsWith(page, "</script>\n</body>\n</html>\n"), true);
 	}
 
 	static function openIssue(id:String, status:String, priority:Int):OpenGraphIssue {

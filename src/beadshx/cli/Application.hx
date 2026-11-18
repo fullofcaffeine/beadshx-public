@@ -16,6 +16,7 @@ import beadshx.relation.OpenGraph.isOpenGraphStatus;
 import beadshx.cli.GraphViews.renderGraphBox;
 import beadshx.cli.GraphViews.renderGraphCompact;
 import beadshx.cli.GraphViews.renderGraphDot;
+import beadshx.cli.GraphViews.renderGraphHtml;
 import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
@@ -1114,8 +1115,7 @@ final class Application {
 	/**
 		Checks the arguments, resolves the root, loads its subgraph and checks the row cap,
 		in the order upstream graphCmd does. Then `--open` filters the subgraph. Every view
-		of one issue but `--html` is ported: `--all` and `--html` fail where upstream would
-		start to differ.
+		of one issue is ported; `--all` fails where upstream would start to differ.
 	**/
 	function runGraphQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final request = invocation.graph;
@@ -1169,14 +1169,15 @@ final class Application {
 			case "--dot":
 				output.writeStdout(renderGraphDot(graph, layout));
 				return 0;
+			case "--html":
+				output.writeStdout(renderGraphHtml(graph, layout));
+				return 0;
 			case "--box":
 				output.writeStdout(renderGraphBox(graph, layout));
 				return 0;
-			case "":
+			case _:
 				output.writeStdout(renderGraphVisual(graph, layout));
 				return 0;
-			case view:
-				return runModeAwareFailure(invocation.output, 'graph ${view} is not available yet in this build');
 		}
 	}
 
@@ -4637,7 +4638,7 @@ final class Application {
 	}
 
 	function graphHelp():String {
-		return "Display issue dependency graph. This build prints every view of one issue but --html.\n\n"
+		return "Display issue dependency graph. This build prints the graph of one issue; --all is not available yet.\n\n"
 			+ "Usage:\n  bdhx graph [issue-id] [flags]\n\n"
 			+ "Flags:\n"
 			+ "      --all            Show graph for all open issues (not available yet in this build)\n"
@@ -4645,7 +4646,7 @@ final class Application {
 			+ "      --compact        Tree format, one line per issue, more scannable\n"
 			+ "      --dot            Output Graphviz DOT format (pipe to: dot -Tsvg > graph.svg)\n"
 			+ "  -h, --help           help for graph\n"
-			+ "      --html           Output self-contained interactive HTML (not available yet in this build)\n"
+			+ "      --html           Output self-contained interactive HTML (redirect to file)\n"
 			+
 			"      --max-rows int   Hard upper bound on the number of issues in the graph. Returns a non-zero exit (code 2) and an error to stderr if exceeded. 0 disables (the default). Overrides BEADS_MAX_ROWS for this invocation.\n"
 			+ "      --open           Show only open issues (filters out closed/deferred), forces compact layer format\n\n"

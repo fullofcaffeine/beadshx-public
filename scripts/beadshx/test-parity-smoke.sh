@@ -613,6 +613,20 @@ compare_real_database() {
 			return 1
 		fi
 		;;
+	graph-html)
+		# graph --html lists its JSON nodes in Go map order. Each node starts with {"id":, which
+		# cannot occur inside a JSON string, so split the nodes there and sort their exact text.
+		for side in oracle candidate; do
+			jq -Rr 'if startswith("const nodes = [{\"id\":") and endswith("}];") then
+				"const nodes = [{\"id\":" + (.[21:-3] | split("},{\"id\":") | sort | join("},{\"id\":")) + "}];"
+			else . end' "$case_root/$side.stdout" >"$case_root/$side.normalized"
+		done
+		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+			printf '%s stdout differs from upstream after sorting the HTML nodes\n' "$name" >&2
+			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+			return 1
+		fi
+		;;
 	*)
 		printf 'unknown real-database comparison: %s\n' "$comparison" >&2
 		return 2
@@ -992,7 +1006,8 @@ compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql"
 compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
 # graph <id> walks every dependency type both ways from the root, then lays the nodes out by
 # `blocks` edges only, lifts children to their parent's layer and sorts each layer, so upstream's
-# Go map order never reaches the output. All single-issue views but --html are ported so far.
+# Go map order reaches the output only where a case below says so. Every single-issue view is
+# ported; --all is not.
 graph_lift_sql="$dependency_row ('fixture-graph-1', '$real_database_epic_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 graph_external_row="INSERT INTO dependencies (id, issue_id, depends_on_external, type, created_at, created_by) VALUES"
 graph_external_sql="$graph_external_row ('fixture-graph-2', '$real_database_issue_id', 'external:other:$real_database_labeled_relation_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
@@ -1273,12 +1288,31 @@ compare_real_database_env graph-open-json-envelope exact BD_JSON_ENVELOPE=1 grap
 compare_real_database_sql graph-views-open exact "$graph_views_sql" graph "$real_database_bug_id" --open
 compare_real_database_sql graph-views-open-json exact "$graph_views_sql" graph "$real_database_bug_id" --open --json
 compare_real_database_sql graph-cycle-open exact "$dep_cycle_sql" graph test-abcd11 --open
+# --html fills upstream's page template: the root's title and ID, HTML-escaped, in <title>, then
+# one JSON node per issue with its layer and one JSON link per blocks or parent-child row, from
+# the blocker. Upstream lists the nodes in Go map order, so graph-html sorts them; the page of a
+# graph with one issue is the same every time. --html outranks --compact and --box.
+graph_html_title_sql="UPDATE issues SET title = 'Quote \" it''s <b> & a\\ttab', updated_at = updated_at WHERE id = '$real_database_closed_id'"
+compare_real_database graph-isolated-html exact graph "$real_database_bug_id" --html
+compare_real_database graph-escaping-html exact graph "$real_database_escaping_id" --html
+compare_real_database_sql graph-title-html exact "$graph_html_title_sql" graph "$real_database_closed_id" --html
+compare_real_database graph-hierarchy-html graph-html graph "$real_database_child_id" --html
+compare_real_database graph-epic-html graph-html graph "$real_database_epic_id" --html
+compare_real_database graph-blockers-html graph-html graph "$molecule_step_two_id" --html
+compare_real_database graph-molecule-html graph-html graph "$real_database_molecule_id" --html
+compare_real_database graph-gated-html graph-html graph "$real_database_gated_step_id" --html
+compare_real_database graph-metadata-html graph-html graph "$real_database_issue_id" --html
+compare_real_database graph-html-over-compact graph-html graph "$real_database_epic_id" --box --compact --html=true
+compare_real_database graph-html-max-rows exact graph "$real_database_epic_id" --max-rows 2 --html
+compare_real_database graph-html-missing exact graph test-missing --html
+compare_real_database_sql graph-views-html graph-html "$graph_views_sql" graph "$real_database_bug_id" --html
+compare_real_database_sql graph-lift-html graph-html "$graph_lift_sql" graph "$real_database_grandchild_id" --html
+compare_real_database_sql graph-cycle-html graph-html "$dep_cycle_sql" graph test-abcd11 --html
+compare_real_database_sql graph-external-html graph-html "$graph_external_sql" graph "$real_database_issue_id" --html
+compare_real_database_import graph-wisp-html graph-html "$graph_wisp_record" graph test-graph-wisp --html
+compare_real_database_import graph-tree-html graph-html "$graph_compact_records" graph test-gc-root --html
 # The views that are not ported yet must fail the same way every time; upstream prints them.
 graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
-expect_candidate_failure graph--html-unported "" \
-	"Error: graph --html is not available yet in this build" "" graph "$real_database_epic_id" --html
-expect_candidate_failure graph--html-over-compact-unported "" \
-	"Error: graph --html is not available yet in this build" "" graph "$real_database_epic_id" --box --compact --html
 expect_candidate_failure graph-all-unported "" "Error: graph --all is not available yet in this build" "" graph --all
 expect_candidate_failure graph-other-repository-unported \
 	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \

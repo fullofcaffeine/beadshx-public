@@ -1,5 +1,6 @@
 package beadshx.cli;
 
+import haxe.Json;
 import haxe.io.Bytes;
 import beadshx.cli.GraphDrawing.DagNode;
 import beadshx.cli.GraphDrawing.buildDagGutterGrid;
@@ -11,6 +12,7 @@ import beadshx.cli.GraphDrawing.padRight;
 import beadshx.cli.GraphDrawing.renderCompactGraph;
 import beadshx.cli.GraphDrawing.repeat;
 import beadshx.cli.GraphDrawing.truncateTitle;
+import beadshx.cli.GraphHtmlPage.graphHtmlPage;
 import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.RelatedIssue;
@@ -183,6 +185,33 @@ function renderGraphCompact(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	return renderCompactGraph(subgraph.root.id, nodes, layout, subgraph.edges);
 }
 
+/**
+	Upstream renderGraphHTML for one loaded subgraph: the page that graphHtmlPage fills in.
+
+	The page title names the root. Each issue is one JSON node with its layer, and
+	with its assignee only when it has one. Each `blocks` and `parent-child` row is
+	one JSON link from the blocker to the blocked issue, in load order. Upstream
+	lists the nodes in Go map order, so any order can come out there; this port
+	lists them in load order, the root first.
+**/
+function renderGraphHtml(subgraph:GraphSubgraph, layout:GraphLayout):String {
+	final nodes = new Array<String>();
+	for (issue in subgraph.issues) {
+		final assignee = issue.assignee == "" ? "" : ',"assignee":${goJsonString(issue.assignee)}';
+		nodes.push('{"id":${goJsonString(issue.id)},"title":${goJsonString(issue.title)},"status":${goJsonString(issue.status)},'
+			+ '"priority":${issue.priority},"type":${goJsonString(issue.issueType)},"layer":${layout.nodes.get(issue.id).layer}${assignee}}');
+	}
+	final links = [
+		for (edge in subgraph.edges)
+			if ((edge.type == "blocks" || edge.type == "parent-child")
+				&& layout.nodes.exists(edge.issueId)
+				&& layout.nodes.exists(edge.dependsOnId))
+				'{"source":${goJsonString(edge.dependsOnId)},"target":${goJsonString(edge.issueId)},"type":"${edge.type}"}'
+	];
+	final title = escapeHtml('Beads: ${subgraph.root.title} (${subgraph.root.id})');
+	return graphHtmlPage(title, '[${nodes.join(",")}]', '[${links.join(",")}]');
+}
+
 /** Upstream renderNodeBoxWithDeps; the counts line appears only when a count is not zero. */
 private function renderNodeBox(issue:RelatedIssue, width:Int, blocksCount:Int, needsCount:Int):String {
 	final paddedTitle = padRight(truncateTitle(issue.title, width - 4), width - 4);
@@ -218,6 +247,22 @@ private function trimTrailingSpaces(value:String):String {
 private function countOf(counts:Map<String, Int>, id:String):Int {
 	final count = counts.get(id);
 	return count == null ? 0 : count;
+}
+
+/**
+	A JSON string as upstream's json.Marshal prints it. haxe.go's Json.stringify
+	encodes like Go with HTML escaping off, so `<`, `>` and `&` are escaped here.
+**/
+private function goJsonString(value:String):String {
+	final quoted = Json.stringify(value);
+	return StringTools.replace(StringTools.replace(StringTools.replace(quoted, "&", "\\u0026"), "<", "\\u003c"), ">", "\\u003e");
+}
+
+/** Go html.EscapeString: `<`, `>`, `&`, `'` and `"` become entities. */
+private function escapeHtml(value:String):String {
+	final ampersands = StringTools.replace(value, "&", "&amp;");
+	final quotes = StringTools.replace(StringTools.replace(ampersands, "'", "&#39;"), '"', "&#34;");
+	return StringTools.replace(StringTools.replace(quotes, "<", "&lt;"), ">", "&gt;");
 }
 
 private function issuesById(subgraph:GraphSubgraph):Map<String, RelatedIssue> {
