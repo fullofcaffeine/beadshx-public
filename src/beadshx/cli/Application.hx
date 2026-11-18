@@ -4,6 +4,7 @@ import beadshx.relation.RelationRead.prepareRelationRead;
 import beadshx.relation.RelationRead.RelationDirection;
 import beadshx.relation.RelatedIssue;
 import beadshx.relation.DependencyCycle;
+import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
@@ -248,7 +249,7 @@ final class Application {
 
 	static function usesStore(command:Command):Bool {
 		return switch command {
-			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | List | Show: true;
+			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | Blocked | List | Show: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -267,6 +268,7 @@ final class Application {
 			case Children: "children";
 			case DepList: "dep-list";
 			case DepCycles: "dep-cycles";
+			case Blocked: "blocked";
 			case List: "list";
 			case Show: "show";
 			case RootHelp: "bd";
@@ -313,6 +315,8 @@ final class Application {
 				runDepList(invocation);
 			case DepCycles:
 				runDepCycles(invocation);
+			case Blocked:
+				runBlocked(invocation);
 			case List:
 				runList(invocation);
 			case Show:
@@ -769,6 +773,70 @@ final class Application {
 			lines.push("    ],");
 			lines.push('    "partial": ${cycle.partial}');
 			lines.push(cycleIndex == cycles.length - 1 ? "  }" : "  },");
+		}
+		lines.push("]");
+		return Success(lines.join("\n") + "\n");
+	}
+
+	function runBlocked(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = switch query.blockedIssues(location.path, location.databaseName, invocation.listRequest.parentId,
+									invocation.global) {
+									case Failure(message): runModeAwareFailure(invocation.output, message);
+									case Success(blocked): renderBlocked(invocation, blocked);
+								};
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/** Matches upstream `bd blocked` output with colors off; `%v` prints the blocker list as `[a b]`. */
+	function renderBlocked(invocation:Invocation, blocked:Array<BlockedIssue>):Int {
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderBlockedJson(blocked));
+		if (blocked.length == 0) {
+			output.writeStdout("\n✨ No blocked issues\n\n");
+			return 0;
+		}
+		final rendered = new StringBuf();
+		rendered.add('\n🚫 Blocked issues (${blocked.length}):\n\n');
+		for (entry in blocked) {
+			rendered.add('[P${entry.issue.priority}] ${entry.issue.id}: ${entry.issue.title}\n');
+			rendered.add('  Blocked by ${entry.blockedBy.length} open dependencies: [${entry.blockedBy.join(" ")}]\n\n');
+		}
+		output.writeStdout(rendered.toString());
+		return 0;
+	}
+
+	/** Each entry is the full issue followed by blocked_by_count and blocked_by, like upstream BlockedIssue. */
+	static function renderBlockedJson(blocked:Array<BlockedIssue>):StoreResult<String> {
+		if (blocked.length == 0)
+			return Success("[]\n");
+		final lines = ["["];
+		for (index in 0...blocked.length) {
+			final entry = blocked[index];
+			final fields = switch renderRawIssueFields(entry.issue, false, "    ", entry.issue.labels) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			fields.push('"blocked_by_count": ${entry.blockedBy.length}');
+			fields.push(renderRawStringArray("blocked_by", entry.blockedBy, "    "));
+			lines.push("  {");
+			for (fieldIndex in 0...fields.length)
+				lines.push('    ${fields[fieldIndex]}${fieldIndex == fields.length - 1 ? "" : ","}');
+			lines.push(index == blocked.length - 1 ? "  }" : "  },");
 		}
 		lines.push("]");
 		return Success(lines.join("\n") + "\n");
@@ -4074,6 +4142,7 @@ final class Application {
 			case Children: childrenHelp();
 			case DepList: depListHelp();
 			case DepCycles: basicCommandHelp("Detect dependency cycles", "dep cycles", "");
+			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case List: listHelp();
 			case Show: showHelp();
 		};

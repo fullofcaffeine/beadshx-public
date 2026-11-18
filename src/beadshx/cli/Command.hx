@@ -17,6 +17,7 @@ enum Command {
 	Children;
 	DepList;
 	DepCycles;
+	Blocked;
 	List;
 	Show;
 }

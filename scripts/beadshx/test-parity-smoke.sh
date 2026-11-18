@@ -835,6 +835,29 @@ compare_real_database_sql dep-cycles-human exact "$dep_cycle_sql" dep cycles
 compare_real_database_sql dep-cycles-json exact "$dep_cycle_sql" dep cycles --json
 compare_real_database_sql dep-cycles-partial-human exact "$dep_partial_cycle_sql" dep cycles
 compare_real_database_sql dep-cycles-partial-json exact "$dep_partial_cycle_sql" dep cycles --json
+# Upstream sorts blocked issues by priority, then created_at, after a Go map walk, and created_at
+# has one-second precision, so ties come out in random order. Spread created_at by ID first.
+distinct_created_sql="UPDATE issues SET created_at = TIMESTAMPADD(SECOND, CONV(SUBSTRING(MD5(id), 1, 6), 16, 10), '2026-01-01 00:00:00')
+UPDATE wisps SET created_at = TIMESTAMPADD(SECOND, CONV(SUBSTRING(MD5(id), 1, 6), 16, 10), '2026-01-01 00:00:00')"
+compare_real_database_sql blocked-human exact "$distinct_created_sql" blocked
+compare_real_database_sql blocked-json exact "$distinct_created_sql" blocked --json
+compare_real_database_sql blocked-parent-json exact "$distinct_created_sql" blocked --parent "$real_database_molecule_id" --json
+compare_real_database_sql blocked-parent-human exact "$distinct_created_sql" blocked --parent "$real_database_molecule_id"
+compare_real_database blocked-parent-none-human exact blocked --parent "$real_database_closed_id"
+compare_real_database blocked-parent-none-json exact blocked --parent "$real_database_closed_id" --json
+compare_real_database_sql blocked-cycle-json exact "$distinct_created_sql
+$dep_cycle_sql" blocked --json
+# Upstream trusts the stored is_blocked flag. Set it directly to cover several blockers in row
+# order, a closed blocker that is skipped, and an issue that names its parent instead.
+molecule_step_one_id="$(jq -er '.id' "$real_database_seed/molecule-step-one.json")"
+blocked_flags_sql="$distinct_created_sql
+$dependency_row ('fixture-block-1', '$real_database_issue_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-block-2', '$real_database_issue_id', '$real_database_epic_id', 'waits-for', '2026-08-21 10:00:00', 'fixture')
+$dependency_row ('fixture-block-3', '$real_database_issue_id', '$real_database_closed_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+UPDATE issues SET is_blocked = 1 WHERE id IN ('$real_database_issue_id', '$molecule_step_one_id')"
+compare_real_database_sql blocked-flags-human exact "$blocked_flags_sql" blocked
+compare_real_database_sql blocked-flags-json exact "$blocked_flags_sql" blocked --json
+compare_real_database_sql blocked-flags-parent-json exact "$blocked_flags_sql" blocked --parent "$real_database_molecule_id" --json
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

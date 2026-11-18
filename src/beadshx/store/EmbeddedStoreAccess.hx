@@ -30,6 +30,10 @@ final class EmbeddedStoreAccess {
 		return implementation.issueSummary(beadsDir, databaseName, id);
 	}
 
+	public static function blockedIssues(beadsDir:String, databaseName:String, parentId:String):Null<StoreResult<Array<SqlBlockedReader.BlockedIssue>>> {
+		return implementation.blockedIssues(beadsDir, databaseName, parentId);
+	}
+
 	public static function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {
 		return implementation.dependencyCycles(beadsDir, databaseName);
 	}
@@ -59,6 +63,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function issueSummary(beadsDir:String, databaseName:String, id:String):Null<StoreResult<IssueLookup>> {
+		return null;
+	}
+
+	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String):Null<StoreResult<Array<SqlBlockedReader.BlockedIssue>>> {
 		return null;
 	}
 

@@ -19,6 +19,10 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedRelationReader.read(beadsDir, databaseName, plan);
 	}
 
+	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String):Null<StoreResult<Array<SqlBlockedReader.BlockedIssue>>> {
+		return EmbeddedBlockedReader.read(beadsDir, databaseName, parentId);
+	}
+
 	public function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {
 		return EmbeddedCycleReader.read(beadsDir, databaseName);
 	}

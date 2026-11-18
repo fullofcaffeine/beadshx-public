@@ -34,6 +34,9 @@ import beadshx.store.InfoSnapshot.ConfigEntry;
 **/
 final DEP_CYCLES_ROUTE_UNAVAILABLE = "dep cycles is not available yet for server-mode or proxied workspaces in this build";
 
+/** `bd blocked` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
+final BLOCKED_ROUTE_UNAVAILABLE = "blocked is not available yet for server-mode or proxied workspaces in this build";
+
 /**
 	Typed adapter over the narrow native read-only facade.
 
@@ -71,6 +74,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
+	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.blockedIssues(beadsDir, databaseName, parentId);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(BLOCKED_ROUTE_UNAVAILABLE);
 	}
 
 	public function dependencyCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>> {
@@ -1202,6 +1214,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
 		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
+	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
+		return Failure(BLOCKED_ROUTE_UNAVAILABLE);
 	}
 
 	public function dependencyCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>> {

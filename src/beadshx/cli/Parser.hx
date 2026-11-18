@@ -1387,7 +1387,8 @@ final class Parser {
 					&& !(name == "query" && isQueryFilterFlag(flag))
 					&& !(name == "stale" && isStaleFilterFlag(flag))
 					&& !(name == "orphans" && isOrphansFilterFlag(flag))
-					&& !(name == "dep" && (flag == "--type" || flag == "-t"))) {
+					&& !(name == "dep" && (flag == "--type" || flag == "-t"))
+					&& !(name == "blocked" && flag == "--parent")) {
 					incompatibleListFlag = flag;
 					break;
 				}
@@ -1625,6 +1626,8 @@ final class Parser {
 			return parsedCommand(Command.Children);
 		if (name == "dep")
 			return parsedCommand(depCycles ? Command.DepCycles : Command.DepList);
+		if (name == "blocked")
+			return parsedCommand(Command.Blocked);
 		if (name == "list")
 			return parsedCommand(Command.List);
 		if (name == "show" || name == "view")
