@@ -980,7 +980,7 @@ compare_real_database_sql graph-check-ghost-human exact "$graph_ghost_cycle_sql"
 compare_real_database_sql graph-check-ghost-json exact "$graph_ghost_cycle_sql" graph check --json
 # graph <id> walks every dependency type both ways from the root, then lays the nodes out by
 # `blocks` edges only, lifts children to their parent's layer and sorts each layer, so upstream's
-# Go map order never reaches the output. The JSON and DOT views are ported so far.
+# Go map order never reaches the output. The JSON, DOT and box views are ported so far.
 graph_lift_sql="$dependency_row ('fixture-graph-1', '$real_database_epic_id', '$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 graph_external_row="INSERT INTO dependencies (id, issue_id, depends_on_external, type, created_at, created_by) VALUES"
 graph_external_sql="$graph_external_row ('fixture-graph-2', '$real_database_issue_id', 'external:other:$real_database_labeled_relation_id', 'blocks', '2026-08-21 10:00:00', 'fixture')"
@@ -1077,13 +1077,36 @@ compare_real_database_sql graph-lift-dot exact "$graph_lift_sql" graph "$real_da
 compare_real_database_sql graph-cycle-dot exact "$dep_cycle_sql" graph test-abcd11 --dot
 compare_real_database_sql graph-external-dot exact "$graph_external_sql" graph "$real_database_issue_id" --dot
 compare_real_database_import graph-wisp-dot exact "$graph_wisp_record" graph test-graph-wisp --dot
+# --box sizes every box from the longest title cut to 30 characters and counted in UTF-8 bytes,
+# cuts an ID that does not fit, turns a tab into four spaces in a title that is not open, and
+# counts blocks/needs without the rows whose blocker is the root. Every other view flag but
+# --json outranks it.
+compare_real_database graph-hierarchy-box exact graph "$real_database_child_id" --box
+compare_real_database graph-blockers-box exact graph "$molecule_step_two_id" --box
+compare_real_database graph-molecule-box exact graph "$real_database_molecule_id" --box
+compare_real_database graph-gated-box exact graph "$real_database_gated_step_id" --box
+compare_real_database graph-metadata-box exact graph "$real_database_issue_id" --box
+compare_real_database graph-isolated-box exact graph "$real_database_bug_id" --box
+compare_real_database graph-escaping-box exact graph "$real_database_escaping_id" --box
+compare_real_database graph-box-explicit exact graph "$real_database_epic_id" --dot=false --box=true
+compare_real_database graph-box-missing exact graph test-missing --box
+compare_real_database_env graph-box-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph "$real_database_bug_id" --box
+compare_real_database_sql graph-views-box exact "$graph_views_sql" graph "$real_database_bug_id" --box
+compare_real_database_sql graph-empty-layer-box exact "$graph_empty_layer_sql" graph "$real_database_bug_id" --box
+compare_real_database_sql graph-narrow-box exact "$graph_narrow_sql" graph "$real_database_bug_id" --box
+compare_real_database_sql graph-lift-box exact "$graph_lift_sql" graph "$real_database_grandchild_id" --box
+compare_real_database_sql graph-cycle-box exact "$dep_cycle_sql" graph test-abcd11 --box
+compare_real_database_sql graph-external-box exact "$graph_external_sql" graph "$real_database_issue_id" --box
+compare_real_database_import graph-wisp-box exact "$graph_wisp_record" graph test-graph-wisp --box
 # The views that are not ported yet must fail the same way every time; upstream prints them.
 graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
 expect_candidate_failure graph-human-unported "" \
 	"Error: graph without --json is not available yet in this build" "" graph "$real_database_epic_id"
-for graph_view in --compact --box --html; do
+for graph_view in --compact --html; do
 	expect_candidate_failure "graph${graph_view}-unported" "" \
 		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" "$graph_view"
+	expect_candidate_failure "graph${graph_view}-over-box-unported" "" \
+		"Error: graph $graph_view is not available yet in this build" "" graph "$real_database_epic_id" --box "$graph_view"
 done
 expect_candidate_failure graph-open-unported \
 	'{"error":"graph --open is not available yet in this build","schema_version":1}' "" "" graph "$real_database_epic_id" --open --json

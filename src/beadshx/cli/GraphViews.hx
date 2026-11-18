@@ -1,5 +1,7 @@
 package beadshx.cli;
 
+import haxe.io.Bytes;
+import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.RelatedIssue;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
@@ -47,6 +49,102 @@ function renderGraphDot(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	}
 	rendered.add("}\n");
 	return rendered.toString();
+}
+
+/**
+	Upstream renderGraph, the `--box` view, with colors off.
+
+	Every box is as wide as the longest title cut to 30 characters, measured in
+	UTF-8 bytes as upstream's len does, so a multibyte title widens every box; a
+	box then shows that many characters of each title and cuts a longer ID. The
+	counts leave out `blocks` rows whose blocker is the root. Upstream renders the
+	ID and every title but an open one through an empty lipgloss style, which
+	turns a tab into four spaces.
+**/
+function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout):String {
+	final issues = issuesById(subgraph);
+	var nodeCount = 0;
+	var maxTitleLength = 0;
+	for (layer in layout.layers)
+		for (id in layer) {
+			nodeCount++;
+			final length = Bytes.ofString(truncateTitle(issues.get(id).title, 30)).length;
+			if (length > maxTitleLength)
+				maxTitleLength = length;
+		}
+	final width = maxTitleLength + 4;
+	final blocks = new Map<String, Int>();
+	final needs = new Map<String, Int>();
+	var blockingRows = 0;
+	for (edge in subgraph.edges)
+		if (edge.type == "blocks") {
+			blockingRows++;
+			if (edge.dependsOnId != subgraph.root.id) {
+				blocks.set(edge.dependsOnId, countOf(blocks, edge.dependsOnId) + 1);
+				needs.set(edge.issueId, countOf(needs, edge.issueId) + 1);
+			}
+		}
+	final rendered = new StringBuf();
+	rendered.add('\n📊 Dependency graph for ${subgraph.root.id}:\n\n');
+	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed\n\n");
+	for (index in 0...layout.layers.length) {
+		rendered.add(index == 0 ? "  Layer 0 (ready)\n" : '  Layer ${index}\n');
+		for (id in layout.layers[index])
+			rendered.add(renderNodeBox(issues.get(id), width, countOf(blocks, id), countOf(needs, id)));
+		if (index < layout.layers.length - 1)
+			rendered.add("      │\n      ▼\n");
+		rendered.add("\n");
+	}
+	if (blockingRows > 0)
+		rendered.add('  Dependencies: ${blockingRows} blocking relationships\n');
+	rendered.add('  Total: ${nodeCount} issues across ${layout.layers.length} layers\n\n');
+	return rendered.toString();
+}
+
+/** Upstream renderNodeBoxWithDeps; the counts line appears only when a count is not zero. */
+private function renderNodeBox(issue:RelatedIssue, width:Int, blocksCount:Int, needsCount:Int):String {
+	final paddedTitle = padRight(truncateTitle(issue.title, width - 4), width - 4);
+	final title = issue.status == "open" ? paddedTitle : expandTabs(paddedTitle);
+	final rule = repeat("─", width);
+	final lines = [
+		'  ┌${rule}┐',
+		'  │ ${statusIcon(issue.status)} ${title} │',
+		'  │ ${expandTabs(padRight(issue.id, width - 2))} │'
+	];
+	final counts = new Array<String>();
+	if (blocksCount > 0)
+		counts.push('blocks:${blocksCount}');
+	if (needsCount > 0)
+		counts.push('needs:${needsCount}');
+	if (counts.length > 0) {
+		final info = counts.join(" ");
+		lines.push('  │ ${info}${repeat(" ", width - 2 - info.length)} │');
+	}
+	lines.push('  └${rule}┘');
+	return lines.join("\n") + "\n";
+}
+
+/** Upstream padRight: cuts to `width` characters or pads with spaces to it. */
+private function padRight(value:String, width:Int):String {
+	return value.length >= width ? value.substr(0, width) : value + repeat(" ", width - value.length);
+}
+
+/** What an empty lipgloss v2 style does to text when colors are off. */
+private function expandTabs(value:String):String {
+	return StringTools.replace(value, "\t", "    ");
+}
+
+/** `value` repeated `count` times; nothing when `count` is not positive. */
+private function repeat(value:String, count:Int):String {
+	final repeated = new StringBuf();
+	for (_ in 0...count)
+		repeated.add(value);
+	return repeated.toString();
+}
+
+private function countOf(counts:Map<String, Int>, id:String):Int {
+	final count = counts.get(id);
+	return count == null ? 0 : count;
 }
 
 /** Upstream truncateTitle: at most `maxLength` characters, the last one an ellipsis when cut. */

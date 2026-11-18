@@ -9,7 +9,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "155a9ef6f24d1e1f4757895a39606e55df6d128aee3079e783b6f62b65e95521"
+        "sha256": "c00f30a0d554ccf930288f2dbbcbe1411f44311e8b58ec3608b9ca2203475887"
       },
       {
         "path": "src/beadshx/cli/Command.hx",
@@ -25,7 +25,7 @@
       },
       {
         "path": "src/beadshx/cli/GraphViews.hx",
-        "sha256": "27ea670a6afb76560dfb93d9a4b6c7afc9f649aa1d09aed8056081224ac87ef6"
+        "sha256": "6a0f9f0611eecde8ce40d8a057bee234fced50e8e344899bb3d58ef2b727de8d"
       },
       {
         "path": "src/beadshx/cli/InfoChanges.hx",
@@ -50,6 +50,10 @@
       {
         "path": "src/beadshx/cli/Parser.hx",
         "sha256": "eaf0ae7bedd4f9fcf0abb1e4257553602401c9763093da24c207005937a36149"
+      },
+      {
+        "path": "src/beadshx/cli/StatusIcon.hx",
+        "sha256": "70309b3923b4a573b2273e05b08de6ba900add87ae88b92f67856a35ddac4d63"
       },
       {
         "path": "src/beadshx/cli/SystemEnvironment.hx",
@@ -773,7 +777,7 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "2496b04a1b7db041a9c918fa1cb562134207df4130950e707053b4a7da3ef9d6"
+      "sha256": "dda297461ab9ef29b84ffba7e630c88f6a92b93189e92f6c29ae65bdbb737fce"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -781,7 +785,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "b42044c46028e92ef6e562c40b8d1c4d4111e13bd259f07159969b8b6a43c785"
+      "sha256": "4c06c446cc1d8a282ba21eaac2a8f9fc7e6786135c800615b729377b768e07da"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_command.go",
@@ -797,7 +801,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_graphviews.go",
-      "sha256": "42857ea76aff60d1029364e9eefa4867784740aa9d6a859062a2227aa2ef1b86"
+      "sha256": "40175b70037fc1dbdc5258227b092867ca33369807354f154b6bd44a0edeae92"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_infochanges.go",
@@ -814,6 +818,10 @@
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parseresult.go",
       "sha256": "fafd10662da43c9722630422c6b68e92e5274c70ec9541f91aed24430b1df87d"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_cli_statusicon.go",
+      "sha256": "480d5f4fcc3b638f826f846766533fb335076c1cd024609e6a3834080888011d"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_systemenvironment.go",
