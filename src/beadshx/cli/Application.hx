@@ -698,21 +698,25 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						final positiveOffset = switch invocation.listRequest.offset {
-							case IntPresent(value): value > 0;
-							case IntAbsent: false;
-						};
-						if (positiveOffset && !location.proxiedServer) {
-							runStoreFailure("--offset is only supported under --proxied-server");
-						} else if (!hasSelectedDatabase(location)) {
+						if (!hasSelectedDatabase(location)) {
 							runDatabaseNotFound();
 						} else {
 							final effectiveLimit = resolveListLimit(invocation, location);
 							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
-									final result = invocation.watchMode ? runListWatch(invocation, location, effectiveLimit,
-										query) : renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query));
+									// Upstream checks --offset in the command body, after its pre-run opened the store.
+									final positiveOffset = switch invocation.listRequest.offset {
+										case IntPresent(value): value > 0;
+										case IntAbsent: false;
+									};
+									final result = if (positiveOffset && !location.proxiedServer) {
+										runStoreFailure("--offset is only supported under --proxied-server");
+									} else if (invocation.watchMode) {
+										runListWatch(invocation, location, effectiveLimit, query);
+									} else {
+										renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query));
+									}
 									closeIssueQuery(query, result);
 							}
 						}
@@ -1945,21 +1949,20 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						final offset = switch invocation.readyRequest.offset {
-							case IntPresent(value): value;
-							case IntAbsent: 0;
-						};
-						if (!location.proxiedServer && offset > 0) {
-							runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
-						} else if (location.proxiedServer && offset < 0) {
-							runStoreFailure("--offset must be >= 0");
-						} else if (!hasSelectedDatabase(location)) {
-							runDatabaseNotFound();
-						} else switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer,
-							invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
-								final result = if (invocation.readyGated) {
+								// Upstream checks --offset in the command body, after its pre-run opened the store.
+								final offset = switch invocation.readyRequest.offset {
+									case IntPresent(value): value;
+									case IntAbsent: 0;
+								};
+								final result = if (!location.proxiedServer && offset > 0) {
+									runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
+								} else if (location.proxiedServer && offset < 0) {
+									runStoreFailure("--offset must be >= 0");
+								} else if (invocation.readyGated) {
 									runReadyGated(invocation, location, query);
 								} else if (invocation.readyMolecule != "") {
 									runReadyMolecule(invocation, location, query);
@@ -2119,19 +2122,16 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
-							runDatabaseNotFound();
-						} else if (invocation.searchQuery == "") {
-							output.writeStdout(searchHelp());
-							if (location.proxiedServer)
-								runModeAwareFailure(invocation.output, "search query is required");
-							else
-								runStoreFailure("search query is required");
-						} else switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer,
-							invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
-								final result = switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
+								// Upstream asks for the query in the command body, after its pre-run opened the store.
+								final result = if (invocation.searchQuery == "") {
+									output.writeStdout(searchHelp());
+									location.proxiedServer ? runModeAwareFailure(invocation.output,
+										"search query is required") : runStoreFailure("search query is required");
+								} else switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
 									case ListFailure(message): runStoreFailure(message);
 									case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 									case ListSuccess(page): renderSearch(invocation, page);
@@ -2151,28 +2151,32 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
-							runDatabaseNotFound();
-						} else if (!invocation.queryRequest.provided) {
-							output.writeStderr("Error: query expression is required\n\n");
-							output.writeStderr(queryHelp());
-							1;
-						} else if (invocation.queryRequest.parseOnly) {
-							switch QuerySyntax.parse(invocation.queryRequest.expression) {
-								case Parsed(expression):
-									output.writeStdout('Parsed query: ${QuerySyntax.render(expression)}\n');
-									0;
-								case Invalid(message): runModeAwareFailure(invocation.output, 'invalid query expression: ${message}');
-							}
-						} else if (!location.proxiedServer && invocation.queryRequest.offset > 0) {
-							runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
-						} else switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer,
-							invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 							case Failure(message): runStoreFailure(message);
-							case Success(query): closeIssueQuery(query, executeQuery(invocation, location, query));
+							case Success(query): closeIssueQuery(query, runQueryBody(invocation, location, query));
 						}
 				}
 		};
+	}
+
+	/** Checks the arguments as upstream's command body does, after its pre-run opened the store, then queries. */
+	function runQueryBody(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		if (!invocation.queryRequest.provided) {
+			output.writeStderr("Error: query expression is required\n\n");
+			output.writeStderr(queryHelp());
+			return 1;
+		}
+		if (invocation.queryRequest.parseOnly)
+			return switch QuerySyntax.parse(invocation.queryRequest.expression) {
+				case Parsed(expression):
+					output.writeStdout('Parsed query: ${QuerySyntax.render(expression)}\n');
+					0;
+				case Invalid(message): runModeAwareFailure(invocation.output, 'invalid query expression: ${message}');
+			};
+		if (!location.proxiedServer && invocation.queryRequest.offset > 0)
+			return runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
+		return executeQuery(invocation, location, query);
 	}
 
 	function executeQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
@@ -2288,18 +2292,17 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
-							runDatabaseNotFound();
-						} else if (invocation.staleRequest.days < 1) {
-							runModeAwareFailure(invocation.output, "--days must be at least 1");
-						} else if (!validStaleStatus(invocation.staleRequest.status)) {
-							runModeAwareFailure(invocation.output,
-								'invalid status \'${invocation.staleRequest.status}\'. Valid values: open, in_progress, blocked, deferred');
-						} else switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer,
-							invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
-								final result = switch query.issueStale(location.path, invocation.staleRequest, invocation.global) {
+								// Upstream checks --days and --status in the command body, after its pre-run opened the store.
+								final result = if (invocation.staleRequest.days < 1) {
+									runModeAwareFailure(invocation.output, "--days must be at least 1");
+								} else if (!validStaleStatus(invocation.staleRequest.status)) {
+									runModeAwareFailure(invocation.output,
+										'invalid status \'${invocation.staleRequest.status}\'. Valid values: open, in_progress, blocked, deferred');
+								} else switch query.issueStale(location.path, invocation.staleRequest, invocation.global) {
 									case Failure(message): runStoreFailure(message);
 									case Success(issues): renderStale(invocation, issues);
 								};

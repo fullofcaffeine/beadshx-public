@@ -427,6 +427,27 @@ compare_store_failure unavailable-server events-tail events tail
 compare_store_failure unavailable-server events-tail-json events tail --json
 compare_store_failure unavailable-server events-export events export
 compare_store_failure unavailable-server events-export-json events export --json
+# These argument checks run in upstream's command body, after the pre-run store open.
+compare_store_failure unavailable-server stale-zero-days stale --days 0
+compare_store_failure unavailable-server stale-zero-days-json stale --days 0 --json
+compare_store_failure unavailable-server stale-bad-status stale --status bogus
+compare_store_failure unavailable-server stale-bad-status-json stale --status bogus --json
+compare_store_failure unavailable-server search-no-query search
+compare_store_failure unavailable-server search-no-query-json search --json
+compare_store_failure unavailable-server query-no-expression query
+compare_store_failure unavailable-server query-no-expression-json query --json
+compare_store_failure unavailable-server query-parse-only query status=open --parse-only
+compare_store_failure unavailable-server query-parse-only-json query status=open --parse-only --json
+compare_store_failure unavailable-server query-offset query status=open --offset 1
+compare_store_failure unavailable-server query-offset-json query status=open --offset 1 --json
+compare_store_failure unavailable-server list-offset list --offset 1
+compare_store_failure unavailable-server list-offset-json list --offset 1 --json
+compare_store_failure unavailable-server ready-offset ready --offset 1
+compare_store_failure unavailable-server ready-offset-json ready --offset 1 --json
+compare_store_failure missing-embedded list-offset list --offset 1
+compare_store_failure missing-embedded list-offset-json list --offset 1 --json
+compare_store_failure missing-embedded ready-offset ready --offset 1
+compare_store_failure missing-embedded ready-offset-json ready --offset 1 --json
 compare_store_failure missing-embedded types types
 compare_store_failure missing-embedded statuses statuses
 
