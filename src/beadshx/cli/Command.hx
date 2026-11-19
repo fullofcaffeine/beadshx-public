@@ -23,6 +23,9 @@ enum Command {
 	Blocked;
 	Comments;
 	History;
+	Events;
+	EventsTail;
+	EventsExport;
 	Types;
 	Statuses;
 	Label;

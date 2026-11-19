@@ -328,9 +328,9 @@ linters:
   exclusions:
     rules:
       # Generated Haxe storage adapters are the BeadsHX equivalent of the
-      # inherited internal/storage boundary. Keep the exception to the fourteen
+      # inherited internal/storage boundary. Keep the exception to the fifteen
       # files whose typed externs directly consume the Dolt driver API.
-      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|store_embedded(assignedissuereader|blockedreader|commentreader|customconfigreader|cyclereader|dependencyreader|graphreader|historyreader|issueidsearch|issuesummaryreader|relationreader|scalarissuedetailsreader|treereader))\.go$'
+      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|store_embedded(assignedissuereader|blockedreader|commentreader|customconfigreader|cyclereader|dependencyreader|eventsjournalreader|graphreader|historyreader|issueidsearch|issuesummaryreader|relationreader|scalarissuedetailsreader|treereader))\.go$'
         linters:
           - depguard
       # Haxe Std.random intentionally implements a non-cryptographic random

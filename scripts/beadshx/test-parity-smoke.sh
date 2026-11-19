@@ -1814,6 +1814,119 @@ expect_candidate_failure history-global-unported "" \
 expect_candidate_failure history-global-json-unported \
 	'{"error":"history is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	history "$real_database_issue_id" --events --global --json
+# bd events tail and export print bd_events_journal rows after --since as JSON lines, oldest first, cut by a
+# SQL LIMIT. The stored payloads are compacted and HTML-escaped, never re-encoded. A read whose rows do not
+# continue the checkpoint fails with the retained window. Reads never prune (the events family is exempt).
+compare_no_workspace events_bare events
+compare_no_workspace events_help events --help
+compare_no_workspace help_events help events
+compare_no_workspace events_unknown_subcommand events frob --json
+compare_no_workspace events_tail_help events tail --help
+compare_no_workspace help_events_tail help events tail
+compare_no_workspace events_export_help events export -h
+compare_no_workspace events_tail_no_workspace events tail --since -1
+compare_no_workspace events_export_no_workspace_json events export --json
+compare_no_workspace events_tail_invalid_since events tail --since many
+compare_no_workspace events_tail_empty_since events tail --since=
+compare_no_workspace events_tail_since_out_of_range events tail --since 99999999999999999999
+compare_no_workspace events_tail_missing_since events tail --since
+compare_no_workspace events_tail_invalid_limit events tail --limit=many
+compare_no_workspace events_export_limit_out_of_range events export --limit 99999999999999999999
+compare_no_workspace events_tail_limit_shorthand events tail -n 2
+compare_no_workspace events_tail_invalid_follow events tail --follow=maybe
+compare_no_workspace events_export_unknown_since events export --since 1
+compare_no_workspace events_export_unknown_follow events export --follow
+# `bd events` itself prints its usage under a flag error; pflag rejects an unknown flag before its value.
+compare_no_workspace events_unknown_flag events --since 1
+compare_no_workspace events_unknown_flag_before_subcommand events --bogus tail
+compare_no_workspace events_unknown_subcommand_limit events frob --limit x
+compare_no_workspace events_unknown_follow events --follow=maybe
+compare_no_workspace list_unknown_since list --since x
+compare_no_workspace events_tail_unknown_flag events tail --status open
+compare_no_workspace events_tail_unknown_before events tail --before 3
+compare_no_workspace events_prune_invalid_before events prune --before many
+# The seed never enabled the journal: no rows and a head of 0.
+compare_real_database events-tail-empty-human exact events tail
+compare_real_database events-export-empty-json exact events export --json
+compare_real_database events-tail-above-head exact events tail --since 5
+compare_real_database events-tail-follow-false exact events tail --follow=false
+compare_real_database events-tail-negative-since-human exact events tail --since -1
+compare_real_database events-tail-negative-since-json exact events tail --since=-1 --json
+compare_real_database_env events-tail-negative-since-envelope-json exact BD_JSON_ENVELOPE=1 events tail --since -1 --json
+# fixture-sql writes journal rows directly. Dolt ignores the journal tables, so a title change gives its
+# commit something to record. Row 1 has spaces and <, > and &; row 2 has a raw U+2028.
+events_commit="UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+events_line_separator="$(printf '\342\200\250')"
+events_rows_sql="INSERT INTO bd_events_journal (seq, ts, op, issue_id, issue_json, dep_json, comment_json) VALUES (1, '2030-01-02 03:04:05', 'create', 'test-ev1', '{ \"id\" : \"test-ev1\", \"title\": \"Spaced <b> & co\", \"n\": [1.50, 1E3, -0] }', NULL, NULL), (2, '2030-01-02 03:04:06', 'comment', 'test-ev1', '{\"id\":\"test-ev1\"}', '', '{\"id\":7,\"author\":\"amy\",\"text\":\"ünï${events_line_separator}x\",\"source\":\"\"}'), (3, '1999-12-31 23:59:59', 'dep_add', 'test-ev<2>', '{\"id\":\"test-ev<2>\"}', '{\"kind\":\"blocks\",\"target\":\"test-ev1\",\"metadata\":\"{}\"}', NULL), (4, '2030-12-31 00:00:00', 'delete', 'test-ev1', NULL, NULL, NULL)
+UPDATE bd_events_seq SET next_seq = 4 WHERE id = 0
+$events_commit"
+compare_real_database_sql events-export-rows-human exact "$events_rows_sql" events export
+compare_real_database_sql events-export-rows-json exact "$events_rows_sql" events export --json
+compare_real_database_sql events-tail-since-inside exact "$events_rows_sql" events tail --since 2
+compare_real_database_sql events-tail-since-hex exact "$events_rows_sql" events tail --since=0x1 --limit 0b10
+compare_real_database_sql events-tail-since-at-head exact "$events_rows_sql" events tail --since 4
+compare_real_database_sql events-tail-since-after-head exact "$events_rows_sql" events tail --since 9
+compare_real_database_sql events-tail-limit exact "$events_rows_sql" events tail --since 1 --limit 2
+compare_real_database_sql events-tail-negative-limit exact "$events_rows_sql" events tail --limit -3
+compare_real_database_sql events-export-limit exact "$events_rows_sql" events export --limit=1 extra
+real_database_extra_sql="$events_rows_sql"
+compare_real_database_env events-tail-envelope-json exact BD_JSON_ENVELOPE=1 events tail --json
+real_database_extra_sql=""
+# A pruned prefix: rows 3 and 4 remain below a head of 4.
+events_pruned_sql="$events_rows_sql
+DELETE FROM bd_events_journal WHERE seq < 3"
+compare_real_database_sql events-export-truncated-human exact "$events_pruned_sql" events export
+compare_real_database_sql events-export-truncated-json exact "$events_pruned_sql" events export --json
+compare_real_database_sql events-tail-truncated-limit-json exact "$events_pruned_sql" events tail --since 1 --limit 1 --json
+compare_real_database_sql events-tail-from-floor exact "$events_pruned_sql" events tail --since 2
+real_database_extra_sql="$events_pruned_sql"
+compare_real_database_env events-export-truncated-envelope-json exact BD_JSON_ENVELOPE=1 events export --json
+real_database_extra_sql=""
+# Every row pruned: the floor is one past the head, and a caught-up checkpoint still reads nothing.
+events_emptied_sql="$events_rows_sql
+DELETE FROM bd_events_journal"
+compare_real_database_sql events-tail-emptied-human exact "$events_emptied_sql" events tail --since 1
+compare_real_database_sql events-tail-emptied-caught-up exact "$events_emptied_sql" events tail --since 4
+# An interior hole reports the last contiguous row as the checkpoint.
+events_gap_sql="$events_rows_sql
+DELETE FROM bd_events_journal WHERE seq = 3"
+compare_real_database_sql events-export-gap-human exact "$events_gap_sql" events export
+compare_real_database_sql events-export-gap-json exact "$events_gap_sql" events export --json
+# Legacy JSON round-trips the payload through float64, so a head above 2^53 rounds; the envelope does not.
+events_huge_head_sql="$events_pruned_sql
+UPDATE bd_events_seq SET next_seq = 9007199254740993 WHERE id = 0"
+compare_real_database_sql events-export-huge-head-human exact "$events_huge_head_sql" events export
+compare_real_database_sql events-export-huge-head-json exact "$events_huge_head_sql" events export --json
+real_database_extra_sql="$events_huge_head_sql"
+compare_real_database_env events-export-huge-head-envelope-json exact BD_JSON_ENVELOPE=1 events export --json
+real_database_extra_sql=""
+# A missing counter row is a head of 0; a missing table fails the read.
+compare_real_database_sql events-export-no-counter-human exact "$events_pruned_sql
+DELETE FROM bd_events_seq" events export
+compare_real_database_sql events-export-no-counter-table-json exact "DROP TABLE bd_events_seq
+$events_commit" events export --json
+compare_real_database_sql events-tail-no-journal-table-human exact "DROP TABLE bd_events_journal
+$events_commit" events tail
+# A payload Go cannot compact stops the stream after the rows before it. An empty payload is absent.
+events_bad_json_sql="$events_rows_sql
+UPDATE bd_events_journal SET issue_json = '{\"id\": broken' WHERE seq = 3"
+compare_real_database_sql events-export-bad-json-human exact "$events_bad_json_sql" events export
+compare_real_database_sql events-export-bad-json-json exact "$events_bad_json_sql" events export --json
+compare_real_database_sql events-export-blank-dep exact "$events_rows_sql
+UPDATE bd_events_journal SET dep_json = ' ' WHERE seq = 2" events export
+compare_real_database_sql events-export-empty-issue exact "$events_rows_sql
+UPDATE bd_events_journal SET issue_json = '', dep_json = '' WHERE seq = 3" events export
+# --follow polls until a signal; prune writes. Neither is ported, and --global always selects a server.
+expect_candidate_failure events-tail-follow-unported "" "Error: events tail --follow is not available yet in this build" "" \
+	events tail --follow
+expect_candidate_failure events-prune-unported "" "Error: events prune is not available yet in this build" "" \
+	events prune --before 3
+expect_candidate_failure events-tail-global-unported "" \
+	"Error: events tail is not available yet for server-mode or proxied workspaces in this build" "" \
+	events tail --global
+expect_candidate_failure events-export-global-json-unported \
+	'{"error":"events export is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+	events export --global --json
 
 wait_for_watch_text() {
 	local file="$1"

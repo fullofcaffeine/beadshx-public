@@ -42,6 +42,11 @@ final class EmbeddedStoreAccess {
 		return implementation.issueEvents(beadsDir, databaseName, issueId, limit);
 	}
 
+	public static function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64,
+			limit:haxe.Int64):Null<StoreResult<EventsJournal.EventsJournalRead>> {
+		return implementation.eventsJournal(beadsDir, databaseName, since, limit);
+	}
+
 	public static function blockedIssues(beadsDir:String, databaseName:String, parentId:String):Null<StoreResult<Array<SqlBlockedReader.BlockedIssue>>> {
 		return implementation.blockedIssues(beadsDir, databaseName, parentId);
 	}
@@ -112,6 +117,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int):Null<StoreResult<Array<IssueHistory.IssueEvent>>> {
+		return null;
+	}
+
+	public function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64, limit:haxe.Int64):Null<StoreResult<EventsJournal.EventsJournalRead>> {
 		return null;
 	}
 

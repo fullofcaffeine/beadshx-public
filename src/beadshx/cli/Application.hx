@@ -32,6 +32,14 @@ import beadshx.cli.CatalogViews.renderTypesText;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
 import beadshx.cli.CommentsView.renderCommentsJson;
+import beadshx.cli.EventsView.eventsExportHelp;
+import beadshx.cli.EventsView.eventsHelp;
+import beadshx.cli.EventsView.eventsTailHelp;
+import beadshx.cli.EventsView.eventsTruncatedHint;
+import beadshx.cli.EventsView.renderEventsRecords;
+import beadshx.cli.EventsView.renderEventsTruncatedJson;
+import beadshx.store.EventsJournal.EventsJournalRead;
+import beadshx.store.EventsJournal.eventsTruncatedMessage;
 import beadshx.cli.HistoryView.renderHistoryEventsJson;
 import beadshx.cli.HistoryView.renderHistoryEventsText;
 import beadshx.cli.HistoryView.renderHistoryJson;
@@ -281,6 +289,10 @@ final class Application {
 			case UsageFailure(message):
 				output.writeStderr('Error: ${message}\n');
 				1;
+			case GroupUsageFailure(message, group):
+				final help = commandHelp(group);
+				output.writeStderr('Error: ${message}\n${help.substr(help.indexOf("Usage:\n"))}\n');
+				1;
 			case OutputFailure(mode, message):
 				runModeAwareFailure(mode, message);
 			case ExactFailure(message, exitCode):
@@ -303,8 +315,8 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | History | LabelList | LabelListAll | List | Show | Types | Statuses: true;
-			case RootHelp | Version | Where | Label: false;
+				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses: true;
+			case RootHelp | Version | Where | Label | Events: false;
 		};
 	}
 
@@ -328,6 +340,9 @@ final class Application {
 			case Blocked: "blocked";
 			case Comments: "comments";
 			case History: "history";
+			case Events: "events";
+			case EventsTail: "tail";
+			case EventsExport: "export";
 			case Types: "types";
 			case Statuses: "statuses";
 			// Upstream names a profile after cobra's leaf command name.
@@ -392,6 +407,11 @@ final class Application {
 				runComments(invocation);
 			case History:
 				runWithIssueQuery(invocation, (query, location) -> runHistoryQuery(invocation, location, query));
+			case Events:
+				output.writeStdout(eventsHelp(upstreamGlobalFlags()));
+				0;
+			case EventsTail | EventsExport:
+				runWithIssueQuery(invocation, (query, location) -> runEventsRead(invocation, location, query));
 			case Types:
 				runTypes(invocation);
 			case Statuses:
@@ -1694,6 +1714,38 @@ final class Application {
 		else
 			output.writeStdout(renderHistoryText(issueId, shown));
 		return 0;
+	}
+
+	/**
+		Upstream runEventsTail without --follow: reads the journal after the checkpoint and prints one JSON
+		line per row. A checkpoint that the retained rows do not continue fails with the retained window.
+	**/
+	function runEventsRead(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final unavailable = '${invocation.command == EventsTail ? "events tail" : "events export"} is not available yet for server-mode or proxied workspaces in this build';
+		if (location.proxiedServer || invocation.global)
+			return runModeAwareFailure(invocation.output, unavailable);
+		final since = invocation.events.since;
+		// A negative checkpoint would serve the whole journal as if it were a resume.
+		if (since < 0)
+			return runModeAwareFailure(invocation.output,
+				'--since must be zero or a positive sequence number (got ${haxe.Int64.toStr(since)}); use 0 to read from the beginning');
+		return switch query.eventsJournal(location.path, location.databaseName, since, invocation.events.limit, invocation.global) {
+			case Failure(message):
+				runModeAwareFailure(invocation.output, 'reading events journal: ${message}');
+			case Success(JournalRouteUnavailable):
+				runModeAwareFailure(invocation.output, unavailable);
+			case Success(JournalTruncated(window)):
+				if (invocation.output == Json)
+					writeJsonStdout(renderEventsTruncatedJson(window, output.usesJsonEnvelope()));
+				else
+					output.writeStderr('Error: ${eventsTruncatedMessage(window)}\nHint: ${eventsTruncatedHint(window)}\n');
+				1;
+			case Success(JournalRecords(rows)):
+				// Records are JSON lines in every mode, outside the JSON envelope.
+				final lines = renderEventsRecords(rows);
+				output.writeStdout(lines.text);
+				lines.error == null ? 0 : runModeAwareFailure(invocation.output, 'reading events journal: ${lines.error}');
+		};
 	}
 
 	function runLabel(invocation:Invocation):Int {
@@ -5056,6 +5108,9 @@ final class Application {
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case Comments: commentsHelp();
 			case History: historyHelp();
+			case Events: eventsHelp(upstreamGlobalFlags());
+			case EventsTail: eventsTailHelp(upstreamGlobalFlags());
+			case EventsExport: eventsExportHelp(upstreamGlobalFlags());
 			case Types: basicCommandHelp("List valid issue types", "types", "      --sections   Show required sections for each issue type\n");
 			case Statuses: basicCommandHelp("List valid issue statuses", "statuses", "");
 			case Label: labelHelp();

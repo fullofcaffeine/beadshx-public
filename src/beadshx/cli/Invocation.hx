@@ -62,9 +62,18 @@ typedef Invocation = {
 	final graph:GraphInvocation;
 	final comments:CommentsInvocation;
 	final history:HistoryInvocation;
+	final events:EventsInvocation;
 
 	/** `bd types --sections`. */
 	final typesSections:Bool;
+}
+
+/** The `bd events tail` and `bd events export` arguments; export has no --since and reads from 0. */
+typedef EventsInvocation = {
+	final since:haxe.Int64;
+
+	/** `--limit`; zero or a negative value reads every row. */
+	final limit:haxe.Int64;
 }
 
 /** The `bd history` arguments as typed. */

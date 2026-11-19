@@ -29,6 +29,9 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The audit events of an exact issue ID, newest first, as `bd history --events` reads them; a positive `limit` caps them. */
 	function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int, global:Bool):StoreResult<Array<IssueHistory.IssueEvent>>;
 
+	/** The events journal after `since`, as `bd events tail` reads it; a positive `limit` caps the rows. */
+	function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64, limit:haxe.Int64, global:Bool):StoreResult<EventsJournal.EventsJournalRead>;
+
 	/** Blocked issues, as `bd blocked` reports them; an empty `parentId` means no parent filter. */
 	function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>>;
 

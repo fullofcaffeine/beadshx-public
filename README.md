@@ -32,17 +32,22 @@ workspaces, and require the same stdout, stderr and exit code:
   view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
   `--json`).
 - **Reference lists:** `types` (also `--sections`), `statuses`.
+- **Events journal:** `events`, `events tail` (also `--since`, `--limit`),
+  `events export` (also `--limit`).
 
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
-  `types` and `statuses` read embedded workspaces only. In a server-mode or
-  proxied workspace they report that they are not available yet.
+  `types`, `statuses`, `events tail` and `events export` read embedded
+  workspaces only. In a server-mode or proxied workspace they report that
+  they are not available yet.
   `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
+- `events tail --follow` and `events prune` report that they are not
+  available yet.
 - `types` and `statuses` read custom types and statuses from the database
   only. They ignore `types.custom` and `status.custom` in `config.yaml` and
   the `BD_TYPES_CUSTOM` and `BD_STATUS_CUSTOM` variables.

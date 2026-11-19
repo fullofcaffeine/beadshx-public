@@ -21,5 +21,7 @@ extern class Time {
 	@:go.name("Month") public function month():Month;
 	@:go.name("Nanosecond") public function nanosecond():Int;
 	@:go.name("Unix") public function unix():Int;
+	@:go.valueReturn
+	@:go.name("UTC") public function utc():Time;
 	@:go.name("Year") public function year():Int;
 }

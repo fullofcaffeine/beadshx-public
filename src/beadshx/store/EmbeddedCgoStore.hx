@@ -27,6 +27,10 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedHistoryReader.readHistory(beadsDir, databaseName, issueId);
 	}
 
+	public function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64, limit:haxe.Int64):Null<StoreResult<EventsJournal.EventsJournalRead>> {
+		return EmbeddedEventsJournalReader.read(beadsDir, databaseName, since, limit);
+	}
+
 	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int):Null<StoreResult<Array<IssueHistory.IssueEvent>>> {
 		return EmbeddedHistoryReader.readEvents(beadsDir, databaseName, issueId, limit);
 	}

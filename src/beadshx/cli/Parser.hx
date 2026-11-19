@@ -3,6 +3,7 @@ package beadshx.cli;
 import beadshx.cli.DepListSelection.selectDepList;
 import beadshx.cli.Invocation.CommentsInvocation;
 import beadshx.cli.Invocation.DepTreeInvocation;
+import beadshx.cli.Invocation.EventsInvocation;
 import beadshx.cli.Invocation.GraphInvocation;
 import beadshx.cli.Invocation.HistoryInvocation;
 import beadshx.store.OptionalInt;
@@ -12,6 +13,7 @@ import beadshx.store.IssueListTimeFilter;
 import beadshx.store.ReadySort;
 import beadshx.store.StaleRequest;
 import beadshx.query.QueryCommandRequest;
+import haxe.Int64;
 
 private enum ListTimeField {
 	TimeCreatedAfter;
@@ -71,6 +73,9 @@ private enum ExpectedValue {
 	StaleDays;
 	DepDirection;
 	DepTreeMaxDepth(shorthand:Bool);
+	EventsSince;
+	EventsLimit;
+	EventsBefore;
 }
 
 /** Upstream validateCommentsArgs for `bd comments` with more than one argument. */
@@ -86,6 +91,20 @@ final class Parser {
 	}
 
 	public function parse(args:Array<String>):ParseResult {
+		final positional = new Array<String>();
+		return switch parseCommand(args, positional) {
+			// `bd events` has no SilenceUsage, unlike its subcommands; every usage failure there is a flag error.
+			case UsageFailure(message)
+				if (positional.length > 0
+					&& positional[0] == "events"
+					&& !(positional.length > 1 && (positional[1] == "tail" || positional[1] == "export" || positional[1] == "prune"))):
+				GroupUsageFailure(message, Command.Events);
+			case result: result;
+		};
+	}
+
+	/** Parses `args`, leaving the positional arguments read so far in `positional`. */
+	function parseCommand(args:Array<String>, positional:Array<String>):ParseResult {
 		var output = OutputMode.Human;
 		var actor = "";
 		var directory = "";
@@ -202,6 +221,13 @@ final class Parser {
 		final commentsOnlyFlags = new Array<String>();
 		var historyEvents = false;
 		var historyEventsUsed = false;
+		var eventsSince = Int64.ofInt(0);
+		var eventsLimit = Int64.ofInt(0);
+		var eventsFollow = false;
+		// --since and --follow belong to `events tail`, --before to `events prune`.
+		final eventsOnlyFlags = new Array<String>();
+		// pflag reports an unknown flag before it parses the value, so the values wait for the command.
+		final eventsFlagValues = new Array<{flag:String, raw:String}>();
 		var readyAwareUsageFailure = "";
 		function rememberReadyAwareUsageFailure(message:String):Void {
 			if (readyAwareUsageFailure == "")
@@ -220,7 +246,6 @@ final class Parser {
 		var showIds = new Array<String>();
 		final issueFlagIds = new Array<String>();
 		var flagsEnded = false;
-		final positional = new Array<String>();
 		// Like `-a` for query, `-d` and a negative `--max-rows` depend on the command typed so far.
 		function inDepTree():Bool {
 			return positional.length > 1 && positional[0] == "dep" && positional[1] == "tree";
@@ -233,6 +258,10 @@ final class Parser {
 		function invalidLimit(raw:String):ParseResult {
 			final history = positional.length > 0 && positional[0] == "history";
 			return UsageFailure(history ? invalidIntegerFlag("--limit", raw) : 'invalid argument "${raw}" for "-n, --limit" flag: expected an integer');
+		}
+		// `bd events tail` and `export` declare --limit as a plain int flag, without the -n shorthand.
+		function inEvents():Bool {
+			return positional.length > 0 && positional[0] == "events";
 		}
 		function invalidMaxRows(raw:String):ParseResult {
 			return UsageFailure(inGraph() ? invalidIntegerFlag("--max-rows", raw) : 'invalid argument "${raw}" for "--max-rows" flag: expected an integer');
@@ -371,6 +400,12 @@ final class Parser {
 						if (depth == null)
 							return UsageFailure(invalidIntegerFlag("-d, --max-depth", argument));
 						depTreeMaxDepth = depth;
+					case EventsSince:
+						eventsFlagValues.push({flag: "--since", raw: argument});
+					case EventsLimit:
+						eventsFlagValues.push({flag: "--limit", raw: argument});
+					case EventsBefore:
+						eventsFlagValues.push({flag: "--before", raw: argument});
 				}
 				expectedValue = null;
 				continue;
@@ -487,6 +522,10 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--limit=")) {
 				markListOnly("--limit");
 				final raw = argument.substr(8);
+				if (inEvents()) {
+					eventsFlagValues.push({flag: "--limit", raw: raw});
+					continue;
+				}
 				final limit = parseSignedInt(raw);
 				if (limit == null)
 					return invalidLimit(raw);
@@ -831,6 +870,18 @@ final class Parser {
 					showBriefDependencies = enabled;
 				continue;
 			}
+			if (StringTools.startsWith(argument, "--since=") || StringTools.startsWith(argument, "--before=")) {
+				final separator = argument.indexOf("=");
+				final flag = argument.substr(0, separator);
+				eventsOnlyFlags.push(flag);
+				eventsFlagValues.push({flag: flag, raw: argument.substr(separator + 1)});
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--follow=")) {
+				eventsOnlyFlags.push("--follow");
+				eventsFlagValues.push({flag: "--follow", raw: argument.substr(9)});
+				continue;
+			}
 			if (StringTools.startsWith(argument, "--events=")) {
 				final value = argument.substr(9);
 				if (!isBooleanFlagValue(value))
@@ -916,6 +967,11 @@ final class Parser {
 				case "--priority" | "-p":
 					markListOnly(argument);
 					expectedValue = ListPriority;
+				case "--limit" if (inEvents()):
+					markListOnly(argument);
+					expectedValue = EventsLimit;
+				case "-n" if (inEvents()):
+					return UsageFailure("unknown shorthand flag: 'n' in -n");
 				case "--limit" | "-n":
 					markListOnly(argument);
 					expectedValue = ListLimit;
@@ -1165,6 +1221,15 @@ final class Parser {
 				case "--events":
 					historyEventsUsed = true;
 					historyEvents = true;
+				case "--since":
+					eventsOnlyFlags.push(argument);
+					expectedValue = EventsSince;
+				case "--before":
+					eventsOnlyFlags.push(argument);
+					expectedValue = EventsBefore;
+				case "--follow":
+					eventsOnlyFlags.push(argument);
+					eventsFlagValues.push({flag: "--follow", raw: "true"});
 				case "--brief-deps":
 					showBriefDependencies = true;
 				case "--all":
@@ -1232,6 +1297,9 @@ final class Parser {
 				case StaleDays: UsageFailure("flag needs an argument: --days");
 				case DepDirection: UsageFailure("flag needs an argument: --direction");
 				case DepTreeMaxDepth(shorthand): UsageFailure(shorthand ? "flag needs an argument: 'd' in -d" : "flag needs an argument: --max-depth");
+				case EventsSince: UsageFailure("flag needs an argument: --since");
+				case EventsLimit: UsageFailure("flag needs an argument: --limit");
+				case EventsBefore: UsageFailure("flag needs an argument: --before");
 			};
 		}
 
@@ -1372,6 +1440,10 @@ final class Parser {
 			};
 		}
 
+		function makeEventsInvocation():EventsInvocation {
+			return {since: eventsSince, limit: eventsLimit};
+		}
+
 		function makeCommentsInvocation():CommentsInvocation {
 			final misplacedList = positional.length > 1 && positional[0] == "comments" && positional[1] == "list";
 			return {
@@ -1469,6 +1541,7 @@ final class Parser {
 				graph: makeGraphInvocation(),
 				comments: makeCommentsInvocation(),
 				history: makeHistoryInvocation(),
+				events: makeEventsInvocation(),
 				typesSections: typesSections
 			});
 		}
@@ -1545,6 +1618,10 @@ final class Parser {
 			return UsageFailure("unknown flag: --sections");
 		if (name != "history" && historyEventsUsed)
 			return UsageFailure("unknown flag: --events");
+		final eventsSubcommand = name == "events" && positional.length > 1 ? positional[1] : "";
+		for (flag in eventsOnlyFlags)
+			if (flag == "--before" ? eventsSubcommand != "prune" : eventsSubcommand != "tail")
+				return UsageFailure('unknown flag: ${flag}');
 		if (name != "dep" && depDirectionUsed)
 			return UsageFailure("unknown flag: --direction");
 		if (!depTree && depTreeOnlyFlags.length > 0)
@@ -1572,7 +1649,8 @@ final class Parser {
 					&& !(depTree && isDepTreeFilterFlag(flag))
 					&& !(graphView && (flag == "--all" || flag == "--max-rows"))
 					&& !(name == "blocked" && flag == "--parent")
-					&& !(name == "history" && flag == "--limit")) {
+					&& !(name == "history" && flag == "--limit")
+					&& !(flag == "--limit" && (eventsSubcommand == "tail" || eventsSubcommand == "export"))) {
 					incompatibleListFlag = flag;
 					break;
 				}
@@ -1806,6 +1884,7 @@ final class Parser {
 				graph: makeGraphInvocation(),
 				comments: makeCommentsInvocation(),
 				history: makeHistoryInvocation(),
+				events: makeEventsInvocation(),
 				typesSections: typesSections
 			});
 		}
@@ -1873,6 +1952,38 @@ final class Parser {
 				// With no subcommand or an unknown one, upstream prints the group help.
 				case _:
 					return parsedCommand(Command.Label);
+			}
+		}
+		if (name == "events") {
+			for (entry in eventsFlagValues) {
+				if (entry.flag == "--follow") {
+					if (!isBooleanFlagValue(entry.raw))
+						return UsageFailure('invalid argument "${entry.raw}" for "--follow" flag: strconv.ParseBool: parsing "${entry.raw}": invalid syntax');
+					eventsFollow = booleanFlagValue(entry.raw);
+					continue;
+				}
+				final failure = GoIntFlag.parse(entry.flag, entry.raw, value -> {
+					if (entry.flag == "--since")
+						eventsSince = value;
+					else if (entry.flag == "--limit")
+						eventsLimit = value;
+				});
+				if (failure != null)
+					return UsageFailure(failure);
+			}
+			switch eventsSubcommand {
+				case "prune":
+					return UsageFailure("events prune is not available yet in this build");
+				case "tail":
+					if (eventsFollow && !showHelp)
+						return UsageFailure("events tail --follow is not available yet in this build");
+					return parsedCommand(Command.EventsTail);
+				// Upstream tail and export accept and ignore extra arguments.
+				case "export":
+					return parsedCommand(Command.EventsExport);
+				// With no subcommand or an unknown one, upstream prints the group help.
+				case _:
+					return parsedCommand(Command.Events);
 			}
 		}
 		if (name == "history") {

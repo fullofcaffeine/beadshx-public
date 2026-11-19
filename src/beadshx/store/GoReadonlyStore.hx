@@ -27,6 +27,7 @@ import go.NativeStringSlice;
 import go.Result;
 import beadshx.store.InfoSnapshot.ConfigEntry;
 import beadshx.store.IssueHistory.HISTORY_ROUTE_UNAVAILABLE;
+import beadshx.store.EventsJournal.EventsJournalRead;
 
 /**
 	`bd dep cycles` reads the graph with Haxe-owned SQL, which exists only for embedded
@@ -120,6 +121,16 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return Failure(HISTORY_ROUTE_UNAVAILABLE);
+	}
+
+	public function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64, limit:haxe.Int64,
+			global:Bool):StoreResult<EventsJournal.EventsJournalRead> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.eventsJournal(beadsDir, databaseName, since, limit);
+			if (embedded != null)
+				return embedded;
+		}
+		return Success(JournalRouteUnavailable);
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
@@ -1327,6 +1338,11 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int, global:Bool):StoreResult<Array<IssueHistory.IssueEvent>> {
 		return Failure(HISTORY_ROUTE_UNAVAILABLE);
+	}
+
+	public function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64, limit:haxe.Int64,
+			global:Bool):StoreResult<EventsJournal.EventsJournalRead> {
+		return Success(JournalRouteUnavailable);
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
