@@ -16,6 +16,34 @@ Read [the port specification](beadshx-complete-port-prd.md) and
 [the source index](engdocs/beadshx/program/source-index.md) for the current
 scope and evidence. Use upstream Beads for production work.
 
+## What BeadsHX runs today
+
+`bdhx` implements these read-only commands in authored Haxe. Parity tests run
+each command with `bdhx` and with upstream `bd` v1.2.1 on the same disposable
+workspaces, and require the same stdout, stderr and exit code:
+
+- **Workspace and status:** `version`, `where`, `info`, `ping`, `status`
+  (also `stats`).
+- **Issue queries:** `list`, `show`, `children`, `search`, `query`, `count`,
+  `ready`, `stale`, `orphans`.
+- **Dependencies and graphs:** `dep list`, `dep tree`, `dep cycles`,
+  `blocked`, `graph check`, and `graph` for one issue or `--all`, in every
+  view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
+  `--json`).
+
+Limits:
+
+- `bdhx` does not write yet. Commands that create, update, close or sync
+  issues are not ported.
+- `dep tree`, `dep cycles`, `blocked` and `graph` read embedded workspaces
+  only. In a server-mode or proxied workspace they report that they are not
+  available yet.
+- Where upstream output order is random (Go map order), the parity tests
+  compare the stable part, and `bdhx` prints one fixed order.
+
+Run the parity suite with `make beadshx-parity`; it lives in
+[scripts/beadshx/test-parity-smoke.sh](scripts/beadshx/test-parity-smoke.sh).
+
 ## Upstream Beads overview
 
 The text below describes the upstream Beads product. BeadsHX keeps this
