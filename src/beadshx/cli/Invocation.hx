@@ -66,6 +66,9 @@ typedef Invocation = {
 
 	/** `bd types --sections`. */
 	final typesSections:Bool;
+
+	/** The `bd config get` key as typed; it can be empty. */
+	final configKey:String;
 }
 
 /** The `bd events tail` and `bd events export` arguments; export has no --since and reads from 0. */

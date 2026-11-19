@@ -1542,7 +1542,8 @@ final class Parser {
 				comments: makeCommentsInvocation(),
 				history: makeHistoryInvocation(),
 				events: makeEventsInvocation(),
-				typesSections: typesSections
+				typesSections: typesSections,
+				configKey: ""
 			});
 		}
 		var helpCommand = false;
@@ -1885,8 +1886,8 @@ final class Parser {
 				comments: makeCommentsInvocation(),
 				history: makeHistoryInvocation(),
 				events: makeEventsInvocation(),
-				typesSections: typesSections
-			});
+				typesSections: typesSections,
+				configKey: name == "config" && positional.length > 2 ? positional[2] : ""});
 		}
 		if (name == "version")
 			return parsedCommand(Command.Version);
@@ -1984,6 +1985,23 @@ final class Parser {
 				// With no subcommand or an unknown one, upstream prints the group help.
 				case _:
 					return parsedCommand(Command.Events);
+			}
+		}
+		if (name == "config") {
+			final subcommand = positional.length > 1 ? positional[1] : "";
+			switch subcommand {
+				case "get":
+					if (!showHelp && positional.length != 3)
+						return UsageFailure('accepts 1 arg(s), received ${positional.length - 2}');
+					return parsedCommand(Command.ConfigGet);
+				// Upstream list accepts and ignores extra arguments.
+				case "list":
+					return parsedCommand(Command.ConfigList);
+				case "set" | "set-many" | "unset" | "apply" | "show" | "validate" | "drift":
+					return UsageFailure('config ${subcommand} is not available yet in this build');
+				// With no subcommand or an unknown one, upstream prints the group help.
+				case _:
+					return parsedCommand(Command.Config);
 			}
 		}
 		if (name == "history") {

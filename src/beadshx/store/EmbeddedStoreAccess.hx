@@ -80,6 +80,14 @@ final class EmbeddedStoreAccess {
 		return implementation.customStatuses(beadsDir, databaseName);
 	}
 
+	public static function configValue(beadsDir:String, databaseName:String, key:String):Null<StoreResult<String>> {
+		return implementation.configValue(beadsDir, databaseName, key);
+	}
+
+	public static function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>> {
+		return implementation.configSettings(beadsDir, databaseName);
+	}
+
 	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
@@ -154,6 +162,14 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
+		return null;
+	}
+
+	public function configValue(beadsDir:String, databaseName:String, key:String):Null<StoreResult<String>> {
+		return null;
+	}
+
+	public function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>> {
 		return null;
 	}
 

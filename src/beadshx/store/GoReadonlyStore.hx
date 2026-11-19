@@ -1,5 +1,6 @@
 package beadshx.store;
 
+import beadshx.config.ConfigKeys.CONFIG_ROUTE_UNAVAILABLE;
 import beadshx.store.WorkspaceState.readLastTouchedId;
 import beadshx.relation.RelatedIssue;
 import beadshx.relation.RelationRead.RelationReadPlan;
@@ -219,6 +220,24 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return Failure(STATUSES_ROUTE_UNAVAILABLE);
+	}
+
+	public function configValue(beadsDir:String, databaseName:String, key:String, global:Bool):StoreResult<String> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.configValue(beadsDir, databaseName, key);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(CONFIG_ROUTE_UNAVAILABLE);
+	}
+
+	public function configSettings(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.configSettings(beadsDir, databaseName);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(CONFIG_ROUTE_UNAVAILABLE);
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
@@ -1391,6 +1410,14 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<CustomConfig.CustomStatus>> {
 		return Failure(STATUSES_ROUTE_UNAVAILABLE);
+	}
+
+	public function configValue(beadsDir:String, databaseName:String, key:String, global:Bool):StoreResult<String> {
+		return Failure(CONFIG_ROUTE_UNAVAILABLE);
+	}
+
+	public function configSettings(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>> {
+		return Failure(CONFIG_ROUTE_UNAVAILABLE);
 	}
 
 	final native:NativeQuerySession;

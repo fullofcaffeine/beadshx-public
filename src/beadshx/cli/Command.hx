@@ -28,6 +28,9 @@ enum Command {
 	EventsExport;
 	Types;
 	Statuses;
+	Config;
+	ConfigGet;
+	ConfigList;
 	Label;
 	LabelList;
 	LabelListAll;

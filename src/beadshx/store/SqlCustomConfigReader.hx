@@ -1,5 +1,6 @@
 package beadshx.store;
 
+import beadshx.config.ConfigKeys.ConfigSetting;
 import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.store.CustomConfig.CustomStatus;
@@ -76,6 +77,45 @@ final class SqlCustomConfigReader {
 		final value = readConfigValue(context, transaction, "status.custom");
 		final parsed = value == null ? null : parseCustomStatusConfig(value);
 		return parsed == null ? [] : backfilledStatuses(parsed);
+	}
+
+	/** Upstream GetConfigInTx for `bd config get`: an empty string for a missing key. */
+	public static function readSetting(context:Context, transaction:Tx, key:String):StoreResult<String> {
+		final queried = transaction.queryContext(context, "SELECT value FROM config WHERE `key` = ?", key);
+		if (queried.value2 != null)
+			return Failure('get config ${key}: ${queried.value2.toString()}');
+		final rows = queried.value1;
+		if (!rows.next()) {
+			final rowError = rows.err();
+			rows.close();
+			return rowError == null ? Success("") : Failure('get config ${key}: ${rowError.toString()}');
+		}
+		final value = go.NativePointer.of("");
+		final scanError = rows.scan(value);
+		rows.close();
+		return scanError == null ? Success(value.get()) : Failure('get config ${key}: ${scanError.toString()}');
+	}
+
+	/** Upstream GetAllConfigInTx for `bd config list`: every row, in the order the table gives them. */
+	public static function readSettings(context:Context, transaction:Tx):StoreResult<Array<ConfigSetting>> {
+		final queried = transaction.queryContext(context, "SELECT `key`, value FROM config");
+		if (queried.value2 != null)
+			return Failure('get all config: ${queried.value2.toString()}');
+		final rows = queried.value1;
+		final settings = new Array<ConfigSetting>();
+		while (rows.next()) {
+			final key = go.NativePointer.of("");
+			final value = go.NativePointer.of("");
+			final scanError = rows.scan(key, value);
+			if (scanError != null) {
+				rows.close();
+				return Failure('get all config: scan: ${scanError.toString()}');
+			}
+			settings.push({key: key.get(), value: value.get()});
+		}
+		final rowError = rows.err();
+		rows.close();
+		return rowError == null ? Success(settings) : Failure(rowError.toString());
 	}
 
 	/** Upstream GetConfigInTx: an empty string for a missing key, or null for a failed read. */

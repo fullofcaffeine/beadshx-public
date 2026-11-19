@@ -58,5 +58,11 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The custom statuses `bd statuses` lists after the built-in ones. */
 	function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<CustomConfig.CustomStatus>>;
 
+	/** One config table value as `bd config get` reads it, or "" when no row holds the key. */
+	function configValue(beadsDir:String, databaseName:String, key:String, global:Bool):StoreResult<String>;
+
+	/** Every config table row, as `bd config list` reads them before it filters and sorts. */
+	function configSettings(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>;
+
 	function close():StoreResult<Bool>;
 }

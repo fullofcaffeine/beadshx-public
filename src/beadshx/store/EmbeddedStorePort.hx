@@ -30,4 +30,6 @@ interface EmbeddedStorePort {
 	function graphAll(beadsDir:String, databaseName:String, maxRows:Int):Null<StoreResult<SqlGraphReader.AllGraphLoad>>;
 	function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>>;
 	function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>>;
+	function configValue(beadsDir:String, databaseName:String, key:String):Null<StoreResult<String>>;
+	function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>>;
 }

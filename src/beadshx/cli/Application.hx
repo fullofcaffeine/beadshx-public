@@ -29,6 +29,26 @@ import beadshx.cli.CatalogViews.renderTypeSectionsJson;
 import beadshx.cli.CatalogViews.renderTypeSectionsText;
 import beadshx.cli.CatalogViews.renderTypesJson;
 import beadshx.cli.CatalogViews.renderTypesText;
+import beadshx.cli.ConfigView.configHelp;
+import beadshx.cli.ConfigView.configSubcommandHelp;
+import beadshx.cli.ConfigView.renderBackupEnabledJson;
+import beadshx.cli.ConfigView.renderBackupEnabledText;
+import beadshx.cli.ConfigView.renderConfigGetJson;
+import beadshx.cli.ConfigView.renderConfigGetText;
+import beadshx.cli.ConfigView.renderConfigListJson;
+import beadshx.cli.ConfigView.renderConfigListText;
+import beadshx.config.ConfigKeys.ConfigSource;
+import beadshx.store.CustomConfig.goTrimSpace;
+import beadshx.config.ConfigKeys.isKvPlaneKey;
+import beadshx.config.ConfigKeys.isUserGlobalKey;
+import beadshx.config.ConfigKeys.isYamlOnlyKey;
+import beadshx.config.LayeredConfig;
+import beadshx.config.LayeredConfig.gitBeadsRole;
+import beadshx.config.LayeredConfig.gitHasRemote;
+import beadshx.config.LayeredConfig.goQuote;
+import beadshx.config.LayeredConfig.userConfigYamlDisplayPath;
+import beadshx.config.LayeredConfig.userConfigYamlPresent;
+import beadshx.config.ConfigKeys.CONFIG_ROUTE_UNAVAILABLE;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
 import beadshx.cli.CommentsView.renderCommentsJson;
@@ -315,8 +335,8 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses: true;
-			case RootHelp | Version | Where | Label | Events: false;
+				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses | ConfigGet | ConfigList: true;
+			case RootHelp | Version | Where | Label | Events | Config: false;
 		};
 	}
 
@@ -345,7 +365,10 @@ final class Application {
 			case EventsExport: "export";
 			case Types: "types";
 			case Statuses: "statuses";
+			case Config: "config";
 			// Upstream names a profile after cobra's leaf command name.
+			case ConfigGet: "get";
+			case ConfigList: "list";
 			case Label: "label";
 			case LabelList: "list";
 			case LabelListAll: "list-all";
@@ -419,6 +442,13 @@ final class Application {
 			case Label:
 				output.writeStdout(labelHelp());
 				0;
+			case Config:
+				output.writeStdout(configHelp(upstreamGlobalFlags()));
+				0;
+			case ConfigGet:
+				runConfigGet(invocation);
+			case ConfigList:
+				runConfigList(invocation);
 			case LabelList | LabelListAll:
 				runLabel(invocation);
 			case List:
@@ -1749,6 +1779,143 @@ final class Application {
 				final lines = renderEventsRecords(rows);
 				output.writeStdout(lines.text);
 				lines.error == null ? 0 : runModeAwareFailure(invocation.output, 'reading events journal: ${lines.error}');
+		};
+	}
+
+	/**
+		Upstream configGetCmd. The key's source decides the route: the database
+		config table, the layered config.yaml and environment values, git config,
+		or backup.enabled's effective value. YAML and git keys run without a
+		database, as upstream's configCommandCanRunWithoutStore lets them.
+	**/
+	function runConfigGet(invocation:Invocation):Int {
+		final key = invocation.configKey;
+		final storeFree = isYamlOnlyKey(key) || key == "beads.role";
+		final readsTable = !storeFree && goTrimSpace(key) != "" && !isKvPlaneKey(key);
+		return runWithLayeredConfig(invocation, storeFree, readsTable, (config, location, query) -> {
+			if (key == "backup.enabled")
+				return showBackupEnabled(invocation, config, location != null);
+			if (isYamlOnlyKey(key)) {
+				if (isUserGlobalKey(key)) {
+					// Upstream reads these from the user config.yaml alone, with its own YAML rules.
+					if (userConfigYamlPresent())
+						return runModeAwareFailure(invocation.output, 'config get ${key} is not available yet when a user config.yaml exists in this build');
+					return showConfigValue(invocation, key, "", userConfigYamlDisplayPath());
+				}
+				return showConfigValue(invocation, key, config.getString(key), "config.yaml");
+			}
+			if (key == "beads.role")
+				return showConfigValue(invocation, key, gitBeadsRole(), "git config");
+			if (goTrimSpace(key) == "")
+				return runStoreFailure("getting config: validation failed: config key must not be empty");
+			// The kv. plane shares the table; upstream answers it as absent without a read.
+			if (isKvPlaneKey(key))
+				return showConfigValue(invocation, key, "", null);
+			return switch query.configValue(location.path, selectedDatabaseName(invocation, location), key, invocation.global) {
+				case Failure(message): runConfigReadFailure(invocation, "getting config", message);
+				case Success(value): showConfigValue(invocation, key, value, null);
+			};
+		});
+	}
+
+	function showConfigValue(invocation:Invocation, key:String, value:String, location:Null<String>):Int {
+		if (invocation.output == Json)
+			writeJsonStdout(renderConfigGetJson(key, value, location));
+		else
+			output.writeStdout(renderConfigGetText(key, value, location));
+		return 0;
+	}
+
+	/**
+		Upstream runConfigGetBackupEnabled. An unset key is on in an embedded
+		workspace whose Git checkout has a remote and off in shared-server mode.
+	**/
+	function showBackupEnabled(invocation:Invocation, config:LayeredConfig, workspaceSelected:Bool):Int {
+		final source = config.source("backup.enabled");
+		final sharedServer = config.sharedServerMode();
+		final effective = source != DefaultSource ? config.getBool("backup.enabled") : (!sharedServer && workspaceSelected && gitHasRemote());
+		if (invocation.output == Json) {
+			writeJsonStdout(renderBackupEnabledJson(effective, source));
+			return 0;
+		}
+		final description = switch source {
+			case EnvironmentSource: "env var";
+			case ConfigFileSource: "config.yaml";
+			case DefaultSource if (sharedServer): "default (auto: off in sql-server mode)";
+			case DefaultSource if (effective): "default (auto: on — git remote detected)";
+			case DefaultSource: "default (auto: off — no git remote)";
+		};
+		output.writeStdout(renderBackupEnabledText(effective, description));
+		return 0;
+	}
+
+	/** Upstream configListCmd: the stored settings, then the config.yaml and environment notes. */
+	function runConfigList(invocation:Invocation):Int {
+		return runWithLayeredConfig(invocation, false, true, (config, location, query) -> {
+			final stored = switch query.configSettings(location.path, selectedDatabaseName(invocation, location), invocation.global) {
+				case Failure(message): return runConfigReadFailure(invocation, "listing config", message);
+				case Success(rows): [for (row in rows) if (!isKvPlaneKey(row.key)) row];
+			};
+			if (invocation.output == Json)
+				writeJsonStdout(renderConfigListJson(stored));
+			else
+				output.writeStdout(renderConfigListText(stored, config.allKeys(), config.facts, goQuote));
+			return 0;
+		});
+	}
+
+	/** A config table read failure; a route this build does not read is refused like other unported routes. */
+	function runConfigReadFailure(invocation:Invocation, operation:String, message:String):Int {
+		return message == CONFIG_ROUTE_UNAVAILABLE ? runModeAwareFailure(invocation.output, message) : runStoreFailure('${operation}: ${message}');
+	}
+
+	/**
+		Loads config like upstream's startup and selected-workspace initializations,
+		printing each failure as upstream's warning, then opens the store when the
+		command needs it and runs `action`. Upstream initializes for the selected
+		workspace once without a database and twice with one (once when it finds
+		the .beads directory, unless --db names it, and once when it binds the
+		database). Upstream also opens the store before any config command runs;
+		when `action` reads no table, an empty-key read stands for that open, so a
+		database route this build does not read is refused either way.
+	**/
+	function runWithLayeredConfig(invocation:Invocation, storeFree:Bool, readsTable:Bool,
+			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int):Int {
+		final startup = LayeredConfig.atStartup();
+		if (startup.failure != null)
+			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
+		function selected(location:WorkspaceLocation, initializations:Int):LayeredConfig {
+			final config = LayeredConfig.forWorkspace(location.path);
+			if (config.failure != null)
+				for (_ in 0...initializations)
+					output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${config.failure}\n');
+			return config;
+		}
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: storeFree ? action(startup, null, null) : runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) {
+							final config = selected(location, 1);
+							storeFree ? action(config, location, null) : runDatabaseNotFound();
+						} else {
+							final config = selected(location, invocation.databasePath == "" ? 2 : 1);
+							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+								case Failure(message): runStoreFailure(message);
+								case Success(query):
+									final probe = readsTable ? Success("") : query.configValue(location.path, selectedDatabaseName(invocation, location), "",
+										invocation.global);
+									closeIssueQuery(query, switch probe {
+										case Failure(message) if (message == CONFIG_ROUTE_UNAVAILABLE): runModeAwareFailure(invocation.output, message);
+										case Failure(_) | Success(_): action(config, location, query);
+									});
+							}
+						}
+				}
 		};
 	}
 
@@ -5117,6 +5284,9 @@ final class Application {
 			case Types: basicCommandHelp("List valid issue types", "types", "      --sections   Show required sections for each issue type\n");
 			case Statuses: basicCommandHelp("List valid issue statuses", "statuses", "");
 			case Label: labelHelp();
+			case Config: configHelp(upstreamGlobalFlags());
+			case ConfigGet: configSubcommandHelp("Get a configuration value", "get <key>", "get", upstreamGlobalFlags());
+			case ConfigList: configSubcommandHelp("List all configuration", "list", "list", upstreamGlobalFlags());
 			case LabelList: labelSubcommandHelp("List labels for an issue", "list [issue-id]", "list");
 			case LabelListAll: labelSubcommandHelp("List all unique labels in the database", "list-all", "list-all");
 			case List: listHelp();

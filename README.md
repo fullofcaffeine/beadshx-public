@@ -34,21 +34,30 @@ workspaces, and require the same stdout, stderr and exit code:
 - **Reference lists:** `types` (also `--sections`), `statuses`.
 - **Events journal:** `events`, `events tail` (also `--since`, `--limit`),
   `events export` (also `--limit`).
+- **Configuration:** `config get <key>` and `config list`. They read the
+  database `config` table, `config.yaml`, `config.local.yaml`, the user
+  `config.yaml`, `BD_*` variables and the defaults in upstream's order.
+  Like upstream, they print secret values as stored.
 
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
-  `types`, `statuses`, `events tail` and `events export` read embedded
-  workspaces only. In a server-mode or proxied workspace they report that
-  they are not available yet. If the server cannot be reached, they print
-  the same store error as upstream.
+  `types`, `statuses`, `events tail`, `events export`, `config get` and
+  `config list` read embedded workspaces only. In a server-mode or proxied
+  workspace they report that they are not available yet. If the server
+  cannot be reached, they print the same store error as upstream.
   `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - `events tail --follow` and `events prune` report that they are not
   available yet.
+- `config set`, `set-many`, `unset`, `apply`, `show`, `validate` and `drift`
+  report that they are not available yet. `config get` of a user-global key
+  (`metrics.*`, `node_id`) reports that it is not available yet when the user
+  `config.yaml` exists. `bdhx` does not load `.beads/.env` before it reads
+  `BD_*` variables.
 - `types` and `statuses` read custom types and statuses from the database
   only. They ignore `types.custom` and `status.custom` in `config.yaml` and
   the `BD_TYPES_CUSTOM` and `BD_STATUS_CUSTOM` variables.

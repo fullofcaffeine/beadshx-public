@@ -183,6 +183,11 @@ compare_no_workspace types_sections_json types --sections --json
 compare_no_workspace types_bad_sections types --sections=bogus
 compare_no_workspace statuses_json statuses --json
 compare_no_workspace statuses_sections statuses --sections
+compare_no_workspace config_get_yaml config get export.auto
+compare_no_workspace config_get_yaml_json config get dolt.auto-commit --json
+compare_no_workspace config_get_database config get issue_prefix
+compare_no_workspace config_list config list
+compare_no_workspace config_help config --help
 BEADSHX_TEST_JSON_ENVELOPE=1 compare_no_workspace where_json_envelope where --json
 
 fingerprint_tree() {
@@ -568,6 +573,7 @@ real_database_closed_id="$(jq -er '.id' "$real_database_seed/closed.json")"
 real_database_labeled_relation_id="$(jq -er '.id' "$real_database_seed/labeled-relation.json")"
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config=""
+real_database_extra_local_config=""
 real_database_extra_import=""
 real_database_extra_sql=""
 real_database_case_count=0
@@ -591,6 +597,9 @@ compare_real_database() {
 		chmod 700 "$state_root/work/.beads"
 		if [[ -n "$real_database_extra_config" ]]; then
 			printf '%s\n' "$real_database_extra_config" >>"$state_root/work/.beads/config.yaml"
+		fi
+		if [[ -n "$real_database_extra_local_config" ]]; then
+			printf '%s\n' "$real_database_extra_local_config" >"$state_root/work/.beads/config.local.yaml"
 		fi
 		if [[ -n "$real_database_extra_import" ]]; then
 			(
@@ -653,12 +662,20 @@ compare_real_database() {
 		return 1
 	fi
 	case "$comparison" in
-	exact)
+	exact | exact-home)
 		local oracle_work candidate_work
 		oracle_work="$(cd "$oracle_root/work" && pwd -P)"
 		candidate_work="$(cd "$candidate_root/work" && pwd -P)"
 		sed "s|$oracle_work|<work>|g" "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
 		sed "s|$candidate_work|<work>|g" "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
+		if [[ "$comparison" == exact-home ]]; then
+			# The user config.yaml path names each side's own HOME, which Go prints cleaned.
+			local oracle_home candidate_home
+			oracle_home="$(cd "$oracle_root/user-home" && pwd -L)"
+			candidate_home="$(cd "$candidate_root/user-home" && pwd -L)"
+			sed -i.bak "s|$oracle_home|<home>|g" "$case_root/oracle.normalized"
+			sed -i.bak "s|$candidate_home|<home>|g" "$case_root/candidate.normalized"
+		fi
 		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
 			printf '%s stdout differs from upstream\n' "$name" >&2
 			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
@@ -745,6 +762,32 @@ compare_real_database_config() {
 	real_database_extra_config="$config"
 	compare_real_database "$name" "$comparison" "$@"
 	real_database_extra_config=""
+}
+
+compare_real_database_local_config() {
+	local name="$1"
+	local comparison="$2"
+	local config="$3"
+	local local_config="$4"
+	shift 4
+	real_database_extra_config="$config"
+	real_database_extra_local_config="$local_config"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_extra_config=""
+	real_database_extra_local_config=""
+}
+
+compare_real_database_config_env() {
+	local name="$1"
+	local comparison="$2"
+	local config="$3"
+	local environment="$4"
+	shift 4
+	real_database_extra_config="$config"
+	real_database_extra_env=("$environment")
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_extra_config=""
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 }
 
 compare_real_database_env() {
@@ -873,6 +916,94 @@ INSERT INTO config (\`key\`, value) VALUES ('status.custom', 'good:active,Bad')"
 expect_candidate_failure statuses-global-json-unported \
 	'{"error":"statuses is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	statuses --global --json
+# bd config get and list. A database key reads the config table; a YAML-only key reads the layered
+# config.yaml, config.local.yaml, BD_ variables and defaults through Viper; beads.role reads git
+# config. Upstream prints values as stored, secrets included, so the fixtures use fake values.
+# export.auto and backup.enabled stay off: with either on, upstream exports or backs up after any
+# command, reads included.
+compare_real_database config-list-human exact config list
+compare_real_database config-list-json exact config list --json
+compare_real_database_env config-list-json-envelope exact BD_JSON_ENVELOPE=1 config list --json
+compare_real_database config-list-extra-argument exact config list extra
+compare_real_database config-get-database-human exact config get issue_prefix
+compare_real_database config-get-database-json exact config get issue_prefix --json
+compare_real_database_env config-get-database-json-envelope exact BD_JSON_ENVELOPE=1 config get issue_prefix --json
+compare_real_database config-get-unknown-human exact config get custom.missing
+compare_real_database config-get-unknown-json exact config get custom.missing --json
+compare_real_database config-get-empty-key exact config get ""
+compare_real_database config-get-blank-key-json exact config get "  " --json
+config_rows_sql="INSERT INTO config (\`key\`, value) VALUES ('custom.empty', ''), ('custom.api_token', 'fake-token-not-a-secret'), ('Zeta.Upper', 'say \"hi\"'), ('ünï.key', 'tab	here'), ('kv.memory.fake-note', 'hidden note'), ('kv.plain', 'hidden')"
+compare_real_database_sql config-list-rows-human exact "$config_rows_sql" config list
+compare_real_database_sql config-list-rows-json exact "$config_rows_sql" config list --json
+compare_real_database_sql config-get-empty-value exact "$config_rows_sql" config get custom.empty
+compare_real_database_sql config-get-fake-secret-json exact "$config_rows_sql" config get custom.api_token --json
+compare_real_database_sql config-get-kv-hidden exact "$config_rows_sql" config get kv.memory.fake-note
+compare_real_database_sql config-list-empty-human exact "DELETE FROM config" config list
+compare_real_database_sql config-list-empty-json exact "DELETE FROM config" config list --json
+real_database_extra_sql="$config_rows_sql"
+compare_real_database_env config-list-database-env exact 'BD_ZETA_UPPER=say "hi"' config list
+compare_real_database_env config-list-database-env-differs exact BD_ISSUE_PREFIX=zzz config list
+compare_real_database_env config-get-database-ignores-env exact BD_ISSUE_PREFIX=zzz config get issue_prefix
+real_database_extra_sql=""
+compare_real_database config-get-yaml-default-human exact config get export.path
+compare_real_database config-get-yaml-default-json exact config get export.auto --json
+compare_real_database config-get-yaml-unset-human exact config get federation.remote
+compare_real_database config-get-yaml-list-default exact config get federation.exclude_types
+config_yaml=$'export:\n  git-add: true\n  interval:\n  path: ""\nsync:\n  remote: [first, second]\nrouting:\n  mode: Maintainer\nhierarchy:\n  max-depth: 0x10\nvalidation.on-create: warn\njira:\n  api_token: fake-token-not-a-secret\n  url: https://jira.example.invalid\ndolt:\n  max-conns: 1.50\nBackup:\n  Interval: 5m\nlist:\n  limit: 2\ncustom:\n  thing: yes'
+compare_real_database_config config-list-yaml-human exact "$config_yaml" config list
+compare_real_database_config config-list-yaml-json exact "$config_yaml" config list --json
+compare_real_database_config config-get-yaml-bool exact "$config_yaml" config get export.git-add
+compare_real_database_config config-get-yaml-null-default exact "$config_yaml" config get export.interval
+compare_real_database_config config-get-yaml-empty-json exact "$config_yaml" config get export.path --json
+compare_real_database_config config-get-yaml-list exact "$config_yaml" config get sync.remote
+compare_real_database_config config-get-yaml-hex exact "$config_yaml" config get hierarchy.max-depth
+compare_real_database_config config-get-yaml-float exact "$config_yaml" config get dolt.max-conns
+compare_real_database_config config-get-yaml-folded-case exact "$config_yaml" config get backup.interval
+compare_real_database_config config-get-yaml-flat-key exact "$config_yaml" config get validation.on-create
+compare_real_database_config config-get-yaml-fake-secret exact "$config_yaml" config get jira.api_token
+compare_real_database_config config-get-yaml-database-key exact "$config_yaml" config get jira.url
+compare_real_database_config_env config-get-env-over-yaml exact "$config_yaml" BD_EXPORT_GIT_ADD=0 config get export.git-add
+compare_real_database_config_env config-get-empty-env-keeps-yaml exact "$config_yaml" BD_ROUTING_MODE= config get routing.mode
+compare_real_database_config_env config-get-blank-env-json exact "$config_yaml" 'BD_EXPORT_PATH= ' config get export.path --json
+compare_real_database_config_env config-get-legacy-env-ignored exact "$config_yaml" BEADS_ROUTING_MODE=legacy config get routing.mode
+compare_real_database_config_env config-list-env-over-yaml exact "$config_yaml" BD_EXPORT_GIT_ADD=false config list
+compare_real_database_config_env config-list-legacy-env exact "$config_yaml" BEADS_ROUTING_MODE=legacy config list
+compare_real_database_config_env config-list-empty-env exact "$config_yaml" BD_SYNC_REMOTE= config list
+compare_real_database_env config-get-env-default exact BD_EXPORT_PATH=fake.jsonl config get export.path
+compare_real_database_env config-get-bound-env exact BEADS_IDENTITY=fake-identity config get identity
+compare_real_database_local_config config-get-local-over-yaml exact "$config_yaml" $'export:\n  git-add: false\nrouting:\n  mode: local' config get export.git-add
+compare_real_database_local_config config-list-local exact "$config_yaml" $'routing:\n  mode: local' config list
+malformed_yaml=$'export:\n  auto: [unclosed'
+compare_real_database_config config-get-malformed-yaml exact "$malformed_yaml" config get export.auto
+compare_real_database_config config-list-malformed-yaml exact "$malformed_yaml" config list
+compare_real_database_local_config config-get-malformed-local exact "$config_yaml" "$malformed_yaml" config get routing.mode
+compare_real_database config-get-beads-role exact config get beads.role
+compare_real_database config-get-beads-role-json exact config get beads.role --json
+compare_real_database config-get-backup-default exact config get backup.enabled
+compare_real_database config-get-backup-default-json exact config get backup.enabled --json
+compare_real_database_env config-get-backup-env exact BD_BACKUP_ENABLED=yes config get backup.enabled
+compare_real_database_config config-get-backup-yaml-json exact $'backup:\n  enabled: false' config get backup.enabled --json
+compare_real_database config-get-user-key exact-home config get metrics.disabled
+compare_real_database config-get-user-key-json exact-home config get node_id --json
+compare_real_database config-help exact config --help
+compare_real_database config-bare exact config
+compare_real_database config-unknown-subcommand exact config frobnicate
+compare_real_database config-help-command exact help config
+compare_real_database config-get-help exact config get --help
+compare_real_database config-list-help exact config list --help
+compare_real_database config-get-missing-argument exact config get
+compare_real_database config-get-extra-argument exact config get one two
+compare_real_database config-list-unknown-flag exact config list --bogus
+# Writes and the other config views are not ported; they fail before touching the fixture.
+for config_subcommand in set set-many unset apply show validate drift; do
+	expect_candidate_failure "config-$config_subcommand-unported" "" \
+		"Error: config $config_subcommand is not available yet in this build" "" config "$config_subcommand" export.auto true
+done
+expect_candidate_failure config-list-global-unported "" \
+	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config list --global
+expect_candidate_failure config-get-global-json-unported \
+	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+	config get export.auto --global --json
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
 compare_real_database count-human exact count
