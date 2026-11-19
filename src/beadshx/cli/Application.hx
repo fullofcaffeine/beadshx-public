@@ -32,6 +32,12 @@ import beadshx.cli.CatalogViews.renderTypesText;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
 import beadshx.cli.CommentsView.renderCommentsJson;
+import beadshx.cli.LabelsView.LABEL_LIST_ALL_ROUTE_UNAVAILABLE;
+import beadshx.cli.LabelsView.countLabels;
+import beadshx.cli.LabelsView.renderIssueLabelsHuman;
+import beadshx.cli.LabelsView.renderIssueLabelsJson;
+import beadshx.cli.LabelsView.renderLabelCountsHuman;
+import beadshx.cli.LabelsView.renderLabelCountsJson;
 import beadshx.store.SqlGraphReader.AllGraphLoad;
 import beadshx.store.SqlGraphReader.GraphDependency;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
@@ -288,8 +294,8 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | List | Show | Types | Statuses: true;
-			case RootHelp | Version | Where: false;
+				Blocked | Comments | LabelList | LabelListAll | List | Show | Types | Statuses: true;
+			case RootHelp | Version | Where | Label: false;
 		};
 	}
 
@@ -314,6 +320,10 @@ final class Application {
 			case Comments: "comments";
 			case Types: "types";
 			case Statuses: "statuses";
+			// Upstream names a profile after cobra's leaf command name.
+			case Label: "label";
+			case LabelList: "list";
+			case LabelListAll: "list-all";
 			case List: "list";
 			case Show: "show";
 			case RootHelp: "bd";
@@ -374,6 +384,11 @@ final class Application {
 				runTypes(invocation);
 			case Statuses:
 				runStatuses(invocation);
+			case Label:
+				output.writeStdout(labelHelp());
+				0;
+			case LabelList | LabelListAll:
+				runLabel(invocation);
 			case List:
 				runList(invocation);
 			case Show:
@@ -1624,6 +1639,72 @@ final class Application {
 			rendered.add("\n");
 		}
 		output.writeStdout(rendered.toString());
+		return 0;
+	}
+
+	function runLabel(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = invocation.command == LabelListAll ? runLabelListAll(invocation, location,
+									query) : runLabelList(invocation, location, query);
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/** Upstream runLabelList: resolve the argument on this route, then print the labels of the issue's detail read. */
+	function runLabelList(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final input = invocation.showIds[0];
+		// The proxied route resolves an exact issue or wisp ID only, and calls anything else "not found".
+		final resolved = location.proxiedServer ? query.issueSummary(location.path, location.databaseName, input,
+			invocation.global) : lookupIssueSummary(location, input, invocation.global, query);
+		final issueId = switch resolved {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'resolving ${input}: ${message}');
+			case Success(IssueMissing):
+				final reason = location.proxiedServer ? "not found" : 'no issue found matching "${input}"';
+				return runModeAwareFailure(invocation.output, 'resolving ${input}: ${reason}');
+			case Success(IssueFound(summary)): summary.id;
+		};
+		final request:IssueDetailsRequest = {includeDependents: false, includeComments: false, briefDependencies: false};
+		final labels = switch query.issueDetails(location.path, issueId, request, invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, message);
+			// Upstream's detail read reports a vanished row as workapi's not-found error.
+			case Success(DetailsMissing): return runModeAwareFailure(invocation.output, 'not found: issue ${issueId}');
+			case Success(DetailsFound(details)): details.labels;
+		};
+		if (invocation.output == Json)
+			writeJsonStdout(renderIssueLabelsJson(labels));
+		else
+			output.writeStdout(renderIssueLabelsHuman(issueId, labels));
+		return 0;
+	}
+
+	/** Upstream labelListAllCmd: one unfiltered, unlimited search, whose bulk-loaded labels it counts. */
+	function runLabelListAll(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		if (location.proxiedServer)
+			return runModeAwareFailure(invocation.output, LABEL_LIST_ALL_ROUTE_UNAVAILABLE);
+		final issues = switch query.issueSearch(location.path, "", IssueListRequests.everyIssue(), invocation.global) {
+			case ListFailure(message): return runModeAwareFailure(invocation.output, message);
+			// The request sets no row cap, so this branch only completes the switch.
+			case ListRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
+			case ListSuccess(page): page.items;
+		};
+		final counts = countLabels(issues);
+		if (invocation.output == Json)
+			writeJsonStdout(renderLabelCountsJson(counts));
+		else
+			output.writeStdout(renderLabelCountsHuman(counts));
 		return 0;
 	}
 
@@ -4922,6 +5003,9 @@ final class Application {
 			case Comments: commentsHelp();
 			case Types: basicCommandHelp("List valid issue types", "types", "      --sections   Show required sections for each issue type\n");
 			case Statuses: basicCommandHelp("List valid issue statuses", "statuses", "");
+			case Label: labelHelp();
+			case LabelList: labelSubcommandHelp("List labels for an issue", "list [issue-id]", "list");
+			case LabelListAll: labelSubcommandHelp("List all unique labels in the database", "list-all", "list-all");
 			case List: listHelp();
 			case Show: showHelp();
 		};
@@ -4960,6 +5044,33 @@ final class Application {
 			+ "\n"
 			+ upstreamGlobalFlags()
 			+ "\nUse \"bd comments [command] --help\" for more information about a command.\n";
+	}
+
+	function labelHelp():String {
+		return [
+			"Manage issue labels",
+			"",
+			"Usage:",
+			"  bd label [command]",
+			"",
+			"Available Commands:",
+			"  add         Add one or more labels to one or more issues",
+			"  list        List labels for an issue",
+			"  list-all    List all unique labels in the database",
+			"  propagate   Propagate a label from a parent issue to all its children",
+			"  remove      Remove one or more labels from one or more issues",
+			"",
+			"Flags:",
+			"  -h, --help   help for label",
+			""
+		].join("\n")
+			+ "\n"
+			+ upstreamGlobalFlags()
+			+ "\nUse \"bd label [command] --help\" for more information about a command.\n";
+	}
+
+	static function labelSubcommandHelp(short:String, usage:String, name:String):String {
+		return '${short}\n\nUsage:\n  bd label ${usage} [flags]\n\nFlags:\n  -h, --help   help for ${name}\n\n' + upstreamGlobalFlags();
 	}
 
 	/** The Global Flags section upstream prints under each command's help. */

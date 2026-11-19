@@ -25,7 +25,7 @@ workspaces, and require the same stdout, stderr and exit code:
 - **Workspace and status:** `version`, `where`, `info`, `ping`, `status`
   (also `stats`).
 - **Issue queries:** `list`, `show`, `children`, `search`, `query`, `count`,
-  `ready`, `stale`, `orphans`, `comments`.
+  `ready`, `stale`, `orphans`, `comments`, `label list`, `label list-all`.
 - **Dependencies and graphs:** `dep list`, `dep tree`, `dep cycles`,
   `blocked`, `graph check`, and `graph` for one issue or `--all`, in every
   view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
@@ -40,6 +40,8 @@ Limits:
   `statuses` read embedded workspaces only. In a server-mode or proxied
   workspace they report that they are not available yet. `types --sections`
   prints its fixed list in every mode.
+- `label list-all` reports that it is not available yet in a proxied
+  workspace.
 - `types` and `statuses` read custom types and statuses from the database
   only. They ignore `types.custom` and `status.custom` in `config.yaml` and
   the `BD_TYPES_CUSTOM` and `BD_STATUS_CUSTOM` variables.

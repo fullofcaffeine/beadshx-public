@@ -24,6 +24,9 @@ enum Command {
 	Comments;
 	Types;
 	Statuses;
+	Label;
+	LabelList;
+	LabelListAll;
 	List;
 	Show;
 }

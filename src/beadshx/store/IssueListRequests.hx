@@ -7,6 +7,11 @@ final class IssueListRequests {
 		return request("", "");
 	}
 
+	/** Every issue and wisp with its labels, as upstream `SearchIssues(ctx, "", IssueFilter{})` returns them. */
+	public static function everyIssue():IssueListRequest {
+		return request("", "");
+	}
+
 	/** Fetch one exact full issue row without presentation filters. */
 	public static function exact(id:String):IssueListRequest {
 		return request("", id);

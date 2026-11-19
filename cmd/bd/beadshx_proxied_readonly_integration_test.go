@@ -63,6 +63,7 @@ func TestBeadsHXProxiedReadonly(t *testing.T) {
 		{"orphans", []string{"orphans", "--json"}},
 		{"children", []string{"children", issue.ID, "--json"}},
 		{"dep-list", []string{"dep", "list", child.ID, "--json"}},
+		{"label-list", []string{"label", "list", issue.ID, "--json"}},
 	}
 	// Run oracle reads before the candidate snapshot: only candidate effects
 	// are under qualification, while the oracle owns fixture preparation.
@@ -83,14 +84,23 @@ func TestBeadsHXProxiedReadonly(t *testing.T) {
 
 	// These admitted commands do not yet support the proxied backend. Keep
 	// their explicit refusal visible instead of counting it as parity.
-	for _, args := range [][]string{{"info", "--schema", "--json"}, {"ping", "--json"}, {"status", "--json"}} {
-		t.Run(args[0]+"-unsupported", func(t *testing.T) {
-			cmd := exec.Command(candidate, args...)
+	const strictReadonlyUnavailable = "Error: strict readonly is unavailable for dolt proxied-server backend\n"
+	for _, refusal := range []struct {
+		args   []string
+		stderr string
+	}{
+		{[]string{"info", "--schema", "--json"}, strictReadonlyUnavailable},
+		{[]string{"ping", "--json"}, strictReadonlyUnavailable},
+		{[]string{"status", "--json"}, strictReadonlyUnavailable},
+		{[]string{"label", "list-all"}, "Error: label list-all is not available yet for proxied workspaces in this build\n"},
+	} {
+		t.Run(refusal.args[0]+"-unsupported", func(t *testing.T) {
+			cmd := exec.Command(candidate, refusal.args...)
 			cmd.Dir = project.dir
 			cmd.Env = bdProxiedEnv(project.dir)
 			stdout, stderr, err := runCommandBuffers(t, cmd)
 			exit, ok := err.(*exec.ExitError)
-			if !ok || exit.ExitCode() != 1 || stdout.Len() != 0 || stderr.String() != "Error: strict readonly is unavailable for dolt proxied-server backend\n" {
+			if !ok || exit.ExitCode() != 1 || stdout.Len() != 0 || stderr.String() != refusal.stderr {
 				t.Fatalf("unexpected unsupported-backend result: exit=%v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
 			}
 		})

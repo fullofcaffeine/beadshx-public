@@ -1822,6 +1822,24 @@ final class Parser {
 			}
 			return parsedCommand(Command.Comments);
 		}
+		if (name == "label") {
+			final subcommand = positional.length > 1 ? positional[1] : "";
+			switch subcommand {
+				case "add" | "remove" | "propagate":
+					return UsageFailure('label ${subcommand} is not available yet in this build');
+				case "list":
+					if (!showHelp && positional.length != 3)
+						return UsageFailure('accepts 1 arg(s), received ${positional.length - 2}');
+					showIds = positional.slice(2);
+					return parsedCommand(Command.LabelList);
+				// Upstream list-all accepts and ignores extra arguments.
+				case "list-all":
+					return parsedCommand(Command.LabelListAll);
+				// With no subcommand or an unknown one, upstream prints the group help.
+				case _:
+					return parsedCommand(Command.Label);
+			}
+		}
 		if (name == "list")
 			return parsedCommand(Command.List);
 		if (name == "show" || name == "view")

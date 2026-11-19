@@ -1666,6 +1666,68 @@ real_database_extra_import="$comments_durable_record"
 compare_real_database_env comments-local-time-human exact TZ=Asia/Kathmandu comments test-cdur --local-time
 compare_real_database_env comments-utc-human exact TZ=Asia/Kathmandu comments test-cdur --local-time=false
 real_database_extra_import=""
+# bd label list resolves a partial ID and prints the sorted labels of the issue's detail read.
+# bd label list-all counts the labels of every issue SearchIssues returns, closed issues,
+# templates and wisps included, sorts them by byte and pads each to the longest byte length.
+compare_no_workspace label_bare label
+compare_no_workspace label_help label --help
+compare_no_workspace help_label help label
+compare_no_workspace label_unknown_subcommand label frob --json
+compare_no_workspace label_list_help label list --help
+compare_no_workspace help_label_list help label list
+compare_no_workspace label_list_all_help label list-all -h
+compare_no_workspace label_list_missing_argument label list
+compare_no_workspace label_list_extra_argument label list test-a test-b --json
+compare_no_workspace label_list_unknown_flag label list test-a --status open
+compare_no_workspace label_list_all_unknown_flag label list-all -s open
+compare_no_workspace label_list_no_workspace label list test-a --json
+compare_no_workspace label_list_all_no_workspace label list-all
+compare_real_database label-list-human exact label list "$real_database_issue_id"
+compare_real_database label-list-json exact label list "$real_database_issue_id" --json
+compare_real_database label-list-escaping-json exact label list "$real_database_escaping_id" --json
+compare_real_database label-list-none-human exact label list "$real_database_bug_id"
+compare_real_database label-list-none-json exact label list "$real_database_bug_id" --json
+compare_real_database label-list-partial-human exact label list abcd11
+compare_real_database label-list-ambiguous-human exact label list abcd
+compare_real_database label-list-ambiguous-json exact label list abcd --json
+compare_real_database label-list-missing-human exact label list test-nope
+compare_real_database label-list-missing-json exact label list test-nope --json
+compare_real_database_env label-list-envelope-json exact BD_JSON_ENVELOPE=1 label list "$real_database_issue_id" --json
+compare_real_database label-list-all-human exact label list-all
+compare_real_database label-list-all-json exact label list-all --json
+compare_real_database label-list-all-extra-argument exact label list-all extra
+compare_real_database_env label-list-all-envelope-json exact BD_JSON_ENVELOPE=1 label list-all --json
+# Byte order puts U+FF3A (EF BC BA) before an emoji (F0 ...), where UTF-16 order would not.
+label_records="$(
+	for record in \
+		'{id: "test-lbl-closed", status: "closed", closed_at: "2026-08-21T13:00:00Z", labels: ["parity", "closed-only"]}' \
+		'{id: "test-lbl-wisp", ephemeral: true, labels: ["parity", "wisp-only"]}' \
+		'{id: "test-lbl-template", is_template: true, labels: ["template-only", "parity"]}' \
+		'{id: "test-lbl-wide", labels: ["é-accent", "Ｚ-wide", "🏷-emoji", "Zed", "zed", "a b"]}'; do
+		jq -nc "{title: \"Labeled record\", status: \"open\", priority: 2, issue_type: \"task\",
+			created_at: \"2026-08-20T12:00:00Z\", updated_at: \"2026-08-21T13:00:00Z\"} + $record"
+	done
+)"
+compare_real_database_import label-list-all-mixed-human exact "$label_records" label list-all
+compare_real_database_import label-list-all-mixed-json exact "$label_records" label list-all --json
+compare_real_database_import label-list-wisp-human exact "$label_records" label list lbl-wisp
+compare_real_database_import label-list-wide-human exact "$label_records" label list test-lbl-wide
+compare_real_database_import label-list-wide-json exact "$label_records" label list test-lbl-wide --json
+# A bead kept in the wisps table without being ephemeral (--no-history) still counts its wisp_labels rows.
+# Dolt ignores the wisp tables, so the title change gives fixture-sql's commit something to record.
+real_database_extra_import="$label_records"
+compare_real_database_sql label-list-all-no-history-json exact \
+	"UPDATE wisps SET ephemeral = 0, updated_at = updated_at WHERE id = 'test-lbl-wisp'
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'" label list-all --json
+real_database_extra_import=""
+compare_real_database_sql label-list-all-empty-human exact "DELETE FROM labels" label list-all
+compare_real_database_sql label-list-all-empty-json exact "DELETE FROM labels" label list-all --json
+expect_candidate_failure label-add-unported "" "Error: label add is not available yet in this build" "" \
+	label add "$real_database_issue_id" fresh
+expect_candidate_failure label-remove-unported "" "Error: label remove is not available yet in this build" "" \
+	label remove "$real_database_issue_id" parity
+expect_candidate_failure label-propagate-unported "" "Error: label propagate is not available yet in this build" "" \
+	label propagate "$real_database_epic_id" parity
 
 wait_for_watch_text() {
 	local file="$1"
