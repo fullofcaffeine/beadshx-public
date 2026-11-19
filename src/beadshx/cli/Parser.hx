@@ -186,6 +186,8 @@ final class Parser {
 		var staleDaysUsed = false;
 		var orphansDetails = false;
 		var orphansDetailsUsed = false;
+		var typesSections = false;
+		var typesSectionsUsed = false;
 		var orphansFix = false;
 		var orphansFixUsed = false;
 		var depDirection = "down";
@@ -430,7 +432,8 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--details=")
 				|| StringTools.startsWith(argument, "--fix=")
-				|| StringTools.startsWith(argument, "-f=")) {
+				|| StringTools.startsWith(argument, "-f=")
+				|| StringTools.startsWith(argument, "--sections=")) {
 				final separator = argument.indexOf("=");
 				final flag = argument.substr(0, separator);
 				final value = argument.substr(separator + 1);
@@ -439,6 +442,9 @@ final class Parser {
 				if (flag == "--details") {
 					orphansDetailsUsed = true;
 					orphansDetails = booleanFlagValue(value);
+				} else if (flag == "--sections") {
+					typesSectionsUsed = true;
+					typesSections = booleanFlagValue(value);
 				} else {
 					orphansFixUsed = true;
 					orphansFix = booleanFlagValue(value);
@@ -1102,6 +1108,9 @@ final class Parser {
 				case "--details":
 					orphansDetailsUsed = true;
 					orphansDetails = true;
+				case "--sections":
+					typesSectionsUsed = true;
+					typesSections = true;
 				case "--fix" | "-f":
 					orphansFixUsed = true;
 					orphansFix = true;
@@ -1428,7 +1437,8 @@ final class Parser {
 				depListSelection: selectDepList(depDirection, showIds.length),
 				depTree: makeDepTreeInvocation(),
 				graph: makeGraphInvocation(),
-				comments: makeCommentsInvocation()
+				comments: makeCommentsInvocation(),
+				typesSections: typesSections
 			});
 		}
 		var helpCommand = false;
@@ -1500,6 +1510,8 @@ final class Parser {
 			return UsageFailure("unknown flag: --details");
 		if (name != "orphans" && orphansFixUsed)
 			return UsageFailure("unknown flag: --fix");
+		if (name != "types" && typesSectionsUsed)
+			return UsageFailure("unknown flag: --sections");
 		if (name != "dep" && depDirectionUsed)
 			return UsageFailure("unknown flag: --direction");
 		if (!depTree && depTreeOnlyFlags.length > 0)
@@ -1758,7 +1770,8 @@ final class Parser {
 				depListSelection: selectDepList(depDirection, showIds.length),
 				depTree: makeDepTreeInvocation(),
 				graph: makeGraphInvocation(),
-				comments: makeCommentsInvocation()
+				comments: makeCommentsInvocation(),
+				typesSections: typesSections
 			});
 		}
 		if (name == "version")
@@ -1789,6 +1802,8 @@ final class Parser {
 			return parsedCommand(depCycles ? Command.DepCycles : (depTree ? Command.DepTree : Command.DepList));
 		if (name == "blocked")
 			return parsedCommand(Command.Blocked);
+		if (name == "types")
+			return parsedCommand(Command.Types);
 		if (graphCheck)
 			return parsedCommand(Command.GraphCheck);
 		if (graphView)

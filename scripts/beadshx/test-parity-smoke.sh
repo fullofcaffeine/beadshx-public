@@ -178,6 +178,9 @@ compare_no_workspace query query
 compare_no_workspace query_json query --json
 compare_no_workspace query_help query --help
 compare_no_workspace query_parse_only query status=open --parse-only
+compare_no_workspace types types
+compare_no_workspace types_sections_json types --sections --json
+compare_no_workspace types_bad_sections types --sections=bogus
 BEADSHX_TEST_JSON_ENVELOPE=1 compare_no_workspace where_json_envelope where --json
 
 fingerprint_tree() {
@@ -243,9 +246,11 @@ copy_fixture_tree() {
 	fi
 }
 
+store_failure_case_count=0
 compare_store_failure() {
 	local scenario="$1"
 	local case_name="$2"
+	store_failure_case_count=$((store_failure_case_count + 1))
 	printf 'parity [%ss]: START store-failure/%s/%s\n' "$SECONDS" "$scenario" "$case_name"
 	shift 2
 	local case_root="$test_root/$scenario-$case_name"
@@ -348,6 +353,7 @@ compare_store_failure missing-embedded info-whats-new info --whats-new
 compare_store_failure missing-embedded info-whats-new-json info --whats-new --json
 compare_store_failure missing-embedded info-whats-new-global info --whats-new --global
 compare_store_failure unavailable-server info info
+compare_store_failure missing-embedded types types
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -727,6 +733,31 @@ compare_real_database_import() {
 
 compare_real_database info-schema-json exact info --schema --json
 compare_real_database status-json exact status --json
+# The fixture has the custom type gate. Upstream fills an empty custom_types table from types.custom
+# when it opens the store and then reads the table by name, so the config value prints each name
+# once in byte order.
+compare_real_database types-human exact types
+compare_real_database types-json exact types --json
+compare_real_database_env types-json-envelope exact BD_JSON_ENVELOPE=1 types --json
+compare_real_database types-sections-human exact types --sections
+compare_real_database types-sections-json exact types --sections --json
+compare_real_database_env types-sections-json-envelope exact BD_JSON_ENVELOPE=1 types --sections --json
+no_custom_types_sql="DELETE FROM custom_types
+DELETE FROM config WHERE \`key\` = 'types.custom'"
+compare_real_database_sql types-none-human exact "$no_custom_types_sql" types
+compare_real_database_sql types-none-json exact "$no_custom_types_sql" types --json
+custom_types_sql="INSERT INTO custom_types (name) VALUES ('zeta'), ('Alpha'), ('r&d<x>'), ('ünïcode'), (' spaced')"
+compare_real_database_sql types-many-human exact "$custom_types_sql" types
+compare_real_database_sql types-many-json exact "$custom_types_sql" types --json
+types_config_sql="DELETE FROM custom_types
+UPDATE config SET value = ' zeta, alpha ,zeta,,Beta ' WHERE \`key\` = 'types.custom'"
+compare_real_database_sql types-config-human exact "$types_config_sql" types
+types_config_json_sql="DELETE FROM custom_types
+UPDATE config SET value = '[\"x\", \" y \", \"\", null, \"x\"]' WHERE \`key\` = 'types.custom'"
+compare_real_database_sql types-config-json exact "$types_config_json_sql" types --json
+# Server-mode, proxied and --global workspaces have no Haxe-owned route yet.
+expect_candidate_failure types-global-unported "" \
+	"Error: types is not available yet for server-mode or proxied workspaces in this build" "" types --global
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
 compare_real_database count-human exact count
@@ -1850,7 +1881,7 @@ printf 'oracle: %s\n' "$oracle_identity"
 printf 'candidate: %s\n' "$candidate_identity"
 printf 'parity identity smoke: PASS\n'
 printf 'no-workspace differential: PASS (%s command forms)\n' "$no_workspace_case_count"
-printf 'store-failure differentials: PASS (7 cases)\n'
+printf 'store-failure differentials: PASS (%s cases)\n' "$store_failure_case_count"
 printf 'real-database differentials: PASS (%s cases; ping timings normalized)\n' "$real_database_case_count"
 printf 'candidate-only checks: PASS (%s cases; views not ported yet fail the same way)\n' "$candidate_only_case_count"
 printf 'watch differentials: PASS (%s cases; poll change, refresh error, and signal lifecycle)\n' "$watch_case_count"

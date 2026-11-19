@@ -22,6 +22,7 @@ enum Command {
 	Graph;
 	Blocked;
 	Comments;
+	Types;
 	List;
 	Show;
 }

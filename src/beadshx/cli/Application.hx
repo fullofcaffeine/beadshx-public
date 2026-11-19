@@ -26,6 +26,10 @@ import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
 import beadshx.cli.CommentsView.renderCommentsJson;
+import beadshx.cli.CatalogViews.renderTypeSectionsJson;
+import beadshx.cli.CatalogViews.renderTypeSectionsText;
+import beadshx.cli.CatalogViews.renderTypesJson;
+import beadshx.cli.CatalogViews.renderTypesText;
 import beadshx.store.SqlGraphReader.AllGraphLoad;
 import beadshx.store.SqlGraphReader.GraphDependency;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
@@ -282,7 +286,7 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | List | Show: true;
+				Blocked | Comments | List | Show | Types: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -306,6 +310,7 @@ final class Application {
 			case Graph: "graph";
 			case Blocked: "blocked";
 			case Comments: "comments";
+			case Types: "types";
 			case List: "list";
 			case Show: "show";
 			case RootHelp: "bd";
@@ -362,6 +367,8 @@ final class Application {
 				runBlocked(invocation);
 			case Comments:
 				runComments(invocation);
+			case Types:
+				runTypes(invocation);
 			case List:
 				runList(invocation);
 			case Show:
@@ -1429,6 +1436,59 @@ final class Application {
 		if (values.length == 0)
 			return "null";
 		return "[\n" + [for (value in values) '${indent}  ${Json.stringify(value)}'].join(",\n") + '\n${indent}]';
+	}
+
+	/** Opens the selected workspace's query like `bd blocked`, runs `action` with it, then closes it. */
+	function runWithIssueQuery(invocation:Invocation, action:(IssueQueryPort, WorkspaceLocation) -> Int):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query): closeIssueQuery(query, action(query, location));
+						}
+				}
+		};
+	}
+
+	function runTypes(invocation:Invocation):Int {
+		return runWithIssueQuery(invocation, (query, location) -> {
+			if (invocation.typesSections)
+				return runTypeSections(invocation, location);
+			return switch query.customTypes(location.path, location.databaseName, invocation.global) {
+				case Failure(message): runModeAwareFailure(invocation.output, message);
+				case Success(customTypes):
+					if (invocation.output == Json)
+						writeJsonStdout(renderTypesJson(customTypes, output.usesJsonEnvelope()));
+					else
+						output.writeStdout(renderTypesText(customTypes));
+					0;
+			};
+		});
+	}
+
+	/**
+		The section list is static, but upstream opens the store before any command runs,
+		so a store that cannot open fails here too. A proxied session is already open.
+	**/
+	function runTypeSections(invocation:Invocation, location:WorkspaceLocation):Int {
+		if (!location.proxiedServer)
+			switch store.validate(location.path, invocation.global) {
+				case Failure(message):
+					return runStoreFailure(message);
+				case Success(_):
+			}
+		if (invocation.output == Json)
+			writeJsonStdout(renderTypeSectionsJson());
+		else
+			output.writeStdout(renderTypeSectionsText());
+		return 0;
 	}
 
 	function runBlocked(invocation:Invocation):Int {
@@ -4843,6 +4903,7 @@ final class Application {
 			case Graph: graphHelp();
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case Comments: commentsHelp();
+			case Types: basicCommandHelp("List valid issue types", "types", "      --sections   Show required sections for each issue type\n");
 			case List: listHelp();
 			case Show: showHelp();
 		};

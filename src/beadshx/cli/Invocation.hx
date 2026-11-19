@@ -61,6 +61,9 @@ typedef Invocation = {
 	final depTree:DepTreeInvocation;
 	final graph:GraphInvocation;
 	final comments:CommentsInvocation;
+
+	/** `bd types --sections`. */
+	final typesSections:Bool;
 }
 
 /** The `bd comments` listing arguments as typed. */

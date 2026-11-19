@@ -43,5 +43,8 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The open issues and the rows between them, as `bd graph --all` loads them; a positive `maxRows` caps each status. */
 	function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad>;
 
+	/** The custom types `bd types` lists after the built-in ones. */
+	function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<String>>;
+
 	function close():StoreResult<Bool>;
 }

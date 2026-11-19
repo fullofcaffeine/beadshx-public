@@ -59,6 +59,10 @@ final class EmbeddedStoreAccess {
 		return implementation.graphAll(beadsDir, databaseName, maxRows);
 	}
 
+	public static function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>> {
+		return implementation.customTypes(beadsDir, databaseName);
+	}
+
 	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
@@ -113,6 +117,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function graphAll(beadsDir:String, databaseName:String, maxRows:Int):Null<StoreResult<SqlGraphReader.AllGraphLoad>> {
+		return null;
+	}
+
+	public function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>> {
 		return null;
 	}
 
