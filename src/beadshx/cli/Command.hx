@@ -22,6 +22,7 @@ enum Command {
 	Graph;
 	Blocked;
 	Comments;
+	History;
 	Types;
 	Statuses;
 	Label;

@@ -61,9 +61,21 @@ typedef Invocation = {
 	final depTree:DepTreeInvocation;
 	final graph:GraphInvocation;
 	final comments:CommentsInvocation;
+	final history:HistoryInvocation;
 
 	/** `bd types --sections`. */
 	final typesSections:Bool;
+}
+
+/** The `bd history` arguments as typed. */
+typedef HistoryInvocation = {
+	/** The issue ID argument as typed; it can be a partial ID. */
+	final issueId:String;
+
+	/** `--limit`; zero or a negative value keeps every entry. */
+	final limit:Int;
+
+	final events:Bool;
 }
 
 /** The `bd comments` listing arguments as typed. */

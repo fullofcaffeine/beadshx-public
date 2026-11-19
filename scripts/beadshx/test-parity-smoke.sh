@@ -1728,6 +1728,92 @@ expect_candidate_failure label-remove-unported "" "Error: label remove is not av
 	label remove "$real_database_issue_id" parity
 expect_candidate_failure label-propagate-unported "" "Error: label propagate is not available yet in this build" "" \
 	label propagate "$real_database_epic_id" parity
+# bd history resolves a partial ID (only an ambiguous one is fatal; any other miss keeps the typed ID),
+# reads one dolt_history_issues row for each commit that holds the issue, newest commit first, and then
+# cuts the list to --limit. --events reads events, or wisp_events for an active wisp, with a SQL LIMIT.
+compare_no_workspace history_help history --help
+compare_no_workspace help_history help history
+compare_no_workspace history_missing_argument history
+compare_no_workspace history_extra_argument history test-a test-b
+compare_no_workspace history_extra_argument_json history test-a test-b --json
+compare_no_workspace history_invalid_limit history test-a --limit many
+compare_no_workspace history_invalid_limit_equals history test-a --limit=many
+compare_no_workspace history_limit_shorthand history test-a -n 3
+compare_no_workspace history_invalid_events history test-a --events=maybe
+compare_no_workspace history_unknown_flag history test-a --status open
+compare_no_workspace history_no_workspace history test-a
+compare_no_workspace history_no_workspace_json history test-a --events --json
+compare_real_database history-human exact history "$real_database_issue_id"
+compare_real_database history-json exact history "$real_database_issue_id" --json
+compare_real_database history-closed-human exact history "$real_database_closed_id"
+compare_real_database history-closed-json exact history "$real_database_closed_id" --json
+compare_real_database history-limit-human exact history "$real_database_issue_id" --limit 2
+compare_real_database history-limit-json exact history "$real_database_issue_id" --limit=2 --json
+compare_real_database history-limit-above-human exact history "$real_database_closed_id" --limit 500
+compare_real_database history-limit-negative-json exact history "$real_database_closed_id" --limit -1 --json
+compare_real_database history-partial-human exact history abcd11 --limit 1
+compare_real_database history-ambiguous-human exact history abcd
+compare_real_database history-ambiguous-json exact history abcd --json
+compare_real_database history-missing-human exact history test-nope
+compare_real_database history-missing-json exact history test-nope --json
+compare_real_database history-bare-missing-human exact history nope
+compare_real_database_env history-envelope-json exact BD_JSON_ENVELOPE=1 history "$real_database_closed_id" --limit 1 --json
+compare_real_database_env history-missing-envelope-json exact BD_JSON_ENVELOPE=1 history test-nope --json
+# Commit dates print in the local zone (Kathmandu is UTC+05:45); event times stay in UTC.
+compare_real_database_env history-local-zone-human exact TZ=Asia/Kathmandu history "$real_database_closed_id" --limit 3
+compare_real_database_env history-events-local-zone-human exact TZ=Asia/Kathmandu history "$real_database_closed_id" --events
+compare_real_database history-events-human exact history "$real_database_issue_id" --events
+compare_real_database history-events-json exact history "$real_database_issue_id" --events --json
+compare_real_database history-events-limit-human exact history "$real_database_issue_id" --events --limit 2
+compare_real_database history-events-limit-json exact history "$real_database_issue_id" --events --limit 2 --json
+compare_real_database history-events-partial-human exact history abcd11 --events
+compare_real_database history-events-ambiguous-json exact history abcd --events --json
+compare_real_database history-events-missing-human exact history test-nope --events
+compare_real_database history-events-missing-json exact history test-nope --events --json
+compare_real_database_env history-events-missing-envelope-json exact BD_JSON_ENVELOPE=1 history test-nope --events --json
+# fixture-sql commits on each copy separately, so a commit that history prints pins its dates; the hash
+# then matches on both copies. Events live in a table Dolt ignores, so a title change makes the commit.
+history_dated_commit="SET @@SESSION.dolt_author_date = '2031-02-03T04:05:06Z'
+SET @@SESSION.dolt_committer_date = '2031-02-03T04:05:06Z'"
+history_sparse_sql="$history_dated_commit
+UPDATE issues SET title = 'Sparse <row> & co', assignee = NULL, owner = NULL, created_by = NULL, estimated_minutes = 0, pinned = 1, mol_type = 'swarm', status = 'review', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database_sql history-sparse-human exact "$history_sparse_sql" history "$real_database_bug_id" --limit 2
+compare_real_database_sql history-sparse-json exact "$history_sparse_sql" history "$real_database_bug_id" --limit 2 --json
+history_events_sql="$history_dated_commit
+DELETE FROM events WHERE issue_id = '$real_database_bug_id'
+INSERT INTO events (id, issue_id, event_type, actor, old_value, new_value, comment, created_at) VALUES ('00000000-0000-0000-0000-000000000001', '$real_database_bug_id', 'commented', 'amy', NULL, NULL, 'Looks <good> & done', '2030-01-02 03:04:05'), ('00000000-0000-0000-0000-000000000002', '$real_database_bug_id', 'status_changed', 'bob', 'open', 'in_progress', '', '2030-01-02 03:04:05'), ('00000000-0000-0000-0000-000000000003', '$real_database_bug_id', 'updated', 'cat', '', 'x', NULL, '2029-12-31 23:59:59')
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database_sql history-events-rows-human exact "$history_events_sql" history "$real_database_bug_id" --events
+compare_real_database_sql history-events-rows-json exact "$history_events_sql" history "$real_database_bug_id" --events --json
+compare_real_database_sql history-events-rows-limit-human exact "$history_events_sql" history "$real_database_bug_id" --events --limit 1
+history_no_events_sql="$history_dated_commit
+DELETE FROM events WHERE issue_id = '$real_database_bug_id'
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database_sql history-events-none-human exact "$history_no_events_sql" history "$real_database_bug_id" --events
+compare_real_database_sql history-events-none-json exact "$history_no_events_sql" history "$real_database_bug_id" --events --json
+# Dolt ignores the wisp tables, so a wisp has no commit history; its events come from wisp_events. The
+# import writes a created event at the current second on each copy, so the cases replace it.
+real_database_extra_import="$comments_wisp_record"
+compare_real_database history-wisp-human exact history cwisp
+compare_real_database history-wisp-json exact history test-cwisp --json
+history_wisp_events_sql="DELETE FROM wisp_events WHERE issue_id = 'test-cwisp'
+INSERT INTO wisp_events (id, issue_id, event_type, actor, old_value, new_value, comment, created_at) VALUES ('00000000-0000-0000-0000-00000000000a', 'test-cwisp', 'closed', 'zed', '', 'done', '', '2030-05-06 07:08:09'), ('00000000-0000-0000-0000-00000000000b', 'test-cwisp', 'created', 'amy', NULL, NULL, NULL, '2030-05-06 07:00:00')
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database_sql history-wisp-events-human exact "$history_wisp_events_sql" history test-cwisp --events
+compare_real_database_sql history-wisp-events-json exact "$history_wisp_events_sql" history test-cwisp --events --json
+# A wisp event without created_at fails the scan into time.Time.
+history_wisp_null_sql="INSERT INTO wisp_events (id, issue_id, event_type, actor, created_at) VALUES ('00000000-0000-0000-0000-00000000000c', 'test-cwisp', 'commented', 'amy', NULL)
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database_sql history-wisp-null-time-human exact "$history_wisp_null_sql" history test-cwisp --events
+compare_real_database_sql history-wisp-null-time-json exact "$history_wisp_null_sql" history test-cwisp --events --json
+real_database_extra_import=""
+# Upstream reads proxied workspaces through the server; --global always selects a server database.
+expect_candidate_failure history-global-unported "" \
+	"Error: history is not available yet for server-mode or proxied workspaces in this build" "" \
+	history "$real_database_issue_id" --global
+expect_candidate_failure history-global-json-unported \
+	'{"error":"history is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+	history "$real_database_issue_id" --events --global --json
 
 wait_for_watch_text() {
 	local file="$1"

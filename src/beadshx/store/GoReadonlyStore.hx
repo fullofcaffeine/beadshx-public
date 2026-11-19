@@ -26,6 +26,7 @@ import go.NativeSlice;
 import go.NativeStringSlice;
 import go.Result;
 import beadshx.store.InfoSnapshot.ConfigEntry;
+import beadshx.store.IssueHistory.HISTORY_ROUTE_UNAVAILABLE;
 
 /**
 	`bd dep cycles` reads the graph with Haxe-owned SQL, which exists only for embedded
@@ -101,6 +102,24 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return Failure(COMMENTS_ROUTE_UNAVAILABLE);
+	}
+
+	public function issueHistory(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueHistory.IssueHistoryEntry>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.issueHistory(beadsDir, databaseName, issueId);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(HISTORY_ROUTE_UNAVAILABLE);
+	}
+
+	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int, global:Bool):StoreResult<Array<IssueHistory.IssueEvent>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.issueEvents(beadsDir, databaseName, issueId, limit);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(HISTORY_ROUTE_UNAVAILABLE);
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
@@ -1300,6 +1319,14 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>> {
 		return Failure(COMMENTS_ROUTE_UNAVAILABLE);
+	}
+
+	public function issueHistory(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueHistory.IssueHistoryEntry>> {
+		return Failure(HISTORY_ROUTE_UNAVAILABLE);
+	}
+
+	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int, global:Bool):StoreResult<Array<IssueHistory.IssueEvent>> {
+		return Failure(HISTORY_ROUTE_UNAVAILABLE);
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {

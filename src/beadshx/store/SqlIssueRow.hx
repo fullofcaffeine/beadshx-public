@@ -261,18 +261,18 @@ final class SqlIssueRow {
 		return parsed.value2 == null ? Success(parsed.value1.toString()) : Failure('scalar issue "$id" has invalid timeout_ns: ${parsed.value2.toString()}');
 	}
 
-	static inline function value(field:NullString):String
+	public static inline function value(field:NullString):String
 		return field.valid ? field.string : "";
 
 	/** Native Scan accepts signed64 integers; every nonzero value is true. */
-	static inline function nativeFlag(field:NullInt64):Bool
+	public static inline function nativeFlag(field:NullInt64):Bool
 		return field.valid && NativeIntegers.fromInt64(field.value).wireValue() != "0";
 
-	static inline function timeValue(field:NullTime):String
+	public static inline function timeValue(field:NullTime):String
 		return field.valid ? field.time.format(GO_RFC3339_NANO) : "";
 
 	/** The pinned scanner reads TEXT dates and treats invalid input as Go's zero time. */
-	static function parseIssueTime(field:NullString):String {
+	public static function parseIssueTime(field:NullString):String {
 		if (!field.valid || field.string == "")
 			return GO_ZERO_TIME;
 		for (layout in [GO_RFC3339_NANO, GO_RFC3339, GO_MYSQL_DATETIME]) {

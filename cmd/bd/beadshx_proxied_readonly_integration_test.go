@@ -93,6 +93,7 @@ func TestBeadsHXProxiedReadonly(t *testing.T) {
 		{[]string{"ping", "--json"}, strictReadonlyUnavailable},
 		{[]string{"status", "--json"}, strictReadonlyUnavailable},
 		{[]string{"label", "list-all"}, "Error: label list-all is not available yet for proxied workspaces in this build\n"},
+		{[]string{"history", issue.ID}, "Error: history is not available yet for server-mode or proxied workspaces in this build\n"},
 	} {
 		t.Run(refusal.args[0]+"-unsupported", func(t *testing.T) {
 			cmd := exec.Command(candidate, refusal.args...)

@@ -34,6 +34,14 @@ final class EmbeddedStoreAccess {
 		return implementation.issueComments(beadsDir, databaseName, issueId);
 	}
 
+	public static function issueHistory(beadsDir:String, databaseName:String, issueId:String):Null<StoreResult<Array<IssueHistory.IssueHistoryEntry>>> {
+		return implementation.issueHistory(beadsDir, databaseName, issueId);
+	}
+
+	public static function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int):Null<StoreResult<Array<IssueHistory.IssueEvent>>> {
+		return implementation.issueEvents(beadsDir, databaseName, issueId, limit);
+	}
+
 	public static function blockedIssues(beadsDir:String, databaseName:String, parentId:String):Null<StoreResult<Array<SqlBlockedReader.BlockedIssue>>> {
 		return implementation.blockedIssues(beadsDir, databaseName, parentId);
 	}
@@ -96,6 +104,14 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function issueComments(beadsDir:String, databaseName:String, issueId:String):Null<StoreResult<Array<IssueComment>>> {
+		return null;
+	}
+
+	public function issueHistory(beadsDir:String, databaseName:String, issueId:String):Null<StoreResult<Array<IssueHistory.IssueHistoryEntry>>> {
+		return null;
+	}
+
+	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int):Null<StoreResult<Array<IssueHistory.IssueEvent>>> {
 		return null;
 	}
 

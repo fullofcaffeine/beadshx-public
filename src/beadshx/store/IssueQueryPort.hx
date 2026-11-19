@@ -23,6 +23,12 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The comments of an exact issue ID, as `bd comments` lists them. */
 	function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>>;
 
+	/** One entry for each commit that holds an exact issue ID, newest first, as `bd history` reads them. */
+	function issueHistory(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueHistory.IssueHistoryEntry>>;
+
+	/** The audit events of an exact issue ID, newest first, as `bd history --events` reads them; a positive `limit` caps them. */
+	function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int, global:Bool):StoreResult<Array<IssueHistory.IssueEvent>>;
+
 	/** Blocked issues, as `bd blocked` reports them; an empty `parentId` means no parent filter. */
 	function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>>;
 

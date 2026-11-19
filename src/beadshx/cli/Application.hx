@@ -32,6 +32,11 @@ import beadshx.cli.CatalogViews.renderTypesText;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
 import beadshx.cli.CommentsView.renderCommentsJson;
+import beadshx.cli.HistoryView.renderHistoryEventsJson;
+import beadshx.cli.HistoryView.renderHistoryEventsText;
+import beadshx.cli.HistoryView.renderHistoryJson;
+import beadshx.cli.HistoryView.renderHistoryText;
+import beadshx.store.IssueHistory.HISTORY_ROUTE_UNAVAILABLE;
 import beadshx.cli.LabelsView.LABEL_LIST_ALL_ROUTE_UNAVAILABLE;
 import beadshx.cli.LabelsView.countLabels;
 import beadshx.cli.LabelsView.renderIssueLabelsHuman;
@@ -243,6 +248,10 @@ final class Application {
 	static final identity = "BeadsHX 0.0.0-development (compatible with Beads v1.2.1 at 634cbbc4bc580fa5124f63fdf65d137a46d5b4ff)";
 	static final noWorkspaceMessage = "No active beads workspace found.";
 	static final noWorkspaceHint = "check BEADS_DIR/worktree setup, or run 'bd init' to create a new database";
+
+	/** utils.ErrAmbiguousID, the one partial-ID resolution failure that `bd history` reports. */
+	static final AMBIGUOUS_ISSUE_ID = "ambiguous issue ID: ";
+
 	static final jsonDeprecation = "NOTE: bd --json output format will change in v2.0. Set BD_JSON_ENVELOPE=1 to opt in early. See docs/reference/json-schema.md for migration details.";
 
 	final parser:Parser;
@@ -294,7 +303,7 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | LabelList | LabelListAll | List | Show | Types | Statuses: true;
+				Blocked | Comments | History | LabelList | LabelListAll | List | Show | Types | Statuses: true;
 			case RootHelp | Version | Where | Label: false;
 		};
 	}
@@ -318,6 +327,7 @@ final class Application {
 			case Graph: "graph";
 			case Blocked: "blocked";
 			case Comments: "comments";
+			case History: "history";
 			case Types: "types";
 			case Statuses: "statuses";
 			// Upstream names a profile after cobra's leaf command name.
@@ -380,6 +390,8 @@ final class Application {
 				runBlocked(invocation);
 			case Comments:
 				runComments(invocation);
+			case History:
+				runWithIssueQuery(invocation, (query, location) -> runHistoryQuery(invocation, location, query));
 			case Types:
 				runTypes(invocation);
 			case Statuses:
@@ -1639,6 +1651,48 @@ final class Application {
 			rendered.add("\n");
 		}
 		output.writeStdout(rendered.toString());
+		return 0;
+	}
+
+	/**
+		Resolves the issue, then reads its commit snapshots or its events, as upstream historyCmd does.
+		A proxied workspace skips the resolution upstream, and --global always selects a server database.
+	**/
+	function runHistoryQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final request = invocation.history;
+		if (location.proxiedServer || invocation.global)
+			return runModeAwareFailure(invocation.output, HISTORY_ROUTE_UNAVAILABLE);
+		// Only an ambiguous ID is fatal; every other miss keeps the typed ID, which then has no history (GH#3502).
+		var issueId = request.issueId;
+		switch lookupIssueSummary(location, request.issueId, invocation.global, query) {
+			case Success(IssueFound(summary)):
+				issueId = summary.id;
+			case Success(IssueMissing):
+			case Failure(message):
+				if (StringTools.startsWith(message, AMBIGUOUS_ISSUE_ID))
+					return runModeAwareFailure(invocation.output, message);
+		}
+		if (request.events) {
+			final events = switch query.issueEvents(location.path, location.databaseName, issueId, request.limit, invocation.global) {
+				case Failure(message): return runModeAwareFailure(invocation.output, 'failed to get history events: ${message}');
+				case Success(value): value;
+			};
+			if (invocation.output == Json)
+				writeJsonStdout(renderHistoryEventsJson(events));
+			else
+				output.writeStdout(renderHistoryEventsText(issueId, events));
+			return 0;
+		}
+		final history = switch query.issueHistory(location.path, location.databaseName, issueId, invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'failed to get history: ${message}');
+			case Success(value): value;
+		};
+		// Upstream applies --limit after the read.
+		final shown = request.limit > 0 && request.limit < history.length ? history.slice(0, request.limit) : history;
+		if (invocation.output == Json)
+			writeJsonStdout(renderHistoryJson(shown));
+		else
+			output.writeStdout(renderHistoryText(issueId, shown));
 		return 0;
 	}
 
@@ -3966,7 +4020,7 @@ final class Application {
 				} else {
 					matches.sort(compareIssueIds);
 					if (matches.length > 1)
-						Failure('ambiguous issue ID: "${input}" matches ${matches.length} issues: [${matches.join(" ")}]\nUse more characters to disambiguate');
+						Failure('${AMBIGUOUS_ISSUE_ID}"${input}" matches ${matches.length} issues: [${matches.join(" ")}]\nUse more characters to disambiguate');
 					else
 						query.issueSummary(location.path, location.databaseName, matches[0], global);
 				}
@@ -5001,6 +5055,7 @@ final class Application {
 			case Graph: graphHelp();
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case Comments: commentsHelp();
+			case History: historyHelp();
 			case Types: basicCommandHelp("List valid issue types", "types", "      --sections   Show required sections for each issue type\n");
 			case Statuses: basicCommandHelp("List valid issue statuses", "statuses", "");
 			case Label: labelHelp();
@@ -5009,6 +5064,27 @@ final class Application {
 			case List: listHelp();
 			case Show: showHelp();
 		};
+	}
+
+	function historyHelp():String {
+		return [
+			"Show the complete version history of an issue, including all commits",
+			"where the issue was modified.",
+			"",
+			"Examples:",
+			"  bd history bd-123           # Show all history for issue bd-123",
+			"  bd history bd-123 --limit 5 # Show last 5 changes",
+			"  bd history bd-123 --events  # Show database audit events",
+			"",
+			"Usage:",
+			"  bd history <id> [flags]",
+			"",
+			"Flags:",
+			"      --events      Show database audit events instead of commit snapshots",
+			"  -h, --help        help for history",
+			"      --limit int   Limit number of history entries (0 = all)",
+			""
+		].join("\n") + "\n" + upstreamGlobalFlags();
 	}
 
 	function commentsHelp():String {

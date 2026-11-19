@@ -4,6 +4,7 @@ import beadshx.cli.DepListSelection.selectDepList;
 import beadshx.cli.Invocation.CommentsInvocation;
 import beadshx.cli.Invocation.DepTreeInvocation;
 import beadshx.cli.Invocation.GraphInvocation;
+import beadshx.cli.Invocation.HistoryInvocation;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.IssueListMetadataFilter;
@@ -199,6 +200,8 @@ final class Parser {
 		final graphOnlyFlags = new Array<String>();
 		var commentsLocalTime = false;
 		final commentsOnlyFlags = new Array<String>();
+		var historyEvents = false;
+		var historyEventsUsed = false;
 		var readyAwareUsageFailure = "";
 		function rememberReadyAwareUsageFailure(message:String):Void {
 			if (readyAwareUsageFailure == "")
@@ -225,6 +228,11 @@ final class Parser {
 		// `bd graph <id>` declares --max-rows as a plain int flag and checks its sign after the load.
 		function inGraph():Bool {
 			return positional.length > 0 && positional[0] == "graph" && !(positional.length > 1 && positional[1] == "check");
+		}
+		// `bd history` declares --limit as a plain int flag, without the -n shorthand.
+		function invalidLimit(raw:String):ParseResult {
+			final history = positional.length > 0 && positional[0] == "history";
+			return UsageFailure(history ? invalidIntegerFlag("--limit", raw) : 'invalid argument "${raw}" for "-n, --limit" flag: expected an integer');
 		}
 		function invalidMaxRows(raw:String):ParseResult {
 			return UsageFailure(inGraph() ? invalidIntegerFlag("--max-rows", raw) : 'invalid argument "${raw}" for "--max-rows" flag: expected an integer');
@@ -268,7 +276,7 @@ final class Parser {
 					case ListLimit:
 						final limit = parseSignedInt(argument);
 						if (limit == null)
-							return UsageFailure('invalid argument "${argument}" for "-n, --limit" flag: expected an integer');
+							return invalidLimit(argument);
 						listLimit = IntPresent(limit);
 					case ListSort:
 						listSort = argument;
@@ -481,7 +489,7 @@ final class Parser {
 				final raw = argument.substr(8);
 				final limit = parseSignedInt(raw);
 				if (limit == null)
-					return UsageFailure('invalid argument "${raw}" for "-n, --limit" flag: expected an integer');
+					return invalidLimit(raw);
 				listLimit = IntPresent(limit);
 				continue;
 			}
@@ -823,6 +831,14 @@ final class Parser {
 					showBriefDependencies = enabled;
 				continue;
 			}
+			if (StringTools.startsWith(argument, "--events=")) {
+				final value = argument.substr(9);
+				if (!isBooleanFlagValue(value))
+					return UsageFailure('invalid argument "${value}" for "--events" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+				historyEventsUsed = true;
+				historyEvents = booleanFlagValue(value);
+				continue;
+			}
 			if (StringTools.startsWith(argument, "--local-time=")) {
 				final value = argument.substr(13);
 				if (!isBooleanFlagValue(value))
@@ -1146,6 +1162,9 @@ final class Parser {
 				case "--local-time":
 					commentsOnlyFlags.push(argument);
 					commentsLocalTime = true;
+				case "--events":
+					historyEventsUsed = true;
+					historyEvents = true;
 				case "--brief-deps":
 					showBriefDependencies = true;
 				case "--all":
@@ -1342,6 +1361,17 @@ final class Parser {
 			};
 		}
 
+		function makeHistoryInvocation():HistoryInvocation {
+			return {
+				issueId: positional.length > 1 && positional[0] == "history" ? positional[1] : "",
+				limit: switch listLimit {
+					case IntAbsent: 0;
+					case IntPresent(value): value;
+				},
+				events: historyEvents
+			};
+		}
+
 		function makeCommentsInvocation():CommentsInvocation {
 			final misplacedList = positional.length > 1 && positional[0] == "comments" && positional[1] == "list";
 			return {
@@ -1438,6 +1468,7 @@ final class Parser {
 				depTree: makeDepTreeInvocation(),
 				graph: makeGraphInvocation(),
 				comments: makeCommentsInvocation(),
+				history: makeHistoryInvocation(),
 				typesSections: typesSections
 			});
 		}
@@ -1512,6 +1543,8 @@ final class Parser {
 			return UsageFailure("unknown flag: --fix");
 		if (name != "types" && typesSectionsUsed)
 			return UsageFailure("unknown flag: --sections");
+		if (name != "history" && historyEventsUsed)
+			return UsageFailure("unknown flag: --events");
 		if (name != "dep" && depDirectionUsed)
 			return UsageFailure("unknown flag: --direction");
 		if (!depTree && depTreeOnlyFlags.length > 0)
@@ -1538,7 +1571,8 @@ final class Parser {
 					&& !(name == "dep" && !depTree && (flag == "--type" || flag == "-t"))
 					&& !(depTree && isDepTreeFilterFlag(flag))
 					&& !(graphView && (flag == "--all" || flag == "--max-rows"))
-					&& !(name == "blocked" && flag == "--parent")) {
+					&& !(name == "blocked" && flag == "--parent")
+					&& !(name == "history" && flag == "--limit")) {
 					incompatibleListFlag = flag;
 					break;
 				}
@@ -1771,6 +1805,7 @@ final class Parser {
 				depTree: makeDepTreeInvocation(),
 				graph: makeGraphInvocation(),
 				comments: makeCommentsInvocation(),
+				history: makeHistoryInvocation(),
 				typesSections: typesSections
 			});
 		}
@@ -1839,6 +1874,11 @@ final class Parser {
 				case _:
 					return parsedCommand(Command.Label);
 			}
+		}
+		if (name == "history") {
+			if (!showHelp && positional.length != 2)
+				return UsageFailure('accepts 1 arg(s), received ${positional.length - 1}');
+			return parsedCommand(Command.History);
 		}
 		if (name == "list")
 			return parsedCommand(Command.List);

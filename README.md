@@ -25,7 +25,8 @@ workspaces, and require the same stdout, stderr and exit code:
 - **Workspace and status:** `version`, `where`, `info`, `ping`, `status`
   (also `stats`).
 - **Issue queries:** `list`, `show`, `children`, `search`, `query`, `count`,
-  `ready`, `stale`, `orphans`, `comments`, `label list`, `label list-all`.
+  `ready`, `stale`, `orphans`, `comments`, `label list`, `label list-all`,
+  `history` (also `--events`).
 - **Dependencies and graphs:** `dep list`, `dep tree`, `dep cycles`,
   `blocked`, `graph check`, and `graph` for one issue or `--all`, in every
   view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
@@ -36,10 +37,10 @@ Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
-- `dep tree`, `dep cycles`, `blocked`, `comments`, `graph`, `types` and
-  `statuses` read embedded workspaces only. In a server-mode or proxied
-  workspace they report that they are not available yet. `types --sections`
-  prints its fixed list in every mode.
+- `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
+  `types` and `statuses` read embedded workspaces only. In a server-mode or
+  proxied workspace they report that they are not available yet.
+  `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - `types` and `statuses` read custom types and statuses from the database
