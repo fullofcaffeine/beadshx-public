@@ -5,7 +5,7 @@ import beadshx.nativeextern.context.Context;
 /**
 	What: the exact `database/sql.DB` lifecycle surface used by BeadsHX storage.
 	Why: Haxe owns transaction policy while Go's standard library owns connection pooling.
-	How: only ping, begin, and close cross this first tracer boundary.
+	How: only ping, begin, close, and pool statistics cross this boundary.
 **/
 @:go.import("database/sql")
 @:go.package("sql")
@@ -24,4 +24,8 @@ extern class DB {
 
 	@:go.name("Close")
 	public function close():go.Error;
+
+	@:go.valueReturn
+	@:go.name("Stats")
+	public function stats():DBStats;
 }

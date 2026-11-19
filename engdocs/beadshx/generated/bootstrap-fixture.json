@@ -137,11 +137,15 @@
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/DB.hx",
-        "sha256": "454c2eb68ffabe5acd86978ffca405939a02f5aa35467c1fc46760f55669b764"
+        "sha256": "d0839f7804201a1146f61ec2bf4f6c7e3ef84fa4753f9c200ddafc39beb59e29"
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/DBBeginTxResult.hx",
         "sha256": "4550ca94610c2e79d6a34863817fbdb781f326251cf683593ddad2f417742417"
+      },
+      {
+        "path": "src/beadshx/nativeextern/database/sql/DBStats.hx",
+        "sha256": "72b0aec867cdc286ad1574b8e448748514928a6ca302662e357fa345a5eaaedb"
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/NativeTxQueryResult.hx",
@@ -169,7 +173,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/SqlPkg.hx",
-        "sha256": "42c3b82cec4c06ca3bc265e6f00ccac8988ce6b8df2f62360cfdf58266e0ad8d"
+        "sha256": "fb2452712f9a95f9318fae23bdd31e5bf083db60ad4fa7149642da8df595d1b8"
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/Tx.hx",
@@ -182,6 +186,10 @@
       {
         "path": "src/beadshx/nativeextern/database/sql/TxQueryContextResult.hx",
         "sha256": "e81a05aaf719939986dbc5ae49802ba801e54867f8f465b302e7be04d3d849e4"
+      },
+      {
+        "path": "src/beadshx/nativeextern/database/sql/driver/Connector.hx",
+        "sha256": "8a43109c0a45c02c4da5bec77caadb56cdc378f208ac0d8fb2c822cd8b754096"
       },
       {
         "path": "src/beadshx/nativeextern/doltdriver/Config.hx",
@@ -252,8 +260,20 @@
         "sha256": "2a4310f715fedd36fe4aea39d47ba5e160c985cf88371b8d45c09bff9d9ffa87"
       },
       {
+        "path": "src/beadshx/nativeextern/mysql/Config.hx",
+        "sha256": "b85b2718068fb0f59aab0f716f877041e14577987000a1148a62fc03e7f1fac6"
+      },
+      {
         "path": "src/beadshx/nativeextern/mysql/MySqlError.hx",
         "sha256": "7c899c3af3dff9ece305097cbe9edd26bb7d2d8a90b2ea93ac2fee8495cf764a"
+      },
+      {
+        "path": "src/beadshx/nativeextern/mysql/MysqlPkg.hx",
+        "sha256": "620c3c67fe1f67d761533f737b746d97c9a6b163fe4db8e3c655849362a02ae3"
+      },
+      {
+        "path": "src/beadshx/nativeextern/mysql/NewConnectorResult.hx",
+        "sha256": "dd4d9630bafdb13651809d65e133f3528e1822908a9641f95eba1eb553a27ab6"
       },
       {
         "path": "src/beadshx/nativeextern/regexp/Regexp.hx",

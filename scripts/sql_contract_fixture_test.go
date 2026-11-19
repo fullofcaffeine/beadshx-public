@@ -46,7 +46,7 @@ func TestSQLContractsUseIsolatedBuildInputs(t *testing.T) {
 				write(filepath.Join(source, "scripts/beadshx", name), string(data), 0755)
 			}
 			inputs := map[string]string{"upstream/locks/haxe-go.json": "compiler pin\n", "go.mod": "module fixture\n", "go.sum": "sum input\n", ".haxerc": "scoped configuration\n", "LICENSE": "authored license\n", ".buildflags": "-tags=gms_pure_go\n", "engdocs/beadshx/program/toolchain-locks.json": "locked toolchain\n", "internal/storage/schema/migrations/one.up.sql": "embedded migration\n", "src/space and\nnewline.hx": "authored source\n"}
-			for _, name := range []string{"storage_errors", "storage_relation_errors", "storage_summary_errors", "render_metadata", "raw_metadata_output", "nullable_issue_strings", "native_issue_math", "sql_comment_reader", "sql_comment_details", "complete_issue_row", "embedded_comment_details", "scalar_label_details"} {
+			for _, name := range []string{"storage_errors", "storage_relation_errors", "storage_summary_errors", "render_metadata", "raw_metadata_output", "nullable_issue_strings", "native_issue_math", "sql_comment_reader", "sql_comment_details", "server_driver_timeouts", "complete_issue_row", "embedded_comment_details", "scalar_label_details"} {
 				inputs["test/"+name+"/compile.hxml"] = "contract " + name + "\n"
 			}
 			inputs["test/complete_issue_row/native_test.go.in"] = "package main // authored observer\n"
@@ -183,7 +183,7 @@ if name=='go':
 				}
 				records = append(records, record)
 			}
-			want := 32
+			want := 35
 			if embedded {
 				want = 4
 			} else if scalar {
@@ -199,7 +199,7 @@ if name=='go':
 			}
 			fixture := records[0].Cwd
 			var expected []invocation
-			contracts := []string{"storage_errors", "storage_relation_errors", "storage_summary_errors", "render_metadata", "raw_metadata_output", "nullable_issue_strings", "native_issue_math", "sql_comment_reader", "sql_comment_details", "complete_issue_row"}
+			contracts := []string{"storage_errors", "storage_relation_errors", "storage_summary_errors", "render_metadata", "raw_metadata_output", "nullable_issue_strings", "native_issue_math", "sql_comment_reader", "sql_comment_details", "server_driver_timeouts", "complete_issue_row"}
 			if embedded {
 				contracts = []string{"embedded_comment_details"}
 			} else if scalar {

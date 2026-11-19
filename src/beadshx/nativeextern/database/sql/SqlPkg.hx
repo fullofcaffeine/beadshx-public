@@ -2,7 +2,7 @@ package beadshx.nativeextern.database.sql;
 
 import beadshx.nativeextern.doltdriver.Connector;
 
-/** Package functions used to attach the independent Dolt connector to `database/sql`. */
+/** Package functions used to attach independent SQL connectors to `database/sql`. */
 @:go.import("database/sql")
 @:go.package("sql")
 @:goNative
@@ -15,4 +15,8 @@ extern class SqlPkg {
 	**/
 	@:go.name("OpenDB")
 	public static function openDoltDB(connector:Connector):DB;
+
+	/** Calls `sql.OpenDB` with a driver's interface value; the pool opens lazily. */
+	@:go.name("OpenDB")
+	public static function openDB(connector:beadshx.nativeextern.database.sql.driver.Connector):DB;
 }
