@@ -25,7 +25,7 @@ workspaces, and require the same stdout, stderr and exit code:
 - **Workspace and status:** `version`, `where`, `info`, `ping`, `status`
   (also `stats`).
 - **Issue queries:** `list`, `show`, `children`, `search`, `query`, `count`,
-  `ready`, `stale`, `orphans`.
+  `ready`, `stale`, `orphans`, `comments`.
 - **Dependencies and graphs:** `dep list`, `dep tree`, `dep cycles`,
   `blocked`, `graph check`, and `graph` for one issue or `--all`, in every
   view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
@@ -35,9 +35,9 @@ Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
-- `dep tree`, `dep cycles`, `blocked` and `graph` read embedded workspaces
-  only. In a server-mode or proxied workspace they report that they are not
-  available yet.
+- `dep tree`, `dep cycles`, `blocked`, `comments` and `graph` read embedded
+  workspaces only. In a server-mode or proxied workspace they report that they
+  are not available yet.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

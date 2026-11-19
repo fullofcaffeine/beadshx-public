@@ -1,6 +1,7 @@
 package beadshx.cli;
 
 import beadshx.cli.DepListSelection.selectDepList;
+import beadshx.cli.Invocation.CommentsInvocation;
 import beadshx.cli.Invocation.DepTreeInvocation;
 import beadshx.cli.Invocation.GraphInvocation;
 import beadshx.store.OptionalInt;
@@ -70,6 +71,10 @@ private enum ExpectedValue {
 	DepDirection;
 	DepTreeMaxDepth(shorthand:Bool);
 }
+
+/** Upstream validateCommentsArgs for `bd comments` with more than one argument. */
+private final COMMENTS_TAKES_ONE_ID = '"bd comments" takes a single issue id and lists its comments.\n\n'
+	+ 'To list comments:\n  bd comments <issue-id>\n\nTo add a comment:\n  bd comments add <issue-id> <text>\n\nSee: bd comments --help';
 
 /** Parses the bounded read-only command profile without Cobra or process-global access. */
 final class Parser {
@@ -190,6 +195,8 @@ final class Parser {
 		final depTreeOnlyFlags = new Array<String>();
 		final graphViews = new Map<String, Bool>();
 		final graphOnlyFlags = new Array<String>();
+		var commentsLocalTime = false;
+		final commentsOnlyFlags = new Array<String>();
 		var readyAwareUsageFailure = "";
 		function rememberReadyAwareUsageFailure(message:String):Void {
 			if (readyAwareUsageFailure == "")
@@ -810,6 +817,14 @@ final class Parser {
 					showBriefDependencies = enabled;
 				continue;
 			}
+			if (StringTools.startsWith(argument, "--local-time=")) {
+				final value = argument.substr(13);
+				if (!isBooleanFlagValue(value))
+					return UsageFailure('invalid argument "${value}" for "--local-time" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+				commentsOnlyFlags.push("--local-time");
+				commentsLocalTime = booleanFlagValue(value);
+				continue;
+			}
 			if (StringTools.startsWith(argument, "--verbose=") || StringTools.startsWith(argument, "-v=")) {
 				final value = argument.substr(argument.indexOf("=") + 1);
 				if (!isBooleanFlagValue(value))
@@ -1119,6 +1134,9 @@ final class Parser {
 					showIncludeDependents = true;
 				case "--include-comments":
 					showIncludeComments = true;
+				case "--local-time":
+					commentsOnlyFlags.push(argument);
+					commentsLocalTime = true;
 				case "--brief-deps":
 					showBriefDependencies = true;
 				case "--all":
@@ -1315,6 +1333,15 @@ final class Parser {
 			};
 		}
 
+		function makeCommentsInvocation():CommentsInvocation {
+			final misplacedList = positional.length > 1 && positional[0] == "comments" && positional[1] == "list";
+			return {
+				issueId: positional.length > 1 && !misplacedList ? positional[1] : "",
+				misplacedList: misplacedList,
+				localTime: commentsLocalTime
+			};
+		}
+
 		function makeGraphInvocation():GraphInvocation {
 			var view = "";
 			// Upstream renders --all in another branch, where --html outranks --dot.
@@ -1400,7 +1427,8 @@ final class Parser {
 				depType: depTypeRaw,
 				depListSelection: selectDepList(depDirection, showIds.length),
 				depTree: makeDepTreeInvocation(),
-				graph: makeGraphInvocation()
+				graph: makeGraphInvocation(),
+				comments: makeCommentsInvocation()
 			});
 		}
 		var helpCommand = false;
@@ -1478,6 +1506,10 @@ final class Parser {
 			return UsageFailure('unknown flag: ${depTreeOnlyFlags[0]}');
 		if (!graphView && graphOnlyFlags.length > 0)
 			return UsageFailure('unknown flag: ${graphOnlyFlags[0]}');
+		// --local-time belongs to the listing alone, not to its `list` or `add` subcommands.
+		if ((name != "comments" || (positional.length > 1 && (positional[1] == "list" || positional[1] == "add")))
+			&& commentsOnlyFlags.length > 0)
+			return UsageFailure('unknown flag: ${commentsOnlyFlags[0]}');
 		if (name == "count" && countGroupConflict)
 			return UsageFailure("only one --by-* flag can be specified");
 		if (name != "list") {
@@ -1725,7 +1757,8 @@ final class Parser {
 				depType: depTypeRaw,
 				depListSelection: selectDepList(depDirection, showIds.length),
 				depTree: makeDepTreeInvocation(),
-				graph: makeGraphInvocation()
+				graph: makeGraphInvocation(),
+				comments: makeCommentsInvocation()
 			});
 		}
 		if (name == "version")
@@ -1760,11 +1793,30 @@ final class Parser {
 			return parsedCommand(Command.GraphCheck);
 		if (graphView)
 			return parsedCommand(Command.Graph);
+		if (name == "comments") {
+			final subcommand = positional.length > 1 ? positional[1] : "";
+			if (subcommand == "add")
+				return UsageFailure("comments add is not available yet in this build");
+			// Upstream checks the arguments before it opens the store; `list` is a subcommand.
+			if (!showHelp && subcommand != "list" && positional.length != 2) {
+				if (positional.length < 2)
+					return UsageFailure("requires at least 1 arg(s), only received 0");
+				return OutputFailure(output, positional[2] == "add" ? misplacedCommentsAdd(subcommand) : COMMENTS_TAKES_ONE_ID);
+			}
+			return parsedCommand(Command.Comments);
+		}
 		if (name == "list")
 			return parsedCommand(Command.List);
 		if (name == "show" || name == "view")
 			return parsedCommand(Command.Show);
 		return helpCommand ? UsageFailure('unknown command "${name}"') : UnknownCommand(name);
+	}
+
+	/** Upstream validateCommentsArgs for `bd comments <id> add ...`. */
+	static function misplacedCommentsAdd(issueId:String):String {
+		return '"bd comments <issue-id> add ..." is not valid — the subcommand must come first.\n\n'
+			+ 'To add a comment, run:\n  bd comments add <issue-id> <text>\n\n'
+			+ 'Example:\n  bd comments add ${issueId} "your comment"\n\nSee: bd comments --help';
 	}
 
 	static function isBooleanFlagValue(value:String):Bool {

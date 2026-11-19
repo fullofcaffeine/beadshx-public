@@ -23,6 +23,9 @@ import beadshx.cli.GraphViews.renderGraphDot;
 import beadshx.cli.GraphViews.renderGraphHtml;
 import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
+import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
+import beadshx.cli.CommentsView.commentTimestamp;
+import beadshx.cli.CommentsView.renderCommentsJson;
 import beadshx.store.SqlGraphReader.AllGraphLoad;
 import beadshx.store.SqlGraphReader.GraphDependency;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
@@ -279,7 +282,7 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | List | Show: true;
+				Blocked | Comments | List | Show: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -302,6 +305,7 @@ final class Application {
 			case GraphCheck: "graph-check";
 			case Graph: "graph";
 			case Blocked: "blocked";
+			case Comments: "comments";
 			case List: "list";
 			case Show: "show";
 			case RootHelp: "bd";
@@ -356,6 +360,8 @@ final class Application {
 				runGraph(invocation);
 			case Blocked:
 				runBlocked(invocation);
+			case Comments:
+				runComments(invocation);
 			case List:
 				runList(invocation);
 			case Show:
@@ -1487,6 +1493,61 @@ final class Application {
 		}
 		lines.push("]");
 		return Success(lines.join("\n") + "\n");
+	}
+
+	function runComments(invocation:Invocation):Int {
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFound();
+			case Found(location):
+				switch validateDatabaseSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case Accepted:
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
+							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							case Failure(message): runStoreFailure(message);
+							case Success(query):
+								final result = runCommentsQuery(invocation, location, query);
+								closeIssueQuery(query, result);
+						}
+				}
+		};
+	}
+
+	/** Resolves the issue, then reads and prints its comments, in the order upstream commentsCmd does. */
+	function runCommentsQuery(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final request = invocation.comments;
+		if (request.misplacedList)
+			return runModeAwareFailure(invocation.output, MISPLACED_COMMENTS_LIST);
+		final issueId = switch lookupIssueSummary(location, request.issueId, invocation.global, query) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: ${message}');
+			case Success(IssueMissing):
+				return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: no issue found matching "${request.issueId}"');
+			case Success(IssueFound(summary)): summary.id;
+		};
+		final comments = switch query.issueComments(location.path, location.databaseName, issueId, invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'getting comments: ${message}');
+			case Success(value): value;
+		};
+		if (invocation.output == Json) {
+			writeJsonStdout(renderCommentsJson(comments));
+			return 0;
+		}
+		if (comments.length == 0) {
+			output.writeStdout('No comments on ${issueId}\n');
+			return 0;
+		}
+		final rendered = new StringBuf();
+		rendered.add('\nComments on ${issueId}:\n\n');
+		for (comment in comments) {
+			rendered.add('[${comment.author}] at ${commentTimestamp(comment.createdAt, request.localTime)}\n');
+			for (line in trimTrailingNewlines(output.renderMarkdown(comment.text)).split("\n"))
+				rendered.add('  ${line}\n');
+			rendered.add("\n");
+		}
+		output.writeStdout(rendered.toString());
+		return 0;
 	}
 
 	function renderRelatedDepList(invocation:Invocation, ids:Array<String>, dependencies:Array<RelatedIssue>, direction:RelationDirection):Int {
@@ -4781,9 +4842,67 @@ final class Application {
 			case GraphCheck: basicCommandHelp("Check dependency graph integrity", "graph check", "");
 			case Graph: graphHelp();
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
+			case Comments: commentsHelp();
 			case List: listHelp();
 			case Show: showHelp();
 		};
+	}
+
+	function commentsHelp():String {
+		return [
+			"View or manage comments on an issue.",
+			"",
+			"Examples:",
+			"  # List all comments on an issue (issue id is required — there is no \"comments list\")",
+			"  bd comments bd-123",
+			"",
+			"  # List comments in JSON format",
+			"  bd comments bd-123 --json",
+			"",
+			"  # Add a comment",
+			"  bd comments add bd-123 \"This is a comment\"",
+			"",
+			"  # Add a comment from a file",
+			"  bd comments add bd-123 -f notes.txt",
+			"",
+			"Usage:",
+			"  bd comments [issue-id] [flags]",
+			"  bd comments [command]",
+			"",
+			"Available Commands:",
+			"  add         Add a comment to an issue",
+			"  list        Invalid — use bd comments <issue-id> to list comments",
+			"",
+			"Flags:",
+			"  -h, --help         help for comments",
+			"      --local-time   Show timestamps in local time instead of UTC",
+			""
+		].join("\n")
+			+ "\n"
+			+ upstreamGlobalFlags()
+			+ "\nUse \"bd comments [command] --help\" for more information about a command.\n";
+	}
+
+	/** The Global Flags section upstream prints under each command's help. */
+	static function upstreamGlobalFlags():String {
+		return [
+			"Global Flags:",
+			"      --actor string              Actor name for audit trail (default: $BEADS_ACTOR, git user.name, $USER)",
+			"      --cpu-profile               Generate CPU profile for performance analysis",
+			"      --database string           Run against a different server database for this invocation, without changing the project's configured database (proxied-server mode only)",
+			"      --db string                 Database path (default: auto-discover .beads/*.db). In proxied-server mode, a value that isn't an existing path is treated as a database name override (see --database)",
+			"  -C, --directory string          Change to this directory before running the command (like git -C)",
+			"      --dolt-auto-commit string   Dolt auto-commit policy (off|on|batch). 'on': commit after each write. 'batch': defer commits to bd dolt commit; uncommitted changes persist in the working set until then (a live batch-mode bd process also flushes on SIGTERM/SIGHUP). Applies to embedded and direct SQL-server modes; proxied-server routes are unaffected. Default: on. Override via config key dolt.auto-commit",
+			"      --global                    Use the global shared-server database (beads_global)",
+			"      --ignore-schema-skew        Proceed despite forward schema drift (some queries may fail)",
+			"      --json                      Output in JSON format",
+			"      --mem-profile string        Write heap profile to FILE on exit (also respects BEADS_MEM_PROFILE)",
+			"      --no-color                  Disable color output (also: NO_COLOR=1 or CLICOLOR=0)",
+			"  -q, --quiet                     Suppress non-essential output (errors only)",
+			"      --readonly                  Read-only mode: block write operations (for worker sandboxes)",
+			"      --sandbox                   Sandbox mode: disables Dolt auto-push",
+			"  -v, --verbose                   Enable verbose/debug output"
+		].join("\n") + "\n";
 	}
 
 	function graphHelp():String {

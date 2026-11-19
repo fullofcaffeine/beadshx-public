@@ -1568,6 +1568,51 @@ compare_real_database show-json-comments-attached exact show "$real_database_iss
 compare_real_database show-json-comments-disabled exact show "$real_database_issue_id" --json --include-comments=false
 compare_real_database show-json-dependents exact show "$real_database_epic_id" --json --include-dependents
 compare_real_database show-json-brief-deps exact show "$real_database_child_id" --json --brief-deps
+# bd comments resolves a partial ID, reads the comment table that the issue's wisp status selects,
+# orders by created_at and then comment ID, and renders each body as Markdown.
+compare_no_workspace comments_help comments --help
+compare_no_workspace comments_missing_argument comments
+compare_no_workspace comments_extra_argument comments test-parent extra
+compare_no_workspace comments_extra_argument_json comments test-parent extra --json
+compare_no_workspace comments_misplaced_add comments test-parent add "a comment"
+compare_no_workspace comments_misplaced_add_json comments test-parent add "a comment" --json
+compare_no_workspace comments_unknown_flag comments test-parent --status open
+compare_no_workspace comments_invalid_local_time comments test-parent --local-time=maybe
+compare_no_workspace comments_no_workspace comments test-parent
+compare_no_workspace comments_list_no_workspace comments list
+compare_real_database comments-human exact comments "$real_database_issue_id"
+compare_real_database comments-json exact comments "$real_database_issue_id" --json
+compare_real_database comments-none-human exact comments "$real_database_bug_id"
+compare_real_database comments-none-json exact comments "$real_database_bug_id" --json
+compare_real_database comments-partial-human exact comments abcd11
+compare_real_database comments-ambiguous-human exact comments abcd
+compare_real_database comments-ambiguous-json exact comments abcd --json
+compare_real_database comments-missing-human exact comments test-nope
+compare_real_database comments-missing-json exact comments test-nope --json
+compare_real_database comments-list-human exact comments list
+compare_real_database comments-list-json exact comments list --json
+compare_real_database_env comments-envelope-json exact BD_JSON_ENVELOPE=1 comments "$real_database_issue_id" --json
+comments_record() {
+	jq -nc --arg id "$1" --argjson ephemeral "$2" '{id: $id, title: "Comment thread", status: "open", priority: 2,
+		issue_type: "task", created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z", ephemeral: $ephemeral,
+		comments: [
+			{author: "zed", text: "Late evening note", created_at: "2026-08-21T20:30:00Z"},
+			{author: "amy", text: "# Heading\n\nSome **bold** text, `code`, <tags> & entities.\n\n- one\n- two",
+				created_at: "2026-08-21T10:15:00Z"},
+			{author: "bob", text: "Tie one", created_at: "2026-08-21T10:15:00Z"},
+			{author: "cat", text: "Tie two", created_at: "2026-08-21T10:15:00Z"}]}'
+}
+comments_durable_record="$(comments_record test-cdur false)"
+comments_wisp_record="$(comments_record test-cwisp true)"
+compare_real_database_import comments-thread-human exact "$comments_durable_record" comments cdur
+compare_real_database_import comments-thread-json exact "$comments_durable_record" comments test-cdur --json
+compare_real_database_import comments-wisp-human exact "$comments_wisp_record" comments test-cwisp
+compare_real_database_import comments-wisp-json exact "$comments_wisp_record" comments test-cwisp --json
+# Kathmandu is UTC+05:45, so --local-time moves the minute, the hour and, at 20:30 UTC, the date.
+real_database_extra_import="$comments_durable_record"
+compare_real_database_env comments-local-time-human exact TZ=Asia/Kathmandu comments test-cdur --local-time
+compare_real_database_env comments-utc-human exact TZ=Asia/Kathmandu comments test-cdur --local-time=false
+real_database_extra_import=""
 
 wait_for_watch_text() {
 	local file="$1"

@@ -20,6 +20,9 @@ interface IssueQueryPort extends QueryTimePort {
 	function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String>;
 	function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>>;
 
+	/** The comments of an exact issue ID, as `bd comments` lists them. */
+	function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>>;
+
 	/** Blocked issues, as `bd blocked` reports them; an empty `parentId` means no parent filter. */
 	function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>>;
 

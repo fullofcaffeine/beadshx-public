@@ -60,6 +60,18 @@ typedef Invocation = {
 	final depListSelection:DepListSelection;
 	final depTree:DepTreeInvocation;
 	final graph:GraphInvocation;
+	final comments:CommentsInvocation;
+}
+
+/** The `bd comments` listing arguments as typed. */
+typedef CommentsInvocation = {
+	/** The issue ID argument as typed; it can be a partial ID. */
+	final issueId:String;
+
+	/** `bd comments list`, which upstream rejects only after it opens the store. */
+	final misplacedList:Bool;
+
+	final localTime:Bool;
 }
 
 /**

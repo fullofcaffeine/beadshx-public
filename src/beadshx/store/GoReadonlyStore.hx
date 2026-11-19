@@ -34,6 +34,9 @@ import beadshx.store.InfoSnapshot.ConfigEntry;
 **/
 final DEP_CYCLES_ROUTE_UNAVAILABLE = "dep cycles is not available yet for server-mode or proxied workspaces in this build";
 
+/** `bd comments` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
+final COMMENTS_ROUTE_UNAVAILABLE = "comments is not available yet for server-mode or proxied workspaces in this build";
+
 /** `bd blocked` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
 final BLOCKED_ROUTE_UNAVAILABLE = "blocked is not available yet for server-mode or proxied workspaces in this build";
 
@@ -83,6 +86,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
+	public function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>> {
+		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+			final embedded = EmbeddedStoreAccess.issueComments(beadsDir, databaseName, issueId);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(COMMENTS_ROUTE_UNAVAILABLE);
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
@@ -1260,6 +1272,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
 		return readTransitionalRelations(this, beadsDir, plan, global);
+	}
+
+	public function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>> {
+		return Failure(COMMENTS_ROUTE_UNAVAILABLE);
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {

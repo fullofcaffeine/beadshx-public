@@ -21,6 +21,7 @@ enum Command {
 	GraphCheck;
 	Graph;
 	Blocked;
+	Comments;
 	List;
 	Show;
 }

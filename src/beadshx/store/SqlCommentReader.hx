@@ -54,30 +54,38 @@ final class SqlCommentReader {
 		return NativeIntegers.fromInt64(value.value);
 	}
 
+	/** Detail assembly reads the bodies through an iterator that prefixes each error. */
 	public static function readSqlIssueComments(context:Context, transaction:Tx, read:SqlCommentRead):StoreResult<Array<IssueComment>> {
+		return switch readSqlDirectIssueComments(context, transaction, read.id) {
+			case Failure(message): Failure('iter comments ${read.id}: ' + message);
+			case Success(comments): Success(comments);
+		};
+	}
+
+	/** Upstream GetIssueCommentsInTx, which `bd comments` calls without the iterator prefix. */
+	public static function readSqlDirectIssueComments(context:Context, transaction:Tx, issueId:String):StoreResult<Array<IssueComment>> {
 		// IsActiveWispInTx deliberately falls back on every query or scan error.
-		final table = SqlWispRouting.isActiveWispInTx(context, transaction, read.id) ? "wisp_comments" : "comments";
+		final table = SqlWispRouting.isActiveWispInTx(context, transaction, issueId) ? "wisp_comments" : "comments";
 		final query = 'SELECT id, issue_id, author, text, created_at FROM $table WHERE issue_id = ? ORDER BY created_at ASC, id ASC';
-		final outer = 'iter comments ${read.id}: ';
-		final queried = transaction.queryContext(context, query, read.id);
+		final queried = transaction.queryContext(context, query, issueId);
 		if (queried.value2 != null)
-			return Failure(outer + 'get issue comments from $table: ' + queried.value2.toString());
+			return Failure('get issue comments from $table: ' + queried.value2.toString());
 		final rows = queried.value1;
 		final comments = new Array<IssueComment>();
 		while (rows.next()) {
 			final id = NativePointer.of("");
-			final issueId = NativePointer.of("");
+			final rowIssueId = NativePointer.of("");
 			final author = NativePointer.of("");
 			final text = NativePointer.of("");
 			final createdAt = new Time();
-			final scanError = rows.scan(id, issueId, author, text, createdAt);
+			final scanError = rows.scan(id, rowIssueId, author, text, createdAt);
 			if (scanError != null) {
 				rows.close();
-				return Failure(outer + "get issue comments: scan: " + scanError.toString());
+				return Failure("get issue comments: scan: " + scanError.toString());
 			}
 			comments.push({
 				id: id.get(),
-				issueId: issueId.get(),
+				issueId: rowIssueId.get(),
 				author: author.get(),
 				text: text.get(),
 				createdAt: createdAt.format("2006-01-02T15:04:05.999999999Z07:00")
@@ -85,6 +93,6 @@ final class SqlCommentReader {
 		}
 		final iterationError = rows.err();
 		rows.close();
-		return iterationError == null ? Success(comments) : Failure(outer + iterationError.toString());
+		return iterationError == null ? Success(comments) : Failure(iterationError.toString());
 	}
 }
