@@ -70,12 +70,27 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public function new() {}
 
+	/**
+		Opens the store for one command, as upstream's root pre-run does before any command body
+		runs. Upstream reports a store that cannot open as plain `Error: failed to open database: ...`
+		in every output mode, without command context. Direct reads open their own store later, so a
+		workspace without an embedded database proves its server open here first: a closed server
+		then fails with the plain message before the command resolves an ID or reads. Embedded reads
+		and `--global` keep their own errors.
+	**/
 	public function openIssueQuery(beadsDir:String, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort> {
 		if (global)
 			if (proxiedServer)
 				return Failure("--global is not supported with --proxied-server");
-		if (!proxiedServer)
+		if (!proxiedServer) {
+			if (!global && !sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"])))
+				switch validate(beadsDir, false) {
+					case Failure(message):
+						return Failure(message);
+					case Success(_):
+				}
 			return Success(this);
+		}
 		final result = NativeReadonlyFacade.openProxiedQuerySession(beadsDir, databaseName);
 		if (result.isErr())
 			return Failure(errorMessage(result));

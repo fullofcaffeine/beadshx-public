@@ -42,7 +42,8 @@ Limits:
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
   `types`, `statuses`, `events tail` and `events export` read embedded
   workspaces only. In a server-mode or proxied workspace they report that
-  they are not available yet.
+  they are not available yet. If the server cannot be reached, they print
+  the same store error as upstream.
   `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.

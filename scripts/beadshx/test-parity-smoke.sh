@@ -261,6 +261,8 @@ compare_store_failure() {
 	local oracle_before oracle_after candidate_before candidate_after
 	local oracle_exit candidate_exit
 	local metadata config_yaml
+	local oracle_tmpdir="${TMPDIR:-/tmp}"
+	local candidate_tmpdir="${TMPDIR:-/tmp}"
 	case "$scenario" in
 	missing-embedded)
 		metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}'
@@ -269,6 +271,14 @@ compare_store_failure() {
 	unavailable-server)
 		metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads"}'
 		config_yaml=$'issue-prefix: test\ndolt:\n  mode: server\n  auto-start: false'
+		# Upstream counts each failed server connection in a circuit breaker file under
+		# $TMPDIR/beads-circuit, which every process on the machine shares. Five failures in a
+		# minute trip it: that process logs a "[circuit-breaker] ... closed → open" line, and later
+		# opens fail fast with another error. A fresh TMPDIR outside the fingerprinted fixture
+		# keeps each command independent of the other cases and of parity runs in other checkouts.
+		oracle_tmpdir="$case_root/oracle-tmp"
+		candidate_tmpdir="$case_root/candidate-tmp"
+		mkdir -p "$oracle_tmpdir" "$candidate_tmpdir"
 		;;
 	*)
 		printf 'unknown store-failure scenario: %s\n' "$scenario" >&2
@@ -290,6 +300,7 @@ compare_store_failure() {
 		cd "$oracle_root/work"
 		env HOME="$oracle_root/home" \
 			XDG_CONFIG_HOME="$oracle_root/config" \
+			TMPDIR="$oracle_tmpdir" \
 			BEADS_DOLT_AUTO_START=0 \
 			BEADS_DOLT_PORT=1 \
 			BEADS_TELEMETRY_DISABLED=1 \
@@ -304,6 +315,7 @@ compare_store_failure() {
 		cd "$candidate_root/work"
 		env HOME="$candidate_root/home" \
 			XDG_CONFIG_HOME="$candidate_root/config" \
+			TMPDIR="$candidate_tmpdir" \
 			BEADS_DOLT_AUTO_START=0 \
 			BEADS_DOLT_PORT=1 \
 			BEADS_TELEMETRY_DISABLED=1 \
@@ -355,6 +367,66 @@ compare_store_failure missing-embedded info-whats-new info --whats-new
 compare_store_failure missing-embedded info-whats-new-json info --whats-new --json
 compare_store_failure missing-embedded info-whats-new-global info --whats-new --global
 compare_store_failure unavailable-server info info
+# Upstream opens the store in its root pre-run, before any command body runs. A closed server
+# fails there with plain "Error: failed to open database: ...", without the command's context
+# (such as "resolving <id>:") and without a JSON object under --json.
+compare_store_failure unavailable-server info-json info --json
+compare_store_failure unavailable-server ping ping
+compare_store_failure unavailable-server ping-json ping --json
+compare_store_failure unavailable-server status status
+compare_store_failure unavailable-server status-json status --json
+compare_store_failure unavailable-server list list
+compare_store_failure unavailable-server list-json list --json
+compare_store_failure unavailable-server show show test-1
+compare_store_failure unavailable-server show-json show test-1 --json
+compare_store_failure unavailable-server children children test-1
+compare_store_failure unavailable-server children-json children test-1 --json
+compare_store_failure unavailable-server search search parity
+compare_store_failure unavailable-server search-json search parity --json
+compare_store_failure unavailable-server query query status=open
+compare_store_failure unavailable-server query-json query status=open --json
+compare_store_failure unavailable-server count count
+compare_store_failure unavailable-server count-json count --json
+compare_store_failure unavailable-server ready ready
+compare_store_failure unavailable-server ready-json ready --json
+compare_store_failure unavailable-server stale stale
+compare_store_failure unavailable-server stale-json stale --json
+compare_store_failure unavailable-server orphans orphans
+compare_store_failure unavailable-server orphans-json orphans --json
+compare_store_failure unavailable-server comments comments test-1
+compare_store_failure unavailable-server comments-json comments test-1 --json
+compare_store_failure unavailable-server label-list label list test-1
+compare_store_failure unavailable-server label-list-json label list test-1 --json
+compare_store_failure unavailable-server label-list-all label list-all
+compare_store_failure unavailable-server label-list-all-json label list-all --json
+compare_store_failure unavailable-server history history test-1
+compare_store_failure unavailable-server history-json history test-1 --json
+compare_store_failure unavailable-server history-events-json history test-1 --events --json
+compare_store_failure unavailable-server dep-list dep list test-1
+compare_store_failure unavailable-server dep-list-json dep list test-1 --json
+compare_store_failure unavailable-server dep-tree dep tree test-1
+compare_store_failure unavailable-server dep-tree-json dep tree test-1 --json
+# The command's own flag checks run after the store opens.
+compare_store_failure unavailable-server dep-tree-bad-direction-json dep tree test-1 --direction sideways --json
+compare_store_failure unavailable-server dep-cycles dep cycles
+compare_store_failure unavailable-server dep-cycles-json dep cycles --json
+compare_store_failure unavailable-server blocked blocked
+compare_store_failure unavailable-server blocked-json blocked --json
+compare_store_failure unavailable-server graph-check graph check
+compare_store_failure unavailable-server graph-check-json graph check --json
+compare_store_failure unavailable-server graph graph test-1
+compare_store_failure unavailable-server graph-json graph test-1 --json
+compare_store_failure unavailable-server graph-all graph --all
+compare_store_failure unavailable-server graph-all-json graph --all --json
+compare_store_failure unavailable-server types types
+compare_store_failure unavailable-server types-json types --json
+compare_store_failure unavailable-server types-sections types --sections
+compare_store_failure unavailable-server statuses statuses
+compare_store_failure unavailable-server statuses-json statuses --json
+compare_store_failure unavailable-server events-tail events tail
+compare_store_failure unavailable-server events-tail-json events tail --json
+compare_store_failure unavailable-server events-export events export
+compare_store_failure unavailable-server events-export-json events export --json
 compare_store_failure missing-embedded types types
 compare_store_failure missing-embedded statuses statuses
 
