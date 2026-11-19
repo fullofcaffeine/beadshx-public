@@ -63,6 +63,10 @@ final class EmbeddedStoreAccess {
 		return implementation.customTypes(beadsDir, databaseName);
 	}
 
+	public static function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
+		return implementation.customStatuses(beadsDir, databaseName);
+	}
+
 	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
@@ -121,6 +125,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>> {
+		return null;
+	}
+
+	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
 		return null;
 	}
 

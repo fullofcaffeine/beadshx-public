@@ -181,6 +181,8 @@ compare_no_workspace query_parse_only query status=open --parse-only
 compare_no_workspace types types
 compare_no_workspace types_sections_json types --sections --json
 compare_no_workspace types_bad_sections types --sections=bogus
+compare_no_workspace statuses_json statuses --json
+compare_no_workspace statuses_sections statuses --sections
 BEADSHX_TEST_JSON_ENVELOPE=1 compare_no_workspace where_json_envelope where --json
 
 fingerprint_tree() {
@@ -354,6 +356,7 @@ compare_store_failure missing-embedded info-whats-new-json info --whats-new --js
 compare_store_failure missing-embedded info-whats-new-global info --whats-new --global
 compare_store_failure unavailable-server info info
 compare_store_failure missing-embedded types types
+compare_store_failure missing-embedded statuses statuses
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -758,6 +761,25 @@ compare_real_database_sql types-config-json exact "$types_config_json_sql" types
 # Server-mode, proxied and --global workspaces have no Haxe-owned route yet.
 expect_candidate_failure types-global-unported "" \
 	"Error: types is not available yet for server-mode or proxied workspaces in this build" "" types --global
+# The fixture has no custom statuses. Upstream fills an empty custom_statuses table from a valid
+# status.custom like custom_types, so those statuses print by name; an invalid value prints none.
+compare_real_database statuses-human exact statuses
+compare_real_database statuses-json exact statuses --json
+custom_statuses_sql="INSERT INTO custom_statuses (name, category) VALUES ('review', 'active'), ('qa', 'wip'), ('shipped', 'done'), ('hold', 'frozen'), ('legacy', 'unspecified'), ('open', 'weird'), ('hooked', 'done'), ('pinned', 'active'), ('Ünï', 'wip'), ('a-very-long-status-name', 'x'), ('r&d<x>', 'wip')"
+compare_real_database_sql statuses-many-human exact "$custom_statuses_sql" statuses
+compare_real_database_sql statuses-many-json exact "$custom_statuses_sql" statuses --json
+real_database_extra_sql="$custom_statuses_sql"
+compare_real_database_env statuses-many-json-envelope exact BD_JSON_ENVELOPE=1 statuses --json
+real_database_extra_sql=""
+status_config_sql="DELETE FROM config WHERE \`key\` = 'status.custom'
+INSERT INTO config (\`key\`, value) VALUES ('status.custom', ' zz:active , qa:wip,legacy,, hold:frozen ')"
+compare_real_database_sql statuses-config-human exact "$status_config_sql" statuses
+compare_real_database_sql statuses-config-json exact "$status_config_sql" statuses --json
+compare_real_database_sql statuses-config-invalid-human exact "DELETE FROM config WHERE \`key\` = 'status.custom'
+INSERT INTO config (\`key\`, value) VALUES ('status.custom', 'good:active,Bad')" statuses
+expect_candidate_failure statuses-global-json-unported \
+	'{"error":"statuses is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+	statuses --global --json
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
 compare_real_database count-human exact count

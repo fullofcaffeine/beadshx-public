@@ -52,6 +52,10 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedCustomConfigReader.readTypes(beadsDir, databaseName);
 	}
 
+	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
+		return EmbeddedCustomConfigReader.readStatuses(beadsDir, databaseName);
+	}
+
 	public function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return switch new EmbeddedDependencyReader(beadsDir, databaseName).read(plan.anchors) {
 			case EmbeddedDependencyFailure(message): DependencyEdgeFailure(message);

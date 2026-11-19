@@ -23,13 +23,15 @@ import beadshx.cli.GraphViews.renderGraphDot;
 import beadshx.cli.GraphViews.renderGraphHtml;
 import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
-import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
-import beadshx.cli.CommentsView.commentTimestamp;
-import beadshx.cli.CommentsView.renderCommentsJson;
+import beadshx.cli.CatalogViews.renderStatusesJson;
+import beadshx.cli.CatalogViews.renderStatusesText;
 import beadshx.cli.CatalogViews.renderTypeSectionsJson;
 import beadshx.cli.CatalogViews.renderTypeSectionsText;
 import beadshx.cli.CatalogViews.renderTypesJson;
 import beadshx.cli.CatalogViews.renderTypesText;
+import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
+import beadshx.cli.CommentsView.commentTimestamp;
+import beadshx.cli.CommentsView.renderCommentsJson;
 import beadshx.store.SqlGraphReader.AllGraphLoad;
 import beadshx.store.SqlGraphReader.GraphDependency;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
@@ -286,7 +288,7 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | List | Show | Types: true;
+				Blocked | Comments | List | Show | Types | Statuses: true;
 			case RootHelp | Version | Where: false;
 		};
 	}
@@ -311,6 +313,7 @@ final class Application {
 			case Blocked: "blocked";
 			case Comments: "comments";
 			case Types: "types";
+			case Statuses: "statuses";
 			case List: "list";
 			case Show: "show";
 			case RootHelp: "bd";
@@ -369,6 +372,8 @@ final class Application {
 				runComments(invocation);
 			case Types:
 				runTypes(invocation);
+			case Statuses:
+				runStatuses(invocation);
 			case List:
 				runList(invocation);
 			case Show:
@@ -1470,6 +1475,18 @@ final class Application {
 						output.writeStdout(renderTypesText(customTypes));
 					0;
 			};
+		});
+	}
+
+	function runStatuses(invocation:Invocation):Int {
+		return runWithIssueQuery(invocation, (query, location) -> switch query.customStatuses(location.path, location.databaseName, invocation.global) {
+			case Failure(message): runModeAwareFailure(invocation.output, message);
+			case Success(customStatuses):
+				if (invocation.output == Json)
+					writeJsonStdout(renderStatusesJson(customStatuses, output.usesJsonEnvelope()));
+				else
+					output.writeStdout(renderStatusesText(customStatuses));
+				0;
 		});
 	}
 
@@ -4904,6 +4921,7 @@ final class Application {
 			case Blocked: basicCommandHelp("Show blocked issues", "blocked", "      --parent string   Filter to descendants of this bead/epic\n");
 			case Comments: commentsHelp();
 			case Types: basicCommandHelp("List valid issue types", "types", "      --sections   Show required sections for each issue type\n");
+			case Statuses: basicCommandHelp("List valid issue statuses", "statuses", "");
 			case List: listHelp();
 			case Show: showHelp();
 		};

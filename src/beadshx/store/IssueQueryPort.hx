@@ -46,5 +46,8 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The custom types `bd types` lists after the built-in ones. */
 	function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<String>>;
 
+	/** The custom statuses `bd statuses` lists after the built-in ones. */
+	function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<CustomConfig.CustomStatus>>;
+
 	function close():StoreResult<Bool>;
 }

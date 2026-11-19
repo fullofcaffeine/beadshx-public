@@ -2,18 +2,24 @@ package beadshx.store;
 
 import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.Tx;
+import beadshx.store.CustomConfig.CustomStatus;
+import beadshx.store.CustomConfig.backfilledStatuses;
 import beadshx.store.CustomConfig.backfilledTypeNames;
+import beadshx.store.CustomConfig.parseCustomStatusConfig;
 import beadshx.store.CustomConfig.parseTypesConfigValue;
+import beadshx.store.DatabaseErrors.isTableNotExist;
 
 /**
-	Reads the custom types that `bd types` lists, in the caller's SQL snapshot.
+	Reads the custom types and statuses that `bd types` and `bd statuses` list, in
+	the caller's SQL snapshot.
 
 	Upstream opens an embedded store with its schema migrations, which fill an
-	empty custom_types table from the types.custom config value, and then reads
-	the table. These reads give what upstream reads after that fill, without
-	writing. Like upstream `bd types`, a failed read gives no custom types.
-	Upstream also adds types.custom from config.yaml and BD_TYPES_CUSTOM, which
-	this build does not read yet (BHX-M08-02).
+	empty custom_types or custom_statuses table from the types.custom or
+	status.custom config value, and then reads the table. These reads give what
+	upstream reads after that fill, without writing. Like upstream, a failed read
+	gives no custom entries. Upstream also reads both keys from config.yaml and
+	BD_TYPES_CUSTOM or BD_STATUS_CUSTOM, which this build does not read yet
+	(BHX-M08-02).
 **/
 @:goNative
 final class SqlCustomConfigReader {
@@ -39,6 +45,37 @@ final class SqlCustomConfigReader {
 			return stored;
 		final value = readConfigValue(context, transaction, "types.custom");
 		return value == null ? [] : backfilledTypeNames(parseTypesConfigValue(value));
+	}
+
+	/** Upstream ResolveCustomStatusesDetailedInTx: the table by name, or else the config value. */
+	public static function readCustomStatuses(context:Context, transaction:Tx):Array<CustomStatus> {
+		final queried = transaction.queryNativeContext(context, "SELECT name, category FROM custom_statuses ORDER BY name");
+		if (queried.error != null) {
+			// Only a missing table falls through to the config value.
+			if (!isTableNotExist(queried.error))
+				return [];
+		} else {
+			final rows = queried.rows;
+			final stored = new Array<CustomStatus>();
+			while (rows.next()) {
+				final name = go.NativePointer.of("");
+				final category = go.NativePointer.of("");
+				if (rows.scan(name, category) != null) {
+					rows.close();
+					return [];
+				}
+				stored.push({name: name.get(), category: category.get()});
+			}
+			final rowError = rows.err();
+			rows.close();
+			if (rowError != null)
+				return [];
+			if (stored.length > 0)
+				return stored;
+		}
+		final value = readConfigValue(context, transaction, "status.custom");
+		final parsed = value == null ? null : parseCustomStatusConfig(value);
+		return parsed == null ? [] : backfilledStatuses(parsed);
 	}
 
 	/** Upstream GetConfigInTx: an empty string for a missing key, or null for a failed read. */

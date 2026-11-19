@@ -9,12 +9,16 @@ import beadshx.nativeextern.doltdriver.Config;
 import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 
-/** Own one read transaction for `bd types`; the custom-type semantics are authored Haxe. */
+/** Own one read transaction for `bd types` or `bd statuses`; the custom-entry semantics are authored Haxe. */
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedCustomConfigReader {
 	public static function readTypes(beadsDir:String, databaseName:String):StoreResult<Array<String>> {
 		return read(beadsDir, databaseName, (context, transaction) -> Success(SqlCustomConfigReader.readCustomTypes(context, transaction)));
+	}
+
+	public static function readStatuses(beadsDir:String, databaseName:String):StoreResult<Array<CustomConfig.CustomStatus>> {
+		return read(beadsDir, databaseName, (context, transaction) -> Success(SqlCustomConfigReader.readCustomStatuses(context, transaction)));
 	}
 
 	static function read<T>(beadsDir:String, databaseName:String, reader:(Context, Tx) -> StoreResult<T>):StoreResult<T> {

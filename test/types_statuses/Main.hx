@@ -1,18 +1,25 @@
 import beadshx.cli.CatalogViews.padRunes;
+import beadshx.cli.CatalogViews.renderStatusesJson;
+import beadshx.cli.CatalogViews.renderStatusesText;
 import beadshx.cli.CatalogViews.renderTypeSectionsText;
 import beadshx.cli.CatalogViews.renderTypesJson;
 import beadshx.cli.CatalogViews.renderTypesText;
+import beadshx.store.CustomConfig.CustomStatus;
+import beadshx.store.CustomConfig.backfilledStatuses;
 import beadshx.store.CustomConfig.backfilledTypeNames;
 import beadshx.store.CustomConfig.goTrimSpace;
+import beadshx.store.CustomConfig.parseCustomStatusConfig;
 import beadshx.store.CustomConfig.parseTypesConfigValue;
 
 /**
-	Pins the `bd types` config parsing against upstream issueops.ParseTypesConfigValue
-	and the custom_types backfill, by hand. Parity covers the real runs.
+	Pins the `bd types` and `bd statuses` config parsing against upstream
+	issueops.ParseTypesConfigValue and types.ParseCustomStatusConfig, and the
+	custom table backfill, by hand. Parity covers the real runs.
 **/
 class Main {
 	static function main():Void {
 		typeContracts();
+		statusContracts();
 		renderContracts();
 		Sys.println("types and statuses Haxe contracts: PASS");
 	}
@@ -35,6 +42,34 @@ class Main {
 		equal(backfilledTypeNames(["zeta", "alpha", "zeta", "Beta", "über", " spaced"]).join("|"), " spaced|Beta|alpha|zeta|über");
 	}
 
+	static function statusContracts():Void {
+		// Entries keep their order; a bare name has the unspecified category.
+		equal(statuses(parseCustomStatusConfig(" zz:active , qa:wip,legacy,, hold:frozen ")), "zz:active qa:wip legacy:unspecified hold:frozen");
+		equal(statuses(parseCustomStatusConfig("  ")), "");
+		// Any invalid entry rejects the whole value.
+		for (value in [
+			"good:active,Bad",
+			"review:",
+			"review:later",
+			"open:active",
+			"hooked",
+			"qa,qa:wip",
+			"1st",
+			"has space",
+			"a:b:c"
+		])
+			equal(parseCustomStatusConfig(value), null);
+		equal(statuses(parseCustomStatusConfig("a-1_b:done")), "a-1_b:done");
+		equal(parseCustomStatusConfig([for (index in 0...51) 's$index'].join(",")), null);
+		equal(parseCustomStatusConfig([for (index in 0...50) 's$index'].join(",")).length, 50);
+		// The backfill reads the table by name, in byte order.
+		equal(statuses(backfilledStatuses(parseCustomStatusConfig("zz:active,qa:wip,hold:frozen"))), "hold:frozen qa:wip zz:active");
+	}
+
+	static function statuses(values:Null<Array<CustomStatus>>):String {
+		return values == null ? "null" : [for (status in values) '${status.name}:${status.category}'].join(" ");
+	}
+
 	static function renderContracts():Void {
 		equal(padRunes("ab", 4), "ab  ");
 		equal(padRunes("abcdef", 4), "abcdef");
@@ -54,6 +89,24 @@ class Main {
 			true);
 		equal(envelope.indexOf("custom_types"), -1);
 		equal(renderTypeSectionsText().indexOf("  chore          (none)\n") > 0, true);
+		// A built-in name keeps its icon, hooked follows its category, and an unknown category is a diamond.
+		final custom:Array<CustomStatus> = [
+			{name: "hooked", category: "done"},
+			{name: "open", category: "weird"},
+			{name: "a-very-long-status-name", category: "unspecified"}
+		];
+		equal(StringTools.endsWith(renderStatusesText(custom),
+			"\nCustom statuses:\n  ✓ hooked         [done  ]\n  ○ open           [weird ]\n  ◇ a-very-long-status-name [unspecified]\n"),
+			true);
+		equal(renderStatusesText([]).indexOf("  ◇ hooked         [wip   ]  Attached to an agent's hook\n") > 0, true);
+		final legacy = renderStatusesJson(custom, false);
+		equal(StringTools.startsWith(legacy,
+			'{\n  "built_in_statuses": [\n    {\n      "category": "active",\n      "description": "Available to work (default)",\n      "icon": "○",\n      "name": "open"\n    },\n'),
+			true);
+		equal(legacy.indexOf('    {\n      "category": "done",\n      "name": "hooked"\n    },\n') > 0, true);
+		final envelope = renderStatusesJson([], true);
+		equal(StringTools.startsWith(envelope, '{\n  "built_in_statuses": [\n    {\n      "name": "open",\n      "category": "active",\n'), true);
+		equal(envelope.indexOf("custom_statuses"), -1);
 		equal(renderTypeSectionsText().indexOf("  bug            ## Steps to Reproduce, ## Acceptance Criteria\n") > 0, true);
 	}
 

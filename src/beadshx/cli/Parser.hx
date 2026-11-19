@@ -1804,6 +1804,8 @@ final class Parser {
 			return parsedCommand(Command.Blocked);
 		if (name == "types")
 			return parsedCommand(Command.Types);
+		if (name == "statuses")
+			return parsedCommand(Command.Statuses);
 		if (graphCheck)
 			return parsedCommand(Command.GraphCheck);
 		if (graphView)

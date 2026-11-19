@@ -23,6 +23,7 @@ enum Command {
 	Blocked;
 	Comments;
 	Types;
+	Statuses;
 	List;
 	Show;
 }

@@ -1,5 +1,7 @@
 package beadshx.cli;
 
+import beadshx.cli.StatusIcon.statusIcon;
+import beadshx.store.CustomConfig.CustomStatus;
 import haxe.Json;
 
 /** A JSON value whose object fields print in the listed order. */
@@ -90,6 +92,88 @@ function renderTypeSectionsText():String {
 	for (type in coreTypes())
 		rendered.add('  ${padRunes(type.name, 14)} ${type.sections.length == 0 ? "(none)" : type.sections.join(", ")}\n');
 	return rendered.toString();
+}
+
+private typedef BuiltInStatus = {
+	final name:String;
+	final category:String;
+	final description:String;
+}
+
+/** Upstream builtInStatuses, in its order. */
+private function builtInStatuses():Array<BuiltInStatus> {
+	return [
+		{name: "open", category: "active", description: "Available to work (default)"},
+		{name: "in_progress", category: "wip", description: "Actively being worked on"},
+		{name: "blocked", category: "wip", description: "Blocked by a dependency"},
+		{name: "deferred", category: "frozen", description: "Deliberately put on ice for later"},
+		{name: "closed", category: "done", description: "Completed"},
+		{name: "pinned", category: "frozen", description: "Persistent, stays open indefinitely"},
+		{name: "hooked", category: "wip", description: "Attached to an agent's hook"}
+	];
+}
+
+/** Upstream renderStatuses text output with colors off. */
+function renderStatusesText(customStatuses:Array<CustomStatus>):String {
+	final rendered = new StringBuf();
+	rendered.add("Built-in statuses:\n");
+	for (status in builtInStatuses())
+		rendered.add('  ${statusIcon(status.name)} ${padRunes(status.name, 14)} [${padRunes(status.category, 6)}]  ${status.description}\n');
+	if (customStatuses.length > 0) {
+		rendered.add("\nCustom statuses:\n");
+		for (status in customStatuses)
+			rendered.add('  ${customStatusIcon(status)} ${padRunes(status.name, 14)} [${padRunes(status.category, 6)}]\n');
+	} else {
+		rendered.add("\nNo custom statuses configured.\n");
+		rendered.add('Configure with: bd config set status.custom "name:category,..."\n');
+		rendered.add("Categories: active, wip, done, frozen\n");
+	}
+	return rendered.toString();
+}
+
+/**
+	Upstream renderStatuses JSON, ordered like renderTypesJson. Built-in icons come
+	from ui.GetStatusIcon; custom statuses carry only a name and a category.
+**/
+function renderStatusesJson(customStatuses:Array<CustomStatus>, structOrder:Bool):String {
+	final builtIn = [
+		for (status in builtInStatuses())
+			JsonObject(orderFields([
+				field("name", JsonText(status.name)),
+				field("category", JsonText(status.category)),
+				field("icon", JsonText(statusIcon(status.name))),
+				field("description", JsonText(status.description))
+			], structOrder))
+	];
+	final fields = [field("built_in_statuses", JsonList(builtIn))];
+	if (customStatuses.length > 0)
+		fields.push(field("custom_statuses", JsonList([
+			for (status in customStatuses)
+				JsonObject(orderFields([
+					field("name", JsonText(status.name)),
+					field("category", JsonText(status.category))
+				], structOrder))
+		])));
+	fields.push(field("schema_version", JsonNumber("1")));
+	return renderCatalogJson(JsonObject(fields));
+}
+
+/**
+	Upstream RenderStatusIconWithCategory with colors off: a built-in name with its
+	own icon keeps it (hooked has none), and any other status follows its category.
+**/
+private function customStatusIcon(status:CustomStatus):String {
+	return switch status.name {
+		case "open" | "in_progress" | "blocked" | "closed" | "deferred" | "pinned": statusIcon(status.name);
+		case _:
+			switch status.category {
+				case "active": statusIcon("open");
+				case "wip": statusIcon("in_progress");
+				case "done": statusIcon("closed");
+				case "frozen": statusIcon("deferred");
+				case _: statusIcon("");
+			}
+	};
 }
 
 /** Upstream printSections JSON: a list, so upstream adds no schema_version and keeps struct order. */

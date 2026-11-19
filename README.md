@@ -30,18 +30,19 @@ workspaces, and require the same stdout, stderr and exit code:
   `blocked`, `graph check`, and `graph` for one issue or `--all`, in every
   view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
   `--json`).
-- **Reference lists:** `types` (also `--sections`).
+- **Reference lists:** `types` (also `--sections`), `statuses`.
 
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
-- `dep tree`, `dep cycles`, `blocked`, `comments`, `graph` and `types` read
-  embedded workspaces only. In a server-mode or proxied workspace they report
-  that they are not available yet. `types --sections` prints its fixed list in
-  every mode.
-- `types` reads custom types from the database only. It ignores
-  `types.custom` in `config.yaml` and the `BD_TYPES_CUSTOM` variable.
+- `dep tree`, `dep cycles`, `blocked`, `comments`, `graph`, `types` and
+  `statuses` read embedded workspaces only. In a server-mode or proxied
+  workspace they report that they are not available yet. `types --sections`
+  prints its fixed list in every mode.
+- `types` and `statuses` read custom types and statuses from the database
+  only. They ignore `types.custom` and `status.custom` in `config.yaml` and
+  the `BD_TYPES_CUSTOM` and `BD_STATUS_CUSTOM` variables.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 
