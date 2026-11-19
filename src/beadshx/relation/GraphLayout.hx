@@ -118,8 +118,7 @@ function computeGraphLayout(issueIds:Array<String>, edges:Array<GraphEdge>):Grap
 	final layers = [for (_ in 0...maxLayer + 1) new Array<String>()];
 	for (id in ids) {
 		final layer:Int = layerOf.get(id);
-		final members:Array<String> = layers[layer];
-		members.push(id);
+		layers[layer].push(id);
 	}
 	final nodes = new Map<String, GraphNodePlacement>();
 	for (layer in layers) {

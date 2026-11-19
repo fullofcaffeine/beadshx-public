@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `34e82512e4672436911167c74a97a1620f4d252b`.
+Required BeadsHX compiler revision: `f2555aa9862b83a3660d803aa3cf1f8c30ec7c76`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -81,6 +81,18 @@ Compiler PR #79 adds the typed native carriers that the SQL row readers need:
 storage with content equality, and local names that cannot shadow imported Go
 packages. Its merged source tree matches the revision that passed all required
 hosted checks.
+Compiler task haxe_go-xujy makes nested Array elements usable directly: an
+element that is itself an Array, as in `grid[row][col]` or `rows[i].push(x)`,
+and an Int position read from an Array, as in `counts[order[i]]`, now compile
+to valid Go. The graph drawing code no longer needs typed locals for them.
+Compiler task haxe_go-6bhu makes the remaining Array methods compile on shared
+Arrays (`reverse`, `contains`, `lastIndexOf`, `unshift`, `splice`, `resize` and
+`toString`), and `Std.string` now prints an Array in Haxe's `[a,b]` format.
+Compiler task haxe_go-jvzb converts calls nested in Go variadic extern
+arguments (`FilepathPkg.join(FilepathPkg.dir(path), name)`) to the declared
+slice type, so the configuration reader no longer needs typed locals for them.
+Compiler tasks haxe_go-euum, haxe_go-v4m0 and haxe_go-cjtk make the BeadsHX
+compile faster without changing generated output.
 
 Reviewed current authority:
 

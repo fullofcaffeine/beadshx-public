@@ -233,9 +233,7 @@ private function readFiles(registry:Viper, paths:Array<String>, primaryPath:Stri
 	}
 	// Viper ignores an empty path, so with only user files the last one stays current.
 	registry.setConfigFile(primaryPath);
-	// A call nested in a rest argument list compiles to the wrong slice type in the locked haxe.go.
-	final primaryDirectory = FilepathPkg.dir(primaryPath);
-	final localPath = FilepathPkg.join(primaryDirectory, "config.local.yaml");
+	final localPath = FilepathPkg.join(FilepathPkg.dir(primaryPath), "config.local.yaml");
 	if (FileSystem.exists(localPath)) {
 		registry.setConfigFile(localPath);
 		final localError = registry.mergeInConfig();
@@ -310,8 +308,7 @@ private function worktreeFallbackConfigPath(directory:String):String {
 	if (gitDirectory == "" || commonDirectory == "" || FilepathPkg.clean(gitDirectory) == FilepathPkg.clean(commonDirectory))
 		return "";
 	if (FilepathPkg.base(commonDirectory) == ".git") {
-		final checkout = FilepathPkg.dir(commonDirectory);
-		return FilepathPkg.join(checkout, ".beads", "config.yaml");
+		return FilepathPkg.join(FilepathPkg.dir(commonDirectory), ".beads", "config.yaml");
 	}
 	return FilepathPkg.join(commonDirectory, ".beads", "config.yaml");
 }

@@ -84,12 +84,9 @@ function collectGutterEdges(layout:GraphLayout, edges:Array<GraphEdge>):Array<Ar
 		for (gutter in source.layer...target.layer) {
 			final sourceRow = gutter == source.layer ? source.position : target.position;
 			final key = '${sourceRow}:${target.position}';
-			// Typed locals: haxe.go reads a nested array element as an untyped value.
-			final seenRows:Map<String, Bool> = seen[gutter];
-			final gutterRows:Array<DagEdge> = gutters[gutter];
-			if (!seenRows.exists(key)) {
-				seenRows.set(key, true);
-				gutterRows.push({sourceRow: sourceRow, targetRow: target.position});
+			if (!seen[gutter].exists(key)) {
+				seen[gutter].set(key, true);
+				gutters[gutter].push({sourceRow: sourceRow, targetRow: target.position});
 			}
 		}
 	}
@@ -112,14 +109,10 @@ function buildDagGutterGrid(edges:Array<DagEdge>, gutterWidth:Int, totalLines:In
 			if (edges[index].sourceRow != edges[index].targetRow) index
 	];
 	final channels = [for (_ in edges) 0];
-	// Typed locals: haxe.go reads a nested array element as an untyped value.
-	for (order in 0...vertical.length) {
-		final edgeIndex:Int = vertical[order];
-		channels[edgeIndex] = vertical.length == 1 ? Std.int(gutterWidth / 2) : 1 + Std.int(order * (gutterWidth - 3) / (vertical.length - 1));
-	}
+	for (order in 0...vertical.length)
+		channels[vertical[order]] = vertical.length == 1 ? Std.int(gutterWidth / 2) : 1 + Std.int(order * (gutterWidth - 3) / (vertical.length - 1));
 	function draw(y:Int, x:Int, incoming:String):Void {
-		final cells:Array<String> = grid[y];
-		cells[x] = dagMergeRune(cells[x], incoming);
+		grid[y][x] = dagMergeRune(grid[y][x], incoming);
 	}
 	for (index in 0...edges.length) {
 		final sourceY = edges[index].sourceRow * bandHeight + 1;
@@ -141,8 +134,7 @@ function buildDagGutterGrid(edges:Array<DagEdge>, gutterWidth:Int, totalLines:In
 			for (x in channel + 1...gutterWidth - 1)
 				draw(targetY, x, "─");
 		}
-		final arrowCells:Array<String> = grid[targetY];
-		arrowCells[gutterWidth - 1] = "▶";
+		grid[targetY][gutterWidth - 1] = "▶";
 	}
 	return [for (line in grid) line.join("")];
 }
@@ -198,9 +190,7 @@ function renderCompactGraph(rootId:String, nodes:Map<String, DagNode>, layout:Gr
 	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n\n");
 	for (index in 0...layout.layers.length) {
 		rendered.add(index == 0 ? "  LAYER 0 (ready)\n" : '  LAYER ${index}\n');
-		// Typed local: haxe.go reads a nested array element as an untyped value.
-		final layer:Array<String> = layout.layers[index];
-		addCompactTree(rendered, nodes, children, layer, "");
+		addCompactTree(rendered, nodes, children, layout.layers[index], "");
 		rendered.add("\n");
 	}
 	return rendered.toString();
