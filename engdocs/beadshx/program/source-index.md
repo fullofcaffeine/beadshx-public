@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `2801ff73a4592785333e78288556278eb375977d`.
+Required BeadsHX compiler revision: `d1005b9d28d25a2cb5920feb1d15c59ae374a517`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -99,6 +99,9 @@ objects and class instances as Haxe does: each generated enum gains an
 Compiler task haxe_go-bg0j gives repeated locals in static and module-level
 initializers unique Go names, so a module-level array comprehension over an
 array literal compiles.
+Compiler task haxe_go-afkv names recovery helpers from their types instead of
+by first use, so an edit to one BeadsHX module no longer renames helpers in
+unrelated generated files.
 
 Reviewed current authority:
 
