@@ -25,7 +25,7 @@ import beadshx.profile.GoProfiler;
 class Main {
 	static function main():Void {
 		final workspace = new GoWorkspace();
-		final parser = new Parser(new SystemEnvironment(), new LayeredJsonSetting(workspace));
+		final parser = new Parser(new SystemEnvironment(workspace), new LayeredJsonSetting(workspace));
 		final application = new Application(parser, new SystemOutput(), new SystemActor(), new GoGitHistory(), workspace, new GoReadonlyStore(),
 			new GoProfiler(), new SystemWatch());
 		Sys.exit(application.run(Sys.args()));

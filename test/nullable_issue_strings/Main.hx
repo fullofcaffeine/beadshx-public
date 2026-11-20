@@ -228,6 +228,8 @@ private final class EmptyEnvironment implements EnvironmentPort {
 
 	public function value(name:String):String
 		return "";
+
+	public function selectWorkspace(selection:WorkspaceSelection):Void {}
 }
 
 /** This contract renders directly and parses no arguments. */

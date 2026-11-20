@@ -57,6 +57,9 @@ no_workspace_case_count=0
 no_workspace_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # When set, each side gets this user config.yaml under its HOME, which the run must leave unchanged.
 no_workspace_user_config=""
+# Names a function that prepares each side root (its argument) of a no-workspace case; the run must
+# then leave that root unchanged instead of empty. Cases that use it come after fingerprint_tree.
+no_workspace_setup=""
 
 # Writes the case's user config.yaml under each HOME directory given.
 write_no_workspace_user_config() {
@@ -95,6 +98,13 @@ compare_no_workspace() {
 	mkdir -p "$candidate_root/home" "$candidate_root/config" "$candidate_root/work"
 	if [[ -n "$no_workspace_user_config" ]]; then
 		write_no_workspace_user_config "$oracle_root/home" "$candidate_root/home"
+	fi
+	local oracle_before="" candidate_before=""
+	if [[ -n "$no_workspace_setup" ]]; then
+		"$no_workspace_setup" "$oracle_root"
+		"$no_workspace_setup" "$candidate_root"
+		oracle_before="$(fingerprint_tree "$oracle_root")"
+		candidate_before="$(fingerprint_tree "$candidate_root")"
 	fi
 
 	set +e
@@ -154,11 +164,19 @@ compare_no_workspace() {
 		diff -u "$case_root/oracle.stderr" "$case_root/candidate.stderr" >&2 || true
 		return 1
 	fi
-	if [[ -n "$(find "$oracle_root" -mindepth 2 -print -quit)" ]]; then
+	if [[ -n "$no_workspace_setup" ]]; then
+		if [[ "$oracle_before" != "$(fingerprint_tree "$oracle_root")" ]]; then
+			printf '%s upstream command changed its prepared files\n' "$name" >&2
+			return 1
+		fi
+		if [[ "$candidate_before" != "$(fingerprint_tree "$candidate_root")" ]]; then
+			printf '%s candidate command changed its prepared files\n' "$name" >&2
+			return 1
+		fi
+	elif [[ -n "$(find "$oracle_root" -mindepth 2 -print -quit)" ]]; then
 		printf '%s upstream command persisted files in an empty workspace\n' "$name" >&2
 		return 1
-	fi
-	if [[ -n "$(find "$candidate_root" -mindepth 2 -print -quit)" ]]; then
+	elif [[ -n "$(find "$candidate_root" -mindepth 2 -print -quit)" ]]; then
 		printf '%s candidate command persisted files in an empty workspace\n' "$name" >&2
 		return 1
 	fi
@@ -3114,6 +3132,205 @@ expect_candidate_failure global-json-yaml-shared-server-refusal \
 expect_candidate_failure global-json-yaml-shared-server-flag-false-refusal "" \
 	"Error: list is not available yet in shared-server mode in this build" "" list --json=false
 candidate_only_setup=""
+
+# Upstream's pre-run loads the selected workspace's .beads/.env with gotenv before it reads any
+# setting, so a variable there counts as if it were exported, unless the environment already has
+# it, even empty. First, when neither -C nor a set BEADS_DIR, BEADS_DB or BD_DB chooses the
+# workspace, the .env file of the workspace found from the current directory may set those three.
+# Then every variable of the selected workspace's .env that the environment lacks is added; that
+# step cannot set BEADS_DIR, and $BEADS_DIR expands to the selected directory. gotenv takes nothing
+# from a file with one line it rejects, and nothing is printed for a missing or rejected file.
+dotenv_contents=""
+write_dotenv() {
+	printf '%s' "$dotenv_contents" >"$1/work/.beads/.env"
+}
+compare_real_database_dotenv() {
+	local name="$1"
+	local comparison="$2"
+	dotenv_contents="$3"
+	shift 3
+	real_database_setup=write_dotenv
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_setup=""
+	dotenv_contents=""
+}
+compare_real_database_dotenv dotenv-json-count exact $'BD_JSON=1\n' count
+compare_real_database_dotenv dotenv-json-list exact $'BD_JSON=true\n' list
+compare_real_database_dotenv dotenv-json-show exact $'BD_JSON=1\n' show "$real_database_issue_id"
+compare_real_database_dotenv dotenv-json-where exact $'BD_JSON=1\n' where
+compare_real_database_dotenv dotenv-json-config-get exact $'BD_JSON=1\n' config get json
+compare_real_database_dotenv dotenv-json-flag-false exact $'BD_JSON=1\n' count --json=false
+compare_real_database_dotenv dotenv-json-help exact $'BD_JSON=1\n' count --help
+real_database_extra_env=(BD_JSON=0)
+compare_real_database_dotenv dotenv-json-environment-wins exact $'BD_JSON=1\n' count
+real_database_extra_env=(BD_JSON=)
+compare_real_database_dotenv dotenv-json-empty-environment-wins exact $'BD_JSON=1\n' count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config='json: true'
+compare_real_database_dotenv dotenv-json-over-yaml exact $'BD_JSON=0\n' count
+compare_real_database_dotenv dotenv-json-empty-keeps-yaml exact $'BD_JSON=\n' count
+real_database_extra_config=""
+# gotenv's line rules: comments, blank lines, `export`, `=` or `: `, quotes, inline comments,
+# multi-line quoted values, escapes in double quotes, $VAR expansion (the environment first, then
+# the file's earlier lines) and CR, LF or CRLF line ends after an optional UTF-8 or UTF-16 BOM.
+compare_real_database_dotenv dotenv-parse-comment-export exact $'# a comment\n\n  export BD_JSON=1\n' count
+compare_real_database_dotenv dotenv-parse-duplicate-last-wins exact $'BD_JSON=1\nBD_JSON=0\n' count
+compare_real_database_dotenv dotenv-parse-duplicate-last-wins-json exact $'BD_JSON=0\nBD_JSON=1\n' count
+compare_real_database_dotenv dotenv-parse-crlf exact $'BD_JSON=1\r\nBD_ROUTING_PROBE=crlf\r\n' config get routing.probe
+compare_real_database_dotenv dotenv-parse-cr exact $'BD_ROUTING_PROBE=cr\rBD_JSON=1' config get routing.probe
+compare_real_database_dotenv dotenv-parse-bom exact $'\xef\xbb\xbfBD_JSON=1\n' count
+compare_real_database_dotenv dotenv-parse-double-quotes exact $'BD_ROUTING_PROBE="a\\nb\\tc # d"\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-single-quotes exact $'BD_ROUTING_PROBE=\'a\\nb $A # c\'\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-inline-comment exact $'BD_ROUTING_PROBE=bare value   # comment\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-equals-in-value exact $'BD_ROUTING_PROBE = a=b=c\n' config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-colon exact $'BD_ROUTING_PROBE: colon\n' config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-colon-lazy-space exact $'BD_ROUTING_PROBE:  "a#b"\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-multiline exact $'BD_ROUTING_PROBE="first\n  second \\" quote\nthird"\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-expansion exact \
+	$'A=1\nBEADSHX_PARITY_EXTRA=file\nBD_ROUTING_PROBE=${A}x$A}y${A $lower ${} $ \\$A $UNSET_X ${LATER} $BEADSHX_PARITY_EXTRA\nLATER=2\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-expansion-beads-dir exact $'BD_ROUTING_PROBE="$BEADS_DIR/x"\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-escapes exact $'BD_ROUTING_PROBE="\\$A \\\\ \\q \\\\n"\n' \
+	config get routing.probe --json
+compare_real_database_dotenv dotenv-parse-dotted-key exact $'BD_ROUTING.PROBE=dotted\nBD_JSON=1\n' config get routing.probe
+write_utf16_dotenv() {
+	printf '\377\376B\000D\000_\000J\000S\000O\000N\000=\0001\000\r\000\n\000' >"$1/work/.beads/.env"
+}
+real_database_setup=write_utf16_dotenv
+compare_real_database dotenv-parse-utf16 exact count
+real_database_setup=""
+# One rejected line, an unclosed quote or a line longer than bufio.Scanner's 64 KiB limit makes
+# gotenv take nothing from the file.
+compare_real_database_dotenv dotenv-malformed-line exact $'BD_JSON=1\nnot a valid line\n' count
+compare_real_database_dotenv dotenv-malformed-unclosed-quote exact $'BD_JSON=1\nBD_ROUTING_PROBE="open\n' count
+compare_real_database_dotenv dotenv-malformed-export-without-value exact $'BD_JSON=1\nexport BD_ROUTING_PROBE\n' count
+compare_real_database_dotenv dotenv-malformed-colon-without-space exact $'BD_JSON=1\nBD_ROUTING_PROBE:value\n' count
+# "BD_ROUTING_PROBE=" is 17 bytes, so these lines are 65535 and 65536 bytes long.
+dotenv_long_value="$(head -c 65518 /dev/zero | tr '\0' x)"
+compare_real_database_dotenv dotenv-line-at-scanner-limit exact $'BD_JSON=1\nBD_ROUTING_PROBE='"$dotenv_long_value"$'\n' count
+compare_real_database_dotenv dotenv-line-over-scanner-limit exact $'BD_JSON=1\nBD_ROUTING_PROBE='"${dotenv_long_value}x"$'\n' count
+# A .env directory adds nothing, a symbolic link is followed, and a dangling one adds nothing.
+write_dotenv_directory() {
+	mkdir -p "$1/work/.beads/.env"
+}
+write_dotenv_symlink() {
+	printf 'BD_JSON=1\n' >"$1/work/.beads/linked.env"
+	ln -s linked.env "$1/work/.beads/.env"
+}
+write_dotenv_dangling_symlink() {
+	ln -s missing.env "$1/work/.beads/.env"
+}
+real_database_setup=write_dotenv_directory
+compare_real_database dotenv-directory exact count
+real_database_setup=write_dotenv_symlink
+compare_real_database dotenv-symlink exact count
+real_database_setup=write_dotenv_dangling_symlink
+compare_real_database dotenv-dangling-symlink exact count
+real_database_setup=""
+# Settings read through Viper's BD_ prefix and plain BEADS_ variables, with their provenance.
+compare_real_database_dotenv dotenv-config-show exact \
+	$'BD_LIST_LIMIT=3\nBD_ISSUE_PREFIX=zz\nBEADS_MAX_ROWS=7\nBD_ACTOR=dotenv-actor\n' config show
+compare_real_database_dotenv dotenv-config-show-env-json exact $'BD_LIST_LIMIT=3\nBEADS_MAX_ROWS=7\n' \
+	config show --source env --json
+compare_real_database_dotenv dotenv-config-get-list-limit exact $'BD_LIST_LIMIT=3\n' config get list.limit --json
+compare_real_database_dotenv dotenv-config-list exact $'BD_LIST_LIMIT=3\nBD_ROUTING_MODE=auto\n' config list
+compare_real_database_dotenv dotenv-list-limit exact $'BD_LIST_LIMIT=2\n' list
+compare_real_database_dotenv dotenv-max-rows-dep-tree exact $'BEADS_MAX_ROWS=1\n' dep tree "$real_database_grandchild_id"
+compare_real_database_dotenv dotenv-types-custom exact $'BD_TYPES_CUSTOM=alpha,beta\n' types
+compare_real_database_dotenv dotenv-statuses-custom exact $'BD_STATUS_CUSTOM=review:wip\n' statuses --json
+compare_real_database_dotenv dotenv-json-envelope exact $'BD_JSON_ENVELOPE=1\nBD_JSON=1\n' count
+# A .env file can choose another workspace through BEADS_DIR. These cases add a second workspace
+# at work/sub, with its own .env.
+dotenv_sub_contents=""
+write_dotenv_with_sub_workspace() {
+	write_dotenv "$1"
+	mkdir -p "$1/work/sub"
+	copy_fixture_tree "$real_database_seed/work/.beads" "$1/work/sub/.beads"
+	printf '%s' "$dotenv_sub_contents" >"$1/work/sub/.beads/.env"
+}
+real_database_setup=write_dotenv_with_sub_workspace
+dotenv_sub_contents=$'BD_ROUTING_PROBE=sub\n'
+dotenv_contents=$'BEADS_DIR=sub/.beads\nBD_JSON=1\nBD_ROUTING_PROBE=work\n'
+compare_real_database dotenv-select-beads-dir exact config get routing.probe
+compare_real_database dotenv-select-beads-dir-where exact where
+compare_real_database dotenv-select-directory-flag exact -C . config get routing.probe
+compare_real_database dotenv-select-directory-sub exact -C sub config get routing.probe
+compare_real_database dotenv-select-database-flag exact --db sub/.beads/embeddeddolt config get routing.probe
+real_database_extra_env=(BEADS_DIR=.beads)
+compare_real_database dotenv-select-environment-beads-dir exact config get routing.probe
+real_database_extra_env=(BEADS_DIR=)
+compare_real_database dotenv-select-empty-environment-beads-dir exact config get routing.probe
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+dotenv_contents=$'BEADS_DIR="  "\nBD_JSON=1\n'
+compare_real_database dotenv-select-blank-beads-dir exact where
+dotenv_contents=$'BEADS_DIR=missing/.beads\nBD_JSON=1\n'
+compare_real_database dotenv-select-missing-beads-dir exact where
+dotenv_contents=$'BEADS_DIR=sub/.beads\nBD_JSON=1\nnot a valid line\n'
+compare_real_database dotenv-select-malformed exact where
+dotenv_sub_contents=$'BEADS_DIR=../.beads\nBD_ROUTING_PROBE=sub\n'
+dotenv_contents=$'BEADS_DIR=sub/.beads\n'
+compare_real_database dotenv-select-once exact config get routing.probe
+# A redirect selects its target, whose .env is loaded instead of the redirecting workspace's.
+write_dotenv_redirect_to_sub() {
+	write_dotenv_with_sub_workspace "$1"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+}
+real_database_setup=write_dotenv_redirect_to_sub
+dotenv_sub_contents=$'BD_ROUTING_PROBE=sub\n'
+dotenv_contents=$'BD_JSON=1\n'
+compare_real_database dotenv-redirect exact config get routing.probe
+compare_real_database dotenv-redirect-where exact where
+real_database_setup=""
+dotenv_sub_contents=""
+dotenv_contents=""
+# A selector from .env also makes upstream ignore the db setting, so it reads the workspace as usual
+# and writes nothing.
+write_dotenv_with_database_path() {
+	set_database_path "$1"
+	write_dotenv "$1"
+}
+real_database_read_only=1
+real_database_setup=write_dotenv_with_database_path
+dotenv_contents=$'BD_DB=fake-selector\nBD_JSON=1\n'
+compare_real_database dotenv-db-setting-bd-db exact count
+compare_real_database dotenv-db-setting-bd-db-config-get exact config get db
+dotenv_contents=$'BEADS_DB=fake-selector\n'
+compare_real_database dotenv-db-setting-beads-db exact ready
+dotenv_contents=$'BEADS_DIR=.beads\n'
+compare_real_database dotenv-db-setting-beads-dir exact list
+real_database_setup=""
+real_database_read_only=""
+# Shared-server mode and the db setting from .env meet the same refusals as from the environment.
+candidate_only_setup=write_dotenv
+dotenv_contents=$'BEADS_DOLT_SHARED_SERVER=1\n'
+expect_store_refusal dotenv-shared-server-unported "$shared_reason" count count
+dotenv_contents=$'BD_DOLT_SHARED_SERVER=true\nBD_JSON=1\n'
+expect_candidate_failure dotenv-bd-shared-server-json-unported \
+	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "" "" config show
+candidate_only_setup=write_dotenv_with_database_path
+dotenv_contents=$'BD_JSON=1\n'
+expect_candidate_failure dotenv-db-setting-json-unported \
+	'{"error":"ready is not available yet when the db setting names a database in this build","schema_version":1}' "" "" ready
+candidate_only_setup=""
+dotenv_contents=""
+# Without a workspace, no .env file is read: not one in the current directory, and not one in a
+# .beads directory that holds no project files.
+write_stray_dotenv() {
+	printf 'BD_JSON=1\n' >"$1/work/.env"
+	mkdir -p "$1/work/.beads"
+	printf 'BD_JSON=1\n' >"$1/work/.beads/.env"
+}
+no_workspace_setup=write_stray_dotenv
+compare_no_workspace dotenv_without_workspace_where where
+compare_no_workspace dotenv_without_workspace_count count
+compare_no_workspace dotenv_without_workspace_config_get config get json
+no_workspace_setup=""
 
 wait_for_watch_text() {
 	local file="$1"

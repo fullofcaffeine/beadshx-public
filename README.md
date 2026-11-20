@@ -60,6 +60,20 @@ is ignored. `BD_JSON` outranks the files, and `--json`, `--json=false` and
 count, but `--format json` always selects JSON. Help pages, `--version` and
 flag errors stay text.
 
+Like upstream, `bdhx` loads the `.beads/.env` file of the selected workspace
+before it reads any setting. A variable in that file counts as if it were set
+in the environment, but a variable that the environment sets, even to an empty
+value, keeps its value. This applies to the `BD_*` settings, such as `BD_JSON`
+and `BD_LIST_LIMIT`, and to `BEADS_*` variables, such as `BEADS_MAX_ROWS` and
+`BEADS_DOLT_SHARED_SERVER`. When no `-C`, `BEADS_DIR`, `BEADS_DB` or `BD_DB`
+selects the workspace, `BEADS_DIR`, `BEADS_DB` and `BD_DB` in the `.env` file
+of the workspace found from the current directory can select another
+workspace first. Then `bdhx` loads the `.env` file of the selected workspace;
+for a redirect, this is the file of the target. The file has the same format
+as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
+`export`, `#` comments, single or double quotes and `$VAR` expansion. If one
+line is not valid, `bdhx` ignores the full file, and prints no warning.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
@@ -78,8 +92,7 @@ Limits:
 - `config set`, `set-many`, `unset` and `apply` report that they are not
   available yet. `config get` of a user-global key
   (`metrics.*`, `node_id`) and `config show` report that they are not
-  available yet when the user `config.yaml` exists. `bdhx` does not load
-  `.beads/.env` before it reads `BD_*` variables such as `BD_JSON`.
+  available yet when the user `config.yaml` exists.
 - `config show` reports that it is not available yet in a workspace that has
   no database (upstream creates the embedded database there), when
   `.beads/metadata.json` does not decode, and when only a legacy
@@ -106,6 +119,8 @@ Limits:
   holds its own `redirect` file.
   In an embedded workspace upstream's remote check tries to connect to
   `127.0.0.1:0`; `bdhx` makes the same attempt and prints the same error.
+- In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
+  invalid byte to U+FFFD. Upstream keeps the byte.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

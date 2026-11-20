@@ -83,7 +83,7 @@ private enum ExpectedValue {
 private final COMMENTS_TAKES_ONE_ID = '"bd comments" takes a single issue id and lists its comments.\n\n'
 	+ 'To list comments:\n  bd comments <issue-id>\n\nTo add a comment:\n  bd comments add <issue-id> <text>\n\nSee: bd comments --help';
 
-/** Parses the bounded read-only command profile without Cobra or process-global access. */
+/** Parses the bounded read-only command profile without Cobra; it reaches the process only through its ports. */
 final class Parser {
 	final environment:EnvironmentPort;
 	final jsonSetting:JsonSettingPort;
@@ -1328,6 +1328,10 @@ final class Parser {
 				case ConfigShowSource: UsageFailure("flag needs an argument: --source");
 			};
 		}
+
+		// Cobra reports the flag errors above before upstream's pre-run loads the selected
+		// workspace's .beads/.env, which comes before any setting or variable is read below.
+		environment.selectWorkspace({directory: directory, databasePath: databasePath});
 
 		final formatJson = formatFlagSet && isJsonFormat(formatFlagValue);
 		if (formatFlagSet && !formatJson)

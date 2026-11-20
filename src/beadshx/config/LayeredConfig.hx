@@ -43,9 +43,9 @@ final class LayeredConfig {
 	/** Upstream Initialize's error; the registry keeps what loaded before it, as upstream's does. */
 	public final failure:Null<String>;
 
-	/** Upstream's process-start initialization: the current directory and the caller's BEADS_DIR. */
+	/** Upstream's process-start initialization: the current directory and the caller's BEADS_DIR, before any `.beads/.env`. */
 	public static function atStartup():LayeredConfig {
-		return new LayeredConfig(Sys.getCwd(), Sys.getEnv("BEADS_DIR"));
+		return new LayeredConfig(Sys.getCwd(), WorkspaceEnvironment.callerBeadsDir());
 	}
 
 	/** Upstream prepareSelectedCommandContext: BEADS_DIR set to the selected .beads directory. */

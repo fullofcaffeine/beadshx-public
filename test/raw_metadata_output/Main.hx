@@ -78,6 +78,9 @@ final class FixedEnvironment implements EnvironmentPort {
 	public function value(name:String):String {
 		return "";
 	}
+
+	/** These contracts read no workspace `.beads/.env`. */
+	public function selectWorkspace(selection:WorkspaceSelection):Void {}
 }
 
 /** These contracts pass --json, so the `json` setting never decides their output. */
