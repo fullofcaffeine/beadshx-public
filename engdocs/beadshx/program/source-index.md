@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `f2555aa9862b83a3660d803aa3cf1f8c30ec7c76`.
+Required BeadsHX compiler revision: `de5199b4846dce875f981f54cd35d092cefbb911`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -93,6 +93,9 @@ arguments (`FilepathPkg.join(FilepathPkg.dir(path), name)`) to the declared
 slice type, so the configuration reader no longer needs typed locals for them.
 Compiler tasks haxe_go-euum, haxe_go-v4m0 and haxe_go-cjtk make the BeadsHX
 compile faster without changing generated output.
+Compiler task haxe_go-w5jz makes `Std.string` print enum values, anonymous
+objects and class instances as Haxe does: each generated enum gains an
+`HxEnumValue` method and each class without `toString` an `HxClassName` method.
 
 Reviewed current authority:
 
