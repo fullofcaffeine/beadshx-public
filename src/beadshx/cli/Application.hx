@@ -306,6 +306,17 @@ private enum HumanShowMode {
 	WatchedShow;
 }
 
+/** What a config command checks before upstream's pre-run would open a store. */
+private typedef ConfigPreflightInput = {
+	/** The process-start config, from which upstream's pre-run takes the `db` setting. */
+	final startup:LayeredConfig;
+
+	/** The config reloaded for the selected workspace, which upstream's shared-server check reads. */
+	final config:LayeredConfig;
+
+	final location:WorkspaceLocation;
+}
+
 /** Haxe-owned read-only command application. */
 final class Application {
 	static final identity = "BeadsHX 0.0.0-development (compatible with Beads v1.2.1 at 634cbbc4bc580fa5124f63fdf65d137a46d5b4ff)";
@@ -1871,7 +1882,7 @@ final class Application {
 				case Failure(message): runConfigReadFailure(invocation, "getting config", message);
 				case Success(value): showConfigValue(invocation, key, value, null);
 			};
-		});
+		}, configReadPreflight("get", invocation, storeFree));
 	}
 
 	function showConfigValue(invocation:Invocation, key:String, value:String, location:Null<String>):Int {
@@ -1917,7 +1928,7 @@ final class Application {
 			else
 				output.writeStdout(renderConfigListText(stored, config.allKeys(), config.facts, goQuote));
 			return 0;
-		});
+		}, configReadPreflight("list", invocation, false));
 	}
 
 	/**
@@ -1967,7 +1978,7 @@ final class Application {
 			else
 				output.writeStdout(renderConfigShowText(shown));
 			return 0;
-		});
+		}, configReadPreflight("show", invocation, false));
 	}
 
 	/**
@@ -2025,7 +2036,7 @@ final class Application {
 			}
 			output.writeStdout(renderValidationText(issues));
 			return issues.length == 0 ? 0 : 1;
-		}, configPreflight("validate", true), unboundWorkspace(invocation));
+		}, configPreflight("validate", invocation, true), unboundWorkspace(invocation));
 	}
 
 	/**
@@ -2061,7 +2072,7 @@ final class Application {
 			else
 				output.writeStdout(renderDriftText(items));
 			return hasDrift(items) ? 1 : 0;
-		}, configPreflight("drift", false), unboundWorkspace(invocation));
+		}, configPreflight("drift", invocation, false), unboundWorkspace(invocation));
 	}
 
 	/** Upstream checkHooksDrift: skipped outside a git repository, else the bd hooks in the hooks directory. */
@@ -2085,12 +2096,14 @@ final class Application {
 		parent directory, which only a `.beads` directory without its own
 		redirect survives unchanged.
 	**/
-	static function configPreflight(name:String, resolvesFromRepository:Bool):(LayeredConfig, WorkspaceLocation) -> Null<String> {
-		return (config, location) -> {
+	static function configPreflight(name:String, invocation:Invocation, resolvesFromRepository:Bool):ConfigPreflightInput->Null<String> {
+		return input -> {
+			final config = input.config;
+			final location = input.location;
 			if (config.sharedServerMode())
-				return 'config ${name} is not available yet in shared-server mode in this build';
-			if (config.getString("db") != "")
-				return 'config ${name} is not available yet when the db setting names a database in this build';
+				return sharedServerRefusal(name);
+			if (databaseSettingSelects(invocation, input.startup))
+				return databaseSettingRefusal(name);
 			// A configured host can make upstream treat the workspace as a server workspace.
 			if (environmentValue("BEADS_DOLT_SERVER_HOST") != "" || config.getString("dolt.host") != "")
 				return 'config ${name} is not available yet when a Dolt server endpoint is configured in this build';
@@ -2106,6 +2119,63 @@ final class Application {
 			if (resolvesFromRepository && !ConfigProbes.resolvesFromRepository(location.path))
 				return 'config ${name} is not available yet for this redirected workspace in this build';
 			return null;
+		};
+	}
+
+	/**
+		Refusals before `bd config get`, `list` or `show` opens the store, in the
+		two cases where upstream's pre-run writes. In shared-server mode it
+		connects to the shared server, creating that server's directory under
+		HOME and a circuit-breaker file under TMPDIR. A `db` setting makes it open
+		or create an embedded database at that path. When `runsWithoutStore` and
+		the workspace has no database, upstream opens no store; it then prints
+		nothing about shared-server mode unless metadata.json pins dolt_mode
+		embedded, so that case runs as usual.
+	**/
+	static function configReadPreflight(name:String, invocation:Invocation, runsWithoutStore:Bool):ConfigPreflightInput->Null<String> {
+		return input -> {
+			final storeFree = runsWithoutStore && !hasSelectedDatabase(input.location);
+			if (input.config.sharedServerMode() && !(storeFree && quietSharedServerSetup(input.location.path)))
+				return sharedServerRefusal(name);
+			if (databaseSettingSelects(invocation, input.startup))
+				return databaseSettingRefusal(name);
+			return null;
+		};
+	}
+
+	static function sharedServerRefusal(name:String):String {
+		return 'config ${name} is not available yet in shared-server mode in this build';
+	}
+
+	static function databaseSettingRefusal(name:String):String {
+		return 'config ${name} is not available yet when the db setting names a database in this build';
+	}
+
+	/**
+		Upstream's pre-run takes the `db` setting from the process-start config
+		as the database path only when no --db flag, -C directory, BEADS_DB, BD_DB
+		or BEADS_DIR selects the workspace.
+	**/
+	static function databaseSettingSelects(invocation:Invocation, startup:LayeredConfig):Bool {
+		return invocation.databasePath == ""
+			&& goTrimSpace(invocation.directory) == ""
+			&& environmentValue("BEADS_DB") == ""
+			&& environmentValue("BD_DB") == ""
+			&& environmentValue("BEADS_DIR") == ""
+			&& startup.getString("db") != "";
+	}
+
+	/**
+		Whether upstream's selected-workspace setup prints nothing about the
+		storage mode in shared-server mode: metadata.json is absent, or decodes
+		without pinning dolt_mode embedded. An undecodable metadata.json prints
+		a load warning, and a legacy config.json takes upstream's legacy checks.
+	**/
+	static function quietSharedServerSetup(beadsDir:String):Bool {
+		return switch readMetadataFields(beadsDir) {
+			case MetadataAbsent: true;
+			case MetadataFields(fields): goTrimSpace(fields.exists("dolt_mode") ? fields.get("dolt_mode") : "").toLowerCase() != "embedded";
+			case MetadataFieldsUndecodable | MetadataFieldsLegacyOnly: false;
 		};
 	}
 
@@ -2161,7 +2231,7 @@ final class Application {
 		no database for to `action` without a store.
 	**/
 	function runWithLayeredConfig(invocation:Invocation, storeFree:Bool, readsTable:Bool,
-			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int, ?preflight:(LayeredConfig, WorkspaceLocation) -> Null<String>,
+			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int, ?preflight:ConfigPreflightInput->Null<String>,
 			?runsWithoutDatabase:WorkspaceLocation->Bool):Int {
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
@@ -2183,13 +2253,13 @@ final class Application {
 					case Accepted:
 						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
 							final config = selected(location, 1);
-							final refusal = preflight == null ? null : preflight(config, location);
+							final refusal = preflight == null ? null : preflight({startup: startup, config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound();
 						} else {
 							final config = selected(location, invocation.databasePath == "" ? 2 : 1);
-							final refusal = preflight == null ? null : preflight(config, location);
+							final refusal = preflight == null ? null : preflight({startup: startup, config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {

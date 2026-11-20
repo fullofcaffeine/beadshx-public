@@ -75,6 +75,14 @@ Limits:
   no database (upstream creates the embedded database there), when
   `.beads/metadata.json` does not decode, and when only a legacy
   `.beads/config.json` exists (upstream rewrites it as `metadata.json`).
+- `config get`, `config list` and `config show` report that they are not
+  available yet in shared-server mode and when the `db` setting names a
+  database. In these cases upstream connects to the shared server, or opens or
+  creates the database at that path, and writes files. Like upstream, `bdhx`
+  ignores the `db` setting when `--db`, `-C`, `BEADS_DB`, `BD_DB` or
+  `BEADS_DIR` selects the workspace. In a shared-server workspace that has no
+  database, `config get` of a key that needs no database still runs, unless
+  `.beads/metadata.json` sets `dolt_mode` to `embedded`.
 - `config validate` and `config drift` report that they are not available
   yet in shared-server mode, with `--global`, when the `db` setting names a
   database, when `.beads/metadata.json` does not decode or names a backend

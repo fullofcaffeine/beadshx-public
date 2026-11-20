@@ -1435,6 +1435,95 @@ candidate_only_setup=set_database_path
 expect_candidate_failure config-validate-db-setting-unported "" \
 	"Error: config validate is not available yet when the db setting names a database in this build" "" config validate
 candidate_only_setup=""
+# config get, list and show refuse the same two settings before they open a store. Upstream connects
+# to the shared server (creating ~/.beads/shared-server/dolt and a TMPDIR circuit file), or opens or
+# creates the database that the db setting names.
+candidate_only_setup=enable_shared_server
+expect_candidate_failure config-get-shared-server-unported "" \
+	"Error: config get is not available yet in shared-server mode in this build" "" config get issue_prefix
+expect_candidate_failure config-get-yaml-shared-server-json-unported \
+	'{"error":"config get is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	config get routing.mode --json
+expect_candidate_failure config-list-shared-server-unported "" \
+	"Error: config list is not available yet in shared-server mode in this build" "" config list
+expect_candidate_failure config-list-shared-server-json-unported \
+	'{"error":"config list is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	config list --json
+expect_candidate_failure config-show-shared-server-unported "" \
+	"Error: config show is not available yet in shared-server mode in this build" "" config show
+expect_candidate_failure config-show-shared-server-json-unported \
+	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	config show --json
+candidate_only_setup=""
+# Upstream also turns shared-server mode on from config.local.yaml and from both variables.
+enable_local_shared_server() {
+	printf 'dolt:\n  shared-server: true\n' >"$1/work/.beads/config.local.yaml"
+}
+candidate_only_setup=enable_local_shared_server
+expect_candidate_failure config-show-local-shared-server-unported "" \
+	"Error: config show is not available yet in shared-server mode in this build" "" config show
+candidate_only_setup=""
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+expect_candidate_failure config-get-shared-server-env-unported "" \
+	"Error: config get is not available yet in shared-server mode in this build" "" config get beads.role
+real_database_extra_env=(BD_DOLT_SHARED_SERVER=true)
+expect_candidate_failure config-list-shared-server-bd-env-unported "" \
+	"Error: config list is not available yet in shared-server mode in this build" "" config list
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Without a database upstream opens no store for a key that needs none, but it prints a notice when
+# metadata.json pins dolt_mode embedded, as this fixture's does.
+enable_shared_server_without_database() {
+	enable_shared_server "$1"
+	remove_embedded_database "$1"
+}
+candidate_only_setup=enable_shared_server_without_database
+expect_candidate_failure config-get-shared-server-no-database-unported "" \
+	"Error: config get is not available yet in shared-server mode in this build" "" config get routing.mode
+candidate_only_setup=set_database_path
+expect_candidate_failure config-get-db-setting-unported "" \
+	"Error: config get is not available yet when the db setting names a database in this build" "" config get issue_prefix
+expect_candidate_failure config-get-yaml-db-setting-json-unported \
+	'{"error":"config get is not available yet when the db setting names a database in this build","schema_version":1}' "" "" \
+	config get routing.mode --json
+expect_candidate_failure config-list-db-setting-unported "" \
+	"Error: config list is not available yet when the db setting names a database in this build" "" config list
+expect_candidate_failure config-show-db-setting-json-unported \
+	'{"error":"config show is not available yet when the db setting names a database in this build","schema_version":1}' "" "" \
+	config show --json
+# An empty BD_DB counts as unset.
+real_database_extra_env=(BD_DB=)
+expect_candidate_failure config-get-db-setting-empty-bd-db-unported "" \
+	"Error: config get is not available yet when the db setting names a database in this build" "" config get beads.role
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
+set_local_database_path() {
+	printf 'db: other/beads.db\n' >"$1/work/.beads/config.local.yaml"
+}
+candidate_only_setup=set_local_database_path
+expect_candidate_failure config-show-local-db-setting-unported "" \
+	"Error: config show is not available yet when the db setting names a database in this build" "" config show
+candidate_only_setup=""
+# Upstream takes the db setting only when no --db, -C, BEADS_DB, BD_DB or BEADS_DIR selects the
+# workspace; otherwise these commands read the workspace as usual and write nothing.
+real_database_read_only=1
+real_database_setup=set_database_path
+compare_real_database_env config-get-db-setting-bd-db exact BD_DB=fake-selector config get issue_prefix
+compare_real_database_env config-show-db-setting-bd-db exact BD_DB=fake-selector config show --source env
+compare_real_database_env config-validate-db-setting-bd-db exact BD_DB=fake-selector config validate
+compare_real_database config-list-db-setting-directory exact -C . config list
+compare_real_database config-show-db-setting-flag exact --db .beads config show --source config.yaml
+real_database_setup=""
+# In shared-server mode, upstream opens no store for a key that needs none when the workspace has
+# no database and metadata.json does not pin dolt_mode, and then prints nothing about the mode.
+real_database_setup=remove_embedded_database
+real_database_extra_metadata='del(.dolt_mode)'
+compare_real_database_config config-get-shared-server-no-database exact $'dolt:\n  shared-server: true' \
+	config get routing.mode
+compare_real_database_config config-get-shared-server-no-database-backup-json exact $'dolt:\n  shared-server: true' \
+	config get backup.enabled --json
+real_database_extra_metadata=""
+real_database_setup=""
+real_database_read_only=""
 use_sqlite_backend() {
 	jq '.backend = "sqlite"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
 	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
