@@ -86,6 +86,92 @@ function backfilledStatuses(statuses:Array<CustomStatus>):Array<CustomStatus> {
 	return sorted;
 }
 
+/**
+	What `bd types` reads in the database, before upstream adds the types.custom
+	list from config.yaml and BD_TYPES_CUSTOM.
+**/
+enum DatabaseCustomTypes {
+	/** ResolveCustomTypesInTx's database layer: the custom_types rows, or else the types.custom value. */
+	StoredTypes(names:Array<String>);
+
+	/** The table read failed; upstream's GetCustomTypes then returns the layered list as it is. */
+	UnreadableTypes;
+}
+
+/**
+	What `bd statuses` reads in the database. Upstream reads the status.custom
+	list from config.yaml and BD_STATUS_CUSTOM only when the database has no answer.
+**/
+enum DatabaseCustomStatuses {
+	/** The custom_statuses rows, or else the status.custom value; an invalid or blank value gives none. */
+	StoredStatuses(statuses:Array<CustomStatus>);
+
+	/** No rows and an empty or missing status.custom value, or a failed read. */
+	NoStoredStatuses;
+}
+
+/**
+	Upstream EmbeddedDoltStore.GetCustomTypes: ResolveCustomTypesInTx adds the
+	layered names (getConfigList("types.custom")) after the database names, and
+	a failed read gives the layered names alone, as listed.
+**/
+function effectiveCustomTypes(database:DatabaseCustomTypes, layered:Array<String>):Array<String> {
+	return switch database {
+		case StoredTypes(names): mergeLayeredTypes(names, layered);
+		case UnreadableTypes: layered;
+	};
+}
+
+/**
+	Upstream mergeWithYAMLCustomTypes: without layered names the database names
+	stay as read. Otherwise both lists, database names first, are trimmed, empty
+	names dropped and each name kept at its first position.
+**/
+function mergeLayeredTypes(stored:Array<String>, layered:Array<String>):Array<String> {
+	if (layered.length == 0)
+		return stored;
+	final merged = new Array<String>();
+	final seen = new Map<String, Bool>();
+	for (name in stored.concat(layered)) {
+		final trimmed = goTrimSpace(name);
+		if (trimmed == "" || seen.exists(trimmed))
+			continue;
+		seen.set(trimmed, true);
+		merged.push(trimmed);
+	}
+	return merged;
+}
+
+/**
+	Upstream EmbeddedDoltStore.GetCustomStatusesDetailed over
+	ResolveCustomStatusesDetailedInTx: the database answer when there is one,
+	else the layered entries (getConfigList("status.custom")).
+**/
+function effectiveCustomStatuses(database:DatabaseCustomStatuses, layered:Array<String>):Array<CustomStatus> {
+	return switch database {
+		case StoredStatuses(statuses): statuses;
+		case NoStoredStatuses: parseStatusFallback(layered);
+	};
+}
+
+/**
+	Upstream issueops.ParseStatusFallback: the entries as one status.custom value,
+	in their order, or, when that value is invalid, each entry by name with the
+	unspecified category, repeats and invalid names included.
+**/
+function parseStatusFallback(entries:Array<String>):Array<CustomStatus> {
+	final parsed = parseCustomStatusConfig(entries.join(","));
+	if (parsed != null)
+		return parsed;
+	final statuses = new Array<CustomStatus>();
+	for (entry in entries) {
+		final name = goTrimSpace(entry);
+		if (name != "")
+			statuses.push({name: name, category: "unspecified"});
+	}
+	return statuses;
+}
+
 private function isStatusCategory(category:String):Bool {
 	return switch category {
 		case "active" | "wip" | "done" | "frozen": true;

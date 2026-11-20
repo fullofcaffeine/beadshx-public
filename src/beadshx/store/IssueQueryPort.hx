@@ -52,11 +52,11 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The open issues and the rows between them, as `bd graph --all` loads them; a positive `maxRows` caps each status. */
 	function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad>;
 
-	/** The custom types `bd types` lists after the built-in ones. */
-	function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<String>>;
+	/** The database custom types; `bd types` adds the layered config ones and lists them after the built-in ones. */
+	function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomTypes>;
 
-	/** The custom statuses `bd statuses` lists after the built-in ones. */
-	function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<CustomConfig.CustomStatus>>;
+	/** The database custom statuses; without them `bd statuses` falls back to the layered config ones. */
+	function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomStatuses>;
 
 	/** One config table value as `bd config get` reads it, or "" when no row holds the key. */
 	function configValue(beadsDir:String, databaseName:String, key:String, global:Bool):StoreResult<String>;

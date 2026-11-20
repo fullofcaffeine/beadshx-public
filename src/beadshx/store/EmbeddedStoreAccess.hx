@@ -72,11 +72,11 @@ final class EmbeddedStoreAccess {
 		return implementation.graphAll(beadsDir, databaseName, maxRows);
 	}
 
-	public static function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>> {
+	public static function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomTypes>> {
 		return implementation.customTypes(beadsDir, databaseName);
 	}
 
-	public static function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
+	public static function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomStatuses>> {
 		return implementation.customStatuses(beadsDir, databaseName);
 	}
 
@@ -157,11 +157,11 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 		return null;
 	}
 
-	public function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>> {
+	public function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomTypes>> {
 		return null;
 	}
 
-	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
+	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomStatuses>> {
 		return null;
 	}
 

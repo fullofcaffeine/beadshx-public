@@ -4,9 +4,10 @@ import beadshx.nativeextern.strings.Replacer;
 
 /**
 	The exact spf13/viper registry surface that upstream config.Initialize builds
-	and that `bd config get` and `bd config list` read. Viper owns YAML decoding,
-	merging, case folding, environment lookup and string conversion; the files,
-	precedence, environment names and defaults are authored Haxe.
+	and that `bd config get`, `bd config list`, `bd types` and `bd statuses`
+	read. Viper owns YAML decoding, merging, case folding, environment lookup
+	and string conversion; the files, precedence, environment names and
+	defaults are authored Haxe.
 **/
 @:go.import("github.com/spf13/viper")
 @:go.package("viper")
@@ -31,6 +32,10 @@ extern class Viper {
 
 	@:go.name("GetString") public function getString(key:String):String;
 	@:go.name("GetBool") public function getBool(key:String):Bool;
+
+	/** The value through cast.ToStringSlice: a YAML sequence item by item, a scalar split at white space. */
+	@:go.name("GetStringSlice") public function getStringSlice(key:String):go.NativeStringSlice;
+
 	@:go.name("InConfig") public function inConfig(key:String):Bool;
 	@:go.name("AllKeys") public function allKeys():go.NativeStringSlice;
 }

@@ -4,6 +4,8 @@ import beadshx.config.ConfigKeys.ConfigSetting;
 import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.store.CustomConfig.CustomStatus;
+import beadshx.store.CustomConfig.DatabaseCustomStatuses;
+import beadshx.store.CustomConfig.DatabaseCustomTypes;
 import beadshx.store.CustomConfig.backfilledStatuses;
 import beadshx.store.CustomConfig.backfilledTypeNames;
 import beadshx.store.CustomConfig.parseCustomStatusConfig;
@@ -16,16 +18,15 @@ import beadshx.store.DatabaseErrors.isTableNotExist;
 
 	Upstream opens an embedded store with its schema migrations, which fill an
 	empty custom_types or custom_statuses table from the types.custom or
-	status.custom config value, and then reads the table. These reads give what
-	upstream reads after that fill, without writing. Like upstream, a failed read
-	gives no custom entries. Upstream also reads both keys from config.yaml and
-	BD_TYPES_CUSTOM or BD_STATUS_CUSTOM, which this build does not read yet
-	(BHX-M08-02).
+	status.custom database config value, and then reads the table. These reads
+	give what upstream reads after that fill, without writing. The fill never
+	reads config.yaml or BD_ variables; the caller adds those lists afterwards
+	with CustomConfig.effectiveCustomTypes and effectiveCustomStatuses.
 **/
 @:goNative
 final class SqlCustomConfigReader {
-	/** Upstream ResolveCustomTypesInTx: the table by name, or else the config value. */
-	public static function readCustomTypes(context:Context, transaction:Tx):Array<String> {
+	/** Upstream ResolveCustomTypesInTx's database layer: the table by name, or else the config value. */
+	public static function readCustomTypes(context:Context, transaction:Tx):DatabaseCustomTypes {
 		final stored = new Array<String>();
 		// Like upstream, a failed table query falls through to the config value.
 		final queried = transaction.queryContext(context, "SELECT name FROM custom_types ORDER BY name");
@@ -40,21 +41,26 @@ final class SqlCustomConfigReader {
 			final rowError = rows.err();
 			rows.close();
 			if (rowError != null)
-				return [];
+				return UnreadableTypes;
 		}
 		if (stored.length > 0)
-			return stored;
+			return StoredTypes(stored);
+		// A failed config read gives the layered names alone, kept once each, as no names would.
 		final value = readConfigValue(context, transaction, "types.custom");
-		return value == null ? [] : backfilledTypeNames(parseTypesConfigValue(value));
+		return StoredTypes(value == null ? [] : backfilledTypeNames(parseTypesConfigValue(value)));
 	}
 
-	/** Upstream ResolveCustomStatusesDetailedInTx: the table by name, or else the config value. */
-	public static function readCustomStatuses(context:Context, transaction:Tx):Array<CustomStatus> {
+	/**
+		Upstream ResolveCustomStatusesDetailedInTx's database layer: the table by
+		name, or else the config value. Like upstream, a failed read falls back to
+		the layered statuses.
+	**/
+	public static function readCustomStatuses(context:Context, transaction:Tx):DatabaseCustomStatuses {
 		final queried = transaction.queryNativeContext(context, "SELECT name, category FROM custom_statuses ORDER BY name");
 		if (queried.error != null) {
 			// Only a missing table falls through to the config value.
 			if (!isTableNotExist(queried.error))
-				return [];
+				return NoStoredStatuses;
 		} else {
 			final rows = queried.rows;
 			final stored = new Array<CustomStatus>();
@@ -63,20 +69,23 @@ final class SqlCustomConfigReader {
 				final category = go.NativePointer.of("");
 				if (rows.scan(name, category) != null) {
 					rows.close();
-					return [];
+					return NoStoredStatuses;
 				}
 				stored.push({name: name.get(), category: category.get()});
 			}
 			final rowError = rows.err();
 			rows.close();
 			if (rowError != null)
-				return [];
+				return NoStoredStatuses;
 			if (stored.length > 0)
-				return stored;
+				return StoredStatuses(stored);
 		}
 		final value = readConfigValue(context, transaction, "status.custom");
-		final parsed = value == null ? null : parseCustomStatusConfig(value);
-		return parsed == null ? [] : backfilledStatuses(parsed);
+		if (value == null || value == "")
+			return NoStoredStatuses;
+		// Any other value decides, even one that is blank or invalid and so lists none.
+		final parsed = parseCustomStatusConfig(value);
+		return StoredStatuses(parsed == null ? [] : backfilledStatuses(parsed));
 	}
 
 	/** Upstream GetConfigInTx for `bd config get`: an empty string for a missing key. */

@@ -38,6 +38,8 @@ import beadshx.cli.ConfigView.renderConfigGetText;
 import beadshx.cli.ConfigView.renderConfigListJson;
 import beadshx.cli.ConfigView.renderConfigListText;
 import beadshx.config.ConfigKeys.ConfigSource;
+import beadshx.store.CustomConfig.effectiveCustomStatuses;
+import beadshx.store.CustomConfig.effectiveCustomTypes;
 import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.config.ConfigKeys.isKvPlaneKey;
 import beadshx.config.ConfigKeys.isUserGlobalKey;
@@ -1543,13 +1545,18 @@ final class Application {
 		};
 	}
 
+	/**
+		Upstream typesCmd: the database custom types, then the types.custom names
+		from the layered config.yaml files and BD_TYPES_CUSTOM.
+	**/
 	function runTypes(invocation:Invocation):Int {
-		return runWithIssueQuery(invocation, (query, location) -> {
+		return runWithLayeredConfig(invocation, false, true, (config, location, query) -> {
 			if (invocation.typesSections)
 				return runTypeSections(invocation, location);
 			return switch query.customTypes(location.path, location.databaseName, invocation.global) {
 				case Failure(message): runModeAwareFailure(invocation.output, message);
-				case Success(customTypes):
+				case Success(stored):
+					final customTypes = effectiveCustomTypes(stored, config.list("types.custom"));
 					if (invocation.output == Json)
 						writeJsonStdout(renderTypesJson(customTypes, output.usesJsonEnvelope()));
 					else
@@ -1559,16 +1566,22 @@ final class Application {
 		});
 	}
 
+	/**
+		Upstream statusesCmd: the database custom statuses, or without them the
+		status.custom entries from the layered config.yaml files and BD_STATUS_CUSTOM.
+	**/
 	function runStatuses(invocation:Invocation):Int {
-		return runWithIssueQuery(invocation, (query, location) -> switch query.customStatuses(location.path, location.databaseName, invocation.global) {
-			case Failure(message): runModeAwareFailure(invocation.output, message);
-			case Success(customStatuses):
-				if (invocation.output == Json)
-					writeJsonStdout(renderStatusesJson(customStatuses, output.usesJsonEnvelope()));
-				else
-					output.writeStdout(renderStatusesText(customStatuses));
-				0;
-		});
+		return runWithLayeredConfig(invocation, false, true,
+			(config, location, query) -> switch query.customStatuses(location.path, location.databaseName, invocation.global) {
+				case Failure(message): runModeAwareFailure(invocation.output, message);
+				case Success(stored):
+					final customStatuses = effectiveCustomStatuses(stored, config.list("status.custom"));
+					if (invocation.output == Json)
+						writeJsonStdout(renderStatusesJson(customStatuses, output.usesJsonEnvelope()));
+					else
+						output.writeStdout(renderStatusesText(customStatuses));
+					0;
+			});
 	}
 
 	/**

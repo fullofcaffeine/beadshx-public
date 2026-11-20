@@ -7,19 +7,24 @@ import beadshx.cli.CatalogViews.renderTypesText;
 import beadshx.store.CustomConfig.CustomStatus;
 import beadshx.store.CustomConfig.backfilledStatuses;
 import beadshx.store.CustomConfig.backfilledTypeNames;
+import beadshx.store.CustomConfig.effectiveCustomStatuses;
+import beadshx.store.CustomConfig.effectiveCustomTypes;
 import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.CustomConfig.parseCustomStatusConfig;
+import beadshx.store.CustomConfig.parseStatusFallback;
 import beadshx.store.CustomConfig.parseTypesConfigValue;
 
 /**
 	Pins the `bd types` and `bd statuses` config parsing against upstream
-	issueops.ParseTypesConfigValue and types.ParseCustomStatusConfig, and the
-	custom table backfill, by hand. Parity covers the real runs.
+	issueops.ParseTypesConfigValue and types.ParseCustomStatusConfig, the custom
+	table backfill, and the config.yaml and BD_ overlay (mergeWithYAMLCustomTypes
+	and ParseStatusFallback), by hand. Parity covers the real runs.
 **/
 class Main {
 	static function main():Void {
 		typeContracts();
 		statusContracts();
+		layeredContracts();
 		renderContracts();
 		Sys.println("types and statuses Haxe contracts: PASS");
 	}
@@ -64,6 +69,25 @@ class Main {
 		equal(parseCustomStatusConfig([for (index in 0...50) 's$index'].join(",")).length, 50);
 		// The backfill reads the table by name, in byte order.
 		equal(statuses(backfilledStatuses(parseCustomStatusConfig("zz:active,qa:wip,hold:frozen"))), "hold:frozen qa:wip zz:active");
+	}
+
+	static function layeredContracts():Void {
+		// Without layered names the database names stay as read, untrimmed.
+		equal(effectiveCustomTypes(StoredTypes([" spaced", "gate"]), []).join("|"), " spaced|gate");
+		// Otherwise both lists are trimmed and each name kept once, database names first.
+		equal(effectiveCustomTypes(StoredTypes([" spaced", "Alpha", "spaced", "zeta"]), ["alpha", "zeta", "Alpha", "new", "new"]).join("|"),
+			"spaced|Alpha|zeta|alpha|new");
+		equal(effectiveCustomTypes(StoredTypes([]), ["b", "a", "b"]).join("|"), "b|a");
+		// A failed table read gives the layered names as listed, repeats included.
+		equal(effectiveCustomTypes(UnreadableTypes, ["b", "a", "b"]).join("|"), "b|a|b");
+		equal(effectiveCustomTypes(UnreadableTypes, []).length, 0);
+		// Stored statuses decide, even when none are valid; the layered entries are a fallback only.
+		equal(statuses(effectiveCustomStatuses(StoredStatuses([]), ["zz:active"])), "");
+		equal(statuses(effectiveCustomStatuses(NoStoredStatuses, ["zz:active", "qa:wip", "legacy"])), "zz:active qa:wip legacy:unspecified");
+		equal(statuses(effectiveCustomStatuses(NoStoredStatuses, [])), "");
+		// Entries that do not parse together are listed by name, unspecified, repeats and built-ins included.
+		equal(statuses(parseStatusFallback(["review:bogus", "open", "Bad", "qa", "qa"])),
+			"review:bogus:unspecified open:unspecified Bad:unspecified qa:unspecified qa:unspecified");
 	}
 
 	static function statuses(values:Null<Array<CustomStatus>>):String {

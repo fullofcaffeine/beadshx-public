@@ -31,7 +31,10 @@ workspaces, and require the same stdout, stderr and exit code:
   `blocked`, `graph check`, and `graph` for one issue or `--all`, in every
   view (default, `--compact`, `--open`, `--box`, `--dot`, `--html`,
   `--json`).
-- **Reference lists:** `types` (also `--sections`), `statuses`.
+- **Reference lists:** `types` (also `--sections`), `statuses`. They read
+  custom types and statuses from the database, the same `config.yaml` files
+  as `config get`, and `BD_TYPES_CUSTOM` and `BD_STATUS_CUSTOM`, in upstream's
+  order.
 - **Events journal:** `events`, `events tail` (also `--since`, `--limit`),
   `events export` (also `--limit`).
 - **Configuration:** `config get <key>` and `config list`. They read the
@@ -58,9 +61,6 @@ Limits:
   (`metrics.*`, `node_id`) reports that it is not available yet when the user
   `config.yaml` exists. `bdhx` does not load `.beads/.env` before it reads
   `BD_*` variables.
-- `types` and `statuses` read custom types and statuses from the database
-  only. They ignore `types.custom` and `status.custom` in `config.yaml` and
-  the `BD_TYPES_CUSTOM` and `BD_STATUS_CUSTOM` variables.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

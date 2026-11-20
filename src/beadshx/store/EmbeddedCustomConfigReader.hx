@@ -17,11 +17,11 @@ import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedCustomConfigReader {
-	public static function readTypes(beadsDir:String, databaseName:String):StoreResult<Array<String>> {
+	public static function readTypes(beadsDir:String, databaseName:String):StoreResult<CustomConfig.DatabaseCustomTypes> {
 		return read(beadsDir, databaseName, (context, transaction) -> Success(SqlCustomConfigReader.readCustomTypes(context, transaction)));
 	}
 
-	public static function readStatuses(beadsDir:String, databaseName:String):StoreResult<Array<CustomConfig.CustomStatus>> {
+	public static function readStatuses(beadsDir:String, databaseName:String):StoreResult<CustomConfig.DatabaseCustomStatuses> {
 		return read(beadsDir, databaseName, (context, transaction) -> Success(SqlCustomConfigReader.readCustomStatuses(context, transaction)));
 	}
 

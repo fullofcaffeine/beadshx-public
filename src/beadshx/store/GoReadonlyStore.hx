@@ -204,7 +204,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return Failure(GRAPH_ROUTE_UNAVAILABLE);
 	}
 
-	public function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<String>> {
+	public function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomTypes> {
 		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
 			final embedded = EmbeddedStoreAccess.customTypes(beadsDir, databaseName);
 			if (embedded != null)
@@ -213,7 +213,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return Failure(TYPES_ROUTE_UNAVAILABLE);
 	}
 
-	public function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<CustomConfig.CustomStatus>> {
+	public function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomStatuses> {
 		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
 			final embedded = EmbeddedStoreAccess.customStatuses(beadsDir, databaseName);
 			if (embedded != null)
@@ -1404,11 +1404,11 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return Failure(GRAPH_ROUTE_UNAVAILABLE);
 	}
 
-	public function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<String>> {
+	public function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomTypes> {
 		return Failure(TYPES_ROUTE_UNAVAILABLE);
 	}
 
-	public function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<CustomConfig.CustomStatus>> {
+	public function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomStatuses> {
 		return Failure(STATUSES_ROUTE_UNAVAILABLE);
 	}
 

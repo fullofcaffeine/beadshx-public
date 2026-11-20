@@ -60,11 +60,11 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedGraphReader.readAll(beadsDir, databaseName, maxRows);
 	}
 
-	public function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<Array<String>>> {
+	public function customTypes(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomTypes>> {
 		return EmbeddedCustomConfigReader.readTypes(beadsDir, databaseName);
 	}
 
-	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<Array<CustomConfig.CustomStatus>>> {
+	public function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomStatuses>> {
 		return EmbeddedCustomConfigReader.readStatuses(beadsDir, databaseName);
 	}
 

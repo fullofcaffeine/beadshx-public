@@ -29,7 +29,8 @@ private typedef UserConfigCandidates = {
 	defaults.
 
 	Why: `bd config get` and `bd config list` print the layered values and say
-	where they came from. What: Haxe chooses the files and their order, binds the
+	where they came from, and `bd types` and `bd statuses` read their custom
+	lists from them. What: Haxe chooses the files and their order, binds the
 	environment and sets the defaults exactly as upstream; Viper, an independent
 	library, decodes, merges and converts the values. How: upstream initializes
 	once at process start and again for the selected workspace with BEADS_DIR set
@@ -124,6 +125,19 @@ final class LayeredConfig {
 		return registry.getBool(key);
 	}
 
+	/**
+		Upstream getConfigList, which GetCustomTypesFromYAML and
+		GetCustomStatusesFromYAML read: Viper's string list with each entry split
+		again at commas, or else the string value split at commas. Entries are
+		trimmed and empty ones dropped.
+	**/
+	public function list(key:String):Array<String> {
+		final slice = registry.getStringSlice(key);
+		final entries = [for (index in 0...slice.length) slice[index]];
+		final listed = commaEntries(entries);
+		return listed.length > 0 ? listed : commaEntries([registry.getString(key)]);
+	}
+
 	/** Viper's AllKeys: every default, file and bound-environment key, lower-cased. */
 	public function allKeys():Array<String> {
 		final keys = registry.allKeys();
@@ -215,6 +229,18 @@ private function setDefaults(registry:Viper):Void {
 	registry.setIntDefault("list.limit", 50);
 	registry.setIntDefault("output.title-length", 255);
 	registry.setStringsDefault("external_projects", go.NativeStringSlice.fromArray([]));
+}
+
+/** Each entry split at commas, as Go's strings.Split does, keeping the trimmed non-empty parts in order. */
+private function commaEntries(entries:Array<String>):Array<String> {
+	final parts = new Array<String>();
+	for (entry in entries)
+		for (part in entry.split(",")) {
+			final trimmed = goTrimSpace(part);
+			if (trimmed != "")
+				parts.push(trimmed);
+		}
+	return parts;
 }
 
 /** Reads the lowest file and merges the others over it, then config.local.yaml beside the primary file. */

@@ -916,6 +916,65 @@ INSERT INTO config (\`key\`, value) VALUES ('status.custom', 'good:active,Bad')"
 expect_candidate_failure statuses-global-json-unported \
 	'{"error":"statuses is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	statuses --global --json
+# types.custom and status.custom also come from the layered config.yaml and BD_TYPES_CUSTOM or
+# BD_STATUS_CUSTOM, through upstream's getConfigList: Viper's string list (a YAML sequence, or a
+# scalar split at white space), each entry split again at commas. A set variable, even a blank
+# one, replaces the YAML value; an empty one does not. Upstream appends these types to the
+# database types, trimmed and each kept once, but uses these statuses only when the database has
+# no custom_statuses row and no status.custom value.
+types_yaml=$'types:\n  custom: " zeta, alpha ,zeta,,Beta "'
+real_database_extra_sql="$no_custom_types_sql"
+compare_real_database_config types-yaml-human exact "$types_yaml" types
+compare_real_database_config types-yaml-json exact "$types_yaml" types --json
+compare_real_database_config types-yaml-blank exact $'types:\n  custom: "  "' types
+compare_real_database_env types-env-human exact 'BD_TYPES_CUSTOM=one two,three, one' types
+compare_real_database_env types-env-json exact 'BD_TYPES_CUSTOM=one two,three, one' types --json
+real_database_extra_sql=""
+compare_real_database_config types-yaml-list exact $'types:\n  custom: [b c, "x,y", gate, "", 7]' types
+compare_real_database_config types-yaml-flat-key exact 'types.custom: flat1,flat2' types --json
+compare_real_database_config_env types-env-over-yaml exact "$types_yaml" BD_TYPES_CUSTOM=envonly types
+compare_real_database_config_env types-empty-env-keeps-yaml exact "$types_yaml" BD_TYPES_CUSTOM= types
+compare_real_database_config_env types-blank-env-hides-yaml exact "$types_yaml" 'BD_TYPES_CUSTOM=  ' types --json
+compare_real_database_config_env types-yaml-json-envelope exact "$types_yaml" BD_JSON_ENVELOPE=1 types --json
+compare_real_database_local_config types-local-over-yaml exact "$types_yaml" $'types:\n  custom: [local]' types
+types_rows_yaml=$'types:\n  custom: "alpha, zeta ,Alpha,new,new"'
+real_database_extra_sql="$custom_types_sql"
+compare_real_database_config types-yaml-rows-human exact "$types_rows_yaml" types
+compare_real_database_config types-yaml-rows-json exact "$types_rows_yaml" types --json
+real_database_extra_sql="$types_config_sql"
+compare_real_database_config types-yaml-config-value exact "$types_rows_yaml" types
+real_database_extra_sql=""
+statuses_yaml=$'status:\n  custom: " zz:active , qa:wip,legacy,, hold:frozen "'
+compare_real_database_config statuses-yaml-human exact "$statuses_yaml" statuses
+compare_real_database_config statuses-yaml-json exact "$statuses_yaml" statuses --json
+compare_real_database_config statuses-yaml-list exact $'status:\n  custom: [review:active, "hold:frozen,qa"]' statuses --json
+# A YAML value that does not parse lists each entry by name with the unspecified category.
+compare_real_database_config statuses-yaml-invalid exact $'status:\n  custom: "review:bogus,open,Bad Name,qa,qa"' statuses
+compare_real_database_config statuses-yaml-blank exact $'status:\n  custom: "  "' statuses --json
+compare_real_database_env statuses-env-human exact 'BD_STATUS_CUSTOM=envst:wip later:frozen' statuses
+compare_real_database_env statuses-env-json exact 'BD_STATUS_CUSTOM=envst:wip later:frozen' statuses --json
+compare_real_database_config_env statuses-env-over-yaml exact "$statuses_yaml" BD_STATUS_CUSTOM=envst:done statuses
+compare_real_database_config_env statuses-empty-env-keeps-yaml exact "$statuses_yaml" BD_STATUS_CUSTOM= statuses
+compare_real_database_config_env statuses-blank-env-hides-yaml exact "$statuses_yaml" 'BD_STATUS_CUSTOM= ' statuses
+compare_real_database_config_env statuses-yaml-json-envelope exact "$statuses_yaml" BD_JSON_ENVELOPE=1 statuses --json
+real_database_extra_sql="$custom_statuses_sql"
+compare_real_database_config statuses-rows-over-yaml exact "$statuses_yaml" statuses
+real_database_extra_sql="$status_config_sql"
+compare_real_database_config_env statuses-config-value-over-env exact "$statuses_yaml" BD_STATUS_CUSTOM=envst:wip statuses --json
+# An invalid or blank status.custom value hides the layered statuses; an empty one does not.
+real_database_extra_sql="DELETE FROM config WHERE \`key\` = 'status.custom'
+INSERT INTO config (\`key\`, value) VALUES ('status.custom', 'good:active,Bad')"
+compare_real_database_config statuses-invalid-value-hides-yaml exact "$statuses_yaml" statuses
+real_database_extra_sql="DELETE FROM config WHERE \`key\` = 'status.custom'
+INSERT INTO config (\`key\`, value) VALUES ('status.custom', '  ')"
+compare_real_database_config statuses-blank-value-hides-yaml exact "$statuses_yaml" statuses
+real_database_extra_sql="DELETE FROM config WHERE \`key\` = 'status.custom'
+INSERT INTO config (\`key\`, value) VALUES ('status.custom', '')"
+compare_real_database_env statuses-empty-value-uses-env exact BD_STATUS_CUSTOM=envst:wip statuses
+real_database_extra_sql=""
+# Like every upstream command, both warn once per config load that a config.yaml does not parse.
+compare_real_database_config types-malformed-yaml exact $'types:\n  custom: [unclosed' types
+compare_real_database_config statuses-malformed-yaml exact $'status:\n  custom: [unclosed' statuses --json
 # bd config get and list. A database key reads the config table; a YAML-only key reads the layered
 # config.yaml, config.local.yaml, BD_ variables and defaults through Viper; beads.role reads git
 # config. Upstream prints values as stored, secrets included, so the fixtures use fake values.
