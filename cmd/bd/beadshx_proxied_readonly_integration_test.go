@@ -98,6 +98,7 @@ func TestBeadsHXProxiedReadonly(t *testing.T) {
 		{[]string{"events", "export"}, "Error: events export is not available yet for server-mode or proxied workspaces in this build\n"},
 		{[]string{"config", "list"}, "Error: config is not available yet for server-mode or proxied workspaces in this build\n"},
 		{[]string{"config", "get", "issue_prefix"}, "Error: config is not available yet for server-mode or proxied workspaces in this build\n"},
+		{[]string{"config", "show"}, "Error: config is not available yet for server-mode or proxied workspaces in this build\n"},
 	} {
 		t.Run(refusal.args[0]+"-unsupported", func(t *testing.T) {
 			cmd := exec.Command(candidate, refusal.args...)

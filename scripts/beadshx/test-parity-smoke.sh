@@ -188,6 +188,10 @@ compare_no_workspace config_get_yaml_json config get dolt.auto-commit --json
 compare_no_workspace config_get_database config get issue_prefix
 compare_no_workspace config_list config list
 compare_no_workspace config_help config --help
+compare_no_workspace config_show config show
+compare_no_workspace config_show_json config show --json
+compare_no_workspace config_show_source_metadata config show --source metadata
+compare_no_workspace config_show_help config show --help
 BEADSHX_TEST_JSON_ENVELOPE=1 compare_no_workspace where_json_envelope where --json
 
 fingerprint_tree() {
@@ -455,6 +459,8 @@ compare_store_failure missing-embedded ready-offset ready --offset 1
 compare_store_failure missing-embedded ready-offset-json ready --offset 1 --json
 compare_store_failure missing-embedded types types
 compare_store_failure missing-embedded statuses statuses
+compare_store_failure unavailable-server config-show config show
+compare_store_failure unavailable-server config-show-json config show --json
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -574,10 +580,13 @@ real_database_labeled_relation_id="$(jq -er '.id' "$real_database_seed/labeled-r
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config=""
 real_database_extra_local_config=""
+real_database_extra_metadata=""
 real_database_extra_import=""
 real_database_extra_sql=""
 real_database_case_count=0
 candidate_only_case_count=0
+# Names a function that prepares one candidate-only state root (its argument) before the run.
+candidate_only_setup=""
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
 compare_real_database() {
@@ -600,6 +609,12 @@ compare_real_database() {
 		fi
 		if [[ -n "$real_database_extra_local_config" ]]; then
 			printf '%s\n' "$real_database_extra_local_config" >"$state_root/work/.beads/config.local.yaml"
+		fi
+		if [[ -n "$real_database_extra_metadata" ]]; then
+			# Rewrite metadata.json in place, so the file keeps its mode.
+			jq "$real_database_extra_metadata" "$state_root/work/.beads/metadata.json" >"$state_root/metadata.json"
+			cat "$state_root/metadata.json" >"$state_root/work/.beads/metadata.json"
+			rm -f "$state_root/metadata.json"
 		fi
 		if [[ -n "$real_database_extra_import" ]]; then
 			(
@@ -693,6 +708,23 @@ compare_real_database() {
 			return 1
 		fi
 		;;
+	config-show-tied-text | config-show-tied-json)
+		# config show sorts with sort.Slice, which is not stable, over rows gathered from Go maps,
+		# so the rows of one key set by two sources print in either order. The exact cases pin
+		# the order of distinct keys; here only the order of tied rows may vary.
+		for side in oracle candidate; do
+			if [[ "$comparison" == config-show-tied-json ]]; then
+				jq 'sort_by(.key, .source, .value)' "$case_root/$side.stdout" >"$case_root/$side.normalized"
+			else
+				LC_ALL=C sort "$case_root/$side.stdout" >"$case_root/$side.normalized"
+			fi
+		done
+		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+			printf '%s stdout differs from upstream after sorting tied rows\n' "$name" >&2
+			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+			return 1
+		fi
+		;;
 	ping-human)
 		sed -E 's/[0-9]+ms/<duration>/' "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
 		sed -E 's/[0-9]+ms/<duration>/' "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
@@ -777,6 +809,16 @@ compare_real_database_local_config() {
 	real_database_extra_local_config=""
 }
 
+compare_real_database_metadata() {
+	local name="$1"
+	local comparison="$2"
+	local filter="$3"
+	shift 3
+	real_database_extra_metadata="$filter"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_extra_metadata=""
+}
+
 compare_real_database_config_env() {
 	local name="$1"
 	local comparison="$2"
@@ -829,6 +871,9 @@ expect_candidate_failure() {
 	chmod 700 "$state_root/work/.beads"
 	if [[ -n "$statements" ]]; then
 		printf '%s\n' "$statements" | "$fixture_sql" "$state_root/work" >/dev/null
+	fi
+	if [[ -n "$candidate_only_setup" ]]; then
+		"$candidate_only_setup" "$state_root"
 	fi
 	candidate_before="$(fingerprint_tree "$state_root")"
 	set +e
@@ -1053,8 +1098,70 @@ compare_real_database config-list-help exact config list --help
 compare_real_database config-get-missing-argument exact config get
 compare_real_database config-get-extra-argument exact config get one two
 compare_real_database config-list-unknown-flag exact config list --bogus
+# bd config show: every Viper key with its env, config.yaml or default source, then metadata.json
+# fields, the database table without the kv. plane, git's beads.role and BEADS_MAX_ROWS, sorted
+# by key. Upstream prints every value in full, secrets included; the fixtures use fake values.
+compare_real_database config-show-human exact config show
+compare_real_database config-show-json exact config show --json
+compare_real_database_env config-show-json-envelope exact BD_JSON_ENVELOPE=1 config show --json
+compare_real_database config-show-extra-argument exact config show extra
+# --source keeps the rows whose source starts with the given text.
+for config_source in default database metadata git env config.yaml; do
+	compare_real_database "config-show-source-$config_source" exact config show --source "$config_source"
+done
+compare_real_database config-show-source-env-prefix exact config show --source "env: BEADS"
+compare_real_database config-show-source-partial exact config show --source data
+compare_real_database config-show-source-attached-json exact config show --source=git --json
+compare_real_database config-show-source-empty exact config show --source=
+compare_real_database config-show-source-unknown exact config show --source bogus
+compare_real_database config-show-source-unknown-json exact config show --json --source bogus
+compare_real_database_env config-show-source-unknown-envelope exact BD_JSON_ENVELOPE=1 config show --source bogus --json
+compare_real_database config-show-help exact config show --help
+compare_real_database config-show-help-command exact help config show
+compare_real_database config-show-missing-source exact config show --source
+compare_real_database config-show-unknown-flag exact config show --bogus
+compare_real_database config-show-other-flag exact config show --sections
+compare_real_database config-get-source-flag exact config get issue_prefix --source git
+config_show_rows_sql="$config_rows_sql, ('custom.long', 'fake-long-value-0123456789-0123456789-0123456789-0123456789-end'), ('custom.sixty', 'sixty-bytes-0123456789-0123456789-0123456789-0123456789-0123'), ('custom.wide', 'a$(printf 'é%.0s' {1..35})'), ('custom.html', '<b>Tom & Jerry</b>')"
+compare_real_database_sql config-show-rows-human exact "$config_show_rows_sql" config show
+compare_real_database_sql config-show-rows-json exact "$config_show_rows_sql" config show --json
+compare_real_database_sql config-show-rows-database exact "$config_show_rows_sql" config show --source database
+compare_real_database_sql config-show-kv-only exact "DELETE FROM config WHERE \`key\` <> 'issue_prefix'
+INSERT INTO config (\`key\`, value) VALUES ('kv.memory.fake-note', 'hidden note')" config show --source database
+compare_real_database_sql config-show-empty-table-json exact "DELETE FROM config" config show --source database --json
+compare_real_database_config config-show-yaml-human exact "$config_yaml" config show
+compare_real_database_config config-show-yaml-json exact "$config_yaml" config show --json
+compare_real_database_config config-show-yaml-source exact "$config_yaml" config show --source config.yaml
+compare_real_database_config config-show-yaml-containers exact $'external_projects:\n  other: ../other\ndirectory:\n  labels:\n    frontend: fe\nrepos:\n  primary: "."\n  additional: [a, b]' config show --source config
+compare_real_database_local_config config-show-local exact "$config_yaml" $'routing:\n  mode: local\nexport:\n  auto: true' config show --source config.yaml
+compare_real_database_config config-show-malformed-yaml exact "$malformed_yaml" config show
+compare_real_database_config_env config-show-env-over-yaml exact "$config_yaml" BD_EXPORT_GIT_ADD=0 config show --source env
+compare_real_database_config_env config-show-legacy-env exact "$config_yaml" BEADS_ROUTING_MODE=legacy config show
+compare_real_database_config_env config-show-empty-env exact "$config_yaml" BD_SYNC_REMOTE= config show --source env
+compare_real_database_env config-show-env-default exact BD_EXPORT_PATH=fake.jsonl config show --source env
+compare_real_database_env config-show-bound-env exact BEADS_IDENTITY=fake-identity config show
+compare_real_database_env config-show-user-key-env exact BEADS_NODE_ID=fake-node config show --source env
+compare_real_database_env config-show-max-rows exact BEADS_MAX_ROWS=25 config show
+compare_real_database_env config-show-max-rows-json exact BEADS_MAX_ROWS=not-a-number config show --source env --json
+compare_real_database_env config-show-max-rows-empty exact BEADS_MAX_ROWS= config show --source env
+# The actor row follows upstream's BEADS_ACTOR > BD_ACTOR > config.yaml order.
+compare_real_database_env config-show-actor-empty exact BEADS_ACTOR= config show --source env
+compare_real_database_env config-show-actor-bd exact BD_ACTOR=bd-fixture config show --source env
+real_database_extra_env=(BEADS_ACTOR= BD_ACTOR=bd-fixture)
+compare_real_database config-show-actor-bd-only exact config show --source env
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database_config_env config-show-actor-yaml exact 'actor: yaml-actor' BEADS_ACTOR= config show --source env
+compare_real_database_config config-show-actor-yaml-shadowed exact 'actor: yaml-actor' config show --source env
+compare_real_database_metadata config-show-metadata-fields exact '.dolt_server_host = "db.example.invalid" | .dolt_server_user = "fake-user" | .dolt_server_tls = true | .dolt_remotesapi_port = 8080 | .deletions_retention_days = 7 | .stale_closed_issues_days = -5' config show --source metadata
+# encoding/json matches metadata.json keys under case folding: ſ folds to s, but ı does not fold to i.
+compare_real_database_metadata config-show-metadata-folded-keys exact '.DOLT_REMOTESAPI_PORT = 9090 | .Project_ID = "fake-project" | .dolt_server_user = null | .dolt_data_dir = null | .["ſtale_closed_issues_days"] = 9 | .["dolt_server_hoſt"] = "folded.example.invalid" | .["dolt_ſerver_user"] = "fake-user" | .["dolt_data_dır"] = "/not-a-match"' config show --source metadata --json
+compare_real_database_metadata config-show-metadata-zero-values exact '.dolt_server_tls = false | .deletions_retention_days = 0 | .dolt_server_host = "" | del(.dolt_mode)' config show
+# One key set by two sources prints two rows whose order upstream leaves to chance.
+config_show_tied_yaml=$'issue_prefix: yaml-prefix\nproject_id: yaml-project\nbeads.role: yaml-role\ntypes:\n  custom: yaml-type'
+compare_real_database_config config-show-tied-human config-show-tied-text "$config_show_tied_yaml" config show
+compare_real_database_config config-show-tied-json config-show-tied-json "$config_show_tied_yaml" config show --json
 # Writes and the other config views are not ported; they fail before touching the fixture.
-for config_subcommand in set set-many unset apply show validate drift; do
+for config_subcommand in set set-many unset apply validate drift; do
 	expect_candidate_failure "config-$config_subcommand-unported" "" \
 		"Error: config $config_subcommand is not available yet in this build" "" config "$config_subcommand" export.auto true
 done
@@ -1063,6 +1170,39 @@ expect_candidate_failure config-list-global-unported "" \
 expect_candidate_failure config-get-global-json-unported \
 	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	config get export.auto --global --json
+expect_candidate_failure config-show-global-unported "" \
+	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config show --global
+expect_candidate_failure config-show-global-json-unported \
+	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+	config show --global --json
+# Upstream config show creates the embedded database when the workspace has none.
+remove_embedded_database() {
+	rm -rf "$1/work/.beads/embeddeddolt"
+}
+candidate_only_setup=remove_embedded_database
+expect_candidate_failure config-show-no-database-unported "" \
+	"Error: config show is not available yet for a workspace without a database in this build" "" config show
+candidate_only_setup=""
+# metrics.* and node_id come from the user config.yaml alone, which this build does not read yet.
+write_user_config() {
+	mkdir -p "$1/user-home/.config/bd"
+	printf 'metrics:\n  disabled: true\n' >"$1/user-home/.config/bd/config.yaml"
+}
+candidate_only_setup=write_user_config
+expect_candidate_failure config-show-user-config-unported \
+	'{"error":"config show is not available yet when a user config.yaml exists in this build","schema_version":1}' "" "" \
+	config show --json
+candidate_only_setup=""
+# Upstream refuses to open a store whose metadata.json does not decode.
+break_metadata() {
+	jq '.deletions_retention_days = "7"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+candidate_only_setup=break_metadata
+expect_candidate_failure config-show-bad-metadata-unported "" \
+	"Error: config show is not available yet when .beads/metadata.json does not decode in this build" "" config show
+candidate_only_setup=""
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
 compare_real_database count-human exact count

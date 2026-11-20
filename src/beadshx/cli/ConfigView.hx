@@ -8,7 +8,9 @@ import beadshx.config.ConfigKeys.ConfigSetting;
 import beadshx.config.ConfigKeys.ConfigSource;
 import beadshx.config.ConfigKeys.configSourceName;
 import beadshx.config.ConfigKeys.isYamlOnlyKey;
+import beadshx.config.ConfigShow.ConfigShowEntry;
 import beadshx.relation.DependencyRead.compareUtf8;
+import haxe.io.Bytes;
 
 /** What upstream's `bd config list` override notes read for one key. */
 typedef ConfigKeyFacts = {
@@ -108,6 +110,90 @@ function renderConfigListText(settings:Array<ConfigSetting>, allKeys:Array<Strin
 	}
 	rendered.add("\nTip: Run 'bd config show' for all effective config with provenance.\n");
 	return rendered.toString();
+}
+
+/**
+	Upstream printConfigEntries. Go measures the key and value columns with
+	`len`, in bytes, and caps the value column at 60; a longer value keeps its
+	first 57 bytes and gains "...". `%-*s` then pads with spaces up to that width
+	counted in runes, as haxe.go's String length counts them.
+**/
+function renderConfigShowText(entries:Array<ConfigShowEntry>):String {
+	if (entries.length == 0)
+		return "No configuration found\n";
+	var keyWidth = 0;
+	var valueWidth = 0;
+	for (entry in entries) {
+		final keyLength = Bytes.ofString(entry.key).length;
+		final valueLength = Bytes.ofString(entry.value).length;
+		if (keyLength > keyWidth)
+			keyWidth = keyLength;
+		if (valueLength > valueWidth)
+			valueWidth = valueLength;
+	}
+	if (valueWidth > 60)
+		valueWidth = 60;
+	final rendered = new StringBuf();
+	for (entry in entries) {
+		final value = Bytes.ofString(entry.value);
+		final shown = value.length > 60 ? value.getString(0, 57) + "..." : entry.value;
+		rendered.add('  ${padToRunes(entry.key, keyWidth)} = ${padToRunes(shown, valueWidth)}  (${entry.source})\n');
+	}
+	return rendered.toString();
+}
+
+/** Go's `%-*s`: the text, then spaces until it is `width` runes long. */
+private function padToRunes(text:String, width:Int):String {
+	final padded = new StringBuf();
+	padded.add(text);
+	for (_ in text.length...width)
+		padded.add(" ");
+	return padded.toString();
+}
+
+/** Upstream outputJSON of the rows: `{key, value, source}` objects in struct order, or `null` for none. */
+function renderConfigShowJson(entries:Array<ConfigShowEntry>):String {
+	if (entries.length == 0)
+		return "null\n";
+	return renderCatalogJson(JsonList([
+		for (entry in entries)
+			JsonObject([
+				field("key", JsonText(entry.key)),
+				field("value", JsonText(entry.value)),
+				field("source", JsonText(entry.source))
+			])
+	]));
+}
+
+/** Upstream `bd config show --help`. */
+function configShowHelp(globalFlags:String):String {
+	return [
+		"Display a unified view of all effective configuration across all sources",
+		"with annotations showing where each value comes from.",
+		"",
+		"Sources (by precedence for Viper-managed keys):",
+		"  - env          Environment variable (BD_* or BEADS_*)",
+		"  - config.yaml  Project config file (.beads/config.yaml)",
+		"  - default      Built-in default value",
+		"",
+		"Additional sources:",
+		"  - metadata     Connection settings from .beads/metadata.json",
+		"  - database     Integration config stored in the Dolt database",
+		"  - git          Git config (e.g., beads.role)",
+		"",
+		"Examples:",
+		"  bd config show",
+		"  bd config show --json",
+		"  bd config show --source config.yaml",
+		"",
+		"Usage:",
+		"  bd config show [flags]",
+		"",
+		"Flags:",
+		"  -h, --help            help for show",
+		"      --source string   Filter by source (e.g., config.yaml, env, default, metadata, database, git)",
+		""
+	].join("\n") + "\n" + globalFlags;
 }
 
 /** Upstream `bd config --help`, which bare `bd config` and an unknown subcommand also print. */

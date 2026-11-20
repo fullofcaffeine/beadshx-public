@@ -71,6 +71,11 @@ function isUserGlobalKey(key:String):Bool {
 	return key == "node_id" || StringTools.startsWith(key, "metrics.");
 }
 
+/** Upstream isContainerKey: map keys that `bd config show` skips, because it lists their dotted children. */
+function isConfigContainerKey(key:String):Bool {
+	return key == "directory.labels" || key == "external_projects" || key == "repos";
+}
+
 /**
 	Upstream workapi.KeyIsOnTheKVPlane: `bd kv` and `bd remember` rows share the
 	config table, and the settings reads answer them as absent.

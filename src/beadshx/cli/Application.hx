@@ -37,6 +37,14 @@ import beadshx.cli.ConfigView.renderConfigGetJson;
 import beadshx.cli.ConfigView.renderConfigGetText;
 import beadshx.cli.ConfigView.renderConfigListJson;
 import beadshx.cli.ConfigView.renderConfigListText;
+import beadshx.cli.ConfigView.configShowHelp;
+import beadshx.cli.ConfigView.renderConfigShowJson;
+import beadshx.cli.ConfigView.renderConfigShowText;
+import beadshx.config.ConfigShow.ConfigShowEntry;
+import beadshx.config.ConfigShow.filterConfigShowEntries;
+import beadshx.config.ConfigShow.layeredEntries;
+import beadshx.config.ConfigShow.readWorkspaceMetadata;
+import beadshx.config.ConfigShow.sortConfigShowEntries;
 import beadshx.config.ConfigKeys.ConfigSource;
 import beadshx.store.CustomConfig.effectiveCustomStatuses;
 import beadshx.store.CustomConfig.effectiveCustomTypes;
@@ -45,6 +53,7 @@ import beadshx.config.ConfigKeys.isKvPlaneKey;
 import beadshx.config.ConfigKeys.isUserGlobalKey;
 import beadshx.config.ConfigKeys.isYamlOnlyKey;
 import beadshx.config.LayeredConfig;
+import beadshx.config.LayeredConfig.environmentValue;
 import beadshx.config.LayeredConfig.gitBeadsRole;
 import beadshx.config.LayeredConfig.gitHasRemote;
 import beadshx.config.LayeredConfig.goQuote;
@@ -337,7 +346,8 @@ final class Application {
 	static function usesStore(command:Command):Bool {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
-				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses | ConfigGet | ConfigList: true;
+				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses | ConfigGet |
+				ConfigList | ConfigShow: true;
 			case RootHelp | Version | Where | Label | Events | Config: false;
 		};
 	}
@@ -371,6 +381,7 @@ final class Application {
 			// Upstream names a profile after cobra's leaf command name.
 			case ConfigGet: "get";
 			case ConfigList: "list";
+			case ConfigShow: "show";
 			case Label: "label";
 			case LabelList: "list";
 			case LabelListAll: "list-all";
@@ -451,6 +462,8 @@ final class Application {
 				runConfigGet(invocation);
 			case ConfigList:
 				runConfigList(invocation);
+			case ConfigShow:
+				runConfigShow(invocation);
 			case LabelList | LabelListAll:
 				runLabel(invocation);
 			case List:
@@ -1873,6 +1886,56 @@ final class Application {
 				writeJsonStdout(renderConfigListJson(stored));
 			else
 				output.writeStdout(renderConfigListText(stored, config.allKeys(), config.facts, goQuote));
+			return 0;
+		});
+	}
+
+	/**
+		Upstream configShowCmd: the layered keys, the metadata.json fields, the
+		database config table without the kv. plane, git's beads.role and
+		BEADS_MAX_ROWS, sorted by key and kept when their source starts with
+		--source. Upstream creates an embedded database when the workspace has
+		none, and reads user-global keys from the user config.yaml; this build
+		refuses both cases, and a metadata.json upstream would not open.
+	**/
+	function runConfigShow(invocation:Invocation):Int {
+		return runWithLayeredConfig(invocation, true, true, (config, location, query) -> {
+			final databaseEntries = new Array<ConfigShowEntry>();
+			if (query != null) {
+				switch query.configSettings(location.path, selectedDatabaseName(invocation, location), invocation.global) {
+					case Failure(message) if (message == CONFIG_ROUTE_UNAVAILABLE):
+						return runModeAwareFailure(invocation.output, message);
+					// Upstream lists no database rows when the table read fails.
+					case Failure(_):
+					case Success(rows):
+						for (row in rows)
+							if (!isKvPlaneKey(row.key))
+								databaseEntries.push({key: row.key, value: row.value, source: "database"});
+				}
+			} else if (location != null)
+				return runModeAwareFailure(invocation.output, "config show is not available yet for a workspace without a database in this build");
+			if (userConfigYamlPresent())
+				return runModeAwareFailure(invocation.output, "config show is not available yet when a user config.yaml exists in this build");
+			final metadataEntries = if (location == null) [] else switch readWorkspaceMetadata(location.path) {
+				case MetadataRows(entries): entries;
+				case MetadataUndecodable:
+					return runModeAwareFailure(invocation.output, "config show is not available yet when .beads/metadata.json does not decode in this build");
+				case MetadataLegacyOnly:
+					return runModeAwareFailure(invocation.output, "config show is not available yet for a workspace with a legacy config.json in this build");
+			};
+			// Upstream gathers the rows in this order before its sort, which leaves rows with one key in either order.
+			final entries = layeredEntries(config.allKeys(), config.facts, environmentValue("BEADS_ACTOR")).concat(metadataEntries).concat(databaseEntries);
+			final role = gitBeadsRole();
+			if (role != "")
+				entries.push({key: "beads.role", value: role, source: "git"});
+			final maxRows = environmentValue("BEADS_MAX_ROWS");
+			if (maxRows != "")
+				entries.push({key: "BEADS_MAX_ROWS", value: maxRows, source: "env: BEADS_MAX_ROWS"});
+			final shown = filterConfigShowEntries(sortConfigShowEntries(entries), invocation.configSource);
+			if (invocation.output == Json)
+				writeJsonStdout(renderConfigShowJson(shown));
+			else
+				output.writeStdout(renderConfigShowText(shown));
 			return 0;
 		});
 	}
@@ -5300,6 +5363,7 @@ final class Application {
 			case Config: configHelp(upstreamGlobalFlags());
 			case ConfigGet: configSubcommandHelp("Get a configuration value", "get <key>", "get", upstreamGlobalFlags());
 			case ConfigList: configSubcommandHelp("List all configuration", "list", "list", upstreamGlobalFlags());
+			case ConfigShow: configShowHelp(upstreamGlobalFlags());
 			case LabelList: labelSubcommandHelp("List labels for an issue", "list [issue-id]", "list");
 			case LabelListAll: labelSubcommandHelp("List all unique labels in the database", "list-all", "list-all");
 			case List: listHelp();

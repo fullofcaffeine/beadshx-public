@@ -31,6 +31,7 @@ enum Command {
 	Config;
 	ConfigGet;
 	ConfigList;
+	ConfigShow;
 	Label;
 	LabelList;
 	LabelListAll;

@@ -76,6 +76,7 @@ private enum ExpectedValue {
 	EventsSince;
 	EventsLimit;
 	EventsBefore;
+	ConfigShowSource;
 }
 
 /** Upstream validateCommentsArgs for `bd comments` with more than one argument. */
@@ -208,6 +209,8 @@ final class Parser {
 		var orphansDetailsUsed = false;
 		var typesSections = false;
 		var typesSectionsUsed = false;
+		var configSource = "";
+		var configSourceUsed = false;
 		var orphansFix = false;
 		var orphansFixUsed = false;
 		var depDirection = "down";
@@ -406,6 +409,8 @@ final class Parser {
 						eventsFlagValues.push({flag: "--limit", raw: argument});
 					case EventsBefore:
 						eventsFlagValues.push({flag: "--before", raw: argument});
+					case ConfigShowSource:
+						configSource = argument;
 				}
 				expectedValue = null;
 				continue;
@@ -471,6 +476,11 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--direction=")) {
 				depDirectionUsed = true;
 				depDirection = argument.substr(12);
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--source=")) {
+				configSourceUsed = true;
+				configSource = argument.substr(9);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--details=")
@@ -1195,6 +1205,9 @@ final class Parser {
 				case "--direction":
 					depDirectionUsed = true;
 					expectedValue = DepDirection;
+				case "--source":
+					configSourceUsed = true;
+					expectedValue = ConfigShowSource;
 				case "--no-blocked":
 					statusSkipBlocked = true;
 				case "--assigned":
@@ -1300,6 +1313,7 @@ final class Parser {
 				case EventsSince: UsageFailure("flag needs an argument: --since");
 				case EventsLimit: UsageFailure("flag needs an argument: --limit");
 				case EventsBefore: UsageFailure("flag needs an argument: --before");
+				case ConfigShowSource: UsageFailure("flag needs an argument: --source");
 			};
 		}
 
@@ -1543,7 +1557,8 @@ final class Parser {
 				history: makeHistoryInvocation(),
 				events: makeEventsInvocation(),
 				typesSections: typesSections,
-				configKey: ""
+				configKey: "",
+				configSource: configSource
 			});
 		}
 		var helpCommand = false;
@@ -1617,6 +1632,8 @@ final class Parser {
 			return UsageFailure("unknown flag: --fix");
 		if (name != "types" && typesSectionsUsed)
 			return UsageFailure("unknown flag: --sections");
+		if (configSourceUsed && !(name == "config" && positional.length > 1 && positional[1] == "show"))
+			return UsageFailure("unknown flag: --source");
 		if (name != "history" && historyEventsUsed)
 			return UsageFailure("unknown flag: --events");
 		final eventsSubcommand = name == "events" && positional.length > 1 ? positional[1] : "";
@@ -1887,7 +1904,9 @@ final class Parser {
 				history: makeHistoryInvocation(),
 				events: makeEventsInvocation(),
 				typesSections: typesSections,
-				configKey: name == "config" && positional.length > 2 ? positional[2] : ""});
+				configKey: name == "config" && positional.length > 2 ? positional[2] : "",
+				configSource: configSource
+			});
 		}
 		if (name == "version")
 			return parsedCommand(Command.Version);
@@ -1997,7 +2016,10 @@ final class Parser {
 				// Upstream list accepts and ignores extra arguments.
 				case "list":
 					return parsedCommand(Command.ConfigList);
-				case "set" | "set-many" | "unset" | "apply" | "show" | "validate" | "drift":
+				// Upstream show accepts and ignores extra arguments.
+				case "show":
+					return parsedCommand(Command.ConfigShow);
+				case "set" | "set-many" | "unset" | "apply" | "validate" | "drift":
 					return UsageFailure('config ${subcommand} is not available yet in this build');
 				// With no subcommand or an unknown one, upstream prints the group help.
 				case _:

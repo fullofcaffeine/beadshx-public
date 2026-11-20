@@ -350,14 +350,126 @@ abstract JsonValue(String) {
 	}
 }
 
+/** The Go type of one struct field that encoding/json fills. */
+enum GoJsonFieldKind {
+	GoStringField;
+	GoIntField;
+	GoBoolField;
+}
+
+/** One field of a Go struct, named by its JSON tag. */
+typedef GoJsonField = {
+	final tag:String;
+	final kind:GoJsonFieldKind;
+}
+
+/**
+	Go's json.Unmarshal into a struct of string, int and bool fields.
+
+	Why: upstream reads .beads/metadata.json into configfile.Config, and any
+	decode error rejects the whole file. What: the decoded fields as text by
+	tag (an int in decimal, a bool as `true` or `false`), leaving out absent
+	and null members, or null when Go would return an error. How: members apply
+	in document order, duplicates included; a key matches a tag exactly or
+	under encoding/json's case folding; unknown keys are ignored; a type
+	mismatch, a non-integer or out-of-range int, a non-object top level other
+	than null, or invalid JSON fails.
+**/
+function decodeGoStruct(raw:String, fields:Array<GoJsonField>):Null<Map<String, String>> {
+	final decoded = new Map<String, String>();
+	final members = switch new TypedJsonParser(raw, true).parse() {
+		case Parsed(ObjectValue(members)): members;
+		case Parsed(NullValue): return decoded;
+		case Parsed(_) | Invalid: return null;
+	};
+	for (member in members) {
+		final field = goStructField(fields, member.key);
+		if (field == null)
+			continue;
+		switch [field.kind, member.value] {
+			case [_, NullValue]:
+			case [GoStringField, StringValue(text)]:
+				decoded.set(field.tag, text);
+			case [GoBoolField, BooleanValue(flag)]:
+				decoded.set(field.tag, flag ? "true" : "false");
+			case [GoIntField, NumberValue(token)]:
+				final integer = goInt64Text(token);
+				if (integer == null)
+					return null;
+				decoded.set(field.tag, integer);
+			case _:
+				return null;
+		}
+	}
+	return decoded;
+}
+
+/** encoding/json's field lookup: an exact tag first, then one equal under its case folding. */
+private function goStructField(fields:Array<GoJsonField>, key:String):Null<GoJsonField> {
+	for (field in fields)
+		if (field.tag == key)
+			return field;
+	final folded = goFoldedName(key);
+	for (field in fields)
+		if (goFoldedName(field.tag) == folded)
+			return field;
+	return null;
+}
+
+/**
+	encoding/json's foldName: ASCII letters upper-case, and any other rune
+	becomes the smallest rune of its unicode.SimpleFold orbit. Only two runes
+	reach ASCII that way, ſ (to S) and the Kelvin sign K (to K); the rest stay as
+	they are here, which keeps them unequal to any ASCII name, as in Go.
+**/
+private function goFoldedName(name:String):String {
+	final folded = new StringBuf();
+	for (index in 0...name.length) {
+		final code:Int = name.charCodeAt(index);
+		if (code >= "a".code && code <= "z".code)
+			folded.addChar(code - 32);
+		else if (code == 0x17F)
+			folded.add("S");
+		else if (code == 0x212A)
+			folded.add("K");
+		else
+			folded.add(name.charAt(index));
+	}
+	return folded.toString();
+}
+
+/**
+	strconv.ParseInt(token, 10, 64) for a valid JSON number, as decimal text,
+	or null when Go fails: a fraction, an exponent, or a value outside int64.
+**/
+private function goInt64Text(token:String):Null<String> {
+	final negative = StringTools.startsWith(token, "-");
+	final digits = negative ? token.substr(1) : token;
+	for (index in 0...digits.length) {
+		final code:Int = digits.charCodeAt(index);
+		if (code < "0".code || code > "9".code)
+			return null;
+	}
+	// JSON integers have no leading zeros, so equal-length digit strings order like their values.
+	final limit = negative ? "9223372036854775808" : "9223372036854775807";
+	if (digits.length > limit.length || (digits.length == limit.length && digits > limit))
+		return null;
+	return digits == "0" ? "0" : token;
+}
+
 /** Typed parser for JSON that has already passed native syntax validation. */
 private final class TypedJsonParser {
 	final source:String;
+
+	/** Keeps every member of an object in document order instead of the last value of each key. */
+	final keepDuplicateKeys:Bool;
+
 	var index = 0;
 	var failed = false;
 
-	public function new(source:String) {
+	public function new(source:String, keepDuplicateKeys = false) {
 		this.source = source;
+		this.keepDuplicateKeys = keepDuplicateKeys;
 	}
 
 	public function parse():JsonParseResult {
@@ -407,13 +519,14 @@ private final class TypedJsonParser {
 			final value = parseValue();
 			final raw = source.substring(valueStart, index);
 			var replaced = false;
-			for (fieldIndex in 0...fields.length) {
-				if (fields[fieldIndex].key == key) {
-					fields[fieldIndex] = {key: key, value: value, raw: raw};
-					replaced = true;
-					break;
+			if (!keepDuplicateKeys)
+				for (fieldIndex in 0...fields.length) {
+					if (fields[fieldIndex].key == key) {
+						fields[fieldIndex] = {key: key, value: value, raw: raw};
+						replaced = true;
+						break;
+					}
 				}
-			}
 			if (!replaced)
 				fields.push({key: key, value: value, raw: raw});
 			skipWhitespace();

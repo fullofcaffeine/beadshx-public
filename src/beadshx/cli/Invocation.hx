@@ -69,6 +69,9 @@ typedef Invocation = {
 
 	/** The `bd config get` key as typed; it can be empty. */
 	final configKey:String;
+
+	/** The `bd config show --source` prefix; empty keeps every row. */
+	final configSource:String;
 }
 
 /** The `bd events tail` and `bd events export` arguments; export has no --since and reads from 0. */

@@ -37,30 +37,38 @@ workspaces, and require the same stdout, stderr and exit code:
   order.
 - **Events journal:** `events`, `events tail` (also `--since`, `--limit`),
   `events export` (also `--limit`).
-- **Configuration:** `config get <key>` and `config list`. They read the
-  database `config` table, `config.yaml`, `config.local.yaml`, the user
-  `config.yaml`, `BD_*` variables and the defaults in upstream's order.
-  Like upstream, they print secret values as stored.
+- **Configuration:** `config get <key>`, `config list` and `config show`
+  (also `--source`). They read the database `config` table, `config.yaml`,
+  `config.local.yaml`, the user `config.yaml`, `BD_*` variables and the
+  defaults in upstream's order. `config show` also lists the
+  `.beads/metadata.json` fields, git's `beads.role` and `BEADS_MAX_ROWS`, and
+  leaves out the `kv.` rows. Like upstream, they print secret values in full,
+  without redaction.
 
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
-  `types`, `statuses`, `events tail`, `events export`, `config get` and
-  `config list` read embedded workspaces only. In a server-mode or proxied
-  workspace they report that they are not available yet. If the server
-  cannot be reached, they print the same store error as upstream.
+  `types`, `statuses`, `events tail`, `events export`, `config get`,
+  `config list` and `config show` read embedded workspaces only. In a
+  server-mode or proxied workspace they report that they are not available
+  yet. If the server cannot be reached, they print the same store error as
+  upstream.
   `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - `events tail --follow` and `events prune` report that they are not
   available yet.
-- `config set`, `set-many`, `unset`, `apply`, `show`, `validate` and `drift`
-  report that they are not available yet. `config get` of a user-global key
-  (`metrics.*`, `node_id`) reports that it is not available yet when the user
-  `config.yaml` exists. `bdhx` does not load `.beads/.env` before it reads
-  `BD_*` variables.
+- `config set`, `set-many`, `unset`, `apply`, `validate` and `drift` report
+  that they are not available yet. `config get` of a user-global key
+  (`metrics.*`, `node_id`) and `config show` report that they are not
+  available yet when the user `config.yaml` exists. `bdhx` does not load
+  `.beads/.env` before it reads `BD_*` variables.
+- `config show` reports that it is not available yet in a workspace that has
+  no database (upstream creates the embedded database there), when
+  `.beads/metadata.json` does not decode, and when only a legacy
+  `.beads/config.json` exists (upstream rewrites it as `metadata.json`).
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

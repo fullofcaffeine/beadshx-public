@@ -347,6 +347,12 @@ private function gitPathForRepository(repository:String, path:String):String {
 	return resolved.value2 == null ? resolved.value1 : joined;
 }
 
+/** A process environment variable, or "" when it is unset; `bd config show` reads BEADS_ACTOR and BEADS_MAX_ROWS this way. */
+function environmentValue(name:String):String {
+	final value = Sys.getEnv(name);
+	return value == null ? "" : value;
+}
+
 /** `git config --get beads.role` in the current directory, trimmed, or "" when Git fails. */
 function gitBeadsRole():String {
 	final output = commandOutput(ExecPkg.command("git", "config", "--get", "beads.role"));
