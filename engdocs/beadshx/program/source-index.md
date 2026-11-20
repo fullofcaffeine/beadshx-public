@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `d1005b9d28d25a2cb5920feb1d15c59ae374a517`.
+Required BeadsHX compiler revision: `180f4d064e673908d58e7fd64ac227b71a5367a9`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -102,6 +102,9 @@ array literal compiles.
 Compiler task haxe_go-afkv names recovery helpers from their types instead of
 by first use, so an edit to one BeadsHX module no longer renames helpers in
 unrelated generated files.
+Compiler task haxe_go-8azk hashes generated files once per compile with a faster
+SHA-256, and haxe_go-ww4u converts a go.Error passed to a native Go function to
+Go's error, including Rest<go.Error> packs.
 
 Reviewed current authority:
 

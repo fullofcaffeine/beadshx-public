@@ -1022,14 +1022,14 @@
     },
     "compilerLock": {
       "path": "upstream/locks/haxe-go.json",
-      "sha256": "d0b6571704e4b964e966a57be1bbe6d37e9529c799c72e389c1508d58fcef9ae"
+      "sha256": "50ae08be3ee78e24986099092fe216d01e374419d19447d40fa20074aab61494"
     },
-    "compilerRevision": "d1005b9d28d25a2cb5920feb1d15c59ae374a517"
+    "compilerRevision": "180f4d064e673908d58e7fd64ac227b71a5367a9"
   },
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "87f609647cb3e2b50e49c531478eb9ab9d0711b3b82e566d2080e28427860a2e"
+      "sha256": "c3de5568e67acfa57532c0fa70139640479bf8fc0227f28f4e0229503d60cebd"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -1849,7 +1849,7 @@
     },
     {
       "path": "hxrt/native_error.go",
-      "sha256": "9071bb1b7b0bac0e6fa4a6b516f7e0d7b28d9301c3a582d1d13216e53f10146f"
+      "sha256": "5900a0f9c6888e958998ba4c0a8ccd7d595edeea685d7c5fec5c76fd62ee60eb"
     },
     {
       "path": "hxrt/print.go",
