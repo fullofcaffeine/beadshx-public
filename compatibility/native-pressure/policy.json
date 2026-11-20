@@ -7,7 +7,7 @@
   },
   "compilerEvidence": {
     "project": "haxe.go",
-    "commit": "de5199b4846dce875f981f54cd35d092cefbb911",
+    "commit": "2801ff73a4592785333e78288556278eb375977d",
     "policy": "This task records pressure against the compiler commit pinned by the BeadsHX toolchain. Newer compiler changes are delta evidence until the toolchain lock advances."
   },
   "goVersion": "1.26.5",
