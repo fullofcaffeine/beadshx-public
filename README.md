@@ -75,22 +75,26 @@ Limits:
   no database (upstream creates the embedded database there), when
   `.beads/metadata.json` does not decode, and when only a legacy
   `.beads/config.json` exists (upstream rewrites it as `metadata.json`).
-- `config get`, `config list` and `config show` report that they are not
+- Every command above that reads the database reports that it is not
   available yet in shared-server mode and when the `db` setting names a
-  database. In these cases upstream connects to the shared server, or opens or
-  creates the database at that path, and writes files. Like upstream, `bdhx`
+  database. Only `version`, `where` and help pages still run. In these cases
+  upstream connects to the shared server, which creates
+  `~/.beads/shared-server/dolt` and a file under `TMPDIR`, or it opens or
+  creates the database at that path. `bdhx` refuses before it opens anything,
+  and writes nothing. Shared-server mode comes from `dolt.shared-server` in
+  `config.yaml`, `config.local.yaml` or the user `config.yaml`, or from
+  `BEADS_DOLT_SHARED_SERVER` or `BD_DOLT_SHARED_SERVER`. Like upstream, `bdhx`
   ignores the `db` setting when `--db`, `-C`, `BEADS_DB`, `BD_DB` or
   `BEADS_DIR` selects the workspace. In a shared-server workspace that has no
   database, `config get` of a key that needs no database still runs, unless
   `.beads/metadata.json` sets `dolt_mode` to `embedded`.
-- `config validate` and `config drift` report that they are not available
-  yet in shared-server mode, with `--global`, when the `db` setting names a
-  database, when `.beads/metadata.json` does not decode or names a backend
-  other than Dolt, and when a Dolt server host, port or socket,
-  `BEADS_DOLT_DATA_DIR` or a central server config is set. In these cases
-  upstream connects to a server or creates a database. `config validate` also
-  reports this when the workspace directory is not named `.beads` or holds its
-  own `redirect` file.
+- `config validate` and `config drift` also report that they are not
+  available yet with `--global`, when `.beads/metadata.json` does not decode
+  or names a backend other than Dolt, and when a Dolt server host, port or
+  socket, `BEADS_DOLT_DATA_DIR` or a central server config is set. In these
+  cases upstream connects to a server or creates a database. `config validate`
+  also reports this when the workspace directory is not named `.beads` or
+  holds its own `redirect` file.
   In an embedded workspace upstream's remote check tries to connect to
   `127.0.0.1:0`; `bdhx` makes the same attempt and prints the same error.
 - Where upstream output order is random (Go map order), the parity tests

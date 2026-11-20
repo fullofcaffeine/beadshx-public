@@ -909,7 +909,8 @@ compare_real_database_sql() {
 }
 
 # Runs only the candidate, for a view this build does not port yet: it must exit 1 with this
-# exact output (stdout compared as compact JSON when given) and leave the fixture unchanged.
+# exact output (stdout compared as compact JSON when given), leave the fixture and its HOME
+# unchanged, and write nothing to its own empty TMPDIR.
 expect_candidate_failure() {
 	local name="$1"
 	local expected_stdout="$2"
@@ -931,12 +932,14 @@ expect_candidate_failure() {
 	if [[ -n "$candidate_only_setup" ]]; then
 		"$candidate_only_setup" "$state_root"
 	fi
+	mkdir -p "$case_root/candidate-tmp"
 	candidate_before="$(fingerprint_tree "$state_root")"
 	set +e
 	(
 		cd "$state_root/work"
 		env HOME="$state_root/user-home" \
 			XDG_CONFIG_HOME="$state_root/config" \
+			TMPDIR="$case_root/candidate-tmp" \
 			"${real_database_env[@]}" \
 			"${real_database_extra_env[@]}" \
 			"$candidate" "$@"
@@ -944,6 +947,15 @@ expect_candidate_failure() {
 	candidate_exit=$?
 	set -e
 	candidate_after="$(fingerprint_tree "$state_root")"
+	if [[ "$candidate_before" != "$candidate_after" ]]; then
+		printf '%s candidate command changed the read-only fixture\n' "$name" >&2
+		return 1
+	fi
+	if [[ -n "$(find "$case_root/candidate-tmp" -mindepth 1 -print -quit)" ]]; then
+		printf '%s candidate command wrote temporary files\n' "$name" >&2
+		find "$case_root/candidate-tmp" -mindepth 1 -print >&2
+		return 1
+	fi
 	actual_stdout="$(cat "$case_root/candidate.stdout")"
 	if [[ -n "$expected_stdout" ]]; then
 		actual_stdout="$(jq -c . "$case_root/candidate.stdout" 2>/dev/null || cat "$case_root/candidate.stdout")"
@@ -953,10 +965,6 @@ expect_candidate_failure() {
 		printf '%s: expected exit 1, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
 			"$name" "$expected_stdout" "$expected_stderr" "$candidate_exit" "$actual_stdout" \
 			"$(cat "$case_root/candidate.stderr")" >&2
-		return 1
-	fi
-	if [[ "$candidate_before" != "$candidate_after" ]]; then
-		printf '%s candidate command changed the read-only fixture\n' "$name" >&2
 		return 1
 	fi
 	printf 'parity [%ss]: PASS candidate-only/%s\n' "$SECONDS" "$name"
@@ -1523,6 +1531,146 @@ compare_real_database_config config-get-shared-server-no-database-backup-json ex
 	config get backup.enabled --json
 real_database_extra_metadata=""
 real_database_setup=""
+real_database_read_only=""
+# Every other command that opens a store refuses the same two settings before it opens one. In
+# shared-server mode upstream creates ~/.beads/shared-server/dolt and a TMPDIR circuit file, then
+# fails to reach the server; with a db setting it creates an embedded database at that path.
+# expect_store_refusal <case> <reason> <command path> <args>... expects the refusal in text, or in
+# JSON on stdout when the arguments include --json.
+expect_store_refusal() {
+	local name="$1"
+	local message="$3 is not available yet $2 in this build"
+	shift 3
+	if [[ " $* " == *" --json "* ]]; then
+		expect_candidate_failure "$name" "{\"error\":\"$message\",\"schema_version\":1}" "" "" "$@"
+	else
+		expect_candidate_failure "$name" "" "Error: $message" "" "$@"
+	fi
+}
+shared_reason="in shared-server mode"
+candidate_only_setup=enable_shared_server
+expect_store_refusal count-shared-server-unported "$shared_reason" count count
+expect_store_refusal count-shared-server-json-unported "$shared_reason" count count --json
+expect_store_refusal list-shared-server-unported "$shared_reason" list list
+expect_store_refusal list-global-shared-server-unported "$shared_reason" list list --global
+expect_store_refusal show-shared-server-json-unported "$shared_reason" show show "$real_database_issue_id" --json
+expect_store_refusal children-shared-server-unported "$shared_reason" children children "$real_database_epic_id"
+expect_store_refusal ready-shared-server-unported "$shared_reason" ready ready
+expect_store_refusal blocked-shared-server-unported "$shared_reason" blocked blocked
+expect_store_refusal search-shared-server-unported "$shared_reason" search search parity
+expect_store_refusal query-shared-server-unported "$shared_reason" query query status=open
+expect_store_refusal stale-shared-server-unported "$shared_reason" stale stale
+expect_store_refusal orphans-shared-server-unported "$shared_reason" orphans orphans
+expect_store_refusal dep-list-shared-server-unported "$shared_reason" "dep list" dep list "$real_database_issue_id"
+expect_store_refusal dep-tree-shared-server-unported "$shared_reason" "dep tree" dep tree "$real_database_issue_id"
+expect_store_refusal dep-cycles-shared-server-json-unported "$shared_reason" "dep cycles" dep cycles --json
+expect_store_refusal graph-shared-server-unported "$shared_reason" graph graph "$real_database_issue_id"
+expect_store_refusal graph-check-shared-server-unported "$shared_reason" "graph check" graph check
+expect_store_refusal comments-shared-server-unported "$shared_reason" comments comments "$real_database_issue_id"
+expect_store_refusal history-shared-server-unported "$shared_reason" history history "$real_database_issue_id"
+expect_store_refusal events-tail-shared-server-unported "$shared_reason" "events tail" events tail
+expect_store_refusal events-export-shared-server-unported "$shared_reason" "events export" events export
+expect_store_refusal types-shared-server-unported "$shared_reason" types types
+expect_store_refusal statuses-shared-server-json-unported "$shared_reason" statuses statuses --json
+expect_store_refusal label-list-shared-server-unported "$shared_reason" "label list" label list "$real_database_issue_id"
+expect_store_refusal label-list-all-shared-server-unported "$shared_reason" "label list-all" label list-all
+expect_store_refusal info-shared-server-unported "$shared_reason" info info
+expect_store_refusal info-whats-new-shared-server-unported "$shared_reason" info info --whats-new
+expect_store_refusal status-shared-server-unported "$shared_reason" status status
+expect_store_refusal ping-shared-server-json-unported "$shared_reason" ping ping --json
+candidate_only_setup=enable_local_shared_server
+expect_store_refusal ready-local-shared-server-unported "$shared_reason" ready ready
+candidate_only_setup=""
+enable_user_shared_server() {
+	mkdir -p "$1/user-home/.config/bd"
+	printf 'dolt:\n  shared-server: true\n' >"$1/user-home/.config/bd/config.yaml"
+}
+candidate_only_setup=enable_user_shared_server
+expect_store_refusal show-user-shared-server-unported "$shared_reason" show show "$real_database_issue_id"
+candidate_only_setup=""
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+expect_store_refusal dep-tree-shared-server-env-unported "$shared_reason" "dep tree" dep tree "$real_database_issue_id"
+real_database_extra_env=(BD_DOLT_SHARED_SERVER=true)
+expect_store_refusal comments-shared-server-bd-env-json-unported "$shared_reason" comments comments "$real_database_issue_id" --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Without a database upstream writes nothing, but it prints a notice when metadata.json pins
+# dolt_mode embedded and always gives the server-mode hint, which this build does not print.
+candidate_only_setup=enable_shared_server_without_database
+expect_store_refusal count-shared-server-no-database-unported "$shared_reason" count count
+candidate_only_setup=""
+enable_shared_server_without_database_or_mode() {
+	enable_shared_server_without_database "$1"
+	jq 'del(.dolt_mode)' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+candidate_only_setup=enable_shared_server_without_database_or_mode
+expect_store_refusal list-shared-server-no-database-unported "$shared_reason" list list
+candidate_only_setup=""
+database_reason="when the db setting names a database"
+candidate_only_setup=set_database_path
+expect_store_refusal count-db-setting-unported "$database_reason" count count
+expect_store_refusal list-db-setting-json-unported "$database_reason" list list --json
+expect_store_refusal show-db-setting-unported "$database_reason" show show "$real_database_issue_id"
+expect_store_refusal ready-db-setting-unported "$database_reason" ready ready
+expect_store_refusal dep-tree-db-setting-unported "$database_reason" "dep tree" dep tree "$real_database_issue_id"
+expect_store_refusal graph-check-db-setting-unported "$database_reason" "graph check" graph check
+expect_store_refusal comments-db-setting-unported "$database_reason" comments comments "$real_database_issue_id"
+expect_store_refusal history-db-setting-json-unported "$database_reason" history history "$real_database_issue_id" --json
+expect_store_refusal events-tail-db-setting-unported "$database_reason" "events tail" events tail
+expect_store_refusal types-db-setting-unported "$database_reason" types types
+expect_store_refusal statuses-db-setting-unported "$database_reason" statuses statuses
+expect_store_refusal label-list-all-db-setting-unported "$database_reason" "label list-all" label list-all
+expect_store_refusal info-whats-new-db-setting-unported "$database_reason" info info --whats-new
+expect_store_refusal status-db-setting-json-unported "$database_reason" status status --json
+expect_store_refusal ping-db-setting-unported "$database_reason" ping ping
+# An empty BD_DB counts as unset.
+real_database_extra_env=(BD_DB=)
+expect_store_refusal orphans-db-setting-empty-bd-db-unported "$database_reason" orphans orphans
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=set_local_database_path
+expect_store_refusal blocked-local-db-setting-unported "$database_reason" blocked blocked
+candidate_only_setup=""
+set_user_database_path() {
+	mkdir -p "$1/user-home/.config/bd"
+	printf 'db: %s/elsewhere/beads.db\n' "$1" >"$1/user-home/.config/bd/config.yaml"
+}
+candidate_only_setup=set_user_database_path
+expect_store_refusal search-user-db-setting-unported "$database_reason" search search parity
+candidate_only_setup=""
+# Upstream opens the database that the db setting names even when the workspace has none, or when
+# no workspace is found at all.
+set_database_path_without_database() {
+	set_database_path "$1"
+	remove_embedded_database "$1"
+}
+candidate_only_setup=set_database_path_without_database
+expect_store_refusal stale-db-setting-no-database-unported "$database_reason" stale stale
+candidate_only_setup=""
+set_user_database_path_without_workspace() {
+	set_user_database_path "$1"
+	rm -rf "$1/work/.beads"
+}
+candidate_only_setup=set_user_database_path_without_workspace
+expect_store_refusal count-db-setting-no-workspace-unported "$database_reason" count count
+expect_store_refusal config-list-db-setting-no-workspace-unported "$database_reason" "config list" config list
+candidate_only_setup=""
+# Like upstream, these commands ignore the db setting when --db, -C or BD_DB selects the workspace,
+# and run as usual without writing.
+real_database_read_only=1
+real_database_setup=set_database_path
+compare_real_database_env count-db-setting-bd-db exact BD_DB=fake-selector count
+compare_real_database_env comments-db-setting-bd-db-json exact BD_DB=fake-selector comments "$real_database_issue_id" --json
+compare_real_database ready-db-setting-directory exact -C . ready
+compare_real_database label-list-all-db-setting-flag exact --db .beads label list-all
+real_database_setup=""
+# Help needs no store, so upstream writes nothing in shared-server mode, and neither does bdhx.
+real_database_setup=enable_shared_server
+compare_real_database count-help-shared-server exact count --help
+compare_real_database label-help-shared-server exact label
+real_database_setup=""
+# Shared-server mode is off unless the variable is 1 or true.
+compare_real_database_env count-shared-server-env-off exact BEADS_DOLT_SHARED_SERVER=0 count
 real_database_read_only=""
 use_sqlite_backend() {
 	jq '.backend = "sqlite"' "$1/work/.beads/metadata.json" >"$1/metadata.json"

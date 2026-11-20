@@ -306,11 +306,8 @@ private enum HumanShowMode {
 	WatchedShow;
 }
 
-/** What a config command checks before upstream's pre-run would open a store. */
+/** What a command that loads layered config checks before upstream's pre-run would open a store. */
 private typedef ConfigPreflightInput = {
-	/** The process-start config, from which upstream's pre-run takes the `db` setting. */
-	final startup:LayeredConfig;
-
 	/** The config reloaded for the selected workspace, which upstream's shared-server check reads. */
 	final config:LayeredConfig;
 
@@ -430,6 +427,28 @@ final class Application {
 		};
 	}
 
+	/** The full command name, such as `dep tree` or `config get`, as the store refusals print it. */
+	static function commandPath(command:Command):String {
+		return switch command {
+			case DepList: "dep list";
+			case DepCycles: "dep cycles";
+			case DepTree: "dep tree";
+			case GraphCheck: "graph check";
+			case EventsTail: "events tail";
+			case EventsExport: "events export";
+			case ConfigGet: "config get";
+			case ConfigList: "config list";
+			case ConfigShow: "config show";
+			case ConfigValidate: "config validate";
+			case ConfigDrift: "config drift";
+			case LabelList: "label list";
+			case LabelListAll: "label list-all";
+			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | Graph | Blocked | Comments | History | Events | Types |
+				Statuses | Config | Label | List | Show | RootHelp | Version | Where:
+				commandName(command);
+		};
+	}
+
 	function runInvocation(invocation:Invocation):Int {
 		if (invocation.showHelp) {
 			output.writeStdout(commandHelp(invocation.command));
@@ -437,6 +456,8 @@ final class Application {
 		}
 		if (invocation.listWarning != "")
 			output.writeStderr(invocation.listWarning);
+		if (usesStore(invocation.command) && databaseSettingSelects(invocation))
+			return runModeAwareFailure(invocation.output, databaseSettingRefusal(commandPath(invocation.command)));
 		return switch invocation.command {
 			case RootHelp:
 				runRootHelp(invocation);
@@ -637,7 +658,7 @@ final class Application {
 			case NotFound:
 				runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -701,7 +722,7 @@ final class Application {
 			case NotFound:
 				runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -723,7 +744,7 @@ final class Application {
 			case NotFound:
 				runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -745,7 +766,7 @@ final class Application {
 			case NotFound:
 				runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -780,7 +801,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -815,7 +836,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -888,7 +909,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -977,7 +998,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -1192,7 +1213,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -1265,7 +1286,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -1586,7 +1607,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -1617,7 +1638,7 @@ final class Application {
 						output.writeStdout(renderTypesText(customTypes));
 					0;
 			};
-		});
+		}, sharedServerPreflight(Types));
 	}
 
 	/**
@@ -1635,7 +1656,7 @@ final class Application {
 					else
 						output.writeStdout(renderStatusesText(customStatuses));
 					0;
-			});
+			}, sharedServerPreflight(Statuses));
 	}
 
 	/**
@@ -1661,7 +1682,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -1725,7 +1746,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -1882,7 +1903,7 @@ final class Application {
 				case Failure(message): runConfigReadFailure(invocation, "getting config", message);
 				case Success(value): showConfigValue(invocation, key, value, null);
 			};
-		}, configReadPreflight("get", invocation, storeFree));
+		}, configReadPreflight("get", storeFree));
 	}
 
 	function showConfigValue(invocation:Invocation, key:String, value:String, location:Null<String>):Int {
@@ -1928,7 +1949,7 @@ final class Application {
 			else
 				output.writeStdout(renderConfigListText(stored, config.allKeys(), config.facts, goQuote));
 			return 0;
-		}, configReadPreflight("list", invocation, false));
+		}, configReadPreflight("list", false));
 	}
 
 	/**
@@ -1978,7 +1999,7 @@ final class Application {
 			else
 				output.writeStdout(renderConfigShowText(shown));
 			return 0;
-		}, configReadPreflight("show", invocation, false));
+		}, configReadPreflight("show", false));
 	}
 
 	/**
@@ -2036,7 +2057,7 @@ final class Application {
 			}
 			output.writeStdout(renderValidationText(issues));
 			return issues.length == 0 ? 0 : 1;
-		}, configPreflight("validate", invocation, true), unboundWorkspace(invocation));
+		}, configPreflight("validate", true), unboundWorkspace(invocation));
 	}
 
 	/**
@@ -2072,7 +2093,7 @@ final class Application {
 			else
 				output.writeStdout(renderDriftText(items));
 			return hasDrift(items) ? 1 : 0;
-		}, configPreflight("drift", invocation, false), unboundWorkspace(invocation));
+		}, configPreflight("drift", false), unboundWorkspace(invocation));
 	}
 
 	/** Upstream checkHooksDrift: skipped outside a git repository, else the bd hooks in the hooks directory. */
@@ -2089,21 +2110,19 @@ final class Application {
 
 	/**
 		Refusals before `bd config validate` or `bd config drift` opens the
-		store. In shared-server mode, or when the `db` setting names another
-		database, upstream connects to or creates a database, which can write; a
-		metadata.json upstream would not load or a non-Dolt backend fails
-		upstream's own checks. Validate also reads the workspace back from its
-		parent directory, which only a `.beads` directory without its own
-		redirect survives unchanged.
+		store. In shared-server mode upstream connects to the shared server,
+		which writes (a `db` setting is refused before discovery, as for every
+		store command); a metadata.json upstream would not load or a non-Dolt
+		backend fails upstream's own checks. Validate also reads the workspace
+		back from its parent directory, which only a `.beads` directory without
+		its own redirect survives unchanged.
 	**/
-	static function configPreflight(name:String, invocation:Invocation, resolvesFromRepository:Bool):ConfigPreflightInput->Null<String> {
+	static function configPreflight(name:String, resolvesFromRepository:Bool):ConfigPreflightInput->Null<String> {
 		return input -> {
 			final config = input.config;
 			final location = input.location;
 			if (config.sharedServerMode())
-				return sharedServerRefusal(name);
-			if (databaseSettingSelects(invocation, input.startup))
-				return databaseSettingRefusal(name);
+				return sharedServerRefusal('config ${name}');
 			// A configured host can make upstream treat the workspace as a server workspace.
 			if (environmentValue("BEADS_DOLT_SERVER_HOST") != "" || config.getString("dolt.host") != "")
 				return 'config ${name} is not available yet when a Dolt server endpoint is configured in this build';
@@ -2123,46 +2142,49 @@ final class Application {
 	}
 
 	/**
-		Refusals before `bd config get`, `list` or `show` opens the store, in the
-		two cases where upstream's pre-run writes. In shared-server mode it
-		connects to the shared server, creating that server's directory under
-		HOME and a circuit-breaker file under TMPDIR. A `db` setting makes it open
-		or create an embedded database at that path. When `runsWithoutStore` and
-		the workspace has no database, upstream opens no store; it then prints
+		The shared-server refusal before `bd config get`, `list` or `show` opens
+		the store (see validateStoreSelection). When `runsWithoutStore` and the
+		workspace has no database, upstream opens no store; it then prints
 		nothing about shared-server mode unless metadata.json pins dolt_mode
 		embedded, so that case runs as usual.
 	**/
-	static function configReadPreflight(name:String, invocation:Invocation, runsWithoutStore:Bool):ConfigPreflightInput->Null<String> {
+	static function configReadPreflight(name:String, runsWithoutStore:Bool):ConfigPreflightInput->Null<String> {
 		return input -> {
 			final storeFree = runsWithoutStore && !hasSelectedDatabase(input.location);
 			if (input.config.sharedServerMode() && !(storeFree && quietSharedServerSetup(input.location.path)))
-				return sharedServerRefusal(name);
-			if (databaseSettingSelects(invocation, input.startup))
-				return databaseSettingRefusal(name);
+				return sharedServerRefusal('config ${name}');
 			return null;
 		};
 	}
 
-	static function sharedServerRefusal(name:String):String {
-		return 'config ${name} is not available yet in shared-server mode in this build';
+	/** The shared-server refusal for `bd types` and `bd statuses`, which load layered config. */
+	static function sharedServerPreflight(command:Command):ConfigPreflightInput->Null<String> {
+		return input -> input.config.sharedServerMode() ? sharedServerRefusal(commandPath(command)) : null;
 	}
 
-	static function databaseSettingRefusal(name:String):String {
-		return 'config ${name} is not available yet when the db setting names a database in this build';
+	static function sharedServerRefusal(path:String):String {
+		return '${path} is not available yet in shared-server mode in this build';
+	}
+
+	static function databaseSettingRefusal(path:String):String {
+		return '${path} is not available yet when the db setting names a database in this build';
 	}
 
 	/**
 		Upstream's pre-run takes the `db` setting from the process-start config
 		as the database path only when no --db flag, -C directory, BEADS_DB, BD_DB
-		or BEADS_DIR selects the workspace.
+		or BEADS_DIR selects the workspace. It then opens, or creates, an
+		embedded database at that path for every command that opens a store,
+		even when no workspace is found, so runInvocation refuses those commands
+		before discovery. The config loads only when no selector is set.
 	**/
-	static function databaseSettingSelects(invocation:Invocation, startup:LayeredConfig):Bool {
+	static function databaseSettingSelects(invocation:Invocation):Bool {
 		return invocation.databasePath == ""
 			&& goTrimSpace(invocation.directory) == ""
 			&& environmentValue("BEADS_DB") == ""
 			&& environmentValue("BD_DB") == ""
 			&& environmentValue("BEADS_DIR") == ""
-			&& startup.getString("db") != "";
+			&& LayeredConfig.atStartup().getString("db") != "";
 	}
 
 	/**
@@ -2227,11 +2249,12 @@ final class Application {
 		when `action` reads no table, an empty-key read stands for that open, so a
 		database route this build does not read is refused either way. For a found
 		workspace, a non-null `preflight` message refuses the command before the
-		store opens, and `runsWithoutDatabase` can route a workspace upstream finds
-		no database for to `action` without a store.
+		store opens; every caller passes at least the shared-server refusal.
+		`runsWithoutDatabase` can route a workspace upstream finds no database for
+		to `action` without a store.
 	**/
 	function runWithLayeredConfig(invocation:Invocation, storeFree:Bool, readsTable:Bool,
-			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int, ?preflight:ConfigPreflightInput->Null<String>,
+			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int, preflight:ConfigPreflightInput->Null<String>,
 			?runsWithoutDatabase:WorkspaceLocation->Bool):Int {
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
@@ -2253,13 +2276,13 @@ final class Application {
 					case Accepted:
 						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
 							final config = selected(location, 1);
-							final refusal = preflight == null ? null : preflight({startup: startup, config: config, location: location});
+							final refusal = preflight({config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound();
 						} else {
 							final config = selected(location, invocation.databasePath == "" ? 2 : 1);
-							final refusal = preflight == null ? null : preflight({startup: startup, config: config, location: location});
+							final refusal = preflight({config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
@@ -2282,7 +2305,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -2445,7 +2468,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -2470,7 +2493,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -2643,7 +2666,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -2672,7 +2695,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -2813,7 +2836,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -2872,7 +2895,7 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFound();
 			case Found(location):
-				switch validateDatabaseSelection(invocation, location) {
+				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
@@ -5366,6 +5389,25 @@ final class Application {
 	function runStoreFailure(message:String):Int {
 		output.writeStderr('Error: ${message}\n');
 		return 1;
+	}
+
+	/**
+		Upstream's pre-run, in shared-server mode, creates the shared server's
+		directory under HOME (`~/.beads/shared-server/dolt`) and a
+		circuit-breaker file under TMPDIR, then fails to reach the server. It
+		does this before its --database check, and before any command body.
+		This build cannot reach the shared server, and the native store open
+		would create the same directory, so every command that opens a store
+		refuses first, before it opens anything. Without a database upstream
+		writes nothing, but it then prints a server-mode hint, and a notice when
+		metadata.json pins dolt_mode embedded, which this build does not, so
+		that case is refused too. Commands that load layered config take this
+		refusal from their runWithLayeredConfig preflight instead.
+	**/
+	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
+		if (LayeredConfig.forWorkspace(location.path).sharedServerMode())
+			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
+		return validateDatabaseSelection(invocation, location);
 	}
 
 	function validateDatabaseSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
