@@ -53,6 +53,33 @@ if [[ "$candidate_identity" != "$expected_candidate" ]]; then
 fi
 
 no_workspace_case_count=0
+# One more variable assignment for both sides of a no-workspace case.
+no_workspace_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# When set, each side gets this user config.yaml under its HOME, which the run must leave unchanged.
+no_workspace_user_config=""
+
+# Writes the case's user config.yaml under each HOME directory given.
+write_no_workspace_user_config() {
+	local user_home
+	for user_home in "$@"; do
+		mkdir -p "$user_home/.config/bd"
+		printf '%s\n' "$no_workspace_user_config" >"$user_home/.config/bd/config.yaml"
+	done
+}
+
+# Requires each HOME's user config.yaml to be unchanged, then removes it for the empty-workspace check.
+remove_no_workspace_user_config() {
+	local name="$1" user_home
+	shift
+	for user_home in "$@"; do
+		if [[ "$(cat "$user_home/.config/bd/config.yaml")" != "$no_workspace_user_config" ]]; then
+			printf '%s command changed its user config.yaml\n' "$name" >&2
+			return 1
+		fi
+		rm -rf "$user_home/.config"
+	done
+}
+
 compare_no_workspace() {
 	local name="$1"
 	no_workspace_case_count=$((no_workspace_case_count + 1))
@@ -66,6 +93,9 @@ compare_no_workspace() {
 
 	mkdir -p "$oracle_root/home" "$oracle_root/config" "$oracle_root/work"
 	mkdir -p "$candidate_root/home" "$candidate_root/config" "$candidate_root/work"
+	if [[ -n "$no_workspace_user_config" ]]; then
+		write_no_workspace_user_config "$oracle_root/home" "$candidate_root/home"
+	fi
 
 	set +e
 	(
@@ -78,6 +108,7 @@ compare_no_workspace() {
 			BD_DISABLE_EVENT_FLUSH=1 \
 			BD_JSON_ENVELOPE="${BEADSHX_TEST_JSON_ENVELOPE:-0}" \
 			NO_COLOR=1 \
+			"${no_workspace_extra_env[@]}" \
 			"$oracle" "$@"
 	) >"$case_root/oracle.stdout" 2>"$case_root/oracle.stderr"
 	oracle_exit=$?
@@ -91,10 +122,14 @@ compare_no_workspace() {
 			BD_DISABLE_EVENT_FLUSH=1 \
 			BD_JSON_ENVELOPE="${BEADSHX_TEST_JSON_ENVELOPE:-0}" \
 			NO_COLOR=1 \
+			"${no_workspace_extra_env[@]}" \
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
 	set -e
+	if [[ -n "$no_workspace_user_config" ]]; then
+		remove_no_workspace_user_config "$name" "$oracle_root/home" "$candidate_root/home"
+	fi
 
 	if [[ "$oracle_exit" -ne "$candidate_exit" ]]; then
 		printf '%s exit mismatch: upstream=%s candidate=%s\n' \
@@ -127,6 +162,95 @@ compare_no_workspace() {
 		printf '%s candidate command persisted files in an empty workspace\n' "$name" >&2
 		return 1
 	fi
+	printf 'parity [%ss]: PASS no-workspace/%s\n' "$SECONDS" "$name"
+}
+
+compare_no_workspace_env() {
+	local name="$1"
+	local environment="$2"
+	shift 2
+	no_workspace_extra_env=("$environment")
+	compare_no_workspace "$name" "$@"
+	no_workspace_extra_env=(BEADSHX_PARITY_EXTRA=1)
+}
+
+compare_no_workspace_user_config() {
+	local name="$1"
+	local config="$2"
+	shift 2
+	no_workspace_user_config="$config"
+	compare_no_workspace "$name" "$@"
+	no_workspace_user_config=""
+}
+
+# `version` prints each binary's own identity, so these no-workspace cases compare only the output
+# mode: both sides print a JSON object with schema_version 1 (json), or one line that is not JSON
+# (text), with exit 0, an empty stderr and no file written. They take the same extra environment and
+# user config.yaml as compare_no_workspace.
+compare_version_mode() {
+	local name="$1"
+	local mode="$2"
+	shift 2
+	no_workspace_case_count=$((no_workspace_case_count + 1))
+	printf 'parity [%ss]: START no-workspace/%s\n' "$SECONDS" "$name"
+	local case_root="$test_root/$name"
+	local side side_root binary side_exit
+	for side in oracle candidate; do
+		side_root="$case_root/$side"
+		binary="$oracle"
+		[[ "$side" == candidate ]] && binary="$candidate"
+		mkdir -p "$side_root/home" "$side_root/config" "$side_root/work"
+		if [[ -n "$no_workspace_user_config" ]]; then
+			write_no_workspace_user_config "$side_root/home"
+		fi
+		set +e
+		(
+			cd "$side_root/work"
+			env HOME="$side_root/home" \
+				XDG_CONFIG_HOME="$side_root/config" \
+				BD_DISABLE_METRICS=1 \
+				BD_DISABLE_EVENT_FLUSH=1 \
+				BD_JSON_ENVELOPE=0 \
+				NO_COLOR=1 \
+				"${no_workspace_extra_env[@]}" \
+				"$binary" "$@"
+		) >"$case_root/$side.stdout" 2>"$case_root/$side.stderr"
+		side_exit=$?
+		set -e
+		if [[ -n "$no_workspace_user_config" ]]; then
+			remove_no_workspace_user_config "$name" "$side_root/home"
+		fi
+		if [[ "$side_exit" -ne 0 || -s "$case_root/$side.stderr" ]]; then
+			printf '%s %s exited %s with stderr:\n' "$name" "$side" "$side_exit" >&2
+			cat "$case_root/$side.stderr" >&2
+			return 1
+		fi
+		case "$mode" in
+		json)
+			if ! jq -e '.schema_version == 1' "$case_root/$side.stdout" >/dev/null 2>&1; then
+				printf '%s %s did not print a JSON version document:\n' "$name" "$side" >&2
+				cat "$case_root/$side.stdout" >&2
+				return 1
+			fi
+			;;
+		text)
+			if [[ "$(wc -l <"$case_root/$side.stdout" | tr -d ' ')" != 1 ]] ||
+				jq -e . "$case_root/$side.stdout" >/dev/null 2>&1; then
+				printf '%s %s did not print one text version line:\n' "$name" "$side" >&2
+				cat "$case_root/$side.stdout" >&2
+				return 1
+			fi
+			;;
+		*)
+			printf 'unknown version mode: %s\n' "$mode" >&2
+			return 2
+			;;
+		esac
+		if [[ -n "$(find "$side_root" -mindepth 2 -print -quit)" ]]; then
+			printf '%s %s command persisted files in an empty workspace\n' "$name" "$side" >&2
+			return 1
+		fi
+	done
 	printf 'parity [%ss]: PASS no-workspace/%s\n' "$SECONDS" "$name"
 }
 
@@ -2875,6 +2999,121 @@ expect_candidate_failure events-tail-global-unported "" \
 expect_candidate_failure events-export-global-json-unported \
 	'{"error":"events export is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	events export --global --json
+
+# The global JSON switch. Without --json or the root --format, upstream reads the `json` setting of
+# the layered config (BD_JSON, then config.local.yaml, config.yaml and the user config.yaml) once
+# it has selected the workspace, and every command then prints exactly what --json prints. BD_JSON
+# counts only as Go's strconv.ParseBool reads it, and an empty BD_JSON is unset. --json and
+# --json=<bool> outrank it, and so does a root --format, except that --format json always selects
+# JSON. The --format of list and dep tree is their own flag and does not count. Help and --version
+# print text, and flag errors stay text, as cobra prints them before the switch is read.
+json_yaml='json: true'
+compare_real_database_config global-json-yaml-list exact "$json_yaml" list
+compare_real_database_config global-json-yaml-show exact "$json_yaml" show "$real_database_issue_id"
+compare_real_database_config global-json-yaml-ready exact "$json_yaml" ready
+compare_real_database_config global-json-yaml-count exact "$json_yaml" count
+compare_real_database_config global-json-yaml-graph exact "$json_yaml" graph "$real_database_epic_id"
+compare_real_database_config global-json-yaml-dep-tree exact "$json_yaml" dep tree "$real_database_grandchild_id"
+compare_real_database_config global-json-yaml-comments exact "$json_yaml" comments "$real_database_issue_id"
+real_database_extra_sql="$events_pruned_sql"
+compare_real_database_config global-json-yaml-events-export exact "$json_yaml" events export
+real_database_extra_sql=""
+compare_real_database_config global-json-yaml-config-get exact "$json_yaml" config get json
+compare_real_database_config global-json-yaml-types exact "$json_yaml" types
+compare_real_database_config global-json-yaml-info-schema exact "$json_yaml" info --schema
+compare_real_database_config global-json-yaml-ping ping-json "$json_yaml" ping
+compare_real_database_config global-json-yaml-where exact "$json_yaml" where
+compare_real_database_config global-json-yaml-list-help exact "$json_yaml" list --help
+compare_real_database_config global-json-yaml-show-missing exact "$json_yaml" show test-missing
+compare_real_database_config global-json-yaml-ready-bad-sort exact "$json_yaml" ready --sort bogus
+compare_real_database_config global-json-yaml-ready-brief exact "$json_yaml" ready --brief
+compare_real_database_config global-json-yaml-list-deps exact "$json_yaml" list --deps=all
+compare_real_database_config global-json-yaml-flag-false exact "$json_yaml" count --json=false
+compare_real_database_config global-json-yaml-format-text exact "$json_yaml" count --format=text
+compare_real_database_config global-json-yaml-list-format-digraph exact "$json_yaml" list --format digraph
+compare_real_database_config global-json-yaml-dep-tree-mermaid exact "$json_yaml" \
+	dep tree "$real_database_grandchild_id" --format mermaid
+compare_real_database_config global-json-yaml-yes exact 'json: yes' count
+compare_real_database_env global-json-env-1-show exact BD_JSON=1 show "$real_database_issue_id"
+compare_real_database_env global-json-env-true-list exact BD_JSON=true list
+compare_real_database_env global-json-env-capital-t-ready exact BD_JSON=T ready
+compare_real_database_env global-json-env-1-dep-tree exact BD_JSON=1 dep tree "$real_database_grandchild_id"
+compare_real_database_env global-json-env-1-comments exact BD_JSON=1 comments "$real_database_issue_id"
+compare_real_database_env global-json-env-1-events-tail exact BD_JSON=1 events tail --since=-1
+compare_real_database_env global-json-env-1-config-get exact BD_JSON=1 config get issue_prefix
+compare_real_database_env global-json-env-1-types exact BD_JSON=1 types
+compare_real_database_env global-json-env-1-ping ping-json BD_JSON=1 ping
+compare_real_database_env global-json-env-1-dep-tree-missing exact BD_JSON=1 dep tree test-missing
+compare_real_database_env global-json-env-0-graph exact BD_JSON=0 graph "$real_database_epic_id"
+compare_real_database_env global-json-env-false-ready exact BD_JSON=false ready
+compare_real_database_env global-json-env-empty-count exact BD_JSON= count
+compare_real_database_env global-json-env-yes-count exact BD_JSON=yes count
+compare_real_database_env global-json-env-padded-count exact 'BD_JSON=1 ' count
+compare_real_database_config_env global-json-env-0-over-yaml exact "$json_yaml" BD_JSON=0 count
+compare_real_database_config_env global-json-env-empty-keeps-yaml exact "$json_yaml" BD_JSON= count
+compare_real_database_config_env global-json-env-blank-over-yaml exact "$json_yaml" 'BD_JSON= ' count
+compare_real_database_env global-json-flag-false-over-env exact BD_JSON=1 count --json=false
+compare_real_database_env global-json-flag-over-env exact BD_JSON=0 count --json
+compare_real_database_env global-json-format-json-over-env exact BD_JSON=0 ready --format=JSON
+compare_real_database global-json-format-json-over-flag-false exact count --json=false --format json
+compare_real_database global-json-format-last-wins exact list --format json --format digraph
+compare_real_database global-json-format-folded exact count --format jſon
+compare_real_database global-json-bad-flag-value exact count --json=bogus
+compare_real_database_env global-json-env-graph-no-id exact BD_JSON=1 graph
+# bd comments checks its arguments before the pre-run, where only --json has been read.
+compare_real_database_env global-json-env-comments-extra-argument exact BD_JSON=1 comments "$real_database_issue_id" extra
+compare_real_database global-json-comments-extra-argument-format exact comments "$real_database_issue_id" add x --format json
+compare_real_database global-json-comments-extra-argument-flag exact comments "$real_database_issue_id" extra --json=true
+compare_real_database_local_config global-json-local-yaml exact "" "$json_yaml" list
+compare_real_database_local_config global-json-local-over-yaml exact "$json_yaml" 'json: false' count
+write_json_user_config() {
+	mkdir -p "$1/user-home/.config/bd"
+	printf 'json: true\n' >"$1/user-home/.config/bd/config.yaml"
+}
+real_database_setup=write_json_user_config
+compare_real_database global-json-user-yaml-count exact count
+compare_real_database_config global-json-workspace-over-user-yaml exact 'json: false' count
+real_database_setup=""
+compare_no_workspace_env global_json_env_where BD_JSON=1 where
+compare_no_workspace_env global_json_env_where_flag_false BD_JSON=1 where --json=false
+compare_no_workspace_env global_json_env_list BD_JSON=1 list
+compare_no_workspace_env global_json_env_config_get BD_JSON=1 config get export.auto
+compare_no_workspace_env global_json_env_list_help BD_JSON=1 list --help
+compare_no_workspace_env global_json_env_help_list BD_JSON=1 help list
+compare_no_workspace_env global_json_env_unknown_flag BD_JSON=1 count --frobnicate
+compare_no_workspace global_json_bad_flag_value where --json=bogus
+compare_no_workspace global_json_empty_flag_value ready --json=
+compare_no_workspace_user_config global_json_user_yaml_where "$json_yaml" where
+compare_no_workspace_user_config global_json_user_yaml_config_get "$json_yaml" config get json
+no_workspace_extra_env=(BD_JSON=1)
+compare_version_mode global_json_env_version json version
+compare_version_mode global_json_env_version_flag text --version
+compare_version_mode global_json_env_version_shorthand text -V
+compare_version_mode global_json_env_version_json_false text version --json=false
+no_workspace_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_version_mode global_json_version_flag_with_json text --version --json
+no_workspace_user_config="$json_yaml"
+compare_version_mode global_json_user_yaml_version json version
+no_workspace_user_config=""
+# bdhx's refusals follow the same switch as upstream's errors.
+real_database_extra_env=(BD_JSON=1)
+candidate_only_setup=enable_shared_server
+expect_candidate_failure global-json-env-shared-server-refusal \
+	'{"error":"count is not available yet in shared-server mode in this build","schema_version":1}' "" "" count
+candidate_only_setup=set_database_path
+expect_candidate_failure global-json-env-db-setting-refusal \
+	'{"error":"ready is not available yet when the db setting names a database in this build","schema_version":1}' "" "" ready
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+enable_shared_server_with_json() {
+	enable_shared_server "$1"
+	printf 'json: true\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=enable_shared_server_with_json
+expect_candidate_failure global-json-yaml-shared-server-refusal \
+	'{"error":"list is not available yet in shared-server mode in this build","schema_version":1}' "" "" list
+expect_candidate_failure global-json-yaml-shared-server-flag-false-refusal "" \
+	"Error: list is not available yet in shared-server mode in this build" "" list --json=false
+candidate_only_setup=""
 
 wait_for_watch_text() {
 	local file="$1"

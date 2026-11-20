@@ -86,9 +86,11 @@ private final COMMENTS_TAKES_ONE_ID = '"bd comments" takes a single issue id and
 /** Parses the bounded read-only command profile without Cobra or process-global access. */
 final class Parser {
 	final environment:EnvironmentPort;
+	final jsonSetting:JsonSettingPort;
 
-	public function new(environment:EnvironmentPort) {
+	public function new(environment:EnvironmentPort, jsonSetting:JsonSettingPort) {
 		this.environment = environment;
+		this.jsonSetting = jsonSetting;
 	}
 
 	public function parse(args:Array<String>):ParseResult {
@@ -106,7 +108,12 @@ final class Parser {
 
 	/** Parses `args`, leaving the positional arguments read so far in `positional`. */
 	function parseCommand(args:Array<String>, positional:Array<String>):ParseResult {
-		var output = OutputMode.Human;
+		// The last --json value and the last --format value; outputMode() reads them after the loop.
+		var jsonFlagSet = false;
+		var jsonFlagValue = false;
+		var formatFlagSet = false;
+		var formatFlagValue = "";
+		var versionFlag = false;
 		var actor = "";
 		var directory = "";
 		var databasePath = "";
@@ -283,10 +290,8 @@ final class Parser {
 					case DatabaseName:
 						databaseName = argument;
 					case OutputFormat:
-						if (argument.toLowerCase() == "json")
-							output = OutputMode.Json;
-						else
-							listFormat = argument;
+						formatFlagSet = true;
+						formatFlagValue = argument;
 					case DoltAutoCommit:
 						if (!isDoltAutoCommitValue(argument))
 							return UsageFailure('invalid --dolt-auto-commit="${argument}" (valid: off, on, batch)');
@@ -442,11 +447,16 @@ final class Parser {
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--format=")) {
-				final value = argument.substr(9);
-				if (value.toLowerCase() == "json")
-					output = OutputMode.Json;
-				else
-					listFormat = value;
+				formatFlagSet = true;
+				formatFlagValue = argument.substr(9);
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--json=")) {
+				final value = argument.substr(7);
+				if (!isBooleanFlagValue(value))
+					return UsageFailure(invalidBooleanFlag("--json", value));
+				jsonFlagSet = true;
+				jsonFlagValue = booleanFlagValue(value);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--dolt-auto-commit=")) {
@@ -922,7 +932,8 @@ final class Parser {
 				case "--help" | "-h":
 					showHelp = true;
 				case "--json":
-					output = OutputMode.Json;
+					jsonFlagSet = true;
+					jsonFlagValue = true;
 				case "--schema":
 					infoSchema = true;
 				case "--whats-new":
@@ -1253,6 +1264,7 @@ final class Parser {
 				case "--readonly" | "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v" | "--ignore-schema-skew":
 					// This command profile is already read-only, unstyled, and synchronous.
 				case "--version" | "-V":
+					versionFlag = true;
 					positional.push("version");
 				case value:
 					if (StringTools.startsWith(value, "--")) {
@@ -1317,6 +1329,41 @@ final class Parser {
 			};
 		}
 
+		final formatJson = formatFlagSet && isJsonFormat(formatFlagValue);
+		if (formatFlagSet && !formatJson)
+			listFormat = formatFlagValue;
+		var selectedOutput = OutputMode.Human;
+		var outputSelected = false;
+		// Upstream's JSON switch, decided once the first parsed command or command check needs it.
+		// --version prints text before anything reads the switch, and --format json always selects
+		// JSON. Otherwise the last --json value or a root --format decides; the --format of list and
+		// dep tree is their own flag and does not count. Help prints text. Only then does the `json`
+		// setting of the selected workspace's config apply.
+		function outputMode():OutputMode {
+			if (outputSelected)
+				return selectedOutput;
+			outputSelected = true;
+			final ownFormat = positional.length > 0
+				&& (positional[0] == "list" || (positional[0] == "dep" && positional.length > 1 && positional[1] == "tree"));
+			final helpPage = showHelp || positional.length == 0 || positional[0] == "help";
+			selectedOutput = if (versionFlag) {
+				OutputMode.Human;
+			} else if (formatJson || (jsonFlagSet && jsonFlagValue)) {
+				OutputMode.Json;
+			} else if (jsonFlagSet || (formatFlagSet && !ownFormat) || helpPage) {
+				OutputMode.Human;
+			} else if (jsonSetting.enabled({directory: directory, databasePath: databasePath})) {
+				OutputMode.Json;
+			} else {
+				OutputMode.Human;
+			}
+			return selectedOutput;
+		}
+
+		// Cobra checks a command's arguments before the pre-run reads the switch or --format, so an
+		// argument check that prints JSON (bd comments) follows the --json flag alone.
+		final argumentCheckOutput = jsonFlagSet && jsonFlagValue ? OutputMode.Json : OutputMode.Human;
+
 		function makeListRequest(idFilter:String):beadshx.store.IssueListRequest {
 			return {
 				status: listStatus,
@@ -1360,15 +1407,15 @@ final class Parser {
 				overdue: listOverdue,
 				metadataFields: listMetadataFields,
 				hasMetadataKey: listHasMetadataKey,
-				format: output == OutputMode.Human ? listFormat : "",
+				format: outputMode() == OutputMode.Human ? listFormat : "",
 				sortBy: listSort,
 				reverse: listReverse,
 				limit: listLimit,
 				offset: listOffset,
 				maxRows: listMaxRows,
 				maxRowsSource: listMaxRowsSource,
-				skipCounts: output == OutputMode.Human,
-				blockingAnnotations: output == OutputMode.Human
+				skipCounts: outputMode() == OutputMode.Human,
+				blockingAnnotations: outputMode() == OutputMode.Human
 				&& !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat))
 				&& !listLong};
 		}
@@ -1487,7 +1534,7 @@ final class Parser {
 		if (positional.length == 0 || (positional.length == 1 && positional[0] == "help")) {
 			return Parsed({
 				command: Command.RootHelp,
-				output: output,
+				output: outputMode(),
 				actor: actor,
 				directory: directory,
 				databasePath: databasePath,
@@ -1592,7 +1639,7 @@ final class Parser {
 			listAll = true;
 		}
 		if (readyAwareUsageFailure != "")
-			return name == "ready" ? OutputFailure(output, readyAwareUsageFailure) : UsageFailure(readyAwareUsageFailure);
+			return name == "ready" ? OutputFailure(outputMode(), readyAwareUsageFailure) : UsageFailure(readyAwareUsageFailure);
 		if (shorthandS != "") {
 			if (name == "ready")
 				listSort = shorthandS;
@@ -1614,7 +1661,7 @@ final class Parser {
 		}
 		if (listSort != "") {
 			if (name == "ready" && !isReadySort(listSort))
-				return OutputFailure(output, 'invalid sort policy \'${listSort}\'. Valid values: hybrid, priority, oldest');
+				return OutputFailure(outputMode(), 'invalid sort policy \'${listSort}\'. Valid values: hybrid, priority, oldest');
 			if ((name == "list" || name == "search") && !isListSort(listSort))
 				return UsageFailure('invalid sort field "${listSort}" (valid: priority, created, updated, closed, status, id, title, type, assignee)');
 		}
@@ -1718,14 +1765,14 @@ final class Parser {
 			if (listDepsMode != "") {
 				if (listDepsMode != "scheduling" && listDepsMode != "all")
 					return UsageFailure('invalid --deps value "${listDepsMode}" (valid: scheduling, all)');
-				if (output == OutputMode.Json)
-					return OutputFailure(output, "--deps is not supported with --json output");
+				if (outputMode() == OutputMode.Json)
+					return OutputFailure(outputMode(), "--deps is not supported with --json output");
 				if (listFormat != "")
 					return UsageFailure("--deps is not supported with --format output");
 				if (listFlat)
 					return UsageFailure("--deps requires the tree view and cannot be combined with --flat");
 				if (watchMode)
-					return OutputFailure(output, "--deps is not supported with --watch");
+					return OutputFailure(outputMode(), "--deps is not supported with --watch");
 			}
 			switch listOffset {
 				case IntPresent(value) if (value > 0 && listSort == "id"):
@@ -1750,16 +1797,16 @@ final class Parser {
 			}
 		}
 		if (name == "ready") {
-			if (listBrief && output != OutputMode.Json)
-				return OutputFailure(output, "--brief requires --json; the text renderings print none of the fields it omits");
+			if (listBrief && outputMode() != OutputMode.Json)
+				return OutputFailure(outputMode(), "--brief requires --json; the text renderings print none of the fields it omits");
 			if (listBrief && readyClaim)
-				return OutputFailure(output, "--claim cannot be combined with --brief");
+				return OutputFailure(outputMode(), "--claim cannot be combined with --brief");
 			if (listBrief && readyGated)
-				return OutputFailure(output, "--gated cannot be combined with --brief");
+				return OutputFailure(outputMode(), "--gated cannot be combined with --brief");
 			if (listBrief && readyMolecule != "")
-				return OutputFailure(output, "--mol cannot be combined with --brief");
+				return OutputFailure(outputMode(), "--mol cannot be combined with --brief");
 			if (listBrief && readyExplain)
-				return OutputFailure(output, "--explain cannot be combined with --brief");
+				return OutputFailure(outputMode(), "--explain cannot be combined with --brief");
 			if (!showHelp) {
 				switch listMaxRows {
 					case IntPresent(_):
@@ -1834,7 +1881,7 @@ final class Parser {
 			};
 			return Parsed({
 				command: command,
-				output: output,
+				output: outputMode(),
 				actor: actor,
 				directory: directory,
 				databasePath: databasePath,
@@ -1952,7 +1999,7 @@ final class Parser {
 			if (!showHelp && subcommand != "list" && positional.length != 2) {
 				if (positional.length < 2)
 					return UsageFailure("requires at least 1 arg(s), only received 0");
-				return OutputFailure(output, positional[2] == "add" ? misplacedCommentsAdd(subcommand) : COMMENTS_TAKES_ONE_ID);
+				return OutputFailure(argumentCheckOutput, positional[2] == "add" ? misplacedCommentsAdd(subcommand) : COMMENTS_TAKES_ONE_ID);
 			}
 			return parsedCommand(Command.Comments);
 		}
@@ -2134,6 +2181,20 @@ final class Parser {
 	static function invalidIntegerFlag(flag:String, value:String):String {
 		final quoted = haxe.Json.stringify(value);
 		return 'invalid argument ${quoted} for "${flag}" flag: strconv.ParseInt: parsing ${quoted}: invalid syntax';
+	}
+
+	/** Upstream's pflag message for a bool flag whose value strconv.ParseBool rejects. */
+	static function invalidBooleanFlag(flag:String, value:String):String {
+		final quoted = haxe.Json.stringify(value);
+		return 'invalid argument ${quoted} for "${flag}" flag: strconv.ParseBool: parsing ${quoted}: invalid syntax';
+	}
+
+	/**
+		Go's strings.EqualFold(value, "json"), which upstream applies to --format.
+		Besides the ASCII case pairs, only ſ (U+017F) folds to one of these letters.
+	**/
+	static function isJsonFormat(value:String):Bool {
+		return StringTools.replace(value, String.fromCharCode(0x17F), "s").toLowerCase() == "json";
 	}
 
 	static function isOrphansFilterFlag(flag:String):Bool {

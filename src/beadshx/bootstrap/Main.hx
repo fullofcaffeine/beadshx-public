@@ -6,6 +6,7 @@ import beadshx.cli.Parser;
 import beadshx.cli.SystemEnvironment;
 import beadshx.cli.SystemOutput;
 import beadshx.cli.SystemWatch;
+import beadshx.config.LayeredJsonSetting;
 import beadshx.identity.SystemActor;
 import beadshx.git.GoGitHistory;
 import beadshx.store.GoReadonlyStore;
@@ -23,8 +24,10 @@ import beadshx.profile.GoProfiler;
 @:goNative
 class Main {
 	static function main():Void {
-		final application = new Application(new Parser(new SystemEnvironment()), new SystemOutput(), new SystemActor(), new GoGitHistory(), new GoWorkspace(),
-			new GoReadonlyStore(), new GoProfiler(), new SystemWatch());
+		final workspace = new GoWorkspace();
+		final parser = new Parser(new SystemEnvironment(), new LayeredJsonSetting(workspace));
+		final application = new Application(parser, new SystemOutput(), new SystemActor(), new GoGitHistory(), workspace, new GoReadonlyStore(),
+			new GoProfiler(), new SystemWatch());
 		Sys.exit(application.run(Sys.args()));
 	}
 }

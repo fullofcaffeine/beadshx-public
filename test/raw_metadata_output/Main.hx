@@ -2,6 +2,8 @@ import SqlTestValues.DriverValue;
 import beadshx.cli.Application;
 import beadshx.cli.Parser;
 import beadshx.cli.EnvironmentPort;
+import beadshx.cli.JsonSettingPort;
+import beadshx.cli.JsonSettingPort.WorkspaceSelection;
 import beadshx.cli.OutputPort;
 import beadshx.cli.WatchPort;
 import beadshx.identity.SystemActor;
@@ -75,6 +77,15 @@ final class FixedEnvironment implements EnvironmentPort {
 
 	public function value(name:String):String {
 		return "";
+	}
+}
+
+/** These contracts pass --json, so the `json` setting never decides their output. */
+final class UnsetJsonSetting implements JsonSettingPort {
+	public function new() {}
+
+	public function enabled(selection:WorkspaceSelection):Bool {
+		return false;
 	}
 }
 
@@ -170,7 +181,7 @@ class Main {
 		final fields = scan("escaping", raw);
 		require(fields.metadata.wireValue() == raw, "SQL scan normalized valid escape bytes");
 		final output = new CapturedOutput(envelope);
-		final parser = new Parser(new FixedEnvironment());
+		final parser = new Parser(new FixedEnvironment(), new UnsetJsonSetting());
 		final application = new Application(parser, output, new SystemActor(), new GoGitHistory(), new GoWorkspace(), new GoReadonlyStore(), new GoProfiler(),
 			new UnusedWatch());
 		final invocation = switch parser.parse(["query", "status=open", "--json"]) {
@@ -195,7 +206,7 @@ class Main {
 		require(QueryPredicate.matches(selection, first)
 			&& QueryPredicate.matches(selection, second), "independent OR arm must select both rows");
 		final output = new CapturedOutput(envelope);
-		final parser = new Parser(new FixedEnvironment());
+		final parser = new Parser(new FixedEnvironment(), new UnsetJsonSetting());
 		final application = new Application(parser, output, new SystemActor(), new GoGitHistory(), new GoWorkspace(), new GoReadonlyStore(), new GoProfiler(),
 			new UnusedWatch());
 		final invocation = switch parser.parse(["query", "metadata.missing=x OR status=open", "--json"]) {

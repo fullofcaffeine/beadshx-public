@@ -51,6 +51,15 @@ workspaces, and require the same stdout, stderr and exit code:
   remote and the Dolt server state. Both also run with `--json`, and neither
   writes.
 
+Like upstream, every command above prints JSON, exactly as with `--json`,
+when `json: true` is set in `config.yaml`, `config.local.yaml` or the user
+`config.yaml`, or when `BD_JSON` is true. `BD_JSON` is true for `1`, `t`, `T`,
+`true`, `True` and `TRUE`, and false for any other value. An empty `BD_JSON`
+is ignored. `BD_JSON` outranks the files, and `--json`, `--json=false` and
+`--format` outrank both. The `--format` flag of `list` and `dep tree` does not
+count, but `--format json` always selects JSON. Help pages, `--version` and
+flag errors stay text.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
@@ -70,7 +79,7 @@ Limits:
   available yet. `config get` of a user-global key
   (`metrics.*`, `node_id`) and `config show` report that they are not
   available yet when the user `config.yaml` exists. `bdhx` does not load
-  `.beads/.env` before it reads `BD_*` variables.
+  `.beads/.env` before it reads `BD_*` variables such as `BD_JSON`.
 - `config show` reports that it is not available yet in a workspace that has
   no database (upstream creates the embedded database there), when
   `.beads/metadata.json` does not decode, and when only a legacy

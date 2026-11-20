@@ -1,5 +1,7 @@
 import beadshx.cli.Application;
 import beadshx.cli.EnvironmentPort;
+import beadshx.cli.JsonSettingPort;
+import beadshx.cli.JsonSettingPort.WorkspaceSelection;
 import beadshx.cli.OutputPort;
 import beadshx.cli.Parser;
 import beadshx.cli.WatchPort;
@@ -59,8 +61,8 @@ class Main {
 			}
 		];
 		#if (go || go_output)
-		final application = new Application(new Parser(new EmptyEnvironment()), new NoEffectOutput(), new SystemActor(), new GoGitHistory(),
-			new GoWorkspace(), new GoReadonlyStore(), new GoProfiler(), new UnusedWatch());
+		final application = new Application(new Parser(new EmptyEnvironment(), new UnsetJsonSetting()), new NoEffectOutput(), new SystemActor(),
+			new GoGitHistory(), new GoWorkspace(), new GoReadonlyStore(), new GoProfiler(), new UnusedWatch());
 		#end
 		for (testCase in cases) {
 			final issue = details(testCase.value);
@@ -226,6 +228,14 @@ private final class EmptyEnvironment implements EnvironmentPort {
 
 	public function value(name:String):String
 		return "";
+}
+
+/** This contract renders directly and parses no arguments. */
+private final class UnsetJsonSetting implements JsonSettingPort {
+	public function new() {}
+
+	public function enabled(selection:WorkspaceSelection):Bool
+		return false;
 }
 
 private final class NoEffectOutput implements OutputPort {
