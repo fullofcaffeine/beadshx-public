@@ -196,6 +196,48 @@ function configShowHelp(globalFlags:String):String {
 	].join("\n") + "\n" + globalFlags;
 }
 
+/** Upstream `bd config validate --help`; upstream indents its examples with tabs. */
+function configValidateHelp(globalFlags:String):String {
+	return [
+		"Validate sync-related configuration settings.",
+		"",
+		"Checks:",
+		"  - federation.sovereignty is valid (T1, T2, T3, T4, or empty)",
+		"  - federation.remote is set for Dolt sync",
+		"  - Remote URL format is valid (dolthub://, gs://, s3://, az://, file://)",
+		"  - routing.mode is valid (auto, maintainer, contributor, explicit)",
+		"",
+		"\tExamples:",
+		"\t  bd config validate",
+		"\t  bd config validate --json",
+		""
+	].join("\n") + "\n" + configSubcommandHelp("", "validate", "validate", globalFlags).substr(2);
+}
+
+/** Upstream `bd config drift --help`. */
+function configDriftHelp(globalFlags:String):String {
+	return [
+		"Detect drift between declared configuration and actual system state.",
+		"",
+		"This is a read-only diagnostic that answers \"is my environment consistent",
+		"with my config?\" — no mutations are performed.",
+		"",
+		"Checks:",
+		"  - hooks     Git hooks installed and up-to-date",
+		"  - remote    Dolt remote matches federation.remote config",
+		"  - server    Server state matches dolt.shared-server config",
+		"",
+		"Exit codes:",
+		"  0  No drift detected (all checks ok/info/skipped)",
+		"  1  Drift detected (at least one check has status \"drift\")",
+		"",
+		"Examples:",
+		"  bd config drift",
+		"  bd config drift --json",
+		""
+	].join("\n") + "\n" + configSubcommandHelp("", "drift", "drift", globalFlags).substr(2);
+}
+
 /** Upstream `bd config --help`, which bare `bd config` and an unknown subcommand also print. */
 function configHelp(globalFlags:String):String {
 	return [

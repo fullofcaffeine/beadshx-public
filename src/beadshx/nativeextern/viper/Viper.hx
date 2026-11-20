@@ -37,5 +37,9 @@ extern class Viper {
 	@:go.name("GetStringSlice") public function getStringSlice(key:String):go.NativeStringSlice;
 
 	@:go.name("InConfig") public function inConfig(key:String):Bool;
+
+	/** Whether a file, default or bound variable gives the key a non-null value. */
+	@:go.name("IsSet") public function isSet(key:String):Bool;
+
 	@:go.name("AllKeys") public function allKeys():go.NativeStringSlice;
 }

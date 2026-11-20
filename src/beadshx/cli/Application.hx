@@ -38,6 +38,30 @@ import beadshx.cli.ConfigView.renderConfigGetText;
 import beadshx.cli.ConfigView.renderConfigListJson;
 import beadshx.cli.ConfigView.renderConfigListText;
 import beadshx.cli.ConfigView.configShowHelp;
+import beadshx.cli.ConfigView.configDriftHelp;
+import beadshx.cli.ConfigView.configValidateHelp;
+import beadshx.config.ConfigDrift.DriftItem;
+import beadshx.config.ConfigDrift.DriftStatus;
+import beadshx.config.ConfigDrift.HookStatus;
+import beadshx.config.ConfigDrift.GIT_HOOK_NAMES;
+import beadshx.config.ConfigDrift.hasDrift;
+import beadshx.config.ConfigDrift.hookStatus;
+import beadshx.config.ConfigDrift.hooksDriftItems;
+import beadshx.config.ConfigDrift.plainItem;
+import beadshx.config.ConfigDrift.remoteOpenFailureItem;
+import beadshx.config.ConfigDrift.renderDriftJson;
+import beadshx.config.ConfigDrift.renderDriftText;
+import beadshx.config.ConfigDrift.serverDriftItem;
+import beadshx.config.ConfigProbes;
+import beadshx.config.ConfigShow.WorkspaceMetadataFields;
+import beadshx.config.ConfigShow.readMetadataFields;
+import beadshx.config.ConfigValidate.MetadataFacts;
+import beadshx.config.ConfigValidate.metadataConfigIssues;
+import beadshx.config.ConfigValidate.renderValidationJson;
+import beadshx.config.ConfigValidate.renderValidationText;
+import beadshx.config.ConfigValidate.syncConfigIssues;
+import beadshx.config.ConfigValidate.validationIssues;
+import beadshx.config.ConfigValidate.yamlConfigIssues;
 import beadshx.cli.ConfigView.renderConfigShowJson;
 import beadshx.cli.ConfigView.renderConfigShowText;
 import beadshx.config.ConfigShow.ConfigShowEntry;
@@ -347,7 +371,7 @@ final class Application {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
 				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses | ConfigGet |
-				ConfigList | ConfigShow: true;
+				ConfigList | ConfigShow | ConfigValidate | ConfigDrift: true;
 			case RootHelp | Version | Where | Label | Events | Config: false;
 		};
 	}
@@ -382,6 +406,8 @@ final class Application {
 			case ConfigGet: "get";
 			case ConfigList: "list";
 			case ConfigShow: "show";
+			case ConfigValidate: "validate";
+			case ConfigDrift: "drift";
 			case Label: "label";
 			case LabelList: "list";
 			case LabelListAll: "list-all";
@@ -464,6 +490,10 @@ final class Application {
 				runConfigList(invocation);
 			case ConfigShow:
 				runConfigShow(invocation);
+			case ConfigValidate:
+				runConfigValidate(invocation);
+			case ConfigDrift:
+				runConfigDrift(invocation);
 			case LabelList | LabelListAll:
 				runLabel(invocation);
 			case List:
@@ -1940,6 +1970,178 @@ final class Application {
 		});
 	}
 
+	/**
+		Upstream configValidateCmd: doctor's config.yaml, metadata.json and
+		database checks, then the sync checks of the workspace config.yaml. The
+		JSON form exits 0 even when it lists issues, as upstream's does. The
+		database check dials a Dolt server only when a Dolt data directory exists.
+	**/
+	function runConfigValidate(invocation:Invocation):Int {
+		if (invocation.global)
+			return runModeAwareFailure(invocation.output, CONFIG_ROUTE_UNAVAILABLE);
+		return runWithLayeredConfig(invocation, true, false, (config, location, _) -> {
+			if (location == null) {
+				final message = "no active beads workspace found";
+				final hint = "run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new database";
+				if (invocation.output == Json)
+					writeJsonStdout('{\n  "error": ${Json.stringify(message)},\n  "hint": ${Json.stringify(hint)},\n  "schema_version": 1\n}\n');
+				else
+					output.writeStderr('Error: ${message}\nHint: ${hint}\n');
+				return 1;
+			}
+			final beadsDir = location.path;
+			final metadata = workspaceMetadataFields(beadsDir);
+			final host = ConfigProbes.validationHost();
+			final doctorIssues = new Array<String>();
+			final configPath = ConfigProbes.validationConfigPath(beadsDir);
+			if (configPath != "")
+				switch ConfigProbes.readValidationYaml(configPath) {
+					case YamlFailed(message): doctorIssues.push('config.yaml: failed to parse: ${message}');
+					case YamlLoaded(yaml): for (issue in yamlConfigIssues(yaml, host))
+							doctorIssues.push(issue);
+				}
+			for (issue in metadataConfigIssues(metadata == null ? null : metadataFacts(metadata), host.quote))
+				doctorIssues.push(issue);
+			final doltDirectory = ConfigProbes.doltDirectory(beadsDir, metadata);
+			if (!ConfigProbes.statMissing(doltDirectory))
+				switch ConfigProbes.probeServerStore(beadsDir, doltDirectory, metadata == null ? new Map<String, String>() : metadata, config) {
+					case ProbeEndpointConfigured:
+						return runModeAwareFailure(invocation.output,
+							"config validate is not available yet when a Dolt server endpoint is configured in this build");
+					case ProbeAnswered:
+						return runModeAwareFailure(invocation.output, "config validate is not available yet when a Dolt server answers in this build");
+					case ProbeFailed(message):
+						doctorIssues.push('database: failed to open Dolt store: ${message}');
+				}
+			final syncIssues = switch ConfigProbes.readValidationYaml(ConfigProbes.workspaceConfigPath(beadsDir)) {
+				case YamlLoaded(yaml): syncConfigIssues(yaml, host);
+				// Upstream skips the sync checks when the workspace config.yaml does not read.
+				case YamlFailed(_): [];
+			};
+			final issues = validationIssues(doctorIssues, syncIssues);
+			if (invocation.output == Json) {
+				writeJsonStdout(renderValidationJson(issues));
+				return 0;
+			}
+			output.writeStdout(renderValidationText(issues));
+			return issues.length == 0 ? 0 : 1;
+		}, configPreflight("validate", true), unboundWorkspace(invocation));
+	}
+
+	/**
+		Upstream configDriftCmd: the git hooks, the Dolt remote and the server
+		checks, exiting 1 when one reports drift. In an embedded workspace the
+		remote check's server store never opens, so it reports that error.
+	**/
+	function runConfigDrift(invocation:Invocation):Int {
+		if (invocation.global)
+			return runModeAwareFailure(invocation.output, CONFIG_ROUTE_UNAVAILABLE);
+		return runWithLayeredConfig(invocation, true, false, (config, location, _) -> {
+			final items = gitHooksDrift();
+			if (location == null) {
+				items.push(plainItem("remote", DriftSkipped, "No active beads workspace found"));
+				items.push(plainItem("server", DriftSkipped, "No active beads workspace found"));
+			} else {
+				final metadata = workspaceMetadataFields(location.path);
+				switch ConfigProbes.probeServerStore(location.path, ConfigProbes.doltDirectory(location.path, metadata),
+					metadata == null ? new Map<String, String>() : metadata, config) {
+					case ProbeEndpointConfigured:
+						return runModeAwareFailure(invocation.output,
+							"config drift is not available yet when a Dolt server endpoint is configured in this build");
+					case ProbeAnswered:
+						return runModeAwareFailure(invocation.output, "config drift is not available yet when a Dolt server answers in this build");
+					case ProbeFailed(message):
+						items.push(remoteOpenFailureItem(message));
+				}
+				// The preflight refuses shared-server mode, so the server state lives in the workspace.
+				items.push(serverDriftItem(ConfigProbes.serverProbablyRunning(location.path)));
+			}
+			if (invocation.output == Json)
+				writeJsonStdout(renderDriftJson(items));
+			else
+				output.writeStdout(renderDriftText(items));
+			return hasDrift(items) ? 1 : 0;
+		}, configPreflight("drift", false), unboundWorkspace(invocation));
+	}
+
+	/** Upstream checkHooksDrift: skipped outside a git repository, else the bd hooks in the hooks directory. */
+	function gitHooksDrift():Array<DriftItem> {
+		final directory = ConfigProbes.gitHooksDirectory();
+		if (directory == null)
+			return [plainItem("hooks", DriftSkipped, "Not a git repository")];
+		final version = InfoChanges.currentVersion;
+		final statuses = new Array<HookStatus>();
+		for (name in GIT_HOOK_NAMES)
+			statuses.push(hookStatus(name, ConfigProbes.readHook(directory, name), version));
+		return hooksDriftItems(statuses, version);
+	}
+
+	/**
+		Refusals before `bd config validate` or `bd config drift` opens the
+		store. In shared-server mode, or when the `db` setting names another
+		database, upstream connects to or creates a database, which can write; a
+		metadata.json upstream would not load or a non-Dolt backend fails
+		upstream's own checks. Validate also reads the workspace back from its
+		parent directory, which only a `.beads` directory without its own
+		redirect survives unchanged.
+	**/
+	static function configPreflight(name:String, resolvesFromRepository:Bool):(LayeredConfig, WorkspaceLocation) -> Null<String> {
+		return (config, location) -> {
+			if (config.sharedServerMode())
+				return 'config ${name} is not available yet in shared-server mode in this build';
+			if (config.getString("db") != "")
+				return 'config ${name} is not available yet when the db setting names a database in this build';
+			// A configured host can make upstream treat the workspace as a server workspace.
+			if (environmentValue("BEADS_DOLT_SERVER_HOST") != "" || config.getString("dolt.host") != "")
+				return 'config ${name} is not available yet when a Dolt server endpoint is configured in this build';
+			switch readMetadataFields(location.path) {
+				case MetadataFieldsUndecodable:
+					return 'config ${name} is not available yet when .beads/metadata.json does not decode in this build';
+				case MetadataFieldsLegacyOnly:
+					return 'config ${name} is not available yet for a workspace with a legacy config.json in this build';
+				case MetadataFields(fields) if (fields.exists("backend") && fields.get("backend") != "" && fields.get("backend") != "dolt"):
+					return 'config ${name} is not available yet for a storage backend other than dolt in this build';
+				case MetadataFields(_) | MetadataAbsent:
+			}
+			if (resolvesFromRepository && !ConfigProbes.resolvesFromRepository(location.path))
+				return 'config ${name} is not available yet for this redirected workspace in this build';
+			return null;
+		};
+	}
+
+	/**
+		Upstream's pre-run for config commands that can run without a store: a
+		workspace with no metadata.json, no database upstream can find and no
+		--db selection opens no store. (A configured host, which would make it a
+		server workspace, is refused by the preflight.)
+	**/
+	static function unboundWorkspace(invocation:Invocation):WorkspaceLocation->Bool {
+		return location -> invocation.databasePath == ""
+			&& location.databasePath == ""
+			&& location.databaseName == ""
+			&& !location.proxiedServer
+			&& switch readMetadataFields(location.path) {
+				case MetadataAbsent: true;
+				case MetadataFields(_) | MetadataFieldsUndecodable | MetadataFieldsLegacyOnly: false;
+			};
+	}
+
+	/** The decoded metadata.json fields, or null when the file does not exist; the preflight refused the other cases. */
+	static function workspaceMetadataFields(beadsDir:String):Null<Map<String, String>> {
+		return switch readMetadataFields(beadsDir) {
+			case MetadataFields(fields): fields;
+			case MetadataAbsent | MetadataFieldsUndecodable | MetadataFieldsLegacyOnly: null;
+		};
+	}
+
+	static function metadataFacts(fields:Map<String, String>):MetadataFacts {
+		function text(tag:String, zero:String):String {
+			final value = fields.get(tag);
+			return value == null ? zero : value;
+		}
+		return {database: text("database", ""), doltDatabase: text("dolt_database", ""), deletionsRetentionDays: text("deletions_retention_days", "0")};
+	}
+
 	/** A config table read failure; a route this build does not read is refused like other unported routes. */
 	function runConfigReadFailure(invocation:Invocation, operation:String, message:String):Int {
 		return message == CONFIG_ROUTE_UNAVAILABLE ? runModeAwareFailure(invocation.output, message) : runStoreFailure('${operation}: ${message}');
@@ -1953,10 +2155,14 @@ final class Application {
 		the .beads directory, unless --db names it, and once when it binds the
 		database). Upstream also opens the store before any config command runs;
 		when `action` reads no table, an empty-key read stands for that open, so a
-		database route this build does not read is refused either way.
+		database route this build does not read is refused either way. For a found
+		workspace, a non-null `preflight` message refuses the command before the
+		store opens, and `runsWithoutDatabase` can route a workspace upstream finds
+		no database for to `action` without a store.
 	**/
 	function runWithLayeredConfig(invocation:Invocation, storeFree:Bool, readsTable:Bool,
-			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int):Int {
+			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int, ?preflight:(LayeredConfig, WorkspaceLocation) -> Null<String>,
+			?runsWithoutDatabase:WorkspaceLocation->Bool):Int {
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
 			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
@@ -1975,11 +2181,17 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
+						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
 							final config = selected(location, 1);
+							final refusal = preflight == null ? null : preflight(config, location);
+							if (refusal != null)
+								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound();
 						} else {
 							final config = selected(location, invocation.databasePath == "" ? 2 : 1);
+							final refusal = preflight == null ? null : preflight(config, location);
+							if (refusal != null)
+								return runModeAwareFailure(invocation.output, refusal);
 							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
@@ -5364,6 +5576,8 @@ final class Application {
 			case ConfigGet: configSubcommandHelp("Get a configuration value", "get <key>", "get", upstreamGlobalFlags());
 			case ConfigList: configSubcommandHelp("List all configuration", "list", "list", upstreamGlobalFlags());
 			case ConfigShow: configShowHelp(upstreamGlobalFlags());
+			case ConfigValidate: configValidateHelp(upstreamGlobalFlags());
+			case ConfigDrift: configDriftHelp(upstreamGlobalFlags());
 			case LabelList: labelSubcommandHelp("List labels for an issue", "list [issue-id]", "list");
 			case LabelListAll: labelSubcommandHelp("List all unique labels in the database", "list-all", "list-all");
 			case List: listHelp();

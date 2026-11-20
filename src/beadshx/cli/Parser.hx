@@ -2019,7 +2019,12 @@ final class Parser {
 				// Upstream show accepts and ignores extra arguments.
 				case "show":
 					return parsedCommand(Command.ConfigShow);
-				case "set" | "set-many" | "unset" | "apply" | "validate" | "drift":
+				// Upstream validate and drift accept and ignore extra arguments.
+				case "validate":
+					return parsedCommand(Command.ConfigValidate);
+				case "drift":
+					return parsedCommand(Command.ConfigDrift);
+				case "set" | "set-many" | "unset" | "apply":
 					return UsageFailure('config ${subcommand} is not available yet in this build');
 				// With no subcommand or an unknown one, upstream prints the group help.
 				case _:

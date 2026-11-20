@@ -10,6 +10,10 @@ extern class StrconvPkg {
 	@:go.tupleReturn
 	@:go.name("ParseInt") public static function parseInt(value:String, base:Int, bitSize:Int):ParseIntResult;
 
+	/** Go's `Atoi`, which reads a decimal int with an optional sign. */
+	@:go.tupleReturn
+	@:go.name("Atoi") public static function atoi(value:String):AtoiResult;
+
 	/** Go's `%q` for a string. */
 	@:go.name("Quote") public static function quote(value:String):String;
 }

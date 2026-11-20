@@ -114,8 +114,10 @@ private final LISTED_METADATA:Array<{tag:String, zero:String}> = [
 **/
 function metadataEntries(raw:String):Null<Array<ConfigShowEntry>> {
 	final decoded = decodeGoStruct(raw, METADATA_FIELDS);
-	if (decoded == null)
-		return null;
+	return decoded == null ? null : listedMetadataEntries(decoded);
+}
+
+private function listedMetadataEntries(decoded:Map<String, String>):Array<ConfigShowEntry> {
 	final entries = new Array<ConfigShowEntry>();
 	for (field in LISTED_METADATA) {
 		final value = decoded.get(field.tag);
@@ -125,18 +127,43 @@ function metadataEntries(raw:String):Null<Array<ConfigShowEntry>> {
 	return entries;
 }
 
+/** What upstream configfile.Load decodes from one .beads directory, by JSON tag. */
+enum WorkspaceMetadataFields {
+	/** No metadata.json and no legacy config.json. */
+	MetadataAbsent;
+
+	/** The decoded fields, as decodeGoStruct gives them. */
+	MetadataFields(fields:Map<String, String>);
+
+	/** metadata.json cannot be read or does not decode, and upstream refuses to open the store. */
+	MetadataFieldsUndecodable;
+
+	/** Only a legacy config.json exists, which upstream rewrites as metadata.json. */
+	MetadataFieldsLegacyOnly;
+}
+
 /** Upstream configfile.Load for one .beads directory, without its legacy config.json migration. */
-function readWorkspaceMetadata(beadsDir:String):WorkspaceMetadataRead {
+function readMetadataFields(beadsDir:String):WorkspaceMetadataFields {
 	final path = Path.join([beadsDir, "metadata.json"]);
 	if (!FileSystem.exists(path))
-		return FileSystem.exists(Path.join([beadsDir, "config.json"])) ? MetadataLegacyOnly : MetadataRows([]);
+		return FileSystem.exists(Path.join([beadsDir, "config.json"])) ? MetadataFieldsLegacyOnly : MetadataAbsent;
 	if (FileSystem.isDirectory(path))
-		return MetadataUndecodable;
+		return MetadataFieldsUndecodable;
 	final raw = try File.getContent(path) catch (_:haxe.Exception) null;
 	if (raw == null)
-		return MetadataUndecodable;
-	final entries = metadataEntries(raw);
-	return entries == null ? MetadataUndecodable : MetadataRows(entries);
+		return MetadataFieldsUndecodable;
+	final decoded = decodeGoStruct(raw, METADATA_FIELDS);
+	return decoded == null ? MetadataFieldsUndecodable : MetadataFields(decoded);
+}
+
+/** The `bd config show` rows of one .beads directory's metadata.json. */
+function readWorkspaceMetadata(beadsDir:String):WorkspaceMetadataRead {
+	return switch readMetadataFields(beadsDir) {
+		case MetadataAbsent: MetadataRows([]);
+		case MetadataFields(fields): MetadataRows(listedMetadataEntries(fields));
+		case MetadataFieldsUndecodable: MetadataUndecodable;
+		case MetadataFieldsLegacyOnly: MetadataLegacyOnly;
+	};
 }
 
 /** Upstream's sort by key in byte order. Rows with one key keep the order given, which upstream leaves to chance. */

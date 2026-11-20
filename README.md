@@ -44,6 +44,12 @@ workspaces, and require the same stdout, stderr and exit code:
   `.beads/metadata.json` fields, git's `beads.role` and `BEADS_MAX_ROWS`, and
   leaves out the `kv.` rows. Like upstream, they print secret values in full,
   without redaction.
+- **Configuration checks:** `config validate` checks the values in
+  `config.yaml` and `.beads/metadata.json`, and the sync settings
+  (`federation.remote`, its URL and allowed patterns, and
+  `federation.sovereignty`). `config drift` checks the git hooks, the Dolt
+  remote and the Dolt server state. Both also run with `--json`, and neither
+  writes.
 
 Limits:
 
@@ -51,17 +57,17 @@ Limits:
   issues are not ported.
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
   `types`, `statuses`, `events tail`, `events export`, `config get`,
-  `config list` and `config show` read embedded workspaces only. In a
-  server-mode or proxied workspace they report that they are not available
-  yet. If the server cannot be reached, they print the same store error as
-  upstream.
+  `config list`, `config show`, `config validate` and `config drift` read
+  embedded workspaces only. In a server-mode or proxied workspace they report
+  that they are not available yet. If the server cannot be reached, they print
+  the same store error as upstream.
   `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - `events tail --follow` and `events prune` report that they are not
   available yet.
-- `config set`, `set-many`, `unset`, `apply`, `validate` and `drift` report
-  that they are not available yet. `config get` of a user-global key
+- `config set`, `set-many`, `unset` and `apply` report that they are not
+  available yet. `config get` of a user-global key
   (`metrics.*`, `node_id`) and `config show` report that they are not
   available yet when the user `config.yaml` exists. `bdhx` does not load
   `.beads/.env` before it reads `BD_*` variables.
@@ -69,6 +75,16 @@ Limits:
   no database (upstream creates the embedded database there), when
   `.beads/metadata.json` does not decode, and when only a legacy
   `.beads/config.json` exists (upstream rewrites it as `metadata.json`).
+- `config validate` and `config drift` report that they are not available
+  yet in shared-server mode, with `--global`, when the `db` setting names a
+  database, when `.beads/metadata.json` does not decode or names a backend
+  other than Dolt, and when a Dolt server host, port or socket,
+  `BEADS_DOLT_DATA_DIR` or a central server config is set. In these cases
+  upstream connects to a server or creates a database. `config validate` also
+  reports this when the workspace directory is not named `.beads` or holds its
+  own `redirect` file.
+  In an embedded workspace upstream's remote check tries to connect to
+  `127.0.0.1:0`; `bdhx` makes the same attempt and prints the same error.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

@@ -19,13 +19,40 @@ import beadshx.config.ConfigKeys.isConfigContainerKey;
 import beadshx.config.ConfigKeys.isKvPlaneKey;
 import beadshx.config.ConfigKeys.isUserGlobalKey;
 import beadshx.config.ConfigKeys.isYamlOnlyKey;
+import beadshx.config.ConfigDrift.DriftItem;
+import beadshx.config.ConfigDrift.hasDrift;
+import beadshx.config.ConfigDrift.hookStatus;
+import beadshx.config.ConfigDrift.hookVersion;
+import beadshx.config.ConfigDrift.hooksDriftItems;
+import beadshx.config.ConfigDrift.isFalsyBool;
+import beadshx.config.ConfigDrift.plainItem;
+import beadshx.config.ConfigDrift.remoteOpenFailureItem;
+import beadshx.config.ConfigDrift.renderDriftJson;
+import beadshx.config.ConfigDrift.renderDriftText;
+import beadshx.config.ConfigDrift.serverDriftItem;
+import beadshx.config.ConfigDrift.testDatabaseRefusal;
+import beadshx.config.ConfigDrift.unreachableServerMessage;
+import beadshx.config.ConfigValidate.ParsedUrl;
+import beadshx.config.ConfigValidate.PathStat;
+import beadshx.config.ConfigValidate.ValidationHost;
+import beadshx.config.ConfigValidate.ValidationYaml;
+import beadshx.config.ConfigValidate.metadataConfigIssues;
+import beadshx.config.ConfigValidate.remoteUrlProblem;
+import beadshx.config.ConfigValidate.renderValidationJson;
+import beadshx.config.ConfigValidate.renderValidationText;
+import beadshx.config.ConfigValidate.syncConfigIssues;
+import beadshx.config.ConfigValidate.validationIssues;
+import beadshx.config.ConfigValidate.yamlConfigIssues;
 
 /**
 	Pins `bd config get`, `bd config list` and `bd config show` key routing and
 	rendering against upstream config.IsYamlOnlyKey, IsUserGlobalKey,
 	EnvVarName, showConfigYAMLOverrides, collectViperEntries,
-	collectMetadataEntries and printConfigEntries, by hand. Viper's layering is
-	native; parity covers the real runs.
+	collectMetadataEntries and printConfigEntries, and the `bd config validate`
+	and `bd config drift` rules against upstream's doctor checks,
+	validateSyncConfig, ValidateRemoteURL, getHookVersion, checkHooksDrift and
+	printDriftItems, by hand. Viper, os.Stat, net/url, git and the server dial
+	are native; parity covers the real runs.
 **/
 class Main {
 	static function main():Void {
@@ -35,6 +62,12 @@ class Main {
 		showLayeredContracts();
 		showMetadataContracts();
 		showRenderContracts();
+		validateYamlContracts();
+		validateMetadataContracts();
+		validateSyncContracts();
+		validateRenderContracts();
+		driftHookContracts();
+		driftRenderContracts();
 		Sys.println("config Haxe contracts: PASS");
 	}
 
@@ -236,6 +269,218 @@ class Main {
 		final wide = "a" + [for (_ in 0...35) "é"].join("");
 		equal(renderConfigShowText([entry("k", wide, "database")]), '  k = ${wide.substr(0, 29)}...${[for (_ in 0...28) " "].join("")}  (database)\n');
 		equal(renderConfigShowJson([entry("k", "<v>\t", "database")]), '[\n  {\n    "key": "k",\n    "value": "<v>\\t",\n    "source": "database"\n  }\n]\n');
+	}
+
+	static function validateYamlContracts():Void {
+		final host = fakeHost([
+			"./present" => StatDirectory,
+			"file.txt" => StatNotDirectory,
+			"/fixture-home/plan" => StatDirectory,
+			"locked" => StatFailed("stat locked: permission denied")
+		]);
+		// A key the file does not set is not checked, even where an empty value would fail.
+		equal(yamlConfigIssues(yaml([]), host).join("|"), "");
+		equal(yamlConfigIssues(yaml(["issue-prefix" => "abcdefghijklmnopqrstu"]), host).join("|"),
+			'issue-prefix: "abcdefghijklmnopqrstu" is too long (max 20 characters)');
+		// Go counts bytes: ten two-byte runes pass the length check but fail the pattern.
+		equal(yamlConfigIssues(yaml(["issue-prefix" => "éééééééééé"]), host).join("|"),
+			'issue-prefix: "éééééééééé" is invalid (must start with letter, contain only letters, numbers, dashes, underscores)');
+		equal(yamlConfigIssues(yaml([
+			"issue-prefix" => "a-B_9",
+			"actor" => "me@example.com",
+			"json" => " YES ",
+			"no-db" => "f"
+		]), host).join("|"), "");
+		equal(yamlConfigIssues(yaml(["actor" => ".dot"]), host)[0],
+			'actor: ".dot" is invalid (must start with letter/number, contain only letters, numbers, dashes, underscores, dots, or @)');
+		equal(yamlConfigIssues(yaml(["json" => "maybe"]), host)[0], 'json: "maybe" is not a valid boolean value (expected true/false, yes/no, 1/0, on/off)');
+		equal(yamlConfigIssues(yaml(["routing.mode" => "Auto"]), host)[0],
+			'routing.mode: "Auto" is invalid (valid values: auto, maintainer, contributor, explicit)');
+		equal(yamlConfigIssues(yaml(["routing.mode" => "auto", "routing.maintainer" => "."]), host).join("|"), "");
+		equal(yamlConfigIssues(yaml(["routing.mode" => "auto", "routing.contributor" => "~/plan"]), host)[0],
+			"routing.mode=auto with routing targets but repos.additional not configured. Issues created via routing will not be visible in bd list. Run 'bd repo add <routing-target>' to enable hydration.");
+		// Hydrated targets compare after `~` expansion; a "." contributor is still checked once a maintainer target exists.
+		equal(yamlConfigIssues(yaml([
+			"routing.mode" => "auto",
+			"routing.contributor" => "~/plan",
+			"repos.additional" => "/fixture-home/plan"
+		]), host).join("|"), "");
+		equal(yamlConfigIssues(yaml([
+			"routing.mode" => "auto",
+			"routing.contributor" => ".",
+			"routing.maintainer" => "./present",
+			"repos.additional" => "other"
+		]),
+			host).join("|"),
+			"routing.contributor=\".\" is not in repos.additional. Run 'bd repo add .' to make routed issues visible.|" +
+			"routing.maintainer=\"./present\" is not in repos.additional. Run 'bd repo add ./present' to make routed issues visible.");
+		equal(yamlConfigIssues(yaml([
+			"routing.default" => "./missing",
+			"routing.maintainer" => ".",
+			"routing.contributor" => "locked"
+		]), host).join("|"), 'routing.default: path "./missing" does not exist');
+		equal(yamlConfigIssues(yaml(["repos.primary" => "file.txt", "repos.additional" => "./present,file.txt,"]), host).join("|"),
+			'repos.primary: "file.txt" is not a directory|repos.additional: "file.txt" is not a directory');
+		equal(yamlConfigIssues(yaml(["repos.primary" => "locked"]), host)[0], 'repos.primary: cannot access "locked": stat locked: permission denied');
+	}
+
+	static function validateMetadataContracts():Void {
+		equal(metadataConfigIssues(null, goQuote).join("|"), "");
+		equal(metadataConfigIssues({database: "dolt", doltDatabase: "test_db", deletionsRetentionDays: "0"}, goQuote).join("|"), "");
+		equal(metadataConfigIssues({database: "beads.db", doltDatabase: "a-b.c", deletionsRetentionDays: "-3"}, goQuote).join("|"),
+			'metadata.json database: "beads.db" looks like a SQLite file, but backend is dolt (expected a directory like "dolt")|'
+			+ 'metadata.json database: "beads.db" is misleading for dolt backend (expected "dolt")|'
+			+ 'metadata.json dolt_database: "a-b.c" contains characters invalid in embedded mode — replace with "a_b_c" or set dolt_mode to "server" (GH#3231)|'
+			+ 'metadata.json deletions_retention_days: -3 is invalid (must be >= 0)');
+		equal(metadataConfigIssues({database: "sub/x.sqlite", doltDatabase: "", deletionsRetentionDays: "-0"}, goQuote).join("|"),
+			'metadata.json database: "sub/x.sqlite" should be a filename, not a path|' +
+			'metadata.json database: "sub/x.sqlite" looks like a SQLite file, but backend is dolt (expected a directory like "dolt")');
+	}
+
+	static function validateSyncContracts():Void {
+		final host = fakeHost([]);
+		equal(syncConfigIssues(yaml([]), host).join("|"), "federation.remote: required for Dolt sync");
+		equal(syncConfigIssues(yaml(["federation.sovereignty" => " t2 ", "federation.remote" => "dolthub://org/repo"]), host).join("|"), "");
+		equal(syncConfigIssues(yaml(["federation.sovereignty" => "T5", "federation.remote" => "file:///x"]), host).join("|"),
+			'federation.sovereignty: "T5" is invalid (valid values: T1, T2, T3, T4, or empty for no restriction)');
+		// A pattern list reports a failed URL again, and a URL no pattern matches.
+		equal(syncConfigIssues(yaml([
+			"federation.remote" => "ftp://x",
+			"federation.allowed-remote-patterns" => "ftp://*"
+		]), host).length, 2);
+		equal(syncConfigIssues(yaml([
+			"federation.remote" => "dolthub://org/repo",
+			"federation.allowed-remote-patterns" => "dolthub://org/*"
+		]), host).join("|"), "");
+		equal(syncConfigIssues(yaml([
+			"federation.remote" => "dolthub://org/repo",
+			"federation.allowed-remote-patterns" => "dolthub://other/*"
+		]), host).join("|"),
+			'federation.remote: remote URL "dolthub://org/repo" does not match any allowed pattern');
+		final schemes = "dolthub, https, http, ssh, git, git+ssh, git+https, git+http, git+file, s3, aws, gs, az, oci, file";
+		equal(remoteUrlProblem("git@github.com:org/repo.git", host), null);
+		equal(remoteUrlProblem("a\tb", host), "remote URL contains control character at position 1 (0x09)");
+		equal(remoteUrlProblem("é\x7f", host), "remote URL contains control character at position 2 (0x7f)");
+		equal(remoteUrlProblem("-oProxy", host), "remote URL must not start with a dash");
+		equal(remoteUrlProblem("@host:path", host), 'remote URL has no scheme (expected one of: ${schemes})');
+		equal(remoteUrlProblem("git@:path", host), 'remote URL has no scheme (expected one of: ${schemes})');
+		equal(remoteUrlProblem("ftp://x", host), 'remote URL scheme "ftp" is not allowed (expected one of: ${schemes})');
+		equal(remoteUrlProblem("https://bad", host), "remote URL is malformed: parse failed");
+		equal(remoteUrlProblem("dolthub://org", host), "dolthub:// URL must have org/repo format (e.g., dolthub://myorg/myrepo)");
+		equal(remoteUrlProblem("dolthub://org/repo", host), null);
+		equal(remoteUrlProblem("git+ssh:///path", host), "git+ssh:// URL must include a hostname");
+		equal(remoteUrlProblem("s3:///path", host), "s3:// URL must include a bucket name");
+		equal(remoteUrlProblem("az:///c", host), "az:// URL must include a storage account hostname");
+		equal(remoteUrlProblem("oci:///c", host), "oci:// URL must include a namespace or bucket host");
+		equal(remoteUrlProblem("file://", host), null);
+	}
+
+	static function validateRenderContracts():Void {
+		equal(validationIssues(["a\n\nb"], ["c"]).join("|"), "a||b|c");
+		equal(renderValidationText([]), "✓ All sync-related configuration is valid\n");
+		equal(renderValidationText(["a", "", "b"]),
+			"Configuration validation found issues:\n  • a\n  • b\n\nRun 'bd config set <key> <value>' to fix configuration issues.\n");
+		equal(renderValidationJson([]), '{\n  "issues": [],\n  "schema_version": 1,\n  "valid": true\n}\n');
+		equal(renderValidationJson(["x"]), '{\n  "issues": [\n    "x"\n  ],\n  "schema_version": 1,\n  "valid": false\n}\n');
+	}
+
+	static function driftHookContracts():Void {
+		equal(hookVersion("#!/bin/sh\n# bd-shim v1\n").version, "v1");
+		equal(hookVersion("#!/bin/sh\n# --- BEGIN BEADS INTEGRATION v0.56.1 ---\r\n").version, "0.56.1");
+		equal(hookVersion("# bd-hooks-version: 0.9.0\n").isShim, false);
+		equal(hookVersion("echo\n# bd (beads)").isBdHook, true);
+		equal(hookVersion("echo hi\n").isBdHook, false);
+		// The first marker decides; a line bufio.Scanner cannot hold before it fails the read.
+		equal(hookVersion("# bd-hooks-version: 1\n# bd-shim v2\n").version, "1");
+		final long = [for (_ in 0...65536) "x"].join("");
+		equal(hookVersion(long + "\n# bd-shim v1\n"), null);
+		equal(hookVersion("# bd-shim v1\n" + long).version, "v1");
+		equal(hookVersion(long.substr(1)) != null, true);
+		final statuses = [
+			hookStatus("pre-commit", null, "1.2.1"),
+			hookStatus("post-merge", "# bd (beads)\n", "1.2.1"),
+			hookStatus("pre-push", "# bd-hooks-version: 0.1\n", "1.2.1"),
+			hookStatus("post-checkout", "# bd-hooks-version: 1.2.1\n", "1.2.1"),
+			hookStatus("prepare-commit-msg", "# bd-shim old\n", "1.2.1")
+		];
+		equal(renderItems(hooksDriftItems(statuses, "1.2.1")),
+			"hooks.missing/drift/Git hooks not installed: pre-commit/installed/missing|" +
+			"hooks.outdated/drift/Git hooks outdated: post-merge (have , want 1.2.1), pre-push (have 0.1, want 1.2.1)/v1.2.1/outdated");
+		equal(renderItems(hooksDriftItems([hookStatus("pre-commit", "", "1.2.1")], "1.2.1")), "hooks/ok/Git hooks installed and current//");
+		equal(isFalsyBool(" OFF "), true);
+		equal(isFalsyBool("F"), true);
+		equal(isFalsyBool("no"), false);
+		equal(testDatabaseRefusal("beads_test_x", "127.0.0.1:0", false, goQuote),
+			'refusing to connect test database "beads_test_x" to server 127.0.0.1:0: set BEADS_TEST_SERVER=1 on a dedicated test server, or use test helpers in internal/storage/dolt/testserver');
+		equal(testDatabaseRefusal("beads_test_x", "127.0.0.1:0", true, goQuote), null);
+		equal(testDatabaseRefusal("test", "127.0.0.1:0", false, goQuote), null);
+	}
+
+	static function driftRenderContracts():Void {
+		final failure = unreachableServerMessage("127.0.0.1:0", "dial tcp 127.0.0.1:0: connect: connection refused", false);
+		final items = [
+			hooksDriftItems([hookStatus("pre-commit", null, "1.2.1")], "1.2.1")[0],
+			remoteOpenFailureItem(failure),
+			serverDriftItem(true),
+			plainItem("server", DriftOk, "No shared server configured or running")
+		];
+		equal(hasDrift(items), true);
+		equal(hasDrift(items.slice(1)), false);
+		equal(renderDriftText(items),
+			"  ✗ hooks.missing: Git hooks not installed: pre-commit\n      expected: installed\n      actual:   missing\n"
+			+ "  – remote: Cannot open Dolt store: Dolt server unreachable at 127.0.0.1:0: dial tcp 127.0.0.1:0: connect: connection refused\n\n"
+			+ "The Dolt server may not be running. Try:\n  bd dolt start\n"
+			+ "  ℹ server: Dolt server is running but dolt.shared-server is not enabled in config\n"
+			+ "  ✓ server: No shared server configured or running\n");
+		equal(unreachableServerMessage("a", "e", true),
+			"Dolt server unreachable at a: e\n\nDolt server auto-start is disabled (dolt.auto-start: false).\nStart the server manually:\n  bd dolt start");
+		equal(renderDriftJson([items[0], items[2]]),
+			'[\n  {\n    "check": "hooks.missing",\n    "status": "drift",\n    "message": "Git hooks not installed: pre-commit",\n' +
+			'    "expected": "installed",\n    "actual": "missing"\n  },\n  {\n    "check": "server",\n    "status": "info",\n' +
+			'    "message": "Dolt server is running but dolt.shared-server is not enabled in config"\n  }\n]\n');
+	}
+
+	static function renderItems(items:Array<DriftItem>):String {
+		return [
+			for (item in items)
+				'${item.check}/${switch item.status {
+					case DriftOk: "ok";
+					case DriftDetected: "drift";
+					case DriftInfo: "info";
+					case DriftSkipped: "skipped";
+				}}/${item.message}/${item.expected}/${item.actual}'
+		].join("|");
+	}
+
+	/** A config.yaml with string keys; a list value is its comma-separated text. */
+	static function yaml(values:Map<String, String>):ValidationYaml {
+		return {
+			isSet: key -> values.exists(key),
+			getString: key -> values.exists(key) ? values.get(key) : "",
+			getStringSlice: key -> values.exists(key) ? values.get(key).split(",") : []
+		};
+	}
+
+	/** Paths not listed are missing; `~` expands to /fixture-home; "https://bad" does not parse; patterns match by prefix before `*`. */
+	static function fakeHost(paths:Map<String, PathStat>):ValidationHost {
+		return {
+			stat: path -> paths.exists(path) ? paths.get(path) : StatMissing,
+			expandHome: path -> StringTools.startsWith(path, "~") ? "/fixture-home" + path.substr(1) : path,
+			quote: goQuote,
+			parseUrl: raw -> raw == "https://bad" ? UrlMalformed("parse failed") : parseFakeUrl(raw),
+			matchPattern: (pattern, name) -> StringTools.endsWith(pattern, "*")
+				&& StringTools.startsWith(name, pattern.substr(0, pattern.length - 1))};
+	}
+
+	static function parseFakeUrl(raw:String):ParsedUrl {
+		final rest = raw.substr(raw.indexOf("://") + 3);
+		final slash = rest.indexOf("/");
+		return slash < 0 ? UrlParts(rest, "") : UrlParts(rest.substr(0, slash), rest.substr(slash));
+	}
+
+	/** Go's `%q` for ASCII text without escapes. */
+	static function goQuote(value:String):String {
+		return '"${value}"';
 	}
 
 	static function entry(key:String, value:String, source:String):ConfigShowEntry {

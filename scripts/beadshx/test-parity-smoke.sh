@@ -192,6 +192,12 @@ compare_no_workspace config_show config show
 compare_no_workspace config_show_json config show --json
 compare_no_workspace config_show_source_metadata config show --source metadata
 compare_no_workspace config_show_help config show --help
+compare_no_workspace config_validate config validate
+compare_no_workspace config_validate_json config validate --json
+compare_no_workspace config_validate_help config validate --help
+compare_no_workspace config_drift config drift
+compare_no_workspace config_drift_json config drift --json
+compare_no_workspace config_drift_help config drift --help
 BEADSHX_TEST_JSON_ENVELOPE=1 compare_no_workspace where_json_envelope where --json
 
 fingerprint_tree() {
@@ -461,6 +467,13 @@ compare_store_failure missing-embedded types types
 compare_store_failure missing-embedded statuses statuses
 compare_store_failure unavailable-server config-show config show
 compare_store_failure unavailable-server config-show-json config show --json
+compare_store_failure unavailable-server config-validate config validate
+compare_store_failure unavailable-server config-validate-json config validate --json
+compare_store_failure unavailable-server config-drift config drift
+compare_store_failure unavailable-server config-drift-json config drift --json
+# Without a database upstream opens no store: validate runs its checks and leaves the fixture as it was.
+compare_store_failure missing-embedded config-validate config validate
+compare_store_failure missing-embedded config-validate-json config validate --json
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -583,6 +596,11 @@ real_database_extra_local_config=""
 real_database_extra_metadata=""
 real_database_extra_import=""
 real_database_extra_sql=""
+# Names a function that prepares each state root (its argument) of a database case before the run.
+real_database_setup=""
+# When set, a database case also requires the upstream command to leave its task state unchanged,
+# and gives each side an empty TMPDIR that must stay empty.
+real_database_read_only=""
 real_database_case_count=0
 candidate_only_case_count=0
 # Names a function that prepares one candidate-only state root (its argument) before the run.
@@ -629,14 +647,25 @@ compare_real_database() {
 		if [[ -n "$real_database_extra_sql" ]]; then
 			printf '%s\n' "$real_database_extra_sql" | "$fixture_sql" "$state_root/work" >/dev/null
 		fi
+		if [[ -n "$real_database_setup" ]]; then
+			"$real_database_setup" "$state_root"
+		fi
 	done
 	candidate_before="$(fingerprint_tree "$candidate_root")"
+	local oracle_before="" oracle_temporary=(BEADSHX_PARITY_TMP=inherited) candidate_temporary=(BEADSHX_PARITY_TMP=inherited)
+	if [[ -n "$real_database_read_only" ]]; then
+		oracle_before="$(fingerprint_task_state_tree "$oracle_root")"
+		mkdir -p "$case_root/oracle-tmp" "$case_root/candidate-tmp"
+		oracle_temporary=(TMPDIR="$case_root/oracle-tmp")
+		candidate_temporary=(TMPDIR="$case_root/candidate-tmp")
+	fi
 
 	set +e
 	(
 		cd "$oracle_root/work"
 		env HOME="$oracle_root/user-home" \
 			XDG_CONFIG_HOME="$oracle_root/config" \
+			"${oracle_temporary[@]}" \
 			"${real_database_env[@]}" \
 			"${real_database_extra_env[@]}" \
 			"$oracle" "$@"
@@ -646,6 +675,7 @@ compare_real_database() {
 		cd "$candidate_root/work"
 		env HOME="$candidate_root/user-home" \
 			XDG_CONFIG_HOME="$candidate_root/config" \
+			"${candidate_temporary[@]}" \
 			"${real_database_env[@]}" \
 			"${real_database_extra_env[@]}" \
 			"$candidate" "$@"
@@ -653,6 +683,19 @@ compare_real_database() {
 	candidate_exit=$?
 	candidate_after="$(fingerprint_tree "$candidate_root")"
 	set -e
+	if [[ -n "$real_database_read_only" ]]; then
+		if [[ "$oracle_before" != "$(fingerprint_task_state_tree "$oracle_root")" ]]; then
+			printf '%s upstream command changed its fixture\n' "$name" >&2
+			return 1
+		fi
+		for side in oracle candidate; do
+			if [[ -n "$(find "$case_root/$side-tmp" -mindepth 1 -print -quit)" ]]; then
+				printf '%s %s command wrote temporary files\n' "$name" "$side" >&2
+				find "$case_root/$side-tmp" -mindepth 1 -print >&2
+				return 1
+			fi
+		done
+	fi
 
 	if [[ "$oracle_exit" -ne "$candidate_exit" ]]; then
 		printf '%s exit mismatch: upstream=%s candidate=%s\n' \
@@ -704,6 +747,19 @@ compare_real_database() {
 		LC_ALL=C sort "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
 		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
 			printf '%s stdout content differs from upstream\n' "$name" >&2
+			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+			return 1
+		fi
+		;;
+	config-validate-routing)
+		# Upstream lists the valid routing modes from a Go map, in random order; compare them as a set.
+		for side in oracle candidate; do
+			jq -Rr 'if test("routing\\.mode: .* is invalid \\(valid values: [a-z, ]*\\)") then
+				sub("\\(valid values: (?<modes>[a-z, ]*)\\)"; "(valid values: \(.modes | split(", ") | sort | join(", ")))")
+			else . end' "$case_root/$side.stdout" >"$case_root/$side.normalized"
+		done
+		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+			printf '%s stdout differs from upstream after sorting the routing modes\n' "$name" >&2
 			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
 			return 1
 		fi
@@ -882,6 +938,7 @@ expect_candidate_failure() {
 		env HOME="$state_root/user-home" \
 			XDG_CONFIG_HOME="$state_root/config" \
 			"${real_database_env[@]}" \
+			"${real_database_extra_env[@]}" \
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
@@ -1160,8 +1217,240 @@ compare_real_database_metadata config-show-metadata-zero-values exact '.dolt_ser
 config_show_tied_yaml=$'issue_prefix: yaml-prefix\nproject_id: yaml-project\nbeads.role: yaml-role\ntypes:\n  custom: yaml-type'
 compare_real_database_config config-show-tied-human config-show-tied-text "$config_show_tied_yaml" config show
 compare_real_database_config config-show-tied-json config-show-tied-json "$config_show_tied_yaml" config show --json
-# Writes and the other config views are not ported; they fail before touching the fixture.
-for config_subcommand in set set-many unset apply validate drift; do
+# bd config validate: doctor's config.yaml, metadata.json and database checks, then the sync checks of
+# the workspace config.yaml. Each case also requires upstream to leave the fixture and TMPDIR as they
+# were. The JSON form exits 0 even when it lists issues.
+real_database_read_only=1
+compare_real_database config-validate-human exact config validate
+compare_real_database config-validate-json exact config validate --json
+compare_real_database_env config-validate-json-envelope exact BD_JSON_ENVELOPE=1 config validate --json
+compare_real_database config-validate-extra-argument exact config validate extra
+compare_real_database config-validate-help exact config validate --help
+compare_real_database config-validate-help-command exact help config validate
+compare_real_database config-validate-unknown-flag exact config validate --bogus
+compare_real_database config-validate-source-flag exact config validate --source git
+validate_valid_yaml=$'federation:\n  remote: dolthub://org/repo\n  sovereignty: t2'
+compare_real_database_config config-validate-valid exact "$validate_valid_yaml" config validate
+compare_real_database_config config-validate-valid-json exact "$validate_valid_yaml" config validate --json
+validate_invalid_yaml=$'issue-prefix: 1bad-prefix-that-is-way-too-long\nactor: "-bad actor"\njson: maybe\nno-db: "1"\nsync:\n  require_confirmation_on_mass_delete: perhaps\nfederation:\n  sovereignty: t5\n  remote: "ftp://example.invalid/x"'
+compare_real_database_config config-validate-invalid-values exact "$validate_invalid_yaml" config validate
+compare_real_database_config config-validate-invalid-values-json exact "$validate_invalid_yaml" config validate --json
+compare_real_database_config config-validate-routing-mode config-validate-routing $'routing:\n  mode: Maintainer' config validate
+compare_real_database_config config-validate-routing-mode-json config-validate-routing $'routing:\n  mode: bogus' config validate --json
+# Paths are checked from the current directory, and `~` from HOME.
+validate_routing_yaml=$'routing:\n  mode: auto\n  contributor: ../planning\n  maintainer: /nonexistent/maint\n  default: "~/missing"\nrepos:\n  primary: .beads/config.yaml\n  additional: [../planning, .beads/metadata.json, .beads]'
+compare_real_database_config config-validate-routing-auto exact "$validate_routing_yaml" config validate
+compare_real_database_config config-validate-routing-unhydrated exact $'routing:\n  mode: auto\n  contributor: "~/plans"' config validate
+compare_real_database_config config-validate-repos-unreadable exact $'repos:\n  primary: .beads/config.yaml/inner' config validate
+validate_remote_index=0
+for validate_remote in 'dolthub://org' 'https:///path' 's3:///key' 'az://' 'oci:///x' 'git+ssh:///repo' \
+	'git+https://host/x' 'git@github.com:org/repo.git' '-upload-pack' 'example.invalid/repo' \
+	'https://host/%zz' 'https://exa mple.com' '"tab\there"' 'file:///tmp/remote'; do
+	validate_remote_index=$((validate_remote_index + 1))
+	compare_real_database_config "config-validate-remote-$validate_remote_index" exact \
+		$'federation:\n  remote: '"$validate_remote" config validate --json
+done
+compare_real_database_config config-validate-remote-pattern-miss exact \
+	$'federation:\n  remote: dolthub://org/repo\n  allowed-remote-patterns: ["[", "dolthub://other/*"]' config validate
+compare_real_database_config config-validate-remote-pattern-match exact \
+	$'federation:\n  remote: dolthub://org/repo\n  allowed-remote-patterns: dolthub://org/*' config validate
+# A URL that fails the structural check fails the pattern check too, so upstream reports it twice.
+compare_real_database_config config-validate-remote-pattern-twice exact \
+	$'federation:\n  remote: ftp://x\n  allowed-remote-patterns: ["ftp://*"]' config validate
+# Like every command, both warn that config.yaml does not parse; validate also lists the parse error,
+# split at its newlines.
+compare_real_database_config config-validate-malformed-yaml exact "$malformed_yaml" config validate
+compare_real_database_config config-validate-unmarshal-yaml exact $'- a\n- b' config validate --json
+compare_real_database_metadata config-validate-metadata-database exact '.database = "beads.db"' config validate
+compare_real_database_metadata config-validate-metadata-path exact '.database = "sub/dir"' config validate
+compare_real_database_metadata config-validate-metadata-retention exact '.deletions_retention_days = -3' config validate --json
+# validate reads only the workspace config.yaml: config.local.yaml and BD_ variables do not count.
+compare_real_database_local_config config-validate-local-ignored exact "" $'routing:\n  mode: bogus' config validate
+compare_real_database_env config-validate-env-ignored exact BD_ROUTING_MODE=bogus config validate
+remove_embedded_database() {
+	rm -rf "$1/work/.beads/embeddeddolt"
+}
+real_database_setup=remove_embedded_database
+compare_real_database_metadata config-validate-no-database exact '.dolt_database = "te-st"' config validate
+real_database_setup=""
+# Without metadata.json or a database, upstream opens no store and checks config.yaml alone.
+remove_database_and_metadata() {
+	rm -rf "$1/work/.beads/embeddeddolt" "$1/work/.beads/metadata.json"
+}
+real_database_setup=remove_database_and_metadata
+compare_real_database_config config-validate-config-only exact $'routing:\n  mode: auto\n  maintainer: ../maint' config validate
+compare_real_database config-drift-config-only exact config drift
+real_database_setup=""
+# A Dolt data directory makes doctor dial a server for the database checks. Embedded workspaces
+# configure none, so the dial goes to port 0 and fails at once; upstream lists the error's lines.
+make_dolt_directory() {
+	mkdir -p "$1/work/.beads/dolt"
+}
+real_database_setup=make_dolt_directory
+compare_real_database config-validate-dolt-directory exact config validate
+compare_real_database config-validate-dolt-directory-json exact config validate --json
+compare_real_database_env config-validate-dolt-directory-auto-start-off exact BEADS_DOLT_AUTO_START=0 config validate
+real_database_setup=""
+# Without the workspace config.yaml, doctor reads the user one and the sync checks are skipped.
+remove_workspace_config() {
+	rm -f "$1/work/.beads/config.yaml"
+}
+real_database_setup=remove_workspace_config
+compare_real_database config-validate-no-config-yaml exact config validate
+real_database_setup=""
+use_legacy_user_config() {
+	rm -f "$1/work/.beads/config.yaml"
+	mkdir -p "$1/user-home/.beads"
+	printf 'actor: "bad actor"\n' >"$1/user-home/.beads/config.yaml"
+}
+real_database_setup=use_legacy_user_config
+compare_real_database config-validate-user-config exact config validate
+real_database_setup=""
+# bd config drift: the git hooks, the Dolt remote and the server checks; exit 1 when one drifts. In an
+# embedded workspace the remote check's server store does not open, so it reports that error.
+compare_real_database config-drift-human exact config drift
+compare_real_database config-drift-json exact config drift --json
+compare_real_database_env config-drift-json-envelope exact BD_JSON_ENVELOPE=1 config drift --json
+compare_real_database config-drift-extra-argument exact config drift extra
+compare_real_database config-drift-help exact config drift --help
+compare_real_database config-drift-help-command exact help config drift
+compare_real_database config-drift-unknown-flag exact config drift --bogus
+drift_hook_content=""
+write_drift_hooks() {
+	local hook
+	mkdir -p "$1/work/.git/hooks"
+	for hook in pre-commit post-merge pre-push post-checkout prepare-commit-msg; do
+		printf '%s\n' "$drift_hook_content" >"$1/work/.git/hooks/$hook"
+	done
+}
+real_database_setup=write_drift_hooks
+drift_hook_content=$'#!/bin/sh\n# bd-shim v1\nexec bd hooks run'
+compare_real_database config-drift-hooks-shim exact config drift
+drift_hook_content=$'#!/bin/sh\n# bd-hooks-version: 0.9.0'
+compare_real_database config-drift-hooks-legacy-json exact config drift --json
+drift_hook_content=$'#!/bin/sh\n# bd-hooks-version: 1.2.1'
+compare_real_database config-drift-hooks-current exact config drift
+drift_hook_content=$'#!/bin/sh\n# bd (beads)\nbd sync'
+compare_real_database config-drift-hooks-inline exact config drift
+drift_hook_content=$'#!/bin/sh\necho user\n# --- BEGIN BEADS INTEGRATION v0.56.1 ---\nbd hooks run\n# --- END BEADS INTEGRATION ---'
+compare_real_database config-drift-hooks-section exact config drift
+drift_hook_content=$'#!/bin/sh\necho hi'
+compare_real_database config-drift-hooks-foreign exact config drift
+real_database_setup=""
+# A directory reads as a missing hook; a legacy marker line keeps its version without the CR.
+write_mixed_hooks() {
+	mkdir -p "$1/work/.git/hooks/pre-commit"
+	printf '# bd-hooks-version: 0.1\n' >"$1/work/.git/hooks/pre-push"
+	printf '# bd (beads)\n' >"$1/work/.git/hooks/post-merge"
+	printf '# bd-hooks-version: 0.2\r\n' >"$1/work/.git/hooks/prepare-commit-msg"
+}
+real_database_setup=write_mixed_hooks
+compare_real_database config-drift-hooks-mixed exact config drift
+real_database_setup=""
+use_relative_hooks_path() {
+	git -C "$1/work" config core.hooksPath .beads/hooks
+	mkdir -p "$1/work/.beads/hooks"
+	printf '# bd-shim v2\n' >"$1/work/.beads/hooks/pre-commit"
+}
+real_database_setup=use_relative_hooks_path
+compare_real_database config-drift-hooks-path exact config drift
+real_database_setup=""
+use_home_hooks_path() {
+	git -C "$1/work" config core.hooksPath '~/hooks'
+	mkdir -p "$1/user-home/hooks"
+	printf '# bd-shim v2\n' >"$1/user-home/hooks/pre-push"
+}
+real_database_setup=use_home_hooks_path
+compare_real_database config-drift-hooks-home-path exact config drift --json
+real_database_setup=""
+remove_git_checkout() {
+	rm -rf "$1/work/.git"
+}
+real_database_setup=remove_git_checkout
+compare_real_database config-drift-not-git exact config drift
+real_database_setup=""
+# The server check reads .beads/dolt-server.pid and asks whether that process exists with signal 0.
+# This shell's own pid is alive for the whole run.
+drift_pid_content=""
+write_server_pid() {
+	printf '%s' "$drift_pid_content" >"$1/work/.beads/dolt-server.pid"
+}
+real_database_setup=write_server_pid
+drift_pid_content="$$"$'\n'
+compare_real_database config-drift-server-running exact config drift
+drift_pid_content=" +$$ "$'\n'
+compare_real_database config-drift-server-signed-pid exact config drift
+drift_pid_content=$'2147483647\n'
+compare_real_database config-drift-server-dead-pid exact config drift --json
+drift_pid_content="0"
+compare_real_database config-drift-server-zero-pid exact config drift
+drift_pid_content="not-a-pid"
+compare_real_database config-drift-server-garbage-pid exact config drift
+real_database_setup=""
+compare_real_database_env config-drift-auto-start-env exact BEADS_DOLT_AUTO_START=off config drift
+compare_real_database_env config-drift-auto-start-bd-env exact BD_DOLT_AUTO_START=false config drift
+compare_real_database_config config-drift-auto-start-config exact $'dolt:\n  auto-start: "0"' config drift
+real_database_setup=remove_embedded_database
+compare_real_database config-drift-no-database exact config drift --json
+# Upstream will not open a test-named database on any server unless BEADS_TEST_SERVER=1.
+compare_real_database_metadata config-drift-test-database exact '.dolt_database = "beads_test_parity"' config drift
+real_database_extra_metadata='.dolt_database = "beads_test_parity"'
+compare_real_database_env config-drift-test-database-allowed exact BEADS_TEST_SERVER=1 config drift
+real_database_extra_metadata=""
+real_database_setup=""
+real_database_read_only=""
+# In shared-server mode, or with a configured server address or port, upstream connects to that
+# server or creates state for it; bdhx refuses before it dials or opens anything.
+enable_shared_server() {
+	printf 'dolt:\n  shared-server: true\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=enable_shared_server
+expect_candidate_failure config-validate-shared-server-unported "" \
+	"Error: config validate is not available yet in shared-server mode in this build" "" config validate
+expect_candidate_failure config-drift-shared-server-unported \
+	'{"error":"config drift is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	config drift --json
+candidate_only_setup=""
+real_database_extra_env=(BEADS_DOLT_SERVER_PORT=3307)
+expect_candidate_failure config-drift-endpoint-unported "" \
+	"Error: config drift is not available yet when a Dolt server endpoint is configured in this build" "" config drift
+real_database_extra_env=(BEADS_DOLT_PORT=1)
+candidate_only_setup=make_dolt_directory
+expect_candidate_failure config-validate-endpoint-unported "" \
+	"Error: config validate is not available yet when a Dolt server endpoint is configured in this build" "" config validate
+candidate_only_setup=""
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+write_server_port_file() {
+	printf '3307\n' >"$1/work/.beads/dolt-server.port"
+}
+candidate_only_setup=write_server_port_file
+expect_candidate_failure config-drift-port-file-unported "" \
+	"Error: config drift is not available yet when a Dolt server endpoint is configured in this build" "" config drift
+candidate_only_setup=""
+# A db setting moves upstream to another database path, where it creates a database.
+set_database_path() {
+	printf 'db: other/beads.db\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=set_database_path
+expect_candidate_failure config-validate-db-setting-unported "" \
+	"Error: config validate is not available yet when the db setting names a database in this build" "" config validate
+candidate_only_setup=""
+use_sqlite_backend() {
+	jq '.backend = "sqlite"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+candidate_only_setup=use_sqlite_backend
+expect_candidate_failure config-drift-backend-unported "" \
+	"Error: config drift is not available yet for a storage backend other than dolt in this build" "" config drift
+candidate_only_setup=""
+expect_candidate_failure config-validate-global-unported \
+	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+	config validate --global --json
+expect_candidate_failure config-drift-global-unported "" \
+	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config drift --global
+# Writes and the apply view are not ported; they fail before touching the fixture.
+for config_subcommand in set set-many unset apply; do
 	expect_candidate_failure "config-$config_subcommand-unported" "" \
 		"Error: config $config_subcommand is not available yet in this build" "" config "$config_subcommand" export.auto true
 done
@@ -1176,9 +1465,6 @@ expect_candidate_failure config-show-global-json-unported \
 	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	config show --global --json
 # Upstream config show creates the embedded database when the workspace has none.
-remove_embedded_database() {
-	rm -rf "$1/work/.beads/embeddeddolt"
-}
 candidate_only_setup=remove_embedded_database
 expect_candidate_failure config-show-no-database-unported "" \
 	"Error: config show is not available yet for a workspace without a database in this build" "" config show
@@ -1202,6 +1488,8 @@ break_metadata() {
 candidate_only_setup=break_metadata
 expect_candidate_failure config-show-bad-metadata-unported "" \
 	"Error: config show is not available yet when .beads/metadata.json does not decode in this build" "" config show
+expect_candidate_failure config-validate-bad-metadata-unported "" \
+	"Error: config validate is not available yet when .beads/metadata.json does not decode in this build" "" config validate
 candidate_only_setup=""
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
