@@ -1,17 +1,9 @@
 package beadshx.bootstrap;
 
 import beadshx.store.EmbeddedCgoStore;
-import beadshx.cli.Application;
-import beadshx.cli.Parser;
-import beadshx.cli.SystemEnvironment;
+import beadshx.bootstrap.CommandProcess.commandApplication;
 import beadshx.cli.SystemOutput;
-import beadshx.cli.SystemWatch;
-import beadshx.config.LayeredJsonSetting;
-import beadshx.identity.SystemActor;
-import beadshx.git.GoGitHistory;
-import beadshx.store.GoReadonlyStore;
 import beadshx.workspace.GoWorkspace;
-import beadshx.profile.GoProfiler;
 
 /**
  * Starts the Haxe-authored BeadsHX development binary.
@@ -24,10 +16,6 @@ import beadshx.profile.GoProfiler;
 @:goNative
 class Main {
 	static function main():Void {
-		final workspace = new GoWorkspace();
-		final parser = new Parser(new SystemEnvironment(workspace), new LayeredJsonSetting(workspace));
-		final application = new Application(parser, new SystemOutput(), new SystemActor(), new GoGitHistory(), workspace, new GoReadonlyStore(),
-			new GoProfiler(), new SystemWatch());
-		Sys.exit(application.run(Sys.args()));
+		Sys.exit(commandApplication(new GoWorkspace(), new SystemOutput()).run(Sys.args()));
 	}
 }

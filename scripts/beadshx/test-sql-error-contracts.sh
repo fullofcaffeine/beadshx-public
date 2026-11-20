@@ -3,15 +3,16 @@ set -euo pipefail
 
 mode=default
 if [[ $# -gt 1 || ( $# -eq 1 && -z "$1" ) ]]; then
-    printf 'usage: %s [--scalar-labels|--embedded-comments]\n' "$0" >&2
+    printf 'usage: %s [--scalar-labels|--embedded-comments|--workspace-discovery]\n' "$0" >&2
     exit 2
 fi
 case "${1:-}" in
     "") ;;
     --scalar-labels) mode=scalar_label_details ;;
     --embedded-comments) mode=embedded_comment_details ;;
+    --workspace-discovery) mode=workspace_discovery ;;
     *)
-        printf 'usage: %s [--scalar-labels|--embedded-comments]\n' "$0" >&2
+        printf 'usage: %s [--scalar-labels|--embedded-comments|--workspace-discovery]\n' "$0" >&2
         exit 2
         ;;
 esac
@@ -85,7 +86,10 @@ export GOTOOLCHAIN
 # mode owns a fresh output tree, so neither observer can leak into another build.
 if [[ "$mode" != default ]]; then
     npx --no-install haxe "test/$mode/compile.hxml" -D go_no_build
-    if [[ "$mode" == scalar_label_details ]]; then
+    if [[ "$mode" == workspace_discovery ]]; then
+        # The production object graph runs around a counting discovery and opens no database.
+        go run -tags=gms_pure_go ./generated/go/bdhx
+    elif [[ "$mode" == scalar_label_details ]]; then
         cp -f test/scalar_label_details/native_test.go.in generated/go/bdhx/scalar_label_test.go
         # The scalar module includes its embedded connector, so Go requires
         # CGO even though this observer uses only a mock transaction.

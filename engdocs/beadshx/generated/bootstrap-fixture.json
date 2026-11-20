@@ -4,8 +4,12 @@
   "owners": {
     "haxeSources": [
       {
+        "path": "src/beadshx/bootstrap/CommandProcess.hx",
+        "sha256": "8d0a82366145aab60d7e58829eed903943882a1fe123c806628f8da4f4aa69fc"
+      },
+      {
         "path": "src/beadshx/bootstrap/Main.hx",
-        "sha256": "8ee8758ccd1ed9e3bb39f085eda36dd78e39fcdb3ce80a1556543fbd4c4b5b0b"
+        "sha256": "12f2be347faa6b5a08ddda7bb1a546c52c2e9293451bbbc46b3832f3ba443181"
       },
       {
         "path": "src/beadshx/cli/Application.hx",
@@ -357,7 +361,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/os/OsPkg.hx",
-        "sha256": "4105d96bbcb9489be3a57bdebb3057ac83ab3ab09f32e1591acc12cb89045218"
+        "sha256": "6f2da9cd74cd0ca492eb3d5b9716a844282c185b0cd1fe868301bcf58b96fc92"
       },
       {
         "path": "src/beadshx/nativeextern/os/PathResult.hx",
@@ -1004,6 +1008,10 @@
         "sha256": "a387974bc4130a6b18c272ae20157806a6fe07368bd5b51614a552843191b52e"
       },
       {
+        "path": "src/beadshx/workspace/InvocationWorkspace.hx",
+        "sha256": "617861a060184135ecb84bfcb1ddf9e070fbe08f2976b4eefd70df0003f371b7"
+      },
+      {
         "path": "src/beadshx/workspace/WorkspaceDiscovery.hx",
         "sha256": "3ffb001e1c9fbad936f36596be19dedb5b759721f329b332bba1e3f696358334"
       },
@@ -1029,11 +1037,15 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "c3de5568e67acfa57532c0fa70139640479bf8fc0227f28f4e0229503d60cebd"
+      "sha256": "71938dc801812b02111350f193a5bb38198c8d3070713a2b2df35a70b64a6312"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "2b3df941306f6eceeb79edf9f9ce19d06bf863b926150f6b3f4360302cdd4d12"
+      "sha256": "61dd97ffe60ff44e203e83d72e099e7def821a890b15b7939f0ddaf8e323d9c7"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_bootstrap_commandprocess.go",
+      "sha256": "77c17aab69f057e631b475158131d54f216343f67e5099d6ed33bba1660dac36"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
@@ -1620,6 +1632,10 @@
       "sha256": "b0e053e46e493c86578b7c7386e709bb34222b1bf39d6ce41c16bd0896ade4e7"
     },
     {
+      "path": "bdhx/haxego_generated_module_beadshx_workspace_invocationworkspace.go",
+      "sha256": "1b63b7077e453278055597f98f0f45699cc634351c7bcefdd5a2182ba76d30e2"
+    },
+    {
       "path": "bdhx/haxego_generated_module_beadshx_workspace_workspacediscovery.go",
       "sha256": "886fc7965ec6834e5d2c1dc322e8d2f2ac20f7714bb0c5991385cd3ea20188cb"
     },
@@ -1741,7 +1757,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_std.go",
-      "sha256": "b459b75c3278034c0886a8a62ec6faf28e35e174bedf6d7d8db3399a0e3fcffb"
+      "sha256": "fcf74cc6c36f9e33cbb589f58fb1802ef31228f09a79dd858c24750a53f66190"
     },
     {
       "path": "bdhx/haxego_generated_module_stringbuf.go",
