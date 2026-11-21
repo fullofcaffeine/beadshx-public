@@ -425,8 +425,12 @@ compare_store_failure() {
 		metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}'
 		config_yaml='issue-prefix: test'
 		;;
-	unavailable-server)
+	unavailable-server | deprecated-port-server)
 		metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads"}'
+		# metadata.json also names the server port, which upstream warns is deprecated.
+		if [[ "$scenario" == deprecated-port-server ]]; then
+			metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads","dolt_server_port":1}'
+		fi
 		config_yaml=$'issue-prefix: test\ndolt:\n  mode: server\n  auto-start: false'
 		# Upstream counts each failed server connection in a circuit breaker file under
 		# $TMPDIR/beads-circuit, which every process on the machine shares. Five failures in a
@@ -616,6 +620,13 @@ compare_store_failure unavailable-server config-drift-json config drift --json
 # Without a database upstream opens no store: validate runs its checks and leaves the fixture as it was.
 compare_store_failure missing-embedded config-validate config validate
 compare_store_failure missing-embedded config-validate-json config validate --json
+# A server workspace whose metadata.json names the port: upstream prints its deprecation warning once,
+# before the open error.
+compare_store_failure deprecated-port-server count count
+compare_store_failure deprecated-port-server list-json list --json
+compare_store_failure deprecated-port-server dep-tree dep tree test-1
+compare_store_failure deprecated-port-server config-get config get issue_prefix
+compare_store_failure deprecated-port-server types types
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -2051,6 +2062,66 @@ compare_real_database no-metadata-missing-readonly-list-json exact --readonly li
 compare_real_database no-metadata-missing-global-json exact count --global --json
 compare_real_database no-metadata-missing-database-flag exact count --database other
 real_database_setup=""
+# With metadata.json, the pre-run resolves the Dolt server port instead. When BEADS_DOLT_SERVER_PORT
+# (any value Go reads as a number), a positive .beads/dolt-server.port, a config.yaml in the Dolt
+# directory and a positive dolt.port name none, a positive dolt_server_port in metadata.json does, and
+# upstream prints a three-line deprecation warning on stderr. It comes before the --global and
+# --database checks, the store open and all command output, also under --json, and leaves the exit
+# code as it is. `where`, `version` and the help pages open no store and print nothing.
+real_database_extra_metadata='.dolt_server_port = 3307'
+compare_real_database deprecated-port-list exact list
+compare_real_database deprecated-port-count-json exact count --json
+compare_real_database deprecated-port-ready-json exact ready --json
+compare_real_database deprecated-port-info-json exact info --json
+compare_real_database deprecated-port-dep-tree exact dep tree "$real_database_issue_id"
+compare_real_database deprecated-port-comments-json exact comments "$real_database_issue_id" --json
+compare_real_database deprecated-port-types exact types
+compare_real_database deprecated-port-config-get exact config get issue_prefix
+compare_real_database deprecated-port-config-get-yaml exact config get export.auto
+compare_real_database deprecated-port-config-list-json exact config list --json
+compare_real_database deprecated-port-config-validate exact config validate
+compare_real_database deprecated-port-where exact where
+compare_real_database deprecated-port-version stderr-only version
+compare_real_database deprecated-port-help-command exact help count
+compare_real_database deprecated-port-help-flag exact count --help
+compare_real_database deprecated-port-global exact count --global
+compare_real_database deprecated-port-database-flag-json exact count --database other --json
+compare_real_database deprecated-port-missing-issue exact dep tree test-missing
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database deprecated-port-json-envelope exact list --json
+real_database_extra_env=(BEADS_DOLT_SERVER_PORT=3307)
+compare_real_database deprecated-port-variable exact count
+real_database_extra_env=(BEADS_DOLT_SERVER_PORT=0)
+compare_real_database deprecated-port-variable-zero exact count
+real_database_extra_env=(BEADS_DOLT_SERVER_PORT=abc)
+compare_real_database deprecated-port-variable-text exact count
+real_database_extra_env=(BD_DOLT_PORT=3307)
+compare_real_database deprecated-port-bd-variable exact count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config=$'dolt:\n  port: 3307'
+compare_real_database deprecated-port-dolt-port exact count
+real_database_extra_config=$'dolt:\n  port: 0'
+compare_real_database deprecated-port-dolt-port-zero exact count
+real_database_extra_config=""
+real_database_setup=write_server_port_file
+compare_real_database deprecated-port-port-file exact count
+write_zero_port_file() {
+	printf '0\n' >"$1/work/.beads/dolt-server.port"
+}
+real_database_setup=write_zero_port_file
+compare_real_database deprecated-port-port-file-zero exact count
+write_dolt_config_yaml() {
+	mkdir -p "$1/work/.beads/dolt"
+	printf 'log_level: info\n' >"$1/work/.beads/dolt/config.yaml"
+}
+real_database_setup=write_dolt_config_yaml
+compare_real_database deprecated-port-dolt-config exact count
+real_database_setup=""
+real_database_extra_metadata=""
+compare_real_database_metadata deprecated-port-zero exact '.dolt_server_port = 0' count
+compare_real_database_metadata deprecated-port-negative exact '.dolt_server_port = -1' count
+compare_real_database_metadata deprecated-port-readonly-missing-db exact \
+	'.dolt_server_port = 3307 | .dolt_database = "other"' --readonly count
 real_database_read_only=""
 # Upstream's show also records the issue in .beads/last-touched, so these compare without the
 # read-only check; an empty new database would print a not-found error instead.

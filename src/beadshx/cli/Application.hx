@@ -53,6 +53,7 @@ import beadshx.config.ConfigDrift.renderDriftJson;
 import beadshx.config.ConfigDrift.renderDriftText;
 import beadshx.config.ConfigDrift.serverDriftItem;
 import beadshx.config.ConfigProbes;
+import beadshx.config.DeprecatedServerPort;
 import beadshx.config.ConfigShow.WorkspaceMetadataFields;
 import beadshx.config.ConfigShow.readMetadataFields;
 import beadshx.config.ConfigShow.metadataLoadFailure;
@@ -2384,10 +2385,10 @@ final class Application {
 				final defaultDirectory = missingMetadataDirectory(invocation, location);
 				switch validateDatabaseSelection(invocation, location) {
 					case PlainFailure(message):
-						warnMissingConfiguration(defaultDirectory);
+						warnStoreConfiguration(location, defaultDirectory);
 						runStoreFailure(message);
 					case ModeAwareFailure(message):
-						warnMissingConfiguration(defaultDirectory);
+						warnStoreConfiguration(location, defaultDirectory);
 						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
@@ -2401,7 +2402,7 @@ final class Application {
 							final refusal = preflight({config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
-							warnMissingConfiguration(defaultDirectory);
+							warnStoreConfiguration(location, defaultDirectory);
 							switch validateOpenedDatabase(invocation, location, defaultDirectory) {
 								case PlainFailure(message): return runStoreFailure(message);
 								case ModeAwareFailure(message): return runModeAwareFailure(invocation.output, message);
@@ -5526,14 +5527,15 @@ final class Application {
 		that case is refused too. Commands that load layered config take this
 		refusal from their runWithLayeredConfig preflight instead.
 
-		For a workspace without metadata.json, upstream's warning comes next,
-		before the database selection checks.
+		Upstream's warning for a workspace without metadata.json, or for a
+		deprecated dolt_server_port, comes next, before the database selection
+		checks.
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		if (LayeredConfig.forWorkspace(location.path).sharedServerMode())
 			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
 		final defaultDirectory = missingMetadataDirectory(invocation, location);
-		warnMissingConfiguration(defaultDirectory);
+		warnStoreConfiguration(location, defaultDirectory);
 		return switch validateDatabaseSelection(invocation, location) {
 			case Accepted: validateOpenedDatabase(invocation, location, defaultDirectory);
 			case refusal: refusal;
@@ -5566,9 +5568,44 @@ final class Application {
 		return pathSelected ? WorkspaceEnvironment.databasePathBeadsDir(invocation.databasePath) : location.path;
 	}
 
-	function warnMissingConfiguration(defaultDirectory:Null<String>):Void {
-		if (defaultDirectory != null)
+	/**
+		Upstream's pre-run warnings before its --global and --database checks
+		and its store open: the missing metadata.json warning when
+		`defaultDirectory` names the workspace, or else the dolt_server_port
+		deprecation warning that resolving the Dolt server port prints. Upstream
+		resolves the port for a workspace whose metadata.json loads and names a
+		Dolt backend, once it has found a database; in shared-server mode it
+		reads the shared server's directory instead, which has no metadata.json.
+		The native server open resolves the port itself and prints the warning,
+		so this prints it only for an embedded or proxied workspace.
+	**/
+	function warnStoreConfiguration(location:WorkspaceLocation, defaultDirectory:Null<String>):Void {
+		if (defaultDirectory != null) {
 			output.writeStderr(missingConfigurationWarning(defaultDirectory));
+			return;
+		}
+		if (location.databaseMissing)
+			return;
+		final metadata = switch readMetadataFields(location.path) {
+			case MetadataFields(fields): fields;
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: return;
+		};
+		final backend = metadataField(metadata, "backend");
+		if (backend != "" && backend != "dolt")
+			return;
+		final config = LayeredConfig.forWorkspace(location.path);
+		if (config.sharedServerMode())
+			return;
+		if (!location.proxiedServer
+			&& config.doltServerMode(metadataField(metadata, "dolt_mode"), metadataField(metadata, "dolt_server_host")))
+			return;
+		if (DeprecatedServerPort.fromMetadata(location.path, metadata, config))
+			output.writeStderr(DeprecatedServerPort.WARNING);
+	}
+
+	static function metadataField(fields:Map<String, String>, tag:String):String {
+		final value = fields.get(tag);
+		return value == null ? "" : value;
 	}
 
 	/** The embedded database checks after the database selection checks: the default database, or the one metadata.json selects. */

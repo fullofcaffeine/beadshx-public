@@ -107,6 +107,16 @@ the directory that upstream derives from the path as given. Upstream ignores
 `BEADS_DOLT_SERVER_DATABASE` in this case. `where`, `version` and help pages
 print no warning.
 
+Like upstream, a command that reads the database prints upstream's three-line
+`Warning: dolt_server_port in metadata.json is deprecated ...` on stderr, also
+with `--json`, when it takes the Dolt server port from `dolt_server_port` in
+`.beads/metadata.json`. This happens when that port is more than 0 and no
+earlier source gives a port: `BEADS_DOLT_SERVER_PORT` (any number), a port
+more than 0 in `.beads/dolt-server.port`, a `config.yaml` file in the Dolt
+directory, or a `dolt.port` setting more than 0. The warning comes before the
+output and the errors of the command, and the exit code does not change.
+`where`, `version` and help pages print no warning.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
@@ -187,6 +197,10 @@ Limits:
   holds its own `redirect` file.
   In an embedded workspace upstream's remote check tries to connect to
   `127.0.0.1:0`; `bdhx` makes the same attempt and prints the same error.
+- When the Dolt directory has a `config.yaml` file, `bdhx` takes it as the
+  source of the server port and prints no `dolt_server_port` warning.
+  Upstream also prints the warning when Dolt cannot parse that file, or when
+  the file sets the port to 0 or less.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
 - Where upstream output order is random (Go map order), the parity tests

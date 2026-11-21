@@ -118,19 +118,48 @@ final class LayeredConfig {
 	}
 
 	/**
-		Upstream configfile.HostImpliesServerMode for a workspace without
-		metadata.json, which upstream's pre-run then opens as a server workspace:
-		BEADS_DOLT_SERVER_HOST, or else the dolt.host setting while dolt.mode is
-		unset, names a host that is not this machine.
+		Upstream configfile.HostImpliesServerMode, with metadata.json's
+		`dolt_mode` and `dolt_server_host` ("" without metadata.json): a
+		proxied-server mode never implies server mode. Otherwise
+		BEADS_DOLT_SERVER_HOST decides when it is set; then a set dolt_mode
+		turns the inference off; then dolt_server_host decides when it is set;
+		then a set dolt.mode setting turns it off; then the dolt.host setting
+		decides. A host implies server mode when it is not this machine.
 	**/
-	public function hostImpliesServerMode():Bool {
+	public function hostImpliesServerMode(doltMode = "", metadataHost = ""):Bool {
+		if (doltMode.toLowerCase() == "proxied-server")
+			return false;
 		final variable = environmentValue("BEADS_DOLT_SERVER_HOST");
 		if (variable != "")
 			return !isLocalHost(variable);
+		if (doltMode != "")
+			return false;
+		if (metadataHost != "")
+			return !isLocalHost(metadataHost);
 		if (registry.getString("dolt.mode") != "")
 			return false;
 		final host = registry.getString("dolt.host");
 		return host != "" && !isLocalHost(host);
+	}
+
+	/**
+		Upstream configfile Config.IsDoltServerMode for a Dolt workspace, with
+		metadata.json's `dolt_mode` and `dolt_server_host` ("" without
+		metadata.json): BEADS_DOLT_SERVER_MODE=1, BEADS_DOLT_SHARED_SERVER (1 or
+		true), a host that implies server mode, then dolt_mode, then the
+		dolt.mode setting. Shared-server mode from a config file does not count.
+	**/
+	public function doltServerMode(doltMode:String, metadataHost:String):Bool {
+		if (environmentValue("BEADS_DOLT_SERVER_MODE") == "1")
+			return true;
+		final shared = environmentValue("BEADS_DOLT_SHARED_SERVER");
+		if (shared == "1" || shared.toLowerCase() == "true")
+			return true;
+		if (hostImpliesServerMode(doltMode, metadataHost))
+			return true;
+		if (doltMode != "")
+			return doltMode.toLowerCase() == "server";
+		return registry.getString("dolt.mode").toLowerCase() == "server";
 	}
 
 	public function getString(key:String):String {
