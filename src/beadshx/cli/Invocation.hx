@@ -24,6 +24,10 @@ typedef Invocation = {
 
 	final databaseName:String;
 	final global:Bool;
+
+	/** --readonly: upstream's strict read-only mode, which the `readonly` setting also selects when the flag is absent. */
+	final readonly:Bool;
+
 	final cpuProfile:Bool;
 	final memProfilePath:String;
 	final showHelp:Bool;

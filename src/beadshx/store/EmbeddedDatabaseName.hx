@@ -1,16 +1,14 @@
 package beadshx.store;
 
-import haxe.io.Path;
+import beadshx.config.LayeredConfig.environmentValue;
+import beadshx.store.EmbeddedDatabaseLookup.configuredEmbeddedDatabase;
 
-/** Resolves the Dolt database recorded by one embedded Beads workspace. */
+/**
+	The Dolt database that the embedded store of one workspace opens: `selected`
+	when a --db value names one, or else the name that upstream configfile
+	GetDoltDatabase takes from BEADS_DOLT_SERVER_DATABASE and the workspace's
+	metadata.json.
+**/
 function resolveEmbeddedDatabaseName(beadsDir:String, selected:String):String {
-	if (selected != "")
-		return selected;
-	final metadataPath = Path.join([beadsDir, "metadata.json"]);
-	if (sys.FileSystem.exists(metadataPath)) {
-		final recorded = JsonValue.rawTopLevelString(sys.io.File.getContent(metadataPath), "dolt_database");
-		if (recorded != null && recorded != "")
-			return recorded;
-	}
-	return "beads";
+	return selected != "" ? selected : configuredEmbeddedDatabase(beadsDir, environmentValue("BEADS_DOLT_SERVER_DATABASE"));
 }

@@ -1969,7 +1969,49 @@ compare_real_database metadata-duplicate-last-wins exact count
 compare_real_database metadata-duplicate-last-wins-where exact where
 real_database_setup=""
 compare_real_database_metadata metadata-unknown-and-null-members exact '.unknown_field = {"x": [1]} | .dolt_server_host = null' count
+# Upstream's pre-run opens the embedded store with CREATE DATABASE IF NOT EXISTS, so metadata.json that
+# selects a database the store lacks makes upstream create it (see the candidate-only cases below).
+# Dolt finds a database by its lower-case name, and json.Unmarshal matches a case-folded key and keeps
+# the last duplicate, so these select the fixture's database and write nothing.
+compare_real_database_metadata missing-db-case-folded-name exact '.dolt_database = "TEST"' count
+compare_raw_metadata missing-db-folded-key-comments exact '{"DOLT_DATABASE":"test"}' comments "$real_database_issue_id"
+# null, {} and an empty dolt_database select the default database, which exists here. The directory
+# name has a capital letter that Dolt's lookup ignores.
+default_database_raw_metadata() {
+	mv -f "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/Beads"
+	write_raw_metadata "$1"
+}
+real_database_setup=default_database_raw_metadata
+raw_metadata='null'
+compare_real_database missing-db-default-null exact count
+raw_metadata='{"dolt_database":""}'
+compare_real_database missing-db-default-empty-name-list-json exact list --json
+real_database_setup=""
+# Strict read-only mode (--readonly, or the readonly setting) opens the store without creating the
+# database, so upstream fails with the open error, as text even under --json, and writes nothing.
+compare_raw_metadata missing-db-readonly-count exact '{}' --readonly count
+compare_real_database_metadata missing-db-readonly-other-list-json exact '.dolt_database = "other"' --readonly list --json
+real_database_extra_env=(BD_READONLY=1)
+compare_raw_metadata missing-db-readonly-variable-show-json exact 'null' show "$real_database_issue_id" --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config='readonly: true'
+compare_raw_metadata missing-db-readonly-setting-types exact '{}' types
+real_database_extra_config=""
+compare_real_database_metadata missing-db-readonly-case-folded-name exact '.dolt_database = "TEST"' --readonly count
 real_database_read_only=""
+# Upstream's show also records the issue in .beads/last-touched, so these compare without the
+# read-only check; an empty new database would print a not-found error instead.
+compare_real_database_metadata missing-db-case-folded-name-show exact '.dolt_database = "Test"' show "$real_database_issue_id"
+real_database_setup=duplicate_dolt_database
+compare_real_database missing-db-duplicate-existing-last-show exact show "$real_database_issue_id"
+real_database_setup=default_database_raw_metadata
+raw_metadata='{}'
+compare_real_database missing-db-default-empty-object-show exact show "$real_database_issue_id"
+real_database_setup=""
+# BEADS_DOLT_SERVER_DATABASE names the database before metadata.json does.
+real_database_extra_env=(BEADS_DOLT_SERVER_DATABASE=test)
+compare_raw_metadata missing-db-server-database-variable-show exact '{}' show "$real_database_issue_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # A database path selection names the workspace by that path as given, or makes upstream open a
 # database in another directory.
 break_metadata() {
@@ -1984,6 +2026,51 @@ expect_candidate_failure metadata-db-flag-unported "" \
 expect_candidate_failure metadata-db-flag-where-json-unported \
 	'{"error":"where is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build","schema_version":1}' "" "" \
 	--db .beads/embeddeddolt where --json
+candidate_only_setup=""
+# Upstream creates the database that metadata.json selects when the embedded store lacks it: the default
+# `beads` for null, {} or no dolt_database, or the name that dolt_database, its last duplicate or
+# BEADS_DOLT_SERVER_DATABASE gives. This build refuses before it opens anything.
+candidate_only_setup=write_raw_metadata
+raw_metadata='null'
+expect_candidate_failure missing-db-null-count-unported "" \
+	'Error: count is not available yet when the embedded store has no database named "beads" in this build' "" count
+raw_metadata='{}'
+expect_candidate_failure missing-db-empty-object-count-json-unported \
+	'{"error":"count is not available yet when the embedded store has no database named \"beads\" in this build","schema_version":1}' "" "" \
+	count --json
+raw_metadata='{"database":"dolt","backend":"dolt","dolt_mode":"embedded","dolt_database":"other"}'
+expect_candidate_failure missing-db-other-show-unported "" \
+	'Error: show is not available yet when the embedded store has no database named "other" in this build' "" \
+	show "$real_database_issue_id"
+expect_candidate_failure missing-db-other-ready-json-unported \
+	'{"error":"ready is not available yet when the embedded store has no database named \"other\" in this build","schema_version":1}' "" "" \
+	ready --json
+expect_candidate_failure missing-db-other-types-unported "" \
+	'Error: types is not available yet when the embedded store has no database named "other" in this build' "" types
+expect_candidate_failure missing-db-other-config-get-json-unported \
+	'{"error":"config get is not available yet when the embedded store has no database named \"other\" in this build","schema_version":1}' "" "" \
+	config get issue_prefix --json
+raw_metadata='{"dolt_database":"test","dolt_database":"other"}'
+expect_candidate_failure missing-db-duplicate-last-other-list-json-unported \
+	'{"error":"list is not available yet when the embedded store has no database named \"other\" in this build","schema_version":1}' "" "" \
+	list --json
+candidate_only_setup=""
+real_database_extra_env=(BEADS_DOLT_SERVER_DATABASE=other)
+expect_candidate_failure missing-db-server-database-variable-info-unported "" \
+	'Error: info is not available yet when the embedded store has no database named "other" in this build' "" info
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Upstream keeps a redirecting workspace's dolt_database across the redirect, and so creates `other`
+# here, while the store open in this build would take the target's `test`.
+redirect_with_source_database() {
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+	printf '{"dolt_database":"other"}' >"$1/work/.beads/metadata.json"
+}
+candidate_only_setup=redirect_with_source_database
+expect_candidate_failure missing-db-redirect-source-count-unported "" \
+	'Error: count is not available yet when a redirect keeps the database of the redirecting workspace in this build' "" count
 candidate_only_setup=""
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json

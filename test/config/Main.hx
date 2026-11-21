@@ -46,8 +46,14 @@ import beadshx.config.ConfigValidate.renderValidationText;
 import beadshx.config.ConfigValidate.syncConfigIssues;
 import beadshx.config.ConfigValidate.validationIssues;
 import beadshx.config.ConfigValidate.yamlConfigIssues;
+import beadshx.store.EmbeddedDatabaseLookup.configuredEmbeddedDatabase;
+import beadshx.store.EmbeddedDatabaseLookup.embeddedDatabaseExists;
+import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.JsonValue.GoJsonDecode;
 import beadshx.store.JsonValue.decodeGoStruct;
+import sys.FileSystem;
+import sys.io.File;
 
 /**
 	Pins `bd config get`, `bd config list` and `bd config show` key routing and
@@ -67,6 +73,7 @@ class Main {
 		showLayeredContracts();
 		showMetadataContracts();
 		metadataLoadContracts();
+		embeddedDatabaseContracts();
 		showRenderContracts();
 		validateYamlContracts();
 		validateMetadataContracts();
@@ -291,6 +298,66 @@ class Main {
 			"warning: load /work/.beads/metadata.json: " + error +
 			"; no storage database was opened or modified (storage mode unknown; data commands refuse to fall back to the embedded store)\n");
 		equal(metadataLoadFailure(error), "Error: loading config: " + error + "\n");
+	}
+
+	/**
+		The database an embedded workspace opens and whether the store has it,
+		against upstream GetDoltDatabase, ResolveRedirect, embeddeddolt's
+		validIdentifier and Dolt's lower-case database lookup.
+	**/
+	static function embeddedDatabaseContracts():Void {
+		for (name in ["beads", "test", "_x", "A_1", "B"])
+			equal(isEmbeddedDatabaseIdentifier(name), true);
+		for (name in ["", "1x", "my-db", "bad name", "t\u00e9st", "a.b"])
+			equal(isEmbeddedDatabaseIdentifier(name), false);
+		final temporary = Sys.getEnv("TMPDIR");
+		final root = '${temporary == null || temporary == "" ? "/tmp" : temporary}/beadshx-database-name-contract-${Date.now().getTime()}-${Std.random(1000000)}';
+		final beadsDir = '$root/.beads';
+		FileSystem.createDirectory('$beadsDir/embeddeddolt/Test/.dolt');
+		// A directory without a Dolt repository, and a file, are not databases.
+		FileSystem.createDirectory('$beadsDir/embeddeddolt/other');
+		File.saveContent('$beadsDir/embeddeddolt/plain', "");
+		for (name in ["test", "TEST", "Test"])
+			equal(embeddedDatabaseExists(beadsDir, name), true);
+		for (name in ["other", "plain", "beads"])
+			equal(embeddedDatabaseExists(beadsDir, name), false);
+		equal(embeddedDatabaseExists('$root/missing', "test"), false);
+		// No metadata.json, null, {} and an empty name select the default; the last duplicate and a folded key count.
+		equal(configuredEmbeddedDatabase(beadsDir, ""), "beads");
+		for (raw => expected in [
+			"null" => "beads",
+			"{}" => "beads",
+			'{"dolt_database":""}' => "beads",
+			'{"dolt_database":"test","dolt_database":"other"}' => "other",
+			'{"dolt_database":"other","dolt_database":null}' => "other",
+			'{"DOLT_DATABASE":"test"}' => "test"
+		]) {
+			File.saveContent('$beadsDir/metadata.json', raw);
+			equal(configuredEmbeddedDatabase(beadsDir, ""), expected);
+		}
+		// BEADS_DOLT_SERVER_DATABASE comes before metadata.json.
+		equal(configuredEmbeddedDatabase(beadsDir, "fromenv"), "fromenv");
+		// ResolveRedirect keeps a string dolt_database and ignores the rest; a type error keeps nothing.
+		equal(redirectSourceDatabase('$root/missing'), "");
+		for (raw => expected in [
+			'{"dolt_database":"other","database":7}' => "other",
+			'{"dolt_database":7}' => "",
+			"[1]" => "",
+			"null" => ""
+		]) {
+			File.saveContent('$beadsDir/metadata.json', raw);
+			equal(redirectSourceDatabase(beadsDir), expected);
+		}
+		removeTree(root);
+	}
+
+	static function removeTree(path:String):Void {
+		if (FileSystem.isDirectory(path)) {
+			for (entry in FileSystem.readDirectory(path))
+				removeTree('$path/$entry');
+			FileSystem.deleteDirectory(path);
+		} else
+			FileSystem.deleteFile(path);
 	}
 
 	/** The json.Unmarshal error text for `raw` and configfile.Config, or "" when it decodes. */

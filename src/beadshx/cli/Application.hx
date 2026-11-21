@@ -95,6 +95,10 @@ import beadshx.cli.EventsView.eventsTailHelp;
 import beadshx.cli.EventsView.eventsTruncatedHint;
 import beadshx.cli.EventsView.renderEventsRecords;
 import beadshx.cli.EventsView.renderEventsTruncatedJson;
+import beadshx.store.EmbeddedDatabaseLookup.embeddedDatabaseExists;
+import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
+import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
 import beadshx.store.EventsJournal.eventsTruncatedMessage;
 import beadshx.cli.HistoryView.renderHistoryEventsJson;
@@ -172,6 +176,7 @@ import beadshx.ready.ReadyExplanation;
 import beadshx.relation.DependencyRead;
 import beadshx.profile.ProfilePort;
 import haxe.Json;
+import haxe.io.Path;
 import haxe.ds.StringMap;
 
 /** One group of `bd graph --all`: its root, its issues in walk order and its complete rows. */
@@ -2387,6 +2392,11 @@ final class Application {
 							final refusal = preflight({config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
+							switch validateEmbeddedDatabase(invocation, location) {
+								case PlainFailure(message): return runStoreFailure(message);
+								case ModeAwareFailure(message): return runModeAwareFailure(invocation.output, message);
+								case Accepted:
+							}
 							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
@@ -5509,7 +5519,55 @@ final class Application {
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		if (LayeredConfig.forWorkspace(location.path).sharedServerMode())
 			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
-		return validateDatabaseSelection(invocation, location);
+		return switch validateDatabaseSelection(invocation, location) {
+			case Accepted: validateEmbeddedDatabase(invocation, location);
+			case refusal: refusal;
+		};
+	}
+
+	/**
+		Upstream's pre-run opens the embedded store with `CREATE DATABASE IF NOT
+		EXISTS` for every command that opens a store, so a metadata.json that
+		selects a database the store lacks makes upstream create it, which is a
+		write. That happens for `null`, `{}` and an empty dolt_database, which
+		select `beads`, and for any other missing name, also through
+		BEADS_DOLT_SERVER_DATABASE. This build refuses those commands before it
+		opens anything. Dolt finds a database by its lower-case name, so `TEST`
+		opens `test` without a write and runs as usual, and so does a selection
+		that falls back to an existing `beads`.
+
+		In strict read-only mode (--readonly, or the `readonly` setting when the
+		flag is absent) upstream opens the store without the create and fails
+		with the open error, which this prints as upstream does. Upstream also
+		keeps a redirecting workspace's dolt_database across the redirect; the
+		store open here takes the target's, so a different name is refused.
+		Upstream rejects a name that is not an identifier before it creates
+		anything, so that open goes ahead and fails as before.
+	**/
+	function validateEmbeddedDatabase(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
+		// The workspace facade names .beads/embeddeddolt only for a workspace that upstream opens embedded.
+		if (invocation.global || location.proxiedServer || Path.withoutDirectory(location.databasePath) != "embeddeddolt")
+			return Accepted;
+		switch readMetadataFields(location.path) {
+			case MetadataFields(_):
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				return Accepted;
+		}
+		final opened = resolveEmbeddedDatabaseName(location.path, "");
+		var selected = opened;
+		if (environmentValue("BEADS_DOLT_SERVER_DATABASE") == "" && location.redirectedFrom != "") {
+			final source = redirectSourceDatabase(location.redirectedFrom);
+			if (source != "")
+				selected = source;
+		}
+		final path = commandPath(invocation.command);
+		if (selected.toLowerCase() != opened.toLowerCase())
+			return ModeAwareFailure('${path} is not available yet when a redirect keeps the database of the redirecting workspace in this build');
+		if (!isEmbeddedDatabaseIdentifier(selected) || embeddedDatabaseExists(location.path, selected))
+			return Accepted;
+		if (invocation.readonly || LayeredConfig.forWorkspace(location.path).getBool("readonly"))
+			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${selected}');
+		return ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${selected}" in this build');
 	}
 
 	function validateDatabaseSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {

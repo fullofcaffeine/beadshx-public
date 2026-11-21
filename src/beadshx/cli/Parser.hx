@@ -120,6 +120,7 @@ final class Parser {
 		var databasePath = "";
 		var databaseName = "";
 		var global = false;
+		var readonly = false;
 		var cpuProfile = false;
 		var memProfilePath = "";
 		var expectedValue:Null<ExpectedValue> = null;
@@ -1262,7 +1263,10 @@ final class Parser {
 					listAll = true;
 				case "--no-activity":
 					// Accepted compatibility flags; recent activity is currently absent.
-				case "--readonly" | "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v" | "--ignore-schema-skew":
+				case "--readonly":
+					// Strict read-only mode changes only how upstream opens a store that lacks its database.
+					readonly = true;
+				case "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v" | "--ignore-schema-skew":
 					// This command profile is already read-only, unstyled, and synchronous.
 				case "--version" | "-V":
 					versionFlag = true;
@@ -1553,6 +1557,7 @@ final class Parser {
 				databaseVariable: databaseVariable,
 				databaseName: databaseName,
 				global: global,
+				readonly: readonly,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,
@@ -1902,6 +1907,7 @@ final class Parser {
 				databaseVariable: databaseVariable,
 				databaseName: databaseName,
 				global: global,
+				readonly: readonly,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,

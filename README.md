@@ -93,7 +93,10 @@ the database fail with `Error: loading config: ...` and exit code 1, also with
 for a number where upstream expects a string, or for a syntax error. `version`,
 the root help and `bd help <command>` print only the warning, and a `--help`
 flag prints no warning. Unknown keys, `null` values and repeated keys (the
-last one counts) are accepted, as in upstream.
+last one counts) are accepted, as in upstream. The name of the embedded
+database comes from `BEADS_DOLT_SERVER_DATABASE`, or else from
+`dolt_database`, or else it is `beads`. As in Dolt, the letter case of the
+name does not matter.
 
 Limits:
 
@@ -133,6 +136,16 @@ Limits:
   discovery rewrites it as `.beads/metadata.json` for every command. Upstream
   does this only for `where` and the commands that read the database, not for
   `version`, help pages or an unknown command.
+- In an embedded workspace, every command that reads the database reports
+  that it is not available yet when the embedded store has no database with
+  the name that `.beads/metadata.json` selects. This applies to `null`, `{}`
+  and an empty `dolt_database`, which select `beads`, and to every other
+  missing name, also from `BEADS_DOLT_SERVER_DATABASE`. Upstream creates that
+  database. With `--readonly` or the `readonly` setting, upstream does not
+  create it, and `bdhx` prints the same open error. A redirect can make
+  upstream open the database that the redirecting workspace names instead of
+  the target's; `bdhx` then reports that it is not available yet. `where`,
+  `version` and help pages still run.
 - Every command above that reads the database reports that it is not
   available yet in shared-server mode and when the `db` setting names a
   database. Only `version`, `where` and help pages still run. In these cases
