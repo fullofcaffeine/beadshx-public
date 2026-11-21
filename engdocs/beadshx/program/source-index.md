@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `180f4d064e673908d58e7fd64ac227b71a5367a9`.
+Required BeadsHX compiler revision: `815afa7853ef11810c696530048ceb6dbb9302ce`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -105,6 +105,12 @@ unrelated generated files.
 Compiler task haxe_go-8azk hashes generated files once per compile with a faster
 SHA-256, and haxe_go-ww4u converts a go.Error passed to a native Go function to
 Go's error, including Rest<go.Error> packs.
+Compiler task haxe_go-7su7 finds imports and runtime symbols in one walk per
+generated file. haxe_go-91p8 lowers `return` inside value `switch`, `if` and
+`try` expressions, and haxe_go-7qdq terminates exhaustive switches whose every
+case returns. haxe_go-ymtk emits only the `Sys`, `sys.FileSystem` and
+`sys.io.File` methods a program reaches, so `Sys.environment()` no longer
+copies the terminal runtime.
 
 Reviewed current authority:
 

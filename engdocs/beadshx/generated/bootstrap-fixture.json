@@ -1046,14 +1046,14 @@
     },
     "compilerLock": {
       "path": "upstream/locks/haxe-go.json",
-      "sha256": "50ae08be3ee78e24986099092fe216d01e374419d19447d40fa20074aab61494"
+      "sha256": "51799cc46c5a6b6eed7b7260ef8f5d8ca3e109890a8884221e0677c61f21bcfe"
     },
-    "compilerRevision": "180f4d064e673908d58e7fd64ac227b71a5367a9"
+    "compilerRevision": "815afa7853ef11810c696530048ceb6dbb9302ce"
   },
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "68d9c86c62bdf6b445cbc2c60aa73f2c2e48fe5b4bf7f52f765c868994986151"
+      "sha256": "f1d99144b3c38fc21ce50520187ab3ee2c6a4f3578bf6a45cc290aba29f04f81"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -1801,11 +1801,11 @@
     },
     {
       "path": "bdhx/haxego_generated_module_sys_filesystem.go",
-      "sha256": "5ebd933cf8a281687b32af2a7b0ee293483bf81f852302413fe4863e824c630a"
+      "sha256": "5c7d4852034df996a3164783fe2dd6907547a7a3103ddab746e905f0ab63512a"
     },
     {
       "path": "bdhx/haxego_generated_module_sys_io_file.go",
-      "sha256": "ad10f70cd592dafbba34f5fbb220edde85fe8c0c47e82faf471f96b1e55be7cd"
+      "sha256": "29fd95678ece12dda7f90a03526f6737f0f21ef4d7cb52a16178c89d534c07e7"
     },
     {
       "path": "bdhx/haxego_generated_module_sys_io_fileinput.go",
