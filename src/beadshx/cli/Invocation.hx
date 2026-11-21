@@ -20,6 +20,10 @@ typedef Invocation = {
 	final cpuProfile:Bool;
 	final memProfilePath:String;
 	final showHelp:Bool;
+
+	/** `bd help <command>`: cobra's help command, which runs upstream's root pre-run; a --help flag does not. */
+	final helpCommand:Bool;
+
 	final infoSchema:Bool;
 	final infoWhatsNew:Bool;
 	final statusSkipBlocked:Bool;

@@ -74,6 +74,17 @@ as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
 `export`, `#` comments, single or double quotes and `$VAR` expansion. If one
 line is not valid, `bdhx` ignores the full file, and prints no warning.
 
+Like upstream, `bdhx` reads the selected workspace's `.beads/metadata.json`
+(or, when it does not exist, a legacy `.beads/config.json`) before any
+command runs. If the file cannot be read or does not decode, `bdhx` prints
+upstream's `warning: load ...` line. Then `where` and every command that reads
+the database fail with `Error: loading config: ...` and exit code 1, also with
+`--json`. The error texts are Go's own `encoding/json` errors, for example
+for a number where upstream expects a string, or for a syntax error. `version`,
+the root help and `bd help <command>` print only the warning, and a `--help`
+flag prints no warning. Unknown keys, `null` values and repeated keys (the
+last one counts) are accepted, as in upstream.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
@@ -94,9 +105,17 @@ Limits:
   (`metrics.*`, `node_id`) and `config show` report that they are not
   available yet when the user `config.yaml` exists.
 - `config show` reports that it is not available yet in a workspace that has
-  no database (upstream creates the embedded database there), when
-  `.beads/metadata.json` does not decode, and when only a legacy
-  `.beads/config.json` exists (upstream rewrites it as `metadata.json`).
+  no database (upstream creates the embedded database there).
+- When `--db` selects a workspace whose `.beads/metadata.json` cannot be read
+  or does not decode, `where` and every command that reads the database
+  report that they are not available yet. For `where`, `BEADS_DB`, `BD_DB`
+  and the `db` setting count too. Upstream then prints the path as given, or
+  opens or creates a database in another directory. In these cases `version`
+  and help pages print no warning.
+- In a workspace that has only a legacy `.beads/config.json`, workspace
+  discovery rewrites it as `.beads/metadata.json` for every command. Upstream
+  does this only for `where` and the commands that read the database, not for
+  `version`, help pages or an unknown command.
 - Every command above that reads the database reports that it is not
   available yet in shared-server mode and when the `db` setting names a
   database. Only `version`, `where` and help pages still run. In these cases
@@ -111,8 +130,8 @@ Limits:
   database, `config get` of a key that needs no database still runs, unless
   `.beads/metadata.json` sets `dolt_mode` to `embedded`.
 - `config validate` and `config drift` also report that they are not
-  available yet with `--global`, when `.beads/metadata.json` does not decode
-  or names a backend other than Dolt, and when a Dolt server host, port or
+  available yet with `--global`, when `.beads/metadata.json` names a backend
+  other than Dolt, and when a Dolt server host, port or
   socket, `BEADS_DOLT_DATA_DIR` or a central server config is set. In these
   cases upstream connects to a server or creates a database. `config validate`
   also reports this when the workspace directory is not named `.beads` or

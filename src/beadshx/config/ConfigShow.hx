@@ -4,8 +4,9 @@ import beadshx.cli.ConfigView.ConfigKeyFacts;
 import beadshx.config.ConfigKeys.isConfigContainerKey;
 import beadshx.config.ConfigKeys.isUserGlobalKey;
 import beadshx.relation.DependencyRead.compareUtf8;
-import beadshx.store.JsonValue.GoJsonField;
+import beadshx.store.JsonValue.GoJsonDecode;
 import beadshx.store.JsonValue.GoJsonFieldKind;
+import beadshx.store.JsonValue.GoJsonStruct;
 import beadshx.store.JsonValue.decodeGoStruct;
 import haxe.io.Path;
 import sys.FileSystem;
@@ -16,18 +17,6 @@ typedef ConfigShowEntry = {
 	final key:String;
 	final value:String;
 	final source:String;
-}
-
-/** What upstream configfile.Load gives `bd config show` for one .beads directory. */
-enum WorkspaceMetadataRead {
-	/** The metadata.json rows; none when the file does not exist. */
-	MetadataRows(entries:Array<ConfigShowEntry>);
-
-	/** metadata.json cannot be read or does not decode, and upstream refuses to open the store. */
-	MetadataUndecodable;
-
-	/** Only a legacy config.json exists, which upstream rewrites as metadata.json. */
-	MetadataLegacyOnly;
 }
 
 /**
@@ -65,32 +54,36 @@ function layeredEntries(keys:Array<String>, facts:String->ConfigKeyFacts, beadsA
 	return entries;
 }
 
-/** Every upstream configfile.Config field, which json.Unmarshal type-checks. */
-private final METADATA_FIELDS:Array<GoJsonField> = [
-	{tag: "database", kind: GoStringField},
-	{tag: "backend", kind: GoStringField},
-	{tag: "deletions_retention_days", kind: GoIntField},
-	{tag: "dolt_mode", kind: GoStringField},
-	{tag: "dolt_server_host", kind: GoStringField},
-	{tag: "dolt_server_port", kind: GoIntField},
-	{tag: "dolt_server_socket", kind: GoStringField},
-	{tag: "dolt_server_user", kind: GoStringField},
-	{tag: "dolt_database", kind: GoStringField},
-	{tag: "dolt_server_tls", kind: GoBoolField},
-	{tag: "dolt_data_dir", kind: GoStringField},
-	{tag: "dolt_remotesapi_port", kind: GoIntField},
-	{tag: "dolt_team_server", kind: GoBoolField},
-	{tag: "postgres_dsn", kind: GoStringField},
-	{tag: "postgres_schema", kind: GoStringField},
-	{tag: "mysql_dsn", kind: GoStringField},
-	{tag: "mysql_database", kind: GoStringField},
-	{tag: "sqlite_path", kind: GoStringField},
-	{tag: "project_id", kind: GoStringField},
-	{tag: "global_dolt_database", kind: GoStringField},
-	{tag: "global_project_id", kind: GoStringField},
-	{tag: "stale_closed_issues_days", kind: GoIntField},
-	{tag: "last_bd_version", kind: GoStringField}
-];
+/** Upstream configfile.Config with every field, which json.Unmarshal type-checks. */
+final METADATA_CONFIG:GoJsonStruct = {
+	packageName: "configfile",
+	name: "Config",
+	fields: [
+		{tag: "database", kind: GoStringField},
+		{tag: "backend", kind: GoStringField},
+		{tag: "deletions_retention_days", kind: GoIntField},
+		{tag: "dolt_mode", kind: GoStringField},
+		{tag: "dolt_server_host", kind: GoStringField},
+		{tag: "dolt_server_port", kind: GoIntField},
+		{tag: "dolt_server_socket", kind: GoStringField},
+		{tag: "dolt_server_user", kind: GoStringField},
+		{tag: "dolt_database", kind: GoStringField},
+		{tag: "dolt_server_tls", kind: GoBoolField},
+		{tag: "dolt_data_dir", kind: GoStringField},
+		{tag: "dolt_remotesapi_port", kind: GoIntField},
+		{tag: "dolt_team_server", kind: GoBoolField},
+		{tag: "postgres_dsn", kind: GoStringField},
+		{tag: "postgres_schema", kind: GoStringField},
+		{tag: "mysql_dsn", kind: GoStringField},
+		{tag: "mysql_database", kind: GoStringField},
+		{tag: "sqlite_path", kind: GoStringField},
+		{tag: "project_id", kind: GoStringField},
+		{tag: "global_dolt_database", kind: GoStringField},
+		{tag: "global_project_id", kind: GoStringField},
+		{tag: "stale_closed_issues_days", kind: GoIntField},
+		{tag: "last_bd_version", kind: GoStringField}
+	]
+};
 
 /** The fields upstream collectMetadataEntries lists, in its order, each with its zero value. */
 private final LISTED_METADATA:Array<{tag:String, zero:String}> = [
@@ -113,8 +106,10 @@ private final LISTED_METADATA:Array<{tag:String, zero:String}> = [
 	not decode into configfile.Config, which upstream reads with json.Unmarshal.
 **/
 function metadataEntries(raw:String):Null<Array<ConfigShowEntry>> {
-	final decoded = decodeGoStruct(raw, METADATA_FIELDS);
-	return decoded == null ? null : listedMetadataEntries(decoded);
+	return switch decodeGoStruct(raw, METADATA_CONFIG) {
+		case GoJsonDecoded(decoded): listedMetadataEntries(decoded);
+		case GoJsonFailed(_) | GoJsonUnsupported: null;
+	};
 }
 
 private function listedMetadataEntries(decoded:Map<String, String>):Array<ConfigShowEntry> {
@@ -127,7 +122,7 @@ private function listedMetadataEntries(decoded:Map<String, String>):Array<Config
 	return entries;
 }
 
-/** What upstream configfile.Load decodes from one .beads directory, by JSON tag. */
+/** What upstream configfile.LoadForDiscovery gives for one .beads directory, by JSON tag. */
 enum WorkspaceMetadataFields {
 	/** No metadata.json and no legacy config.json. */
 	MetadataAbsent;
@@ -135,34 +130,74 @@ enum WorkspaceMetadataFields {
 	/** The decoded fields, as decodeGoStruct gives them. */
 	MetadataFields(fields:Map<String, String>);
 
-	/** metadata.json cannot be read or does not decode, and upstream refuses to open the store. */
-	MetadataFieldsUndecodable;
+	/**
+		metadata.json, or the legacy config.json when there is no metadata.json,
+		cannot be read or does not decode. `error` is LoadForDiscovery's error
+		text, such as `parsing config: json: ...`. Upstream's pre-run then
+		refuses every command that opens a store.
+	**/
+	MetadataFieldsUndecodable(error:String);
 
-	/** Only a legacy config.json exists, which upstream rewrites as metadata.json. */
+	/** The file is valid JSON for Go's scanner, but the typed parser rejects it, so its decoding is unknown. */
+	MetadataFieldsUnsupported;
+
+	/** Only a legacy config.json exists, and it decodes. Upstream's store open rewrites it as metadata.json. */
 	MetadataFieldsLegacyOnly;
 }
 
-/** Upstream configfile.Load for one .beads directory, without its legacy config.json migration. */
+/**
+	Upstream configfile.LoadForDiscovery for one .beads directory: metadata.json,
+	or else a legacy config.json, read and decoded without the migration that
+	configfile.Load does.
+**/
 function readMetadataFields(beadsDir:String):WorkspaceMetadataFields {
 	final path = Path.join([beadsDir, "metadata.json"]);
-	if (!FileSystem.exists(path))
-		return FileSystem.exists(Path.join([beadsDir, "config.json"])) ? MetadataFieldsLegacyOnly : MetadataAbsent;
-	if (FileSystem.isDirectory(path))
-		return MetadataFieldsUndecodable;
-	final raw = try File.getContent(path) catch (_:haxe.Exception) null;
-	if (raw == null)
-		return MetadataFieldsUndecodable;
-	final decoded = decodeGoStruct(raw, METADATA_FIELDS);
-	return decoded == null ? MetadataFieldsUndecodable : MetadataFields(decoded);
+	if (FileSystem.exists(path))
+		return decodeMetadataFile(path, "reading config", false);
+	final legacyPath = Path.join([beadsDir, "config.json"]);
+	return FileSystem.exists(legacyPath) ? decodeMetadataFile(legacyPath, "reading legacy config", true) : MetadataAbsent;
 }
 
-/** The `bd config show` rows of one .beads directory's metadata.json. */
-function readWorkspaceMetadata(beadsDir:String):WorkspaceMetadataRead {
+/** One LoadForDiscovery read: a read error carries `readContext` and the os error text, a decode error `parsing config`. */
+private function decodeMetadataFile(path:String, readContext:String, legacy:Bool):WorkspaceMetadataFields {
+	var raw = "";
+	try {
+		raw = File.getContent(path);
+	} catch (error:haxe.Exception) {
+		return MetadataFieldsUndecodable('${readContext}: ${error.message}');
+	}
+	return switch decodeGoStruct(raw, METADATA_CONFIG) {
+		case GoJsonDecoded(fields): legacy ? MetadataFieldsLegacyOnly : MetadataFields(fields);
+		case GoJsonFailed(message): MetadataFieldsUndecodable('parsing config: ${message}');
+		case GoJsonUnsupported: MetadataFieldsUnsupported;
+	};
+}
+
+/**
+	Upstream loadServerModeFromBeadsDir's warning, which the root pre-run prints
+	when LoadForDiscovery fails for the selected .beads directory. It names
+	metadata.json even when the error came from a legacy config.json.
+**/
+function metadataLoadWarning(beadsDir:String, error:String):String {
+	return 'warning: load ${Path.join([beadsDir, "metadata.json"])}: ${error}; no storage database was opened or modified '
+		+ "(storage mode unknown; data commands refuse to fall back to the embedded store)\n";
+}
+
+/** Upstream guardLegacyUpgradeWorkspace's error for a failed LoadForDiscovery, as HandleError prints it. */
+function metadataLoadFailure(error:String):String {
+	return 'Error: loading config: ${error}\n';
+}
+
+/**
+	The `bd config show` rows of one .beads directory's metadata.json; none when
+	it does not exist. The command application stops a workspace whose
+	metadata.json does not load before any store command runs, so that case
+	gives no rows here.
+**/
+function readWorkspaceMetadata(beadsDir:String):Array<ConfigShowEntry> {
 	return switch readMetadataFields(beadsDir) {
-		case MetadataAbsent: MetadataRows([]);
-		case MetadataFields(fields): MetadataRows(listedMetadataEntries(fields));
-		case MetadataFieldsUndecodable: MetadataUndecodable;
-		case MetadataFieldsLegacyOnly: MetadataLegacyOnly;
+		case MetadataFields(fields): listedMetadataEntries(fields);
+		case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: [];
 	};
 }
 

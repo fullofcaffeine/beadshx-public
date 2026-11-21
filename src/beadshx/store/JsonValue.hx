@@ -363,27 +363,62 @@ typedef GoJsonField = {
 	final kind:GoJsonFieldKind;
 }
 
+/** A Go struct type of string, int and bool fields, named as Go's reflect package names it. */
+typedef GoJsonStruct = {
+	/** The package name, such as `configfile`. */
+	final packageName:String;
+
+	/** The type name, such as `Config`. */
+	final name:String;
+
+	final fields:Array<GoJsonField>;
+}
+
+/** What json.Unmarshal gives for JSON text and one GoJsonStruct. */
+enum GoJsonDecode {
+	/** The fields as text by tag: an int in decimal, a bool as `true` or `false`. Absent and null members are left out. */
+	GoJsonDecoded(fields:Map<String, String>);
+
+	/** The error text that json.Unmarshal returns. */
+	GoJsonFailed(message:String);
+
+	/**
+		JSON that Go's scanner accepts and the typed parser rejects, which would
+		be a parser defect. The interpreter has no Go scanner, so there every
+		syntax error lands here.
+	**/
+	GoJsonUnsupported;
+}
+
 /**
 	Go's json.Unmarshal into a struct of string, int and bool fields.
 
 	Why: upstream reads .beads/metadata.json into configfile.Config, and any
-	decode error rejects the whole file. What: the decoded fields as text by
-	tag (an int in decimal, a bool as `true` or `false`), leaving out absent
-	and null members, or null when Go would return an error. How: members apply
-	in document order, duplicates included; a key matches a tag exactly or
-	under encoding/json's case folding; unknown keys are ignored; a type
-	mismatch, a non-integer or out-of-range int, a non-object top level other
-	than null, or invalid JSON fails.
+	decode error rejects the whole file with json.Unmarshal's error text.
+	What: the decoded fields, or that error text. How: Go's own scanner
+	checks the syntax first, as Unmarshal does, and gives its exact syntax
+	error. Then members apply in document order, duplicates included. A key
+	matches a tag exactly or under encoding/json's case folding, and unknown
+	keys are ignored. The first type mismatch fails, even when a later
+	duplicate would fit, because Unmarshal keeps decoding but returns the first
+	error it saved. A mismatch names the field by its tag, whatever the key's
+	case. An int must be an integer in the int64 range (Go's int is 64 bits on
+	every platform this build supports). A null member, or a null document,
+	changes nothing.
 **/
-function decodeGoStruct(raw:String, fields:Array<GoJsonField>):Null<Map<String, String>> {
+function decodeGoStruct(raw:String, type:GoJsonStruct):GoJsonDecode {
+	final syntaxError = GoJsonSyntax.syntaxError(raw);
+	if (syntaxError != null)
+		return GoJsonFailed(syntaxError);
 	final decoded = new Map<String, String>();
 	final members = switch new TypedJsonParser(raw, true).parse() {
 		case Parsed(ObjectValue(members)): members;
-		case Parsed(NullValue): return decoded;
-		case Parsed(_) | Invalid: return null;
+		case Parsed(NullValue): return GoJsonDecoded(decoded);
+		case Parsed(value): return GoJsonFailed('json: cannot unmarshal ${goJsonKind(value)} into Go value of type ${type.packageName}.${type.name}');
+		case Invalid: return GoJsonUnsupported;
 	};
 	for (member in members) {
-		final field = goStructField(fields, member.key);
+		final field = goStructField(type.fields, member.key);
 		if (field == null)
 			continue;
 		switch [field.kind, member.value] {
@@ -395,13 +430,35 @@ function decodeGoStruct(raw:String, fields:Array<GoJsonField>):Null<Map<String, 
 			case [GoIntField, NumberValue(token)]:
 				final integer = goInt64Text(token);
 				if (integer == null)
-					return null;
+					return GoJsonFailed(goFieldTypeError(type, field, 'number ${token}'));
 				decoded.set(field.tag, integer);
-			case _:
-				return null;
+			case [_, value]:
+				return GoJsonFailed(goFieldTypeError(type, field, goJsonKind(value)));
 		}
 	}
-	return decoded;
+	return GoJsonDecoded(decoded);
+}
+
+/** encoding/json's UnmarshalTypeError text for one struct field; `value` is how Go names the JSON value. */
+private function goFieldTypeError(type:GoJsonStruct, field:GoJsonField, value:String):String {
+	final fieldType = switch field.kind {
+		case GoStringField: "string";
+		case GoIntField: "int";
+		case GoBoolField: "bool";
+	};
+	return 'json: cannot unmarshal ${value} into Go struct field ${type.name}.${field.tag} of type ${fieldType}';
+}
+
+/** How an encoding/json UnmarshalTypeError names a JSON value that does not fit its Go type. */
+private function goJsonKind(value:ParsedJsonValue):String {
+	return switch value {
+		case ObjectValue(_): "object";
+		case ArrayValue(_): "array";
+		case StringValue(_): "string";
+		case NumberValue(_): "number";
+		case BooleanValue(_): "bool";
+		case NullValue: "null";
+	};
 }
 
 /** encoding/json's field lookup: an exact tag first, then one equal under its case folding. */

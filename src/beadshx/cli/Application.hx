@@ -55,6 +55,8 @@ import beadshx.config.ConfigDrift.serverDriftItem;
 import beadshx.config.ConfigProbes;
 import beadshx.config.ConfigShow.WorkspaceMetadataFields;
 import beadshx.config.ConfigShow.readMetadataFields;
+import beadshx.config.ConfigShow.metadataLoadFailure;
+import beadshx.config.ConfigShow.metadataLoadWarning;
 import beadshx.config.ConfigValidate.MetadataFacts;
 import beadshx.config.ConfigValidate.metadataConfigIssues;
 import beadshx.config.ConfigValidate.renderValidationJson;
@@ -198,6 +200,18 @@ private typedef DiagnosticDocument = {
 	final error:String;
 	final message:String;
 	final hint:String;
+}
+
+/** How upstream's root pre-run treats a selected workspace whose metadata.json does not load. */
+private enum MetadataLoadRole {
+	/** The pre-run warns, then stops the command; `opensStore` tells a store command from `where`. */
+	MetadataStopsCommand(opensStore:Bool);
+
+	/** The pre-run warns and the command runs: `version`, the root help and `bd help <command>`. */
+	MetadataWarnsOnly;
+
+	/** Cobra prints the help without the pre-run: a --help flag, or a command group without its own action. */
+	MetadataUnread;
 }
 
 private enum DatabaseSelectionValidation {
@@ -450,6 +464,9 @@ final class Application {
 	}
 
 	function runInvocation(invocation:Invocation):Int {
+		final metadataExit = checkWorkspaceMetadata(invocation);
+		if (metadataExit != null)
+			return metadataExit;
 		if (invocation.showHelp) {
 			output.writeStdout(commandHelp(invocation.command));
 			return 0;
@@ -533,6 +550,88 @@ final class Application {
 			case Show:
 				runShow(invocation);
 		};
+	}
+
+	/**
+		Upstream's root pre-run reads the selected workspace's metadata.json, or
+		a legacy config.json, with configfile.LoadForDiscovery before any command
+		body runs. When that fails it prints a warning. Its legacy-workspace guard
+		then stops `where` and every command that opens a store with the load
+		error, as text even under --json. `version`, the root help and `bd help`
+		print only the warning. Returns the exit code when the command stops.
+
+		Upstream names the workspace it selected. When a database path selects
+		it, that is the path as given, or another directory where upstream opens
+		or creates a database, so this build refuses instead.
+	**/
+	function checkWorkspaceMetadata(invocation:Invocation):Null<Int> {
+		var stops = true;
+		var opensStore = false;
+		switch metadataLoadRole(invocation) {
+			case MetadataUnread:
+				return null;
+			case MetadataStopsCommand(store):
+				opensStore = store;
+			case MetadataWarnsOnly:
+				stops = false;
+		}
+		// The db setting refusal follows: upstream would select the workspace from that path.
+		if (opensStore && databaseSettingSelects(invocation))
+			return null;
+		final location = switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case Found(location): location;
+			case NotFound | InvalidSelection(_): return null;
+		};
+		final path = commandPath(invocation.command);
+		var error = "";
+		var refusal = "";
+		switch readMetadataFields(location.path) {
+			case MetadataFieldsUndecodable(text):
+				error = text;
+				if (databasePathSelects(invocation, location, opensStore))
+					refusal = '${path} is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build';
+			case MetadataFieldsUnsupported:
+				refusal = '${path} is not available yet when .beads/metadata.json does not decode in this build';
+			case MetadataAbsent | MetadataFields(_) | MetadataFieldsLegacyOnly:
+				return null;
+		}
+		if (refusal != "") {
+			// `version` and help pages run without the warning they cannot match.
+			if (!stops)
+				return null;
+			return runModeAwareFailure(invocation.output, refusal);
+		}
+		output.writeStderr(metadataLoadWarning(location.path, error));
+		if (!stops)
+			return null;
+		output.writeStderr(metadataLoadFailure(error));
+		return 1;
+	}
+
+	static function metadataLoadRole(invocation:Invocation):MetadataLoadRole {
+		if (invocation.helpCommand)
+			return MetadataWarnsOnly;
+		if (invocation.showHelp)
+			return MetadataUnread;
+		return switch invocation.command {
+			case RootHelp | Version: MetadataWarnsOnly;
+			case Where: MetadataStopsCommand(false);
+			// The label, events and config groups print their help, which cobra shows without the pre-run.
+			case command: usesStore(command) ? MetadataStopsCommand(true) : MetadataUnread;
+		};
+	}
+
+	/**
+		Whether upstream takes the workspace from a database path. Store commands
+		take it from --db (a --db value that names a database instead finds the
+		workspace); `where`, `version` and help also from BEADS_DB, BD_DB and the
+		`db` setting.
+	**/
+	static function databasePathSelects(invocation:Invocation, location:WorkspaceLocation, opensStore:Bool):Bool {
+		if (invocation.databasePath != "" && location.databaseName == "")
+			return true;
+		return !opensStore
+			&& (environmentValue("BEADS_DB") != "" || environmentValue("BD_DB") != "" || databaseSettingSelects(invocation));
 	}
 
 	function writeJsonStdout(value:String):Void {
@@ -1958,7 +2057,7 @@ final class Application {
 		BEADS_MAX_ROWS, sorted by key and kept when their source starts with
 		--source. Upstream creates an embedded database when the workspace has
 		none, and reads user-global keys from the user config.yaml; this build
-		refuses both cases, and a metadata.json upstream would not open.
+		refuses both cases.
 	**/
 	function runConfigShow(invocation:Invocation):Int {
 		return runWithLayeredConfig(invocation, true, true, (config, location, query) -> {
@@ -1978,13 +2077,7 @@ final class Application {
 				return runModeAwareFailure(invocation.output, "config show is not available yet for a workspace without a database in this build");
 			if (userConfigYamlPresent())
 				return runModeAwareFailure(invocation.output, "config show is not available yet when a user config.yaml exists in this build");
-			final metadataEntries = if (location == null) [] else switch readWorkspaceMetadata(location.path) {
-				case MetadataRows(entries): entries;
-				case MetadataUndecodable:
-					return runModeAwareFailure(invocation.output, "config show is not available yet when .beads/metadata.json does not decode in this build");
-				case MetadataLegacyOnly:
-					return runModeAwareFailure(invocation.output, "config show is not available yet for a workspace with a legacy config.json in this build");
-			};
+			final metadataEntries = location == null ? [] : readWorkspaceMetadata(location.path);
 			// Upstream gathers the rows in this order before its sort, which leaves rows with one key in either order.
 			final entries = layeredEntries(config.allKeys(), config.facts, environmentValue("BEADS_ACTOR")).concat(metadataEntries).concat(databaseEntries);
 			final role = gitBeadsRole();
@@ -2112,8 +2205,9 @@ final class Application {
 		Refusals before `bd config validate` or `bd config drift` opens the
 		store. In shared-server mode upstream connects to the shared server,
 		which writes (a `db` setting is refused before discovery, as for every
-		store command); a metadata.json upstream would not load or a non-Dolt
-		backend fails upstream's own checks. Validate also reads the workspace
+		store command); a non-Dolt backend fails upstream's own checks
+		(checkWorkspaceMetadata already stopped a metadata.json that does not
+		load). Validate also reads the workspace
 		back from its parent directory, which only a `.beads` directory without
 		its own redirect survives unchanged.
 	**/
@@ -2127,13 +2221,9 @@ final class Application {
 			if (environmentValue("BEADS_DOLT_SERVER_HOST") != "" || config.getString("dolt.host") != "")
 				return 'config ${name} is not available yet when a Dolt server endpoint is configured in this build';
 			switch readMetadataFields(location.path) {
-				case MetadataFieldsUndecodable:
-					return 'config ${name} is not available yet when .beads/metadata.json does not decode in this build';
-				case MetadataFieldsLegacyOnly:
-					return 'config ${name} is not available yet for a workspace with a legacy config.json in this build';
 				case MetadataFields(fields) if (fields.exists("backend") && fields.get("backend") != "" && fields.get("backend") != "dolt"):
 					return 'config ${name} is not available yet for a storage backend other than dolt in this build';
-				case MetadataFields(_) | MetadataAbsent:
+				case MetadataFields(_) | MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
 			}
 			if (resolvesFromRepository && !ConfigProbes.resolvesFromRepository(location.path))
 				return 'config ${name} is not available yet for this redirected workspace in this build';
@@ -2197,7 +2287,7 @@ final class Application {
 		return switch readMetadataFields(beadsDir) {
 			case MetadataAbsent: true;
 			case MetadataFields(fields): goTrimSpace(fields.exists("dolt_mode") ? fields.get("dolt_mode") : "").toLowerCase() != "embedded";
-			case MetadataFieldsUndecodable | MetadataFieldsLegacyOnly: false;
+			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: false;
 		};
 	}
 
@@ -2214,15 +2304,15 @@ final class Application {
 			&& !location.proxiedServer
 			&& switch readMetadataFields(location.path) {
 				case MetadataAbsent: true;
-				case MetadataFields(_) | MetadataFieldsUndecodable | MetadataFieldsLegacyOnly: false;
+				case MetadataFields(_) | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: false;
 			};
 	}
 
-	/** The decoded metadata.json fields, or null when the file does not exist; the preflight refused the other cases. */
+	/** The decoded metadata.json fields, or null when there are none; checkWorkspaceMetadata stopped a file that does not load. */
 	static function workspaceMetadataFields(beadsDir:String):Null<Map<String, String>> {
 		return switch readMetadataFields(beadsDir) {
 			case MetadataFields(fields): fields;
-			case MetadataAbsent | MetadataFieldsUndecodable | MetadataFieldsLegacyOnly: null;
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: null;
 		};
 	}
 
