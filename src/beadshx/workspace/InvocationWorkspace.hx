@@ -1,7 +1,5 @@
 package beadshx.workspace;
 
-import beadshx.nativeextern.os.OsPkg;
-
 /** The previous native discovery and everything outside the files that it read. */
 private typedef PreviousDiscovery = {
 	final directory:String;
@@ -67,12 +65,11 @@ final class InvocationWorkspace implements WorkspacePort {
 }
 
 /**
-	The process environment through os.Environ, sorted so that only the
-	variables and their values count, not where Go keeps them.
+	The process environment as sorted `key=value` entries, so that only the
+	variables and their values count, not the order in which they are kept.
 **/
 private function environmentEntries():Array<String> {
-	final native = OsPkg.environ();
-	final entries = [for (index in 0...native.length) native[index]];
+	final entries = [for (key => value in Sys.environment()) '$key=$value'];
 	entries.sort((first, second) -> first < second ? -1 : (first > second ? 1 : 0));
 	return entries;
 }
