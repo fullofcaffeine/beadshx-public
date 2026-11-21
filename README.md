@@ -187,7 +187,12 @@ Limits:
   ignores the `db` setting when `--db`, `-C`, `BEADS_DB`, `BD_DB` or
   `BEADS_DIR` selects the workspace. In a shared-server workspace that has no
   database, `config get` of a key that needs no database still runs, unless
-  `.beads/metadata.json` sets `dolt_mode` to `embedded`.
+  `.beads/metadata.json` sets `dolt_mode` to `embedded`. When it does, upstream
+  prints a three-line notice on stderr before every command. `bdhx` prints it
+  for `where`, `version` and help pages only, and not before these refusals.
+  Like upstream, `where` in shared-server mode reads the issue prefix from the
+  embedded database, unless `BEADS_DOLT_SHARED_SERVER` or `dolt_mode` makes the
+  workspace a server workspace.
 - `config validate` and `config drift` also report that they are not
   available yet with `--global`, when `.beads/metadata.json` names a backend
   other than Dolt, and when a Dolt server host, port or

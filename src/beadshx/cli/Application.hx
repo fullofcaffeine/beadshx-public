@@ -57,6 +57,8 @@ import beadshx.config.DeprecatedServerPort;
 import beadshx.config.ConfigShow.WorkspaceMetadataFields;
 import beadshx.config.ConfigShow.readMetadataFields;
 import beadshx.config.ConfigShow.metadataLoadFailure;
+import beadshx.config.ConfigShow.SHARED_SERVER_EMBEDDED_NOTICE;
+import beadshx.config.ConfigShow.pinsEmbeddedMode;
 import beadshx.config.ConfigShow.metadataLoadWarning;
 import beadshx.config.ConfigValidate.MetadataFacts;
 import beadshx.config.ConfigValidate.metadataConfigIssues;
@@ -578,6 +580,9 @@ final class Application {
 		Upstream names the workspace it selected. When a database path selects
 		it, that is the path as given, or another directory where upstream opens
 		or creates a database, so this build refuses instead.
+
+		When the file loads, upstream prints a notice instead in shared-server
+		mode if the file pins dolt_mode embedded (see sharedServerNoticeApplies).
 	**/
 	function checkWorkspaceMetadata(invocation:Invocation):Null<Int> {
 		var stops = true;
@@ -607,7 +612,11 @@ final class Application {
 					refusal = '${path} is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build';
 			case MetadataFieldsUnsupported:
 				refusal = '${path} is not available yet when .beads/metadata.json does not decode in this build';
-			case MetadataAbsent | MetadataFields(_) | MetadataFieldsLegacyOnly:
+			case MetadataFields(fields):
+				if (!opensStore && pinsEmbeddedMode(fields) && sharedServerNoticeApplies(invocation, location))
+					output.writeStderr(SHARED_SERVER_EMBEDDED_NOTICE);
+				return null;
+			case MetadataAbsent | MetadataFieldsLegacyOnly:
 				return null;
 		}
 		if (refusal != "") {
@@ -621,6 +630,22 @@ final class Application {
 			return null;
 		output.writeStderr(metadataLoadFailure(error));
 		return 1;
+	}
+
+	/**
+		Whether `where`, `version` or a help page prints upstream's notice for
+		a workspace whose metadata.json pins dolt_mode embedded: shared-server
+		mode is on for it. Store commands refuse shared-server mode before they
+		open anything (see validateStoreSelection) and print only the refusal.
+		Upstream reads the workspace that BEADS_DB, BD_DB or the db setting
+		chooses; when no --db or variable path took this build there, the two
+		can differ, so no notice prints.
+	**/
+	static function sharedServerNoticeApplies(invocation:Invocation, location:WorkspaceLocation):Bool {
+		final pathSelected = invocation.databasePath != "" && location.databaseName == "";
+		if (!pathSelected && databasePathSelects(invocation, location, false))
+			return false;
+		return LayeredConfig.forWorkspace(location.path).sharedServerMode();
 	}
 
 	static function metadataLoadRole(invocation:Invocation):MetadataLoadRole {
@@ -741,9 +766,10 @@ final class Application {
 	function runWhere(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case Found(location):
+				final prefix = wherePrefix(location);
 				switch invocation.output {
-					case Human: output.writeStdout(renderWhereHuman(location));
-					case Json: writeJsonStdout(renderWhereJson(location));
+					case Human: output.writeStdout(renderWhereHuman(location, prefix));
+					case Json: writeJsonStdout(renderWhereJson(location, prefix));
 				}
 				0;
 			case NotFound:
@@ -2307,7 +2333,7 @@ final class Application {
 	static function quietSharedServerSetup(beadsDir:String):Bool {
 		return switch readMetadataFields(beadsDir) {
 			case MetadataAbsent: true;
-			case MetadataFields(fields): goTrimSpace(fields.exists("dolt_mode") ? fields.get("dolt_mode") : "").toLowerCase() != "embedded";
+			case MetadataFields(fields): !pinsEmbeddedMode(fields);
 			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: false;
 		};
 	}
@@ -5477,24 +5503,64 @@ final class Application {
 		};
 	}
 
-	function renderWhereHuman(location:WorkspaceLocation):String {
+	/**
+		The prefix `bd where` prints. Workspace discovery takes config.yaml's
+		issue-prefix, or else reads issue_prefix from the embedded database, but
+		in shared-server mode it reads no database. Upstream's where still reads
+		the embedded database there, unless the workspace is proxied or
+		configfile IsDoltServerMode makes it a server workspace
+		(BEADS_DOLT_SHARED_SERVER counts, the dolt.shared-server setting does
+		not). It opens the database that GetDoltDatabase names, with `-` and `.`
+		changed to `_`, without creating it, and prints no prefix when the read
+		fails.
+	**/
+	function wherePrefix(location:WorkspaceLocation):String {
+		if (location.prefix != "" || location.databasePath == "" || location.proxiedServer)
+			return location.prefix;
+		final config = LayeredConfig.forWorkspace(location.path);
+		if (!config.sharedServerMode())
+			return location.prefix;
+		final metadata = switch readMetadataFields(location.path) {
+			case MetadataFields(fields): fields;
+			case MetadataAbsent: new Map<String, String>();
+			// checkWorkspaceMetadata stopped where for a metadata.json that does not load.
+			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: return "";
+		};
+		final backend = metadataField(metadata, "backend");
+		if (backend != "" && backend != "dolt")
+			return "";
+		if (config.doltServerMode(metadataField(metadata, "dolt_mode"), metadataField(metadata, "dolt_server_host")))
+			return "";
+		final variable = environmentValue("BEADS_DOLT_SERVER_DATABASE");
+		final recorded = metadataField(metadata, "dolt_database");
+		final configured = variable != "" ? variable : (recorded != "" ? recorded : DEFAULT_EMBEDDED_DATABASE);
+		final database = StringTools.replace(StringTools.replace(configured, "-", "_"), ".", "_");
+		if (!isEmbeddedDatabaseIdentifier(database) || !embeddedDatabaseExists(location.path, database))
+			return "";
+		return switch store.configValue(location.path, database, "issue_prefix", false) {
+			case Success(value): value;
+			case Failure(_): "";
+		};
+	}
+
+	function renderWhereHuman(location:WorkspaceLocation, prefix:String):String {
 		var rendered = location.path + "\n";
 		if (location.redirectedFrom != "")
 			rendered += '  (via redirect from ${location.redirectedFrom})\n';
-		if (location.prefix != "")
-			rendered += '  prefix: ${location.prefix}\n';
+		if (prefix != "")
+			rendered += '  prefix: ${prefix}\n';
 		if (location.databasePath != "")
 			rendered += '  database: ${location.databasePath}\n';
 		return rendered;
 	}
 
-	function renderWhereJson(location:WorkspaceLocation):String {
+	function renderWhereJson(location:WorkspaceLocation, prefix:String):String {
 		final lines = ["{"];
 		if (location.databasePath != "")
 			lines.push('  "database_path": ${Json.stringify(location.databasePath)},');
 		lines.push('  "path": ${Json.stringify(location.path)},');
-		if (location.prefix != "")
-			lines.push('  "prefix": ${Json.stringify(location.prefix)},');
+		if (prefix != "")
+			lines.push('  "prefix": ${Json.stringify(prefix)},');
 		if (location.redirectedFrom != "")
 			lines.push('  "redirected_from": ${Json.stringify(location.redirectedFrom)},');
 		lines.push('  "schema_version": 1');
@@ -5548,9 +5614,10 @@ final class Application {
 		would create the same directory, so every command that opens a store
 		refuses first, before it opens anything. Without a database upstream
 		writes nothing, but it then prints a server-mode hint, and a notice when
-		metadata.json pins dolt_mode embedded, which this build does not, so
-		that case is refused too. Commands that load layered config take this
-		refusal from their runWithLayeredConfig preflight instead.
+		metadata.json pins dolt_mode embedded, which this build prints only for
+		`where`, `version` and help pages, so that case is refused too.
+		Commands that load layered config take this refusal from their
+		runWithLayeredConfig preflight instead.
 
 		Upstream's warning for a workspace without metadata.json, or for a
 		deprecated dolt_server_port, comes next, before the database selection

@@ -4,6 +4,7 @@ import beadshx.cli.ConfigView.ConfigKeyFacts;
 import beadshx.config.ConfigKeys.isConfigContainerKey;
 import beadshx.config.ConfigKeys.isUserGlobalKey;
 import beadshx.relation.DependencyRead.compareUtf8;
+import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.JsonValue.GoJsonDecode;
 import beadshx.store.JsonValue.GoJsonFieldKind;
 import beadshx.store.JsonValue.GoJsonStruct;
@@ -181,6 +182,22 @@ private function decodeMetadataFile(path:String, readContext:String, legacy:Bool
 function metadataLoadWarning(beadsDir:String, error:String):String {
 	return 'warning: load ${Path.join([beadsDir, "metadata.json"])}: ${error}; no storage database was opened or modified '
 		+ "(storage mode unknown; data commands refuse to fall back to the embedded store)\n";
+}
+
+/**
+	Upstream warnSharedServerEmbeddedMismatch's notice, which the
+	selected-workspace setup prints once on stderr in shared-server mode when
+	metadata.json pins dolt_mode embedded (see pinsEmbeddedMode).
+**/
+final SHARED_SERVER_EMBEDDED_NOTICE = "Notice: shared-server mode is enabled (BEADS_DOLT_SHARED_SERVER or dolt.shared-server in config.yaml) "
+	+ "but .beads/metadata.json pins dolt_mode=\"embedded\". Using the shared server for this run.\n"
+	+ "  To persist server mode: set dolt_mode to \"server\" in .beads/metadata.json and commit it.\n"
+	+ "  To stay embedded: unset BEADS_DOLT_SHARED_SERVER (or remove dolt.shared-server from config.yaml).\n";
+
+/** Whether decoded metadata.json fields pin dolt_mode embedded, as upstream compares it: trimmed and in lower case. */
+function pinsEmbeddedMode(fields:Map<String, String>):Bool {
+	final mode = fields.get("dolt_mode");
+	return mode != null && goTrimSpace(mode).toLowerCase() == "embedded";
 }
 
 /** Upstream guardLegacyUpgradeWorkspace's error for a failed LoadForDiscovery, as HandleError prints it. */

@@ -1863,6 +1863,37 @@ real_database_setup=enable_shared_server
 compare_real_database count-help-shared-server exact count --help
 compare_real_database label-help-shared-server exact label
 real_database_setup=""
+# In shared-server mode the selected-workspace setup prints a three-line notice on stderr when
+# metadata.json pins dolt_mode embedded, as the fixture's does (case and surrounding space do not
+# count): for where, version, the root help and `bd help`, but not for a --help flag or a command
+# group. where still reads the prefix from the embedded database, unless BEADS_DOLT_SHARED_SERVER or
+# dolt_mode server makes the workspace a server workspace. Neither side writes.
+real_database_setup=enable_shared_server
+compare_real_database shared-server-notice-where exact where
+compare_real_database shared-server-notice-where-json exact where --json
+compare_real_database shared-server-notice-directory-where exact -C . where
+compare_real_database shared-server-notice-version stderr-only version
+compare_real_database shared-server-notice-version-json stderr-only version --json
+compare_real_database shared-server-notice-root stderr-only
+compare_real_database shared-server-notice-help-command exact help count
+real_database_setup=enable_local_shared_server
+compare_real_database shared-server-notice-local-where exact where
+real_database_setup=enable_user_shared_server
+compare_real_database shared-server-notice-user-where-json exact where --json
+real_database_setup=""
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database shared-server-notice-env-where exact where
+compare_real_database shared-server-notice-env-help-command exact help ready
+real_database_extra_env=(BD_DOLT_SHARED_SERVER=true)
+compare_real_database shared-server-notice-bd-env-where-json exact where --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=enable_shared_server
+compare_real_database_metadata shared-server-notice-mode-spelling exact '.dolt_mode = " Embedded "' where
+compare_real_database_metadata shared-server-no-mode-where exact 'del(.dolt_mode)' where
+compare_real_database_metadata shared-server-server-mode-where-json exact '.dolt_mode = "server"' where --json
+real_database_setup=enable_shared_server_without_database
+compare_real_database shared-server-notice-no-database-where exact where
+real_database_setup=""
 # Shared-server mode is off unless the variable is 1 or true.
 compare_real_database_env count-shared-server-env-off exact BEADS_DOLT_SHARED_SERVER=0 count
 real_database_read_only=""
