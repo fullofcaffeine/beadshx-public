@@ -2,7 +2,9 @@ package beadshx.nativeextern.regexp;
 
 /** Exact Go regex behavior for compatibility patterns, including ASCII word boundaries. */
 @:go.import("regexp")
+@:go.package("regexp")
 @:go.name("Regexp")
+@:goNative
 extern class Regexp {
 	@:go.name("MatchString")
 	public function matchString(value:String):Bool;
@@ -13,6 +15,8 @@ extern class Regexp {
 }
 
 @:go.import("regexp")
+@:go.package("regexp")
+@:goNative
 extern class RegexpPkg {
 	@:go.name("MustCompile")
 	public static function mustCompile(pattern:String):Regexp;

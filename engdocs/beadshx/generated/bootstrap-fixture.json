@@ -385,7 +385,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/regexp/Regexp.hx",
-        "sha256": "9fd3db44b052e38cd98007f9ccedaf39cc185ffeb2b4420f5cf36826a10e7c29"
+        "sha256": "a5928967286c4d4d461f7c1a4277211a1bf3b404f2edfde1c882adfb563b4a67"
       },
       {
         "path": "src/beadshx/nativeextern/strconv/AtoiResult.hx",
