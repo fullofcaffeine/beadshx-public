@@ -10,7 +10,10 @@ import beadshx.cli.ConfigView.renderConfigShowText;
 import beadshx.config.ConfigShow.ConfigShowEntry;
 import beadshx.config.ConfigShow.filterConfigShowEntries;
 import beadshx.config.ConfigShow.layeredEntries;
+import beadshx.config.ConfigShow.METADATA_CONFIG;
 import beadshx.config.ConfigShow.metadataEntries;
+import beadshx.config.ConfigShow.metadataLoadFailure;
+import beadshx.config.ConfigShow.metadataLoadWarning;
 import beadshx.config.ConfigShow.sortConfigShowEntries;
 import beadshx.config.ConfigKeys.ConfigSource;
 import beadshx.config.ConfigKeys.configSourceName;
@@ -43,6 +46,8 @@ import beadshx.config.ConfigValidate.renderValidationText;
 import beadshx.config.ConfigValidate.syncConfigIssues;
 import beadshx.config.ConfigValidate.validationIssues;
 import beadshx.config.ConfigValidate.yamlConfigIssues;
+import beadshx.store.JsonValue.GoJsonDecode;
+import beadshx.store.JsonValue.decodeGoStruct;
 
 /**
 	Pins `bd config get`, `bd config list` and `bd config show` key routing and
@@ -61,6 +66,7 @@ class Main {
 		listContracts();
 		showLayeredContracts();
 		showMetadataContracts();
+		metadataLoadContracts();
 		showRenderContracts();
 		validateYamlContracts();
 		validateMetadataContracts();
@@ -239,6 +245,61 @@ class Main {
 			'\u000C{}'
 		])
 			equal(metadataEntries(raw), null);
+	}
+
+	/**
+		json.Unmarshal's error texts for configfile.Config, as upstream's oracle
+		prints them, and the pre-run warning and error built from them. Syntax
+		errors come from Go's own scanner, which the interpreter does not have.
+	**/
+	static function metadataLoadContracts():Void {
+		final field = "json: cannot unmarshal ";
+		equal(decodeError('{"database":7}'), field + "number into Go struct field Config.database of type string");
+		equal(decodeError('{"deletions_retention_days":"7"}'), field + "string into Go struct field Config.deletions_retention_days of type int");
+		equal(decodeError('{"dolt_server_tls":"yes"}'), field + "string into Go struct field Config.dolt_server_tls of type bool");
+		equal(decodeError('{"dolt_server_tls":1}'), field + "number into Go struct field Config.dolt_server_tls of type bool");
+		equal(decodeError('{"database":true}'), field + "bool into Go struct field Config.database of type string");
+		equal(decodeError('{"database":{"a":1}}'), field + "object into Go struct field Config.database of type string");
+		equal(decodeError('{"dolt_server_port":[1]}'), field + "array into Go struct field Config.dolt_server_port of type int");
+		// An int that strconv.ParseInt rejects names the number as written.
+		equal(decodeError('{"dolt_server_port":1.5}'), field + "number 1.5 into Go struct field Config.dolt_server_port of type int");
+		equal(decodeError('{"dolt_server_port":1e3}'), field + "number 1e3 into Go struct field Config.dolt_server_port of type int");
+		equal(decodeError('{"dolt_server_port":9223372036854775808}'),
+			field + "number 9223372036854775808 into Go struct field Config.dolt_server_port of type int");
+		// The field is named by its tag, whatever the key's case.
+		equal(decodeError('{"DOLT_DATABASE":7}'), field + "number into Go struct field Config.dolt_database of type string");
+		// The first mismatch wins, even when a later duplicate fits.
+		equal(decodeError('{"backend":1,"database":2}'), field + "number into Go struct field Config.backend of type string");
+		equal(decodeError('{"dolt_database":7,"dolt_database":"test"}'), field + "number into Go struct field Config.dolt_database of type string");
+		equal(decodeError('{"dolt_database":"test","dolt_database":7}'), field + "number into Go struct field Config.dolt_database of type string");
+		// A top level that is not an object or null names the Go type.
+		equal(decodeError("[1,2]"), field + "array into Go value of type configfile.Config");
+		equal(decodeError('"text"'), field + "string into Go value of type configfile.Config");
+		equal(decodeError("42"), field + "number into Go value of type configfile.Config");
+		equal(decodeError("true"), field + "bool into Go value of type configfile.Config");
+		// Unknown members, null members and a null document decode; the last duplicate wins.
+		equal(decodeError('{"unknown":{"x":[1,{"y":null}]},"dolt_mode":null}'), "");
+		equal(decodeError("null"), "");
+		equal(switch decodeGoStruct('{"dolt_database":"other","dolt_database":"test"}', METADATA_CONFIG) {
+			case GoJsonDecoded(fields): fields.get("dolt_database");
+			case GoJsonFailed(_) | GoJsonUnsupported: "<failed>";
+		}, "test");
+		// Without Go's scanner the interpreter cannot name a syntax error.
+		equal(decodeGoStruct('{"database":', METADATA_CONFIG), GoJsonUnsupported);
+		final error = "parsing config: " + field + "number into Go struct field Config.database of type string";
+		equal(metadataLoadWarning("/work/.beads", error),
+			"warning: load /work/.beads/metadata.json: " + error +
+			"; no storage database was opened or modified (storage mode unknown; data commands refuse to fall back to the embedded store)\n");
+		equal(metadataLoadFailure(error), "Error: loading config: " + error + "\n");
+	}
+
+	/** The json.Unmarshal error text for `raw` and configfile.Config, or "" when it decodes. */
+	static function decodeError(raw:String):String {
+		return switch decodeGoStruct(raw, METADATA_CONFIG) {
+			case GoJsonDecoded(_): "";
+			case GoJsonFailed(message): message;
+			case GoJsonUnsupported: "<unsupported>";
+		};
 	}
 
 	static function showRenderContracts():Void {

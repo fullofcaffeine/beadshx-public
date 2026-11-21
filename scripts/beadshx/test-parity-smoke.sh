@@ -852,9 +852,15 @@ compare_real_database() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
-	if ! cmp -s "$case_root/oracle.stderr" "$case_root/candidate.stderr"; then
+	local oracle_work candidate_work
+	oracle_work="$(cd "$oracle_root/work" && pwd -P)"
+	candidate_work="$(cd "$candidate_root/work" && pwd -P)"
+	# A metadata.json load warning names each side's own workspace.
+	sed "s|$oracle_work|<work>|g" "$case_root/oracle.stderr" >"$case_root/oracle.stderr.normalized"
+	sed "s|$candidate_work|<work>|g" "$case_root/candidate.stderr" >"$case_root/candidate.stderr.normalized"
+	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
-		diff -u "$case_root/oracle.stderr" "$case_root/candidate.stderr" >&2 || true
+		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
 		return 1
 	fi
 	if [[ "$candidate_before" != "$candidate_after" ]]; then
@@ -863,9 +869,6 @@ compare_real_database() {
 	fi
 	case "$comparison" in
 	exact | exact-home)
-		local oracle_work candidate_work
-		oracle_work="$(cd "$oracle_root/work" && pwd -P)"
-		candidate_work="$(cd "$candidate_root/work" && pwd -P)"
 		sed "s|$oracle_work|<work>|g" "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
 		sed "s|$candidate_work|<work>|g" "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
 		if [[ "$comparison" == exact-home ]]; then
@@ -922,6 +925,9 @@ compare_real_database() {
 			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
 			return 1
 		fi
+		;;
+	stderr-only)
+		# The exit code and stderr compared above. stdout prints this build's own name or identity.
 		;;
 	ping-human)
 		sed -E 's/[0-9]+ms/<duration>/' "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
@@ -1858,17 +1864,112 @@ expect_candidate_failure config-show-user-config-unported \
 	'{"error":"config show is not available yet when a user config.yaml exists in this build","schema_version":1}' "" "" \
 	config show --json
 candidate_only_setup=""
-# Upstream refuses to open a store whose metadata.json does not decode.
+# Upstream's root pre-run reads metadata.json, or a legacy config.json, with configfile.LoadForDiscovery.
+# When that fails it warns, and then where and every command that opens a store stop with the load
+# error, as text even under --json. version, the root help and `bd help` only warn; a --help flag and
+# the command groups skip the pre-run. Unknown keys, null members and duplicate keys (the last one
+# wins) decode. Neither side may change the fixture or write temporary files.
+real_database_read_only=1
+# Replaces metadata.json in place with $raw_metadata, so the file keeps its mode.
+write_raw_metadata() {
+	printf '%s' "$raw_metadata" >"$1/work/.beads/metadata.json"
+}
+compare_raw_metadata() {
+	local name="$1"
+	local comparison="$2"
+	raw_metadata="$3"
+	shift 3
+	real_database_setup=write_raw_metadata
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_setup=""
+}
+type_error_metadata='{"database":"dolt","backend":"dolt","dolt_mode":"embedded","dolt_database":7}'
+compare_raw_metadata metadata-type-count exact "$type_error_metadata" count
+compare_raw_metadata metadata-type-count-json exact "$type_error_metadata" count --json
+compare_raw_metadata metadata-type-list-json exact "$type_error_metadata" list --json
+compare_raw_metadata metadata-type-show exact "$type_error_metadata" show "$real_database_issue_id"
+compare_raw_metadata metadata-type-ready-json exact "$type_error_metadata" ready --json
+compare_raw_metadata metadata-type-types exact "$type_error_metadata" types
+compare_raw_metadata metadata-type-where exact "$type_error_metadata" where
+compare_raw_metadata metadata-type-where-json exact "$type_error_metadata" where --json
+compare_raw_metadata metadata-type-config-get exact "$type_error_metadata" config get issue_prefix
+compare_raw_metadata metadata-type-config-show exact "$type_error_metadata" config show
+compare_raw_metadata metadata-type-config-validate exact "$type_error_metadata" config validate
+compare_raw_metadata metadata-type-config-drift-json exact "$type_error_metadata" config drift --json
+compare_raw_metadata metadata-type-directory-flag exact "$type_error_metadata" -C . count
+# The pre-run stops before the command body reads BEADS_MAX_ROWS.
+real_database_extra_env=(BEADS_MAX_ROWS=bogus)
+compare_raw_metadata metadata-type-max-rows exact "$type_error_metadata" list
+real_database_extra_env=(BD_JSON=1)
+compare_raw_metadata metadata-type-bd-json exact "$type_error_metadata" count
+real_database_extra_env=(BEADS_DIR=.beads)
+compare_raw_metadata metadata-type-beads-dir exact "$type_error_metadata" count
+# A store command finds its workspace even when BEADS_DB names the database.
+real_database_extra_env=(BEADS_DB=.beads/embeddeddolt)
+compare_raw_metadata metadata-type-beads-db exact "$type_error_metadata" count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config='json: true'
+compare_raw_metadata metadata-type-json-setting-where exact "$type_error_metadata" where
+real_database_extra_config=""
+# version and the root help print this build's own name, so only their exit and stderr compare.
+compare_raw_metadata metadata-type-version stderr-only "$type_error_metadata" version
+compare_raw_metadata metadata-type-version-flag stderr-only "$type_error_metadata" --version
+compare_raw_metadata metadata-type-root stderr-only "$type_error_metadata"
+compare_raw_metadata metadata-type-help-command exact "$type_error_metadata" help count
+compare_raw_metadata metadata-type-help-flag exact "$type_error_metadata" count --help
+compare_raw_metadata metadata-type-label-group exact "$type_error_metadata" label
+# Go's scanner names a syntax error; a type error names the Go struct field by its tag, or the Go type.
+compare_raw_metadata metadata-truncated exact '{"database":"dolt",' count
+compare_raw_metadata metadata-empty exact '' count
+compare_raw_metadata metadata-trailing-text exact '{"database":"dolt"} x' count
+compare_raw_metadata metadata-byte-order-mark exact $'\xef\xbb\xbf{"database":"dolt"}' count
+compare_raw_metadata metadata-control-character exact $'{"database":"do\x01lt"}' count
+compare_raw_metadata metadata-top-array exact '[1,2]' count
+compare_raw_metadata metadata-int-fraction exact '{"dolt_server_port":1.5}' count
+compare_raw_metadata metadata-int-overflow exact '{"dolt_server_port":9223372036854775808}' count
+compare_raw_metadata metadata-folded-key exact '{"DOLT_DATABASE":7}' count
+# json.Unmarshal reports the first type error even when a later duplicate fits.
+compare_raw_metadata metadata-duplicate-bad-first exact '{"dolt_database":7,"dolt_database":"test"}' count
+metadata_directory() {
+	rm -f "$1/work/.beads/metadata.json"
+	mkdir "$1/work/.beads/metadata.json"
+}
+real_database_setup=metadata_directory
+compare_real_database metadata-directory exact count
+# Without metadata.json the load reads a legacy config.json, but the warning still names metadata.json.
+legacy_config_type_error() {
+	rm -f "$1/work/.beads/metadata.json"
+	printf '{"database":7}\n' >"$1/work/.beads/config.json"
+}
+real_database_setup=legacy_config_type_error
+compare_real_database metadata-legacy-type-error exact count
+compare_real_database metadata-legacy-type-error-where exact where
+duplicate_dolt_database() {
+	jq -c . "$1/work/.beads/metadata.json" |
+		sed 's/"dolt_database":"test"/"dolt_database":"other","dolt_database":"test"/' >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+real_database_setup=duplicate_dolt_database
+compare_real_database metadata-duplicate-last-wins exact count
+compare_real_database metadata-duplicate-last-wins-where exact where
+real_database_setup=""
+compare_real_database_metadata metadata-unknown-and-null-members exact '.unknown_field = {"x": [1]} | .dolt_server_host = null' count
+real_database_read_only=""
+# A database path selection names the workspace by that path as given, or makes upstream open a
+# database in another directory.
 break_metadata() {
 	jq '.deletions_retention_days = "7"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
 	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
 	rm -f "$1/metadata.json"
 }
 candidate_only_setup=break_metadata
-expect_candidate_failure config-show-bad-metadata-unported "" \
-	"Error: config show is not available yet when .beads/metadata.json does not decode in this build" "" config show
-expect_candidate_failure config-validate-bad-metadata-unported "" \
-	"Error: config validate is not available yet when .beads/metadata.json does not decode in this build" "" config validate
+expect_candidate_failure metadata-db-flag-unported "" \
+	"Error: count is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build" "" \
+	--db .beads/embeddeddolt count
+expect_candidate_failure metadata-db-flag-where-json-unported \
+	'{"error":"where is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build","schema_version":1}' "" "" \
+	--db .beads/embeddeddolt where --json
 candidate_only_setup=""
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
