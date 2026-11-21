@@ -95,8 +95,11 @@ import beadshx.cli.EventsView.eventsTailHelp;
 import beadshx.cli.EventsView.eventsTruncatedHint;
 import beadshx.cli.EventsView.renderEventsRecords;
 import beadshx.cli.EventsView.renderEventsTruncatedJson;
+import beadshx.config.WorkspaceEnvironment;
+import beadshx.store.EmbeddedDatabaseLookup.DEFAULT_EMBEDDED_DATABASE;
 import beadshx.store.EmbeddedDatabaseLookup.embeddedDatabaseExists;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.store.EmbeddedDatabaseLookup.missingConfigurationWarning;
 import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
@@ -2377,9 +2380,15 @@ final class Application {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: storeFree ? action(startup, null, null) : runDatabaseNotFound();
 			case Found(location):
+				// Upstream warns about a missing metadata.json after its config warnings and before its database selection checks.
+				final defaultDirectory = missingMetadataDirectory(invocation, location);
 				switch validateDatabaseSelection(invocation, location) {
-					case PlainFailure(message): runStoreFailure(message);
-					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
+					case PlainFailure(message):
+						warnMissingConfiguration(defaultDirectory);
+						runStoreFailure(message);
+					case ModeAwareFailure(message):
+						warnMissingConfiguration(defaultDirectory);
+						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
 							final config = selected(location, 1);
@@ -2392,7 +2401,8 @@ final class Application {
 							final refusal = preflight({config: config, location: location});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
-							switch validateEmbeddedDatabase(invocation, location) {
+							warnMissingConfiguration(defaultDirectory);
+							switch validateOpenedDatabase(invocation, location, defaultDirectory) {
 								case PlainFailure(message): return runStoreFailure(message);
 								case ModeAwareFailure(message): return runModeAwareFailure(invocation.output, message);
 								case Accepted:
@@ -5515,14 +5525,95 @@ final class Application {
 		metadata.json pins dolt_mode embedded, which this build does not, so
 		that case is refused too. Commands that load layered config take this
 		refusal from their runWithLayeredConfig preflight instead.
+
+		For a workspace without metadata.json, upstream's warning comes next,
+		before the database selection checks.
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		if (LayeredConfig.forWorkspace(location.path).sharedServerMode())
 			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
+		final defaultDirectory = missingMetadataDirectory(invocation, location);
+		warnMissingConfiguration(defaultDirectory);
 		return switch validateDatabaseSelection(invocation, location) {
-			case Accepted: validateEmbeddedDatabase(invocation, location);
+			case Accepted: validateOpenedDatabase(invocation, location, defaultDirectory);
 			case refusal: refusal;
 		};
+	}
+
+	/**
+		Upstream's pre-run takes the embedded database `beads` for a selected
+		workspace that has no metadata.json and no legacy config.json. Before it
+		checks --global and --database it prints a warning that names the
+		workspace directory, which this returns as upstream names it, or null
+		when upstream takes another route. A remote host in BEADS_DOLT_SERVER_HOST
+		or the dolt.host setting makes the workspace a server workspace instead.
+		Without a --db path, a workspace where upstream finds no database stops
+		earlier with "no beads database found". A --db path names the directory
+		that upstream derives from the path as given, which can be relative.
+		BEADS_DB never gets here: it selects only a workspace with metadata.json.
+	**/
+	function missingMetadataDirectory(invocation:Invocation, location:WorkspaceLocation):Null<String> {
+		final pathSelected = invocation.databasePath != "" && location.databaseName == "";
+		if (location.proxiedServer || (!pathSelected && location.databasePath == ""))
+			return null;
+		switch readMetadataFields(location.path) {
+			case MetadataAbsent:
+			case MetadataFields(_) | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				return null;
+		}
+		if (LayeredConfig.forWorkspace(location.path).hostImpliesServerMode())
+			return null;
+		return pathSelected ? WorkspaceEnvironment.databasePathBeadsDir(invocation.databasePath) : location.path;
+	}
+
+	function warnMissingConfiguration(defaultDirectory:Null<String>):Void {
+		if (defaultDirectory != null)
+			output.writeStderr(missingConfigurationWarning(defaultDirectory));
+	}
+
+	/** The embedded database checks after the database selection checks: the default database, or the one metadata.json selects. */
+	function validateOpenedDatabase(invocation:Invocation, location:WorkspaceLocation, defaultDirectory:Null<String>):DatabaseSelectionValidation {
+		return defaultDirectory == null ? validateEmbeddedDatabase(invocation, location) : validateDefaultDatabase(invocation, location, defaultDirectory);
+	}
+
+	/**
+		Upstream's pre-run, after its warning for a workspace without
+		metadata.json, opens `beads` with `CREATE DATABASE IF NOT EXISTS`, so it
+		creates that database when the embedded store lacks it, which is a write.
+		Dolt finds the database by its lower-case name, so a `BEADS` directory
+		holds it. This build refuses before it opens anything. In strict
+		read-only mode upstream fails with the open error instead, which this
+		prints as upstream does while the store directory exists. --global fails
+		first, in the native open as upstream.
+
+		This build also refuses where its store open would differ from
+		upstream's: a --db path for which upstream takes another directory, and
+		BEADS_DOLT_SERVER_DATABASE naming another database or server mode from
+		BEADS_DOLT_SERVER_MODE or the dolt.mode setting. Upstream ignores those
+		without metadata.json, but the native read-only facade reads them.
+	**/
+	function validateDefaultDatabase(invocation:Invocation, location:WorkspaceLocation, defaultDirectory:String):DatabaseSelectionValidation {
+		if (invocation.global)
+			return Accepted;
+		final path = commandPath(invocation.command);
+		if (defaultDirectory != location.path)
+			return ModeAwareFailure('${path} is not available yet when --db names this path in a workspace without .beads/metadata.json in this build');
+		final config = LayeredConfig.forWorkspace(location.path);
+		final variable = environmentValue("BEADS_DOLT_SERVER_DATABASE");
+		if (variable != "" && variable.toLowerCase() != DEFAULT_EMBEDDED_DATABASE)
+			return ModeAwareFailure('${path} is not available yet when BEADS_DOLT_SERVER_DATABASE names a database other than "${DEFAULT_EMBEDDED_DATABASE}"'
+				+ " and the workspace has no .beads/metadata.json in this build");
+		if (environmentValue("BEADS_DOLT_SERVER_MODE") == "1" || config.getString("dolt.mode").toLowerCase() == "server")
+			return ModeAwareFailure('${path} is not available yet when server mode is configured and the workspace has no .beads/metadata.json in this build');
+		if (embeddedDatabaseExists(location.path, DEFAULT_EMBEDDED_DATABASE))
+			return Accepted;
+		final storeDirectory = switch ConfigProbes.statPath(Path.join([location.path, "embeddeddolt"])) {
+			case StatDirectory: true;
+			case StatMissing | StatNotDirectory | StatFailed(_): false;
+		};
+		if (storeDirectory && (invocation.readonly || config.getBool("readonly")))
+			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${DEFAULT_EMBEDDED_DATABASE}');
+		return ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${DEFAULT_EMBEDDED_DATABASE}" in this build');
 	}
 
 	/**

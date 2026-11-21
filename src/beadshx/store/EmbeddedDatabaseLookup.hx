@@ -19,21 +19,34 @@ private final REDIRECT_SOURCE:GoJsonStruct = {
 };
 
 /**
-	Upstream configfile GetDoltDatabase over one workspace's own metadata.json:
-	`serverDatabaseVariable` (BEADS_DOLT_SERVER_DATABASE) when it is not empty,
-	then dolt_database as json.Unmarshal decodes it (a case-folded key matches
-	and the last duplicate wins), then `beads`. The native read-only facade
-	takes the same name.
+	The database that upstream's pre-run opens in one workspace's embedded store.
+	Without metadata.json or a legacy config.json it takes `beads` and does not
+	read BEADS_DOLT_SERVER_DATABASE. Otherwise it is configfile GetDoltDatabase
+	over the workspace's own metadata.json: `serverDatabaseVariable`
+	(BEADS_DOLT_SERVER_DATABASE) when it is not empty, then dolt_database as
+	json.Unmarshal decodes it (a case-folded key matches and the last duplicate
+	wins), then `beads`. The native read-only facade takes the same name, except
+	that it reads the variable also without metadata.json.
 **/
 function configuredEmbeddedDatabase(beadsDir:String, serverDatabaseVariable:String):String {
-	if (serverDatabaseVariable != "")
-		return serverDatabaseVariable;
 	final recorded = switch readMetadataFields(beadsDir) {
+		case MetadataAbsent: return DEFAULT_EMBEDDED_DATABASE;
 		case MetadataFields(fields): fields.get("dolt_database");
 		// The command stops before a store opens when metadata.json does not load.
-		case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: null;
+		case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: null;
 	};
+	if (serverDatabaseVariable != "")
+		return serverDatabaseVariable;
 	return recorded == null || recorded == "" ? DEFAULT_EMBEDDED_DATABASE : recorded;
+}
+
+/**
+	The warning that upstream's pre-run prints on stderr, in every output mode,
+	before it opens the embedded store of a workspace without metadata.json or
+	a legacy config.json. `beadsDir` is the directory as upstream names it.
+**/
+function missingConfigurationWarning(beadsDir:String):String {
+	return 'warning: no beads configuration found in ${beadsDir}; using default database name "${DEFAULT_EMBEDDED_DATABASE}"\n';
 }
 
 /**

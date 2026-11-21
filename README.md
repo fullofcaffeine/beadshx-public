@@ -98,6 +98,15 @@ database comes from `BEADS_DOLT_SERVER_DATABASE`, or else from
 `dolt_database`, or else it is `beads`. As in Dolt, the letter case of the
 name does not matter.
 
+When the selected workspace has no `.beads/metadata.json` and no legacy
+`.beads/config.json`, every command that reads the database uses the embedded
+database `beads`, as upstream does. Before it opens the database, `bdhx` prints
+upstream's `warning: no beads configuration found in <dir>; using default
+database name "beads"` on stderr, also with `--json`. With `--db`, `<dir>` is
+the directory that upstream derives from the path as given. Upstream ignores
+`BEADS_DOLT_SERVER_DATABASE` in this case. `where`, `version` and help pages
+print no warning.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
@@ -146,6 +155,16 @@ Limits:
   upstream open the database that the redirecting workspace names instead of
   the target's; `bdhx` then reports that it is not available yet. `where`,
   `version` and help pages still run.
+- In a workspace without `.beads/metadata.json`, every command that reads the
+  database prints upstream's warning and then reports that it is not
+  available yet when the embedded store has no `beads` database. Upstream
+  creates that database. With `--readonly` or the `readonly` setting,
+  `bdhx` prints the same open error as upstream. `bdhx` also reports that the
+  command is not available yet when `BEADS_DOLT_SERVER_DATABASE` names another
+  database, when `BEADS_DOLT_SERVER_MODE=1` or the `dolt.mode` setting selects
+  server mode, and when upstream takes a `.beads` directory above the
+  directory of a `--db` path. Upstream opens `beads` in these cases (for
+  `--db`, in that other directory), but the native store open would not.
 - Every command above that reads the database reports that it is not
   available yet in shared-server mode and when the `db` setting names a
   database. Only `version`, `where` and help pages still run. In these cases

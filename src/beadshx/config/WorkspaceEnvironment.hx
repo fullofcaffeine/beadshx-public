@@ -212,4 +212,26 @@ final class WorkspaceEnvironment {
 	static function absolutePath(path:String):String {
 		return FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
 	}
+
+	/**
+		Upstream resolveCommandBeadsDir for a --db `path` that no workspace with
+		metadata.json or a legacy config.json claims: the first `.beads`
+		directory beside the path's directory or one of its ancestors, else the
+		path's directory. It keeps a relative path relative, and it stops before
+		`.` or the root directory, as Go's filepath.Dir loop does.
+	**/
+	public static function databasePathBeadsDir(path:String):String {
+		final parent = FilepathPkg.dir(path);
+		var directory = parent;
+		while (directory != "" && directory != FilepathPkg.dir(directory)) {
+			final candidate = FilepathPkg.join(directory, ".beads");
+			switch ConfigProbes.statPath(candidate) {
+				case StatDirectory:
+					return candidate;
+				case StatMissing | StatNotDirectory | StatFailed(_):
+			}
+			directory = FilepathPkg.dir(directory);
+		}
+		return parent;
+	}
 }

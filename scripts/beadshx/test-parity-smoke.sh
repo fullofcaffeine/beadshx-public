@@ -1093,8 +1093,9 @@ expect_candidate_failure() {
 	fi
 	mkdir -p "$case_root/candidate-tmp"
 	candidate_before="$(fingerprint_tree "$state_root")"
-	local candidate_work
+	local candidate_work candidate_work_logical actual_stderr
 	candidate_work="$(cd "$state_root/work" && pwd -P)"
+	candidate_work_logical="$(cd "$state_root/work" && pwd -L)"
 	local candidate_extra_env=("${real_database_extra_env[@]//<work>/$candidate_work}")
 	set +e
 	(
@@ -1122,11 +1123,13 @@ expect_candidate_failure() {
 	if [[ -n "$expected_stdout" ]]; then
 		actual_stdout="$(jq -c . "$case_root/candidate.stdout" 2>/dev/null || cat "$case_root/candidate.stdout")"
 	fi
+	# A warning that names the workspace names it as <work>.
+	actual_stderr="$(sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" "$case_root/candidate.stderr")"
 	if [[ "$candidate_exit" -ne 1 || "$actual_stdout" != "$expected_stdout" ||
-		"$(cat "$case_root/candidate.stderr")" != "$expected_stderr" ]]; then
+		"$actual_stderr" != "$expected_stderr" ]]; then
 		printf '%s: expected exit 1, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
 			"$name" "$expected_stdout" "$expected_stderr" "$candidate_exit" "$actual_stdout" \
-			"$(cat "$case_root/candidate.stderr")" >&2
+			"$actual_stderr" >&2
 		return 1
 	fi
 	printf 'parity [%ss]: PASS candidate-only/%s\n' "$SECONDS" "$name"
@@ -1998,6 +2001,56 @@ real_database_extra_config='readonly: true'
 compare_raw_metadata missing-db-readonly-setting-types exact '{}' types
 real_database_extra_config=""
 compare_real_database_metadata missing-db-readonly-case-folded-name exact '.dolt_database = "TEST"' --readonly count
+# Without .beads/metadata.json (and without a legacy config.json), upstream's pre-run takes the embedded
+# database `beads` for every command that opens a store. It first prints a warning on stderr, also under
+# --json, the json setting, BD_JSON and the JSON envelope, and then checks --global and --database.
+# It ignores BEADS_DOLT_SERVER_DATABASE there, and Dolt finds the database by its lower-case name. The
+# warning names the directory that upstream selected, as a --db path gives it. `where`, `version` and
+# the help pages print no warning.
+remove_metadata() {
+	rm -f "$1/work/.beads/metadata.json"
+}
+no_metadata_database=beads
+no_metadata_default_database() {
+	remove_metadata "$1"
+	mv -f "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/$no_metadata_database"
+}
+real_database_setup=no_metadata_default_database
+compare_real_database no-metadata-default-count exact count
+compare_real_database no-metadata-default-count-json exact count --json
+compare_real_database no-metadata-default-info-json exact info --json
+compare_real_database no-metadata-default-types-json exact types --json
+compare_real_database no-metadata-default-config-get exact config get issue_prefix
+compare_real_database no-metadata-default-where exact where
+compare_real_database no-metadata-default-version stderr-only version
+compare_real_database no-metadata-default-help-command exact help count
+compare_real_database no-metadata-default-readonly-ready-json exact --readonly ready --json
+compare_real_database no-metadata-default-global exact count --global
+compare_real_database no-metadata-default-database-flag-json exact count --database other --json
+compare_real_database no-metadata-default-db-flag exact --db .beads/embeddeddolt count
+compare_real_database no-metadata-default-directory-flag-list-json exact -C . list --json
+real_database_extra_config='json: true'
+compare_real_database no-metadata-default-json-setting exact count
+real_database_extra_config=""
+real_database_extra_env=(BD_JSON=1)
+compare_real_database no-metadata-default-bd-json exact status
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database no-metadata-default-json-envelope exact list --json
+real_database_extra_env=(BEADS_DOLT_SERVER_DATABASE=BEADS)
+compare_real_database no-metadata-default-server-database-variable exact count
+real_database_extra_env=(BEADS_DIR=.beads)
+compare_real_database no-metadata-default-beads-dir exact config list
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+no_metadata_database=BEADS
+compare_real_database no-metadata-default-folded-directory-list-json exact list --json
+no_metadata_database=beads
+# Strict read-only mode opens the store without creating `beads`; --global and --database fail first.
+real_database_setup=remove_metadata
+compare_real_database no-metadata-missing-readonly-count exact --readonly count
+compare_real_database no-metadata-missing-readonly-list-json exact --readonly list --json
+compare_real_database no-metadata-missing-global-json exact count --global --json
+compare_real_database no-metadata-missing-database-flag exact count --database other
+real_database_setup=""
 real_database_read_only=""
 # Upstream's show also records the issue in .beads/last-touched, so these compare without the
 # read-only check; an empty new database would print a not-found error instead.
@@ -2072,6 +2125,81 @@ candidate_only_setup=redirect_with_source_database
 expect_candidate_failure missing-db-redirect-source-count-unported "" \
 	'Error: count is not available yet when a redirect keeps the database of the redirecting workspace in this build' "" count
 candidate_only_setup=""
+# Without metadata.json upstream warns and then creates `beads` when the embedded store lacks it, also
+# when BEADS_DOLT_SERVER_DATABASE names the fixture's database, which upstream ignores there. This build
+# prints the same warning and then refuses before it opens anything.
+no_metadata_warning='warning: no beads configuration found in <work>/.beads; using default database name "beads"'
+candidate_only_setup=remove_metadata
+expect_candidate_failure no-metadata-missing-count-unported "" \
+	"$no_metadata_warning"$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" count
+expect_candidate_failure no-metadata-missing-list-json-unported \
+	'{"error":"list is not available yet when the embedded store has no database named \"beads\" in this build","schema_version":1}' \
+	"$no_metadata_warning" "" list --json
+expect_candidate_failure no-metadata-missing-info-unported "" \
+	"$no_metadata_warning"$'\n''Error: info is not available yet when the embedded store has no database named "beads" in this build' "" info
+expect_candidate_failure no-metadata-missing-types-unported "" \
+	"$no_metadata_warning"$'\n''Error: types is not available yet when the embedded store has no database named "beads" in this build' "" types
+expect_candidate_failure no-metadata-missing-config-get-json-unported \
+	'{"error":"config get is not available yet when the embedded store has no database named \"beads\" in this build","schema_version":1}' \
+	"$no_metadata_warning" "" config get issue_prefix --json
+# A --db path names the directory as upstream derives it from the path as given: `.` for `.beads`.
+expect_candidate_failure no-metadata-missing-db-flag-unported "" \
+	'warning: no beads configuration found in .; using default database name "beads"'$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" \
+	--db .beads count
+real_database_extra_env=(BD_JSON=1)
+expect_candidate_failure no-metadata-missing-bd-json-unported \
+	'{"error":"ready is not available yet when the embedded store has no database named \"beads\" in this build","schema_version":1}' \
+	"$no_metadata_warning" "" ready
+real_database_extra_env=(BEADS_DOLT_SERVER_DATABASE=test)
+expect_candidate_failure no-metadata-missing-server-database-variable-unported "" \
+	"$no_metadata_warning"$'\n''Error: count is not available yet when BEADS_DOLT_SERVER_DATABASE names a database other than "beads" and the workspace has no .beads/metadata.json in this build' "" \
+	count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Upstream reads `beads` here, but the native store open would take BEADS_DOLT_SERVER_DATABASE, or
+# server mode from BEADS_DOLT_SERVER_MODE or the dolt.mode setting, which upstream ignores without
+# metadata.json.
+candidate_only_setup=no_metadata_default_database
+real_database_extra_env=(BEADS_DOLT_SERVER_DATABASE=other)
+expect_candidate_failure no-metadata-default-server-database-variable-other-unported "" \
+	"$no_metadata_warning"$'\n''Error: show is not available yet when BEADS_DOLT_SERVER_DATABASE names a database other than "beads" and the workspace has no .beads/metadata.json in this build' "" \
+	show "$real_database_issue_id"
+real_database_extra_env=(BEADS_DOLT_SERVER_MODE=1)
+expect_candidate_failure no-metadata-default-server-mode-json-unported \
+	'{"error":"count is not available yet when server mode is configured and the workspace has no .beads/metadata.json in this build","schema_version":1}' \
+	"$no_metadata_warning" "" count --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+no_metadata_server_mode_setting() {
+	no_metadata_default_database "$1"
+	printf 'dolt.mode: server\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=no_metadata_server_mode_setting
+expect_candidate_failure no-metadata-default-server-mode-setting-unported "" \
+	"$no_metadata_warning"$'\n''Error: status is not available yet when server mode is configured and the workspace has no .beads/metadata.json in this build' "" \
+	status
+# For a --db path upstream takes the first .beads directory beside the path's directory or one of its
+# ancestors, where this build's discovery takes the path's directory itself.
+no_metadata_nested_directories() {
+	no_metadata_default_database "$1"
+	mkdir -p "$1/work/sub/.beads" "$1/work/sub/data"
+}
+candidate_only_setup=no_metadata_nested_directories
+expect_candidate_failure no-metadata-db-flag-ancestor-unported "" \
+	'warning: no beads configuration found in sub/.beads; using default database name "beads"'$'\n''Error: count is not available yet when --db names this path in a workspace without .beads/metadata.json in this build' "" \
+	--db sub/data/x count
+candidate_only_setup=""
+# Upstream's show records the issue in .beads/last-touched, and a redirect adds a gate lock beside its
+# target, so these compare without the read-only check. A redirect keeps the redirecting workspace's
+# dolt_database only in BEADS_DOLT_SERVER_DATABASE, which upstream ignores for a target without
+# metadata.json, so it reads `beads` there.
+real_database_setup=no_metadata_default_database
+compare_real_database no-metadata-default-show exact show "$real_database_issue_id"
+redirect_to_workspace_without_metadata() {
+	no_metadata_default_database "$1"
+	redirect_with_source_database "$1"
+}
+real_database_setup=redirect_to_workspace_without_metadata
+compare_real_database no-metadata-default-redirect-count-json exact count --json
+real_database_setup=""
 compare_real_database ping-human ping-human ping
 compare_real_database ping-json ping-json ping --json
 compare_real_database count-human exact count

@@ -324,6 +324,8 @@ class Main {
 		equal(embeddedDatabaseExists('$root/missing', "test"), false);
 		// No metadata.json, null, {} and an empty name select the default; the last duplicate and a folded key count.
 		equal(configuredEmbeddedDatabase(beadsDir, ""), "beads");
+		// Without metadata.json upstream's pre-run takes the default before it would read BEADS_DOLT_SERVER_DATABASE.
+		equal(configuredEmbeddedDatabase(beadsDir, "fromenv"), "beads");
 		for (raw => expected in [
 			"null" => "beads",
 			"{}" => "beads",

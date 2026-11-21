@@ -117,6 +117,22 @@ final class LayeredConfig {
 		return flag == "1" || (flag != null && flag.toLowerCase() == "true") || registry.getBool("dolt.shared-server");
 	}
 
+	/**
+		Upstream configfile.HostImpliesServerMode for a workspace without
+		metadata.json, which upstream's pre-run then opens as a server workspace:
+		BEADS_DOLT_SERVER_HOST, or else the dolt.host setting while dolt.mode is
+		unset, names a host that is not this machine.
+	**/
+	public function hostImpliesServerMode():Bool {
+		final variable = environmentValue("BEADS_DOLT_SERVER_HOST");
+		if (variable != "")
+			return !isLocalHost(variable);
+		if (registry.getString("dolt.mode") != "")
+			return false;
+		final host = registry.getString("dolt.host");
+		return host != "" && !isLocalHost(host);
+	}
+
 	public function getString(key:String):String {
 		return registry.getString(key);
 	}
@@ -351,6 +367,11 @@ private function gitPathForRepository(repository:String, path:String):String {
 function environmentValue(name:String):String {
 	final value = Sys.getEnv(name);
 	return value == null ? "" : value;
+}
+
+/** Upstream configfile.IsLocalHostString: an empty host, localhost, or a loopback or unspecified address. */
+private function isLocalHost(host:String):Bool {
+	return ["", "localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"].contains(goTrimSpace(host).toLowerCase());
 }
 
 /** `git config --get beads.role` in the current directory, trimmed, or "" when Git fails. */
