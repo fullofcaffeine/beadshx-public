@@ -341,7 +341,6 @@ private typedef ConfigPreflightInput = {
 final class Application {
 	static final identity = "BeadsHX 0.0.0-development (compatible with Beads v1.2.1 at 634cbbc4bc580fa5124f63fdf65d137a46d5b4ff)";
 	static final noWorkspaceMessage = "No active beads workspace found.";
-	static final noWorkspaceHint = "check BEADS_DIR/worktree setup, or run 'bd init' to create a new database";
 
 	/** utils.ErrAmbiguousID, the one partial-ID resolution failure that `bd history` reports. */
 	static final AMBIGUOUS_ISSUE_ID = "ambiguous issue ID: ";
@@ -748,15 +747,16 @@ final class Application {
 				}
 				0;
 			case NotFound:
+				final hint = workspaceDiagHint(false, LayeredConfig.atStartup().sharedServerMode());
 				switch invocation.output {
 					case Human:
-						output.writeStderr('Error: ${noWorkspaceMessage}\nHint: ${noWorkspaceHint}\n');
+						output.writeStderr('Error: ${noWorkspaceMessage}\nHint: ${hint}\n');
 					case Json:
 						final document:DiagnosticDocument = {
 							schema_version: 1,
 							error: "no_beads_directory",
 							message: noWorkspaceMessage,
-							hint: noWorkspaceHint
+							hint: hint
 						};
 						writeJsonStdout(Json.stringify(document, null, "  ") + "\n");
 				}
@@ -771,7 +771,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFound();
+				runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -840,7 +840,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFound();
+				runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -862,7 +862,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFound();
+				runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -884,7 +884,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFound();
+				runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -919,7 +919,7 @@ final class Application {
 	function runList(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -954,7 +954,7 @@ final class Application {
 	function runDepList(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1027,7 +1027,7 @@ final class Application {
 	function runDepCycles(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1116,7 +1116,7 @@ final class Application {
 	function runDepTree(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1331,7 +1331,7 @@ final class Application {
 	function runGraphCheck(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1404,7 +1404,7 @@ final class Application {
 	function runGraph(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1725,7 +1725,7 @@ final class Application {
 	function runWithIssueQuery(invocation:Invocation, action:(IssueQueryPort, WorkspaceLocation) -> Int):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1800,7 +1800,7 @@ final class Application {
 	function runBlocked(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1864,7 +1864,7 @@ final class Application {
 	function runComments(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2128,7 +2128,7 @@ final class Application {
 		return runWithLayeredConfig(invocation, true, false, (config, location, _) -> {
 			if (location == null) {
 				final message = "no active beads workspace found";
-				final hint = "run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new database";
+				final hint = workspaceDiagHint(true, config.sharedServerMode());
 				if (invocation.output == Json)
 					writeJsonStdout('{\n  "error": ${Json.stringify(message)},\n  "hint": ${Json.stringify(hint)},\n  "schema_version": 1\n}\n');
 				else
@@ -2379,7 +2379,7 @@ final class Application {
 		}
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: storeFree ? action(startup, null, null) : runDatabaseNotFound();
+			case NotFound: storeFree ? action(startup, null, null) : runDatabaseNotFound(startup.sharedServerMode());
 			case Found(location):
 				// Upstream warns about a missing metadata.json after its config warnings and before its database selection checks.
 				final defaultDirectory = missingMetadataDirectory(invocation, location);
@@ -2426,7 +2426,7 @@ final class Application {
 	function runLabel(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2589,7 +2589,7 @@ final class Application {
 	function runCount(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2614,7 +2614,7 @@ final class Application {
 			return runModeAwareFailure(invocation.output, "operation 'ready --claim' is not allowed in read-only mode");
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2787,7 +2787,7 @@ final class Application {
 	function runSearch(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2816,7 +2816,7 @@ final class Application {
 	function runQuery(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2957,7 +2957,7 @@ final class Application {
 	function runStale(invocation:Invocation):Int {
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3016,7 +3016,7 @@ final class Application {
 			return runModeAwareFailure(invocation.output, "operation 'orphans --fix' is not allowed in read-only mode");
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFound();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -5502,11 +5502,36 @@ final class Application {
 		return lines.join("\n") + "\n";
 	}
 
-	function runDatabaseNotFound():Int {
+	/**
+		Upstream's pre-run when it finds no database. Its hint names `bd doctor`
+		when the command uses a SQL server. A selected workspace without a
+		database is no server workspace, and its shared-server mode is refused
+		before this, so only a run without a workspace passes `sqlServer`.
+	**/
+	function runDatabaseNotFound(sqlServer = false):Int {
 		output.writeStderr("Error: no beads database found\n");
-		output.writeStderr("Hint: run 'bd where' to inspect the resolved workspace, or 'bd init' to create a new database\n");
+		output.writeStderr('Hint: ${workspaceDiagHint(true, sqlServer)}\n');
 		output.writeStderr("      or set BEADS_DIR to point to your .beads directory\n");
 		return 1;
+	}
+
+	/** runDatabaseNotFound without a workspace: upstream then uses a SQL server only in shared-server mode, from the process-start config. */
+	function runDatabaseNotFoundWithoutWorkspace():Int {
+		return runDatabaseNotFound(LayeredConfig.atStartup().sharedServerMode());
+	}
+
+	/**
+		Upstream workspaceDiagHint: the advice after a missing workspace or
+		database, with `bd where` (`includeWhere`) or without it. It also names
+		`bd doctor` when the command uses a SQL server (`sqlServer`).
+	**/
+	static function workspaceDiagHint(includeWhere:Bool, sqlServer:Bool):String {
+		final doctor = sqlServer ? "run 'bd doctor' to diagnose, " : "";
+		return includeWhere ? "run 'bd where' to inspect the resolved workspace, "
+			+ doctor
+			+ "or 'bd init' to create a new database" : "check BEADS_DIR/worktree setup, "
+			+ doctor
+			+ "or run 'bd init' to create a new database";
 	}
 
 	function runStoreFailure(message:String):Int {

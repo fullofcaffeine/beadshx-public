@@ -340,6 +340,24 @@ compare_no_workspace config_validate_help config validate --help
 compare_no_workspace config_drift config drift
 compare_no_workspace config_drift_json config drift --json
 compare_no_workspace config_drift_help config drift --help
+# In shared-server mode upstream's hint also names `bd doctor`. Without a workspace it reads the mode
+# from BEADS_DOLT_SHARED_SERVER (1 or true in any case), BD_DOLT_SHARED_SERVER and the user
+# config.yaml. Neither side writes.
+compare_no_workspace_env list_shared_server BEADS_DOLT_SHARED_SERVER=1 list
+compare_no_workspace_env count_json_shared_server BEADS_DOLT_SHARED_SERVER=TRUE count --json
+compare_no_workspace_env config_get_database_shared_server BEADS_DOLT_SHARED_SERVER=1 config get issue_prefix
+compare_no_workspace_env config_get_database_json_shared_server BD_DOLT_SHARED_SERVER=true config get issue_prefix --json
+compare_no_workspace_env config_get_yaml_shared_server BEADS_DOLT_SHARED_SERVER=1 config get export.auto
+compare_no_workspace_env config_list_shared_server BEADS_DOLT_SHARED_SERVER=1 config list
+compare_no_workspace_env config_list_json_shared_server BD_DOLT_SHARED_SERVER=t config list --json
+compare_no_workspace_env config_validate_shared_server BEADS_DOLT_SHARED_SERVER=1 config validate
+compare_no_workspace_env config_validate_json_shared_server BEADS_DOLT_SHARED_SERVER=1 config validate --json
+compare_no_workspace_env where_shared_server BEADS_DOLT_SHARED_SERVER=1 where
+compare_no_workspace_env where_json_shared_server BD_DOLT_SHARED_SERVER=1 where --json
+compare_no_workspace_user_config info_user_shared_server $'dolt:\n  shared-server: true' info
+compare_no_workspace_user_config where_user_shared_server $'dolt:\n  shared-server: true' where
+# Any other value of the variable leaves shared-server mode off.
+compare_no_workspace_env list_shared_server_other_value BEADS_DOLT_SHARED_SERVER=yes list
 BEADSHX_TEST_JSON_ENVELOPE=1 compare_no_workspace where_json_envelope where --json
 
 fingerprint_tree() {
