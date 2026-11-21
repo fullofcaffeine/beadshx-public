@@ -74,6 +74,16 @@ as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
 `export`, `#` comments, single or double quotes and `$VAR` expansion. If one
 line is not valid, `bdhx` ignores the full file, and prints no warning.
 
+Like upstream, a command that reads the database uses `BEADS_DB` only when no
+`--db`, `-C` or `BEADS_DIR` is set and no workspace is found from the current
+directory. These commands ignore `BD_DB`. For `where`, `BEADS_DB`, or else
+`BD_DB`, comes before `-C`, `BEADS_DIR` and the current directory; only `--db`
+comes first. The path, absolute or relative to the current directory, can name
+the workspace directory (such as `.beads`), its `embeddeddolt` directory, or a
+missing file in a `.beads` directory, such as a legacy `beads.db`. `bdhx` then
+reads that workspace with its `config.yaml` and `.env` file. For such a missing
+file, `info` prints that file as the database path, as upstream does.
+
 Like upstream, `bdhx` reads the selected workspace's `.beads/metadata.json`
 (or, when it does not exist, a legacy `.beads/config.json`) before any
 command runs. If the file cannot be read or does not decode, `bdhx` prints
@@ -112,6 +122,13 @@ Limits:
   and the `db` setting count too. Upstream then prints the path as given, or
   opens or creates a database in another directory. In these cases `version`
   and help pages print no warning.
+- When `BEADS_DB` (or, for `where`, `BD_DB`) selects with another path,
+  `where` and every command that reads the database report that they are not
+  available yet. This applies to a missing path outside a `.beads` directory,
+  a directory that is not a workspace, a workspace without an embedded
+  database, a server-mode, proxied or redirected workspace, a path deeper in a
+  `.beads` directory and a path with a trailing slash. For most of these paths
+  upstream creates an embedded database. `version` and help pages still run.
 - In a workspace that has only a legacy `.beads/config.json`, workspace
   discovery rewrites it as `.beads/metadata.json` for every command. Upstream
   does this only for `where` and the commands that read the database, not for

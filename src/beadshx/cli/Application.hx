@@ -475,6 +475,13 @@ final class Application {
 			output.writeStderr(invocation.listWarning);
 		if (usesStore(invocation.command) && databaseSettingSelects(invocation))
 			return runModeAwareFailure(invocation.output, databaseSettingRefusal(commandPath(invocation.command)));
+		switch invocation.databaseVariable {
+			// `version` and the help pages show nothing of the workspace they would select.
+			case UnsupportedPath(name) if (usesStore(invocation.command) || invocation.command == Where):
+				return runModeAwareFailure(invocation.output,
+					'${commandPath(invocation.command)} is not available yet when ${name} names this path in this build');
+			case NoVariable | VariablePath(_, _, _) | UnsupportedPath(_):
+		}
 		return switch invocation.command {
 			case RootHelp:
 				runRootHelp(invocation);
@@ -624,8 +631,8 @@ final class Application {
 	/**
 		Whether upstream takes the workspace from a database path. Store commands
 		take it from --db (a --db value that names a database instead finds the
-		workspace); `where`, `version` and help also from BEADS_DB, BD_DB and the
-		`db` setting.
+		workspace) or from a BEADS_DB path that the parser took as `databasePath`;
+		`where`, `version` and help also from BEADS_DB, BD_DB and the `db` setting.
 	**/
 	static function databasePathSelects(invocation:Invocation, location:WorkspaceLocation, opensStore:Bool):Bool {
 		if (invocation.databasePath != "" && location.databaseName == "")
@@ -779,9 +786,14 @@ final class Application {
 							switch store.info(location.path, invocation.infoSchema, invocation.global) {
 								case Failure(message): runStoreFailure(message);
 								case Success(snapshot):
+									// Upstream prints the database path it took: for BEADS_DB naming a missing file, that file.
+									final databasePath = switch invocation.databaseVariable {
+										case VariablePath(_, _, missingFile) if (missingFile != null): missingFile;
+										case NoVariable | VariablePath(_, _, _) | UnsupportedPath(_): snapshot.databasePath;
+									};
 									switch invocation.output {
-										case Human: output.writeStdout(renderInfoHuman(snapshot, invocation.infoSchema));
-										case Json: writeJsonStdout(renderInfoJson(snapshot, invocation.infoSchema));
+										case Human: output.writeStdout(renderInfoHuman(snapshot, databasePath, invocation.infoSchema));
+										case Json: writeJsonStdout(renderInfoJson(snapshot, databasePath, invocation.infoSchema));
 									}
 									0;
 							}
@@ -5524,9 +5536,9 @@ final class Application {
 		return 1;
 	}
 
-	function renderInfoHuman(snapshot:InfoSnapshot, includeSchema:Bool):String {
-		var rendered = "\nBeads Database Information\n" + "===========================\n" + 'Database: ${snapshot.databasePath}\n'
-			+ 'Mode: ${snapshot.mode}\n' + '\nIssue Count: ${snapshot.issueCount}\n';
+	function renderInfoHuman(snapshot:InfoSnapshot, databasePath:String, includeSchema:Bool):String {
+		var rendered = "\nBeads Database Information\n" + "===========================\n" + 'Database: ${databasePath}\n' + 'Mode: ${snapshot.mode}\n'
+			+ '\nIssue Count: ${snapshot.issueCount}\n';
 		if (includeSchema) {
 			rendered += "\nSchema Information:\n";
 			rendered += "  Tables: [issues dependencies labels config metadata]\n";
@@ -5540,7 +5552,7 @@ final class Application {
 		return rendered + "\n";
 	}
 
-	function renderInfoJson(snapshot:InfoSnapshot, includeSchema:Bool):String {
+	function renderInfoJson(snapshot:InfoSnapshot, databasePath:String, includeSchema:Bool):String {
 		final lines = new Array<String>();
 		lines.push("{");
 		if (snapshot.config.length > 0) {
@@ -5552,7 +5564,7 @@ final class Application {
 			}
 			lines.push("  },");
 		}
-		lines.push('  "database_path": ${Json.stringify(snapshot.databasePath)},');
+		lines.push('  "database_path": ${Json.stringify(databasePath)},');
 		lines.push('  "issue_count": ${snapshot.issueCount},');
 		lines.push('  "mode": ${Json.stringify(snapshot.mode)},');
 		if (includeSchema) {

@@ -4,6 +4,8 @@ import beadshx.cli.Parser;
 import beadshx.cli.EnvironmentPort;
 import beadshx.cli.JsonSettingPort;
 import beadshx.cli.JsonSettingPort.WorkspaceSelection;
+import beadshx.config.DatabaseVariableSelection;
+import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.cli.OutputPort;
 import beadshx.cli.WatchPort;
 import beadshx.identity.SystemActor;
@@ -80,7 +82,9 @@ final class FixedEnvironment implements EnvironmentPort {
 	}
 
 	/** These contracts read no workspace `.beads/.env`. */
-	public function selectWorkspace(selection:WorkspaceSelection):Void {}
+	public function selectWorkspace(selection:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
+		return NoVariable;
+	}
 }
 
 /** These contracts pass --json, so the `json` setting never decides their output. */

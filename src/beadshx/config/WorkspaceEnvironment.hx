@@ -1,6 +1,7 @@
 package beadshx.config;
 
 import beadshx.cli.JsonSettingPort.WorkspaceSelection;
+import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.config.LayeredConfig.environmentValue;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.nativeextern.os.OsPkg;
@@ -9,7 +10,8 @@ import beadshx.workspace.WorkspaceDiscovery;
 import beadshx.workspace.WorkspacePort;
 
 /**
-	Upstream's `.beads/.env` loading in the root pre-run.
+	Upstream's `.beads/.env` loading in the root pre-run, and the BEADS_DB and
+	BD_DB selection that decides which workspace's file it loads.
 
 	Why: upstream reads every BD_ and BEADS_ setting from the process
 	environment, and its pre-run first copies the selected workspace's
@@ -19,10 +21,11 @@ import beadshx.workspace.WorkspacePort;
 	setting is read. How: first, when neither -C nor a set BEADS_DIR, BEADS_DB
 	or BD_DB chooses the workspace, the .env file of the workspace found from
 	the current directory may set those three selectors (upstream
-	loadSelectionEnvironment). Then every variable of the selected workspace's
-	.env file that the environment does not have is set (upstream
+	loadSelectionEnvironment). Then BEADS_DB or BD_DB may choose the workspace
+	(see selectDatabaseVariable). Last, every variable of the selected
+	workspace's .env file that the environment does not have is set (upstream
 	loadBeadsEnvFile under prepareSelectedCommandContext). Upstream sets
-	BEADS_DIR to the selected directory before that second step, so the file
+	BEADS_DIR to the selected directory before that last step, so the file
 	cannot set BEADS_DIR there and `$BEADS_DIR` expands to that directory.
 	Nothing is printed: a missing, unreadable or rejected file adds nothing.
 **/
@@ -31,8 +34,11 @@ final class WorkspaceEnvironment {
 	/** Whether the first step set BEADS_DIR, which was then unset or empty for upstream's process-start config. */
 	static var callerBeadsDirReplaced = false;
 
-	/** Loads the `.env` variables for one command's -C and --db selection. */
-	public static function load(workspace:WorkspacePort, selection:WorkspaceSelection):Void {
+	/**
+		Loads the `.env` variables for one command's -C and --db selection, and
+		returns what BEADS_DB or BD_DB selects for that command.
+	**/
+	public static function load(workspace:WorkspacePort, selection:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
 		var selected:Null<WorkspaceDiscovery> = null;
 		// -C sets BEADS_DIR before upstream's first step, which then does nothing.
 		if (goTrimSpace(selection.directory) == ""
@@ -60,13 +66,20 @@ final class WorkspaceEnvironment {
 			if (!changed && selection.databasePath == "")
 				selected = found;
 		}
-		if (selected == null)
-			selected = workspace.discover(selection.directory, selection.databasePath);
+		final variable = selectDatabaseVariable(workspace, selection, use);
+		switch variable {
+			case VariablePath(_, path, _):
+				selected = workspace.discover(selection.directory, path);
+			case NoVariable | UnsupportedPath(_):
+				if (selected == null)
+					selected = workspace.discover(selection.directory, selection.databasePath);
+		}
 		switch selected {
 			case Found(location):
 				loadFile(location.path);
 			case NotFound | InvalidSelection(_):
 		}
+		return variable;
 	}
 
 	/**
@@ -88,5 +101,115 @@ final class WorkspaceEnvironment {
 		for (name in variables.keys())
 			if (name != "BEADS_DIR" && Sys.getEnv(name) == null)
 				Sys.putEnv(name, variables.get(name));
+	}
+
+	/**
+		Whether BEADS_DB or BD_DB chooses the workspace of a command with the -C
+		and --db values of `typed`.
+
+		Why: without --db, upstream's commands that open the store read BEADS_DB
+		when no -C or BEADS_DIR is set and no workspace is found from the current
+		directory, and `where` reads BEADS_DB, else BD_DB, before all of those.
+		What: the variable and its path when one of them selects as described in
+		DatabaseVariableUse. How: selectPath decides whether this build's --db
+		discovery selects that path exactly as upstream does.
+	**/
+	static function selectDatabaseVariable(workspace:WorkspacePort, typed:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
+		if (typed.databasePath != "")
+			return NoVariable;
+		return switch use {
+			case WithoutWorkspace: selectWithoutWorkspace(workspace, typed);
+			case BeforeWorkspace: selectBeforeWorkspace(workspace, typed);
+		};
+	}
+
+	/** BEADS_DB for a command that opens the store, once nothing else selects a workspace. */
+	static function selectWithoutWorkspace(workspace:WorkspacePort, typed:WorkspaceSelection):DatabaseVariableSelection {
+		final path = environmentValue("BEADS_DB");
+		if (path == "" || goTrimSpace(typed.directory) != "" || environmentValue("BEADS_DIR") != "")
+			return NoVariable;
+		return switch workspace.discover("", "") {
+			case NotFound: selectPath(workspace, "", "BEADS_DB", path);
+			case Found(_) | InvalidSelection(_): NoVariable;
+		};
+	}
+
+	/** BEADS_DB, else BD_DB, for `where`, before -C, BEADS_DIR and the current directory. */
+	static function selectBeforeWorkspace(workspace:WorkspacePort, typed:WorkspaceSelection):DatabaseVariableSelection {
+		// Upstream checks -C before the command runs; its error comes first.
+		if (goTrimSpace(typed.directory) != "")
+			switch workspace.discover(typed.directory, "") {
+				case InvalidSelection(_):
+					return NoVariable;
+				case Found(_) | NotFound:
+			}
+		for (name in ["BEADS_DB", "BD_DB"]) {
+			final path = environmentValue(name);
+			if (path != "")
+				return selectPath(workspace, typed.directory, name, path);
+		}
+		return NoVariable;
+	}
+
+	/**
+		The paths of variable `name` that select an existing embedded workspace
+		in upstream the way this build's --db discovery does.
+
+		Why: upstream turns BEADS_DB into a database path with FindDatabasePath,
+		then maps it to a workspace with resolveCommandBeadsDir, and opens or
+		creates the database there. What: VariablePath for three forms whose
+		workspace holds metadata.json and an `embeddeddolt` database, without a
+		redirect: that workspace directory itself, its `embeddeddolt`
+		directory, and a missing file in a directory named `.beads`, such as a
+		legacy `beads.db` (upstream reads the workspace's database for it).
+		Every other path is UnsupportedPath. For a missing path elsewhere, a
+		directory that is not a workspace, or a workspace without a database,
+		upstream creates an embedded database. How: these checks run before
+		discovery, which may rewrite a legacy config.json as metadata.json, and
+		discovery must then return the directory that upstream selects. The
+		workspace directory must not be inside a directory named `.beads`, and
+		the database path must be directly inside one, because upstream takes
+		such a parent before it compares any candidate.
+	**/
+	static function selectPath(workspace:WorkspacePort, directory:String, name:String, path:String):DatabaseVariableSelection {
+		final parent = FilepathPkg.dir(path);
+		final inBeadsDirectory = FilepathPkg.base(parent) == ".beads";
+		var missingFile:Null<String> = null;
+		final selectedPath = switch ConfigProbes.statPath(path) {
+			case StatDirectory if (ConfigProbes.statSucceeds(FilepathPkg.join(path, "metadata.json"))):
+				inBeadsDirectory ? null : path;
+			// Upstream looks for a database inside this directory first, and finds none.
+			case StatDirectory
+				if (inBeadsDirectory
+					&& FilepathPkg.base(path) == "embeddeddolt"
+					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "config.json"))
+					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "embeddeddolt"))
+					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "dolt"))):
+				parent;
+			case StatMissing if (inBeadsDirectory):
+				missingFile = absolutePath(path);
+				parent;
+			case StatDirectory | StatMissing | StatNotDirectory | StatFailed(_):
+				null;
+		};
+		if (selectedPath == null
+			|| !ConfigProbes.statSucceeds(FilepathPkg.join(selectedPath, "metadata.json"))
+			|| ConfigProbes.statSucceeds(FilepathPkg.join(selectedPath, "redirect")))
+			return UnsupportedPath(name);
+		return switch workspace.discover(directory, path) {
+			case Found(location)
+				if (location.path == selectedPath
+					&& location.databaseName == ""
+					&& !location.proxiedServer
+					&& FilepathPkg.base(location.databasePath) == "embeddeddolt"):
+				VariablePath(name, path, missingFile);
+			case Found(_) | NotFound | InvalidSelection(_):
+				UnsupportedPath(name);
+		};
+	}
+
+	/** Go's filepath.Abs, which upstream's CanonicalizePath returns for a path that does not exist. */
+	static function absolutePath(path:String):String {
+		return FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
 	}
 }

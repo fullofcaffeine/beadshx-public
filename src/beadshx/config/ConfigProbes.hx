@@ -145,7 +145,8 @@ final class ConfigProbes {
 		return error != null && OsPkg.isNotExist(error);
 	}
 
-	static function statPath(path:String):PathStat {
+	/** os.Stat of `path`, narrowed to the answers upstream's path checks read. */
+	public static function statPath(path:String):PathStat {
 		final result = OsPkg.stat(path);
 		final error = result.value2;
 		if (error != null)

@@ -1,5 +1,6 @@
 package beadshx.cli;
 
+import beadshx.config.DatabaseVariableSelection;
 import beadshx.store.IssueListRequest;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
@@ -14,7 +15,13 @@ typedef Invocation = {
 	final output:OutputMode;
 	final actor:String;
 	final directory:String;
+
+	/** The --db value, or the BEADS_DB or BD_DB path that `databaseVariable` selects instead; it can be empty. */
 	final databasePath:String;
+
+	/** What BEADS_DB or BD_DB selects: a path is then `databasePath`, as if --db had named it. */
+	final databaseVariable:DatabaseVariableSelection;
+
 	final databaseName:String;
 	final global:Bool;
 	final cpuProfile:Bool;

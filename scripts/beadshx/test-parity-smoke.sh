@@ -802,6 +802,16 @@ compare_real_database() {
 		candidate_temporary=(TMPDIR="$case_root/candidate-tmp")
 	fi
 
+	local oracle_work candidate_work oracle_work_logical candidate_work_logical
+	oracle_work="$(cd "$oracle_root/work" && pwd -P)"
+	candidate_work="$(cd "$candidate_root/work" && pwd -P)"
+	# Go's Getwd keeps the logical path that the run starts in, which filepath.Abs extends.
+	oracle_work_logical="$(cd "$oracle_root/work" && pwd -L)"
+	candidate_work_logical="$(cd "$candidate_root/work" && pwd -L)"
+	# An extra variable names each side's own work directory as <work>.
+	local oracle_extra_env=("${real_database_extra_env[@]//<work>/$oracle_work}")
+	local candidate_extra_env=("${real_database_extra_env[@]//<work>/$candidate_work}")
+
 	set +e
 	(
 		cd "$oracle_root/work"
@@ -809,7 +819,7 @@ compare_real_database() {
 			XDG_CONFIG_HOME="$oracle_root/config" \
 			"${oracle_temporary[@]}" \
 			"${real_database_env[@]}" \
-			"${real_database_extra_env[@]}" \
+			"${oracle_extra_env[@]}" \
 			"$oracle" "$@"
 	) >"$case_root/oracle.stdout" 2>"$case_root/oracle.stderr"
 	oracle_exit=$?
@@ -819,7 +829,7 @@ compare_real_database() {
 			XDG_CONFIG_HOME="$candidate_root/config" \
 			"${candidate_temporary[@]}" \
 			"${real_database_env[@]}" \
-			"${real_database_extra_env[@]}" \
+			"${candidate_extra_env[@]}" \
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
@@ -852,12 +862,11 @@ compare_real_database() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
-	local oracle_work candidate_work
-	oracle_work="$(cd "$oracle_root/work" && pwd -P)"
-	candidate_work="$(cd "$candidate_root/work" && pwd -P)"
 	# A metadata.json load warning names each side's own workspace.
-	sed "s|$oracle_work|<work>|g" "$case_root/oracle.stderr" >"$case_root/oracle.stderr.normalized"
-	sed "s|$candidate_work|<work>|g" "$case_root/candidate.stderr" >"$case_root/candidate.stderr.normalized"
+	sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" \
+		"$case_root/oracle.stderr" >"$case_root/oracle.stderr.normalized"
+	sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
+		"$case_root/candidate.stderr" >"$case_root/candidate.stderr.normalized"
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
 		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
@@ -869,8 +878,10 @@ compare_real_database() {
 	fi
 	case "$comparison" in
 	exact | exact-home)
-		sed "s|$oracle_work|<work>|g" "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		sed "s|$candidate_work|<work>|g" "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
+		sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" \
+			"$case_root/oracle.stdout" >"$case_root/oracle.normalized"
+		sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
+			"$case_root/candidate.stdout" >"$case_root/candidate.normalized"
 		if [[ "$comparison" == exact-home ]]; then
 			# The user config.yaml path names each side's own HOME, which Go prints cleaned.
 			local oracle_home candidate_home
@@ -1082,6 +1093,9 @@ expect_candidate_failure() {
 	fi
 	mkdir -p "$case_root/candidate-tmp"
 	candidate_before="$(fingerprint_tree "$state_root")"
+	local candidate_work
+	candidate_work="$(cd "$state_root/work" && pwd -P)"
+	local candidate_extra_env=("${real_database_extra_env[@]//<work>/$candidate_work}")
 	set +e
 	(
 		cd "$state_root/work"
@@ -1089,7 +1103,7 @@ expect_candidate_failure() {
 			XDG_CONFIG_HOME="$state_root/config" \
 			TMPDIR="$case_root/candidate-tmp" \
 			"${real_database_env[@]}" \
-			"${real_database_extra_env[@]}" \
+			"${candidate_extra_env[@]}" \
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
@@ -3432,6 +3446,124 @@ compare_no_workspace dotenv_without_workspace_where where
 compare_no_workspace dotenv_without_workspace_count count
 compare_no_workspace dotenv_without_workspace_config_get config get json
 no_workspace_setup=""
+
+# Upstream's commands that open the store take BEADS_DB, never BD_DB, only when no --db, -C or
+# BEADS_DIR is set and no workspace is found from the current directory. `where` takes BEADS_DB, else
+# BD_DB, before -C, BEADS_DIR and the current directory; only --db comes first. A path selects an
+# embedded workspace when it names the workspace directory, its embeddeddolt directory, or a missing
+# file directly in a .beads directory, such as a legacy beads.db: upstream then prints that file as
+# the database path in `info`. The cases run in work, whose workspace moves to work/db.
+move_workspace_to_db() {
+	mkdir "$1/work/db"
+	mv "$1/work/.beads" "$1/work/db/.beads"
+}
+# Also adds a copy of the workspace at work/other.
+copy_workspace_to_other() {
+	move_workspace_to_db "$1"
+	mkdir "$1/work/other"
+	copy_fixture_tree "$1/work/db/.beads" "$1/work/other/.beads"
+}
+# Keeps the current directory's workspace and adds the copy at work/other.
+add_other_workspace() {
+	mkdir "$1/work/other"
+	copy_fixture_tree "$1/work/.beads" "$1/work/other/.beads"
+}
+compare_beads_db() {
+	local name="$1"
+	local comparison="$2"
+	local environment="$3"
+	shift 3
+	read -r -a real_database_extra_env <<<"$environment"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+}
+real_database_read_only=1
+real_database_setup=move_workspace_to_db
+compare_beads_db beads-db-workspace-count exact BEADS_DB=db/.beads count
+compare_beads_db beads-db-workspace-list-json exact BEADS_DB=db/.beads list --json
+compare_beads_db beads-db-absolute-workspace-label-list exact BEADS_DB='<work>/db/.beads' label list "$real_database_issue_id"
+compare_beads_db beads-db-workspace-info-schema-json exact BEADS_DB=db/.beads info --schema --json
+compare_beads_db beads-db-database-directory-ready exact BEADS_DB=db/.beads/embeddeddolt ready
+compare_beads_db beads-db-absolute-database-directory-info-json exact BEADS_DB='<work>/db/.beads/embeddeddolt' info --json
+compare_beads_db beads-db-legacy-file-count exact BEADS_DB=db/.beads/beads.db count
+compare_beads_db beads-db-legacy-dolt-path-config-get exact BEADS_DB=db/.beads/dolt config get issue_prefix
+# Human `info` also checks the Git hooks, which this build does not port, so these print JSON.
+compare_beads_db beads-db-legacy-file-info-json exact BEADS_DB=db/.beads/beads.db info --json
+compare_beads_db beads-db-absolute-legacy-file-info-json exact BEADS_DB='<work>/db/.beads/beads.db' info --json
+compare_beads_db beads-db-where exact BEADS_DB=db/.beads where
+compare_beads_db beads-db-where-legacy-file-json exact BEADS_DB=db/.beads/beads.db where --json
+compare_beads_db beads-db-where-bd-db exact BD_DB=db/.beads/embeddeddolt where
+# Store commands ignore BD_DB.
+compare_beads_db beads-db-bd-db-count exact BD_DB=db/.beads count
+# A BEADS_DIR that names no workspace still keeps BEADS_DB from selecting.
+compare_beads_db beads-db-invalid-beads-dir-count exact 'BEADS_DIR=. BEADS_DB=db/.beads' count
+# -C is checked first; a file names no absolute path in the error.
+compare_beads_db beads-db-where-invalid-directory exact BEADS_DB=db/.beads -C db/.beads/metadata.json where
+# version runs as usual, even for a path that this build cannot select.
+compare_beads_db beads-db-version stderr-only BEADS_DB=missing/beads.db version
+# The selected workspace's config.yaml and .env apply.
+real_database_extra_config='json: true'
+compare_beads_db beads-db-json-setting-count exact BEADS_DB=db/.beads count
+compare_beads_db beads-db-json-setting-where exact BEADS_DB=db/.beads where
+real_database_extra_config=""
+move_workspace_with_dotenv() {
+	move_workspace_to_db "$1"
+	printf 'BD_JSON=1\n' >"$1/work/db/.beads/.env"
+}
+real_database_setup=move_workspace_with_dotenv
+compare_beads_db beads-db-dotenv-ready exact BEADS_DB=db/.beads ready
+real_database_setup=copy_workspace_to_other
+compare_beads_db beads-db-beads-dir-first-info-json exact 'BEADS_DIR=other/.beads BEADS_DB=db/.beads' info --json
+compare_beads_db beads-db-directory-flag-first-info-json exact BEADS_DB=db/.beads -C other info --json
+compare_beads_db beads-db-db-flag-first-info-json exact BEADS_DB=db/.beads --db other/.beads/embeddeddolt info --json
+compare_beads_db beads-db-where-before-directory-flag exact BEADS_DB=db/.beads -C other where
+compare_beads_db beads-db-where-before-beads-dir exact 'BEADS_DIR=other/.beads BEADS_DB=db/.beads' where
+compare_beads_db beads-db-where-before-bd-db exact 'BEADS_DB=db/.beads BD_DB=other/.beads' where --json
+compare_beads_db beads-db-where-db-flag-first exact BEADS_DB=db/.beads --db other/.beads where
+real_database_setup=add_other_workspace
+compare_beads_db beads-db-current-directory-first-info-json exact BEADS_DB=other/.beads info --json
+compare_beads_db beads-db-where-before-current-directory exact BEADS_DB=other/.beads where
+real_database_setup=""
+real_database_read_only=""
+no_workspace_extra_env=(BD_DB=missing)
+compare_no_workspace beads-db-bd-db-without-workspace count
+no_workspace_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Other paths are refused before anything opens. For a missing path outside a .beads directory, a
+# directory that is not a workspace, or a workspace without a database, upstream creates an embedded
+# database; it reads the workspace for a deeper path inside it or a trailing slash.
+expect_beads_db_refusal() {
+	local name="$1"
+	local environment="$2"
+	local stdout="$3"
+	local stderr="$4"
+	shift 4
+	read -r -a real_database_extra_env <<<"$environment"
+	expect_candidate_failure "$name" "$stdout" "$stderr" "" "$@"
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+}
+candidate_only_setup=move_workspace_to_db
+expect_beads_db_refusal beads-db-missing-path-unported BEADS_DB=missing/beads.db "" \
+	"Error: count is not available yet when BEADS_DB names this path in this build" count
+expect_beads_db_refusal beads-db-plain-directory-json-unported BEADS_DB=. \
+	'{"error":"list is not available yet when BEADS_DB names this path in this build","schema_version":1}' "" list --json
+expect_beads_db_refusal beads-db-project-directory-unported BEADS_DB='<work>/db' "" \
+	"Error: show is not available yet when BEADS_DB names this path in this build" show "$real_database_issue_id"
+expect_beads_db_refusal beads-db-deeper-path-unported BEADS_DB=db/.beads/missing/beads.db "" \
+	"Error: ready is not available yet when BEADS_DB names this path in this build" ready
+expect_beads_db_refusal beads-db-trailing-slash-unported BEADS_DB=db/.beads/ "" \
+	"Error: where is not available yet when BEADS_DB names this path in this build" where
+expect_beads_db_refusal beads-db-where-missing-path-unported BEADS_DB=missing/beads.db "" \
+	"Error: where is not available yet when BEADS_DB names this path in this build" where
+expect_beads_db_refusal beads-db-where-bd-db-json-unported BD_DB=missing \
+	'{"error":"where is not available yet when BD_DB names this path in this build","schema_version":1}' "" where --json
+move_workspace_without_database() {
+	move_workspace_to_db "$1"
+	rm -rf "$1/work/db/.beads/embeddeddolt"
+}
+candidate_only_setup=move_workspace_without_database
+expect_beads_db_refusal beads-db-workspace-without-database-unported BEADS_DB=db/.beads "" \
+	"Error: count is not available yet when BEADS_DB names this path in this build" count
+candidate_only_setup=""
 
 wait_for_watch_text() {
 	local file="$1"

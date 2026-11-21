@@ -2,6 +2,8 @@ import beadshx.cli.Application;
 import beadshx.cli.EnvironmentPort;
 import beadshx.cli.JsonSettingPort;
 import beadshx.cli.JsonSettingPort.WorkspaceSelection;
+import beadshx.config.DatabaseVariableSelection;
+import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.cli.OutputPort;
 import beadshx.cli.Parser;
 import beadshx.cli.WatchPort;
@@ -229,7 +231,9 @@ private final class EmptyEnvironment implements EnvironmentPort {
 	public function value(name:String):String
 		return "";
 
-	public function selectWorkspace(selection:WorkspaceSelection):Void {}
+	public function selectWorkspace(selection:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
+		return NoVariable;
+	}
 }
 
 /** This contract renders directly and parses no arguments. */

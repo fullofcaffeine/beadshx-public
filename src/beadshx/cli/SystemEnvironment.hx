@@ -1,6 +1,8 @@
 package beadshx.cli;
 
 import beadshx.cli.JsonSettingPort.WorkspaceSelection;
+import beadshx.config.DatabaseVariableSelection;
+import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.config.WorkspaceEnvironment;
 import beadshx.workspace.WorkspacePort;
 
@@ -18,7 +20,7 @@ final class SystemEnvironment implements EnvironmentPort {
 		return found == null ? "" : found;
 	}
 
-	public function selectWorkspace(selection:WorkspaceSelection):Void {
-		WorkspaceEnvironment.load(workspace, selection);
+	public function selectWorkspace(selection:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
+		return WorkspaceEnvironment.load(workspace, selection, use);
 	}
 }

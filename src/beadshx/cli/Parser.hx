@@ -6,6 +6,7 @@ import beadshx.cli.Invocation.DepTreeInvocation;
 import beadshx.cli.Invocation.EventsInvocation;
 import beadshx.cli.Invocation.GraphInvocation;
 import beadshx.cli.Invocation.HistoryInvocation;
+import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.IssueListMetadataFilter;
@@ -1331,7 +1332,14 @@ final class Parser {
 
 		// Cobra reports the flag errors above before upstream's pre-run loads the selected
 		// workspace's .beads/.env, which comes before any setting or variable is read below.
-		environment.selectWorkspace({directory: directory, databasePath: databasePath});
+		final variableUse = positional.length > 0 && positional[0] == "where" ? BeforeWorkspace : WithoutWorkspace;
+		final databaseVariable = environment.selectWorkspace({directory: directory, databasePath: databasePath}, variableUse);
+		// A path from BEADS_DB or BD_DB selects the workspace from here on, as if --db had named it.
+		switch databaseVariable {
+			case VariablePath(_, path, _):
+				databasePath = path;
+			case NoVariable | UnsupportedPath(_):
+		}
 
 		final formatJson = formatFlagSet && isJsonFormat(formatFlagValue);
 		if (formatFlagSet && !formatJson)
@@ -1542,6 +1550,7 @@ final class Parser {
 				actor: actor,
 				directory: directory,
 				databasePath: databasePath,
+				databaseVariable: databaseVariable,
 				databaseName: databaseName,
 				global: global,
 				cpuProfile: cpuProfile,
@@ -1890,6 +1899,7 @@ final class Parser {
 				actor: actor,
 				directory: directory,
 				databasePath: databasePath,
+				databaseVariable: databaseVariable,
 				databaseName: databaseName,
 				global: global,
 				cpuProfile: cpuProfile,
