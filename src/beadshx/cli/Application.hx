@@ -342,6 +342,21 @@ private typedef ConfigPreflightInput = {
 	final reachesSharedServer:Bool;
 }
 
+/** One stored issue_prefix read: the workspace directory and database it came from, and the value. */
+private typedef StoredPrefixRead = {
+	final key:String;
+	final value:String;
+}
+
+/** What a stored issue_prefix read does when the dolt.shared-server setting turns on shared-server mode. */
+private enum SharedServerSettingRead {
+	/** Upstream's where still reads the embedded database. */
+	ReadEmbedded;
+
+	/** The commands that look up partial IDs refuse that mode before they get here; read nothing. */
+	ReadNothing;
+}
+
 /** Haxe-owned read-only command application. */
 final class Application {
 	static final identity = "BeadsHX 0.0.0-development (compatible with Beads v1.2.1 at 634cbbc4bc580fa5124f63fdf65d137a46d5b4ff)";
@@ -362,6 +377,9 @@ final class Application {
 	final watch:WatchPort;
 	var jsonDeprecationEmitted = false;
 	var sharedServerNoticeEmitted = false;
+
+	/** The last stored issue_prefix read, so one command opens its database for the prefix at most once. */
+	var storedPrefixRead:Null<StoredPrefixRead> = null;
 
 	public function new(parser:Parser, output:OutputPort, actor:ActorPort, gitHistory:GitHistoryPort, workspace:WorkspacePort, store:ReadonlyStorePort,
 			profiler:ProfilePort, watch:WatchPort) {
@@ -3236,7 +3254,7 @@ final class Application {
 							case Success(query):
 								final result = switch query.issueOrphanCandidates(location.path, invocation.listRequest, invocation.global) {
 									case Failure(message): runModeAwareFailure(invocation.output, 'unable to find orphaned issues: ${message}');
-									case Success(scan): loadAndRenderOrphans(invocation, location.prefix, scan);
+									case Success(scan): loadAndRenderOrphans(invocation, location, scan);
 								};
 								closeIssueQuery(query, result);
 						}
@@ -3244,13 +3262,20 @@ final class Application {
 		};
 	}
 
-	function loadAndRenderOrphans(invocation:Invocation, configuredPrefix:String, scan:OrphanCandidateScan):Int {
+	/**
+		Finds the candidates that a commit message names. The prefix is upstream
+		doltStoreProvider.GetIssuePrefix: the layered `issue-prefix` setting
+		(BD_ISSUE_PREFIX sets it, the `issue_prefix` spelling does not), then the
+		stored issue_prefix that the scan read in the same session, then `bd`.
+	**/
+	function loadAndRenderOrphans(invocation:Invocation, location:WorkspaceLocation, scan:OrphanCandidateScan):Int {
 		if (scan.candidates.length == 0)
 			return renderOrphans(invocation, []);
 		final gitDirectory = invocation.directory == "" ? "." : invocation.directory;
 		return switch gitHistory.log(gitDirectory) {
 			case Failure(message): runModeAwareFailure(invocation.output, 'unable to find orphaned issues: ${message}');
 			case Success(log):
+				final configuredPrefix = LayeredConfig.forWorkspace(location.path).getString("issue-prefix");
 				final storedPrefix = scan.prefix == "" ? "bd" : scan.prefix;
 				final prefix = configuredPrefix == "" ? storedPrefix : configuredPrefix;
 				renderOrphans(invocation, findOrphanedIssues(scan.candidates, prefix, log));
@@ -4934,22 +4959,38 @@ final class Application {
 		return writeRenderedJsonStdout(renderShowJson(found));
 	}
 
+	/** Upstream utils.ResolvePartialID: the exact ID first, and the issue prefix only after a miss. */
 	function lookupIssueSummary(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):StoreResult<IssueLookup> {
 		final exact = query.issueSummary(location.path, location.databaseName, id, global);
 		return switch exact {
 			case Success(IssueMissing):
-				final prefixed = configuredPrefixCandidate(id, location.prefix);
+				final issuePrefix = partialIdPrefix(location);
+				final prefixed = configuredPrefixCandidate(id, issuePrefix);
 				final normalized = prefixed == id ? exact : query.issueSummary(location.path, location.databaseName, prefixed, global);
 				switch normalized {
-					case Success(IssueMissing): resolveAbbreviatedIssue(location, id, prefixed, global, query);
+					case Success(IssueMissing): resolveAbbreviatedIssue(location, id, issuePrefix, prefixed, global, query);
 					case Success(IssueFound(_)) | Failure(_): normalized;
 				}
 			case Success(IssueFound(_)) | Failure(_): exact;
 		};
 	}
 
-	function resolveAbbreviatedIssue(location:WorkspaceLocation, input:String, normalized:String, global:Bool, query:IssueQueryPort):StoreResult<IssueLookup> {
-		final prefix = normalizedPrefix(location.prefix);
+	/**
+		The prefix that partial-ID lookup adds to an ID and strips from the
+		candidates. Upstream ResolvePartialID takes the stored issue_prefix, also
+		when config.yaml names another prefix. Without one, upstream takes `bd`
+		and guesses each candidate's prefix, which this lookup does not do; it
+		takes config.yaml's prefix instead, as it does where it reads no stored
+		prefix (a server or proxied workspace).
+	**/
+	function partialIdPrefix(location:WorkspaceLocation):String {
+		final stored = storedIssuePrefix(location, ReadNothing);
+		return stored != "" ? stored : location.yamlPrefix;
+	}
+
+	function resolveAbbreviatedIssue(location:WorkspaceLocation, input:String, issuePrefix:String, normalized:String, global:Bool,
+			query:IssueQueryPort):StoreResult<IssueLookup> {
+		final prefix = normalizedPrefix(issuePrefix);
 		final hashPart = StringTools.startsWith(normalized, prefix) ? normalized.substr(prefix.length) : normalized;
 		if (!isPartialIdHash(hashPart))
 			return Success(IssueMissing);
@@ -5723,31 +5764,50 @@ final class Application {
 	}
 
 	/**
-		The prefix `bd where` prints. Workspace discovery takes config.yaml's
-		issue-prefix, or else reads issue_prefix from the embedded database, but
-		it reads no database in shared-server mode, or when a config file does
-		not parse for the workspace. Upstream's where still reads the embedded
-		database then, unless the workspace is proxied or configfile
-		IsDoltServerMode makes it a server workspace (BEADS_DOLT_SHARED_SERVER
-		counts, the dolt.shared-server setting does not). It opens the database
-		that GetDoltDatabase names, with `-` and `.` changed to `_`, without
-		creating it, and prints no prefix when the read fails.
+		The prefix `bd where` prints, as upstream's where takes it: config.yaml's
+		issue-prefix, or else its issue_prefix, or else the stored issue_prefix.
 	**/
 	function wherePrefix(location:WorkspaceLocation):String {
-		if (location.prefix != "" || location.databasePath == "" || location.proxiedServer)
-			return location.prefix;
-		final config = LayeredConfig.forWorkspace(location.path);
-		if (!config.sharedServerMode() && config.failure == null)
-			return location.prefix;
+		return location.yamlPrefix != "" ? location.yamlPrefix : storedIssuePrefix(location, ReadEmbedded);
+	}
+
+	/**
+		The issue_prefix row of the workspace's embedded database.
+
+		Why: only `where` without a config.yaml prefix and partial-ID lookup after
+		an exact miss need it. Reading it for them alone, instead of during
+		workspace discovery, saves a database open in every other command.
+
+		What: "" when upstream's where would read no embedded database: without a
+		database path, in a proxied workspace, when metadata.json does not load
+		or names another backend, or when configfile IsDoltServerMode makes it a
+		server workspace (BEADS_DOLT_SHARED_SERVER counts). The dolt.shared-server
+		setting does not count for that check; `sharedServerSetting` says whether
+		it stops the read. A failed read also gives "".
+
+		How: it opens the database that GetDoltDatabase names, with `-` and `.`
+		changed to `_`, without creating it, and keeps the value for the rest of
+		the command.
+	**/
+	function storedIssuePrefix(location:WorkspaceLocation, sharedServerSetting:SharedServerSettingRead):String {
+		if (location.databasePath == "" || location.proxiedServer)
+			return "";
 		final metadata = switch readMetadataFields(location.path) {
 			case MetadataFields(fields): fields;
 			case MetadataAbsent: new Map<String, String>();
-			// checkWorkspaceMetadata stopped where for a metadata.json that does not load.
+			// checkWorkspaceMetadata stopped the command for a metadata.json that does not load.
 			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: return "";
 		};
 		final backend = metadataField(metadata, "backend");
 		if (backend != "" && backend != "dolt")
 			return "";
+		final config = LayeredConfig.forWorkspace(location.path);
+		switch sharedServerSetting {
+			case ReadEmbedded:
+			case ReadNothing:
+				if (config.sharedServerMode())
+					return "";
+		}
 		if (config.doltServerMode(metadataField(metadata, "dolt_mode"), metadataField(metadata, "dolt_server_host")))
 			return "";
 		final variable = environmentValue("BEADS_DOLT_SERVER_DATABASE");
@@ -5756,10 +5816,16 @@ final class Application {
 		final database = StringTools.replace(StringTools.replace(configured, "-", "_"), ".", "_");
 		if (!isEmbeddedDatabaseIdentifier(database) || !embeddedDatabaseExists(location.path, database))
 			return "";
-		return switch store.configValue(location.path, database, "issue_prefix", false) {
+		final key = location.path + "\n" + database;
+		final previous = storedPrefixRead;
+		if (previous != null && previous.key == key)
+			return previous.value;
+		final value = switch store.configValue(location.path, database, "issue_prefix", false) {
 			case Success(value): value;
 			case Failure(_): "";
 		};
+		storedPrefixRead = {key: key, value: value};
+		return value;
 	}
 
 	function renderWhereHuman(location:WorkspaceLocation, prefix:String):String {

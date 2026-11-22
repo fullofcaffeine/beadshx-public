@@ -1113,28 +1113,6 @@ func SearchIssueIDs(beadsDir, query string, global bool) (result *IssueIDs, err 
 	return &IssueIDs{ids: ids}, nil
 }
 
-// ReadLocalPrefix returns the stored issue prefix only when the workspace can
-// be opened locally without starting or contacting a server.
-func ReadLocalPrefix(beadsDir string) (prefix string, err error) {
-	if err := initializeSelectedConfig(beadsDir); err != nil {
-		return "", err
-	}
-	fileConfig, err := configfile.LoadForDiscovery(beadsDir)
-	if err != nil {
-		return "", err
-	}
-	if doltserver.IsSharedServerMode() || fileConfig != nil && (fileConfig.IsDoltServerMode() || fileConfig.IsDoltProxiedServerMode()) {
-		return "", nil
-	}
-	ctx := context.Background()
-	store, _, _, err := openStore(ctx, beadsDir, false)
-	if err != nil {
-		return "", err
-	}
-	defer captureClose(store, &err)
-	return store.GetConfig(ctx, "issue_prefix")
-}
-
 // ValidateOpen proves that the selected read-only store can be opened without
 // running a command query. Static info pages still pass through this lifecycle
 // when --global is active, matching the upstream root pre-run contract.

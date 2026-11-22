@@ -2,9 +2,12 @@ package workspacefacade
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -263,6 +266,36 @@ func TestIslandsDoNotCallMigratingConfigLoad(t *testing.T) {
 	}
 	if scanned == 0 {
 		t.Fatal("scan of internal/beadshx found no Go files")
+	}
+}
+
+// Discovery runs before every command, so it must not open the database. The
+// commands that need the stored issue prefix read it in Haxe, and only then.
+func TestDiscoveryDoesNotImportReadonlyFacade(t *testing.T) {
+	const forbidden = "github.com/steveyegge/beads/internal/beadshx/readonlyfacade"
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("ReadDir workspacefacade: %v", err)
+	}
+	parsed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed++
+		for _, spec := range file.Imports {
+			if path, err := strconv.Unquote(spec.Path.Value); err == nil && path == forbidden {
+				t.Errorf("%s imports %s; workspace discovery must not open the database", name, forbidden)
+			}
+		}
+	}
+	if parsed == 0 {
+		t.Fatal("found no workspacefacade Go files")
 	}
 }
 

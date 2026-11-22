@@ -37,7 +37,7 @@ final class CountingDiscovery implements WorkspacePort {
 		return Found({
 			path: selected == null || selected == "" ? defaultWorkspace : selected,
 			redirectedFrom: "",
-			prefix: "test",
+			yamlPrefix: "test",
 			databasePath: "",
 			databaseName: "",
 			databaseMissing: true,

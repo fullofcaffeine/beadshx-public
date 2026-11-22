@@ -132,6 +132,17 @@ Upstream then runs the command with the settings that loaded, and so does
 `bdhx`, for every command that reads the database too. `where` still prints
 the issue prefix from the embedded database, as upstream does.
 
+Each command takes the issue prefix from the same source as upstream. `where`
+prints `issue-prefix` from `.beads/config.yaml`, or else `issue_prefix` from
+that file, or else the `issue_prefix` stored in the database. When an issue ID
+does not match exactly, `show` and the other commands that take an issue ID
+add and remove the stored `issue_prefix`, also when `config.yaml` names
+another prefix. `orphans` takes the `issue-prefix` setting, which
+`BD_ISSUE_PREFIX` can set, then the stored prefix, then `bd`. Workspace
+discovery reads only `config.yaml`. So commands that do not need the stored
+prefix, such as `version` and `count`, do not open the database to read it,
+and an exact issue ID does not read it either.
+
 Like upstream, `list`, `ready`, `count`, `query` and `search` check most of
 their arguments only after the warnings above and after the database opens. A
 `.beads/metadata.json` load error, a missing database or a store error thus
@@ -269,6 +280,13 @@ Limits:
   source of the server port and prints no `dolt_server_port` warning.
   Upstream also prints the warning when Dolt cannot parse that file, or when
   the file sets the port to 0 or less.
+- When an issue ID does not match exactly and the database stores no
+  `issue_prefix`, `bdhx` uses the prefix from `config.yaml` instead. Upstream
+  uses `bd` and then guesses the prefix of each matching issue. With neither
+  prefix, `bdhx` does not find a prefixed issue from its hash alone. In a
+  server-mode or proxied workspace, `bdhx` does not read the stored prefix
+  for this lookup and uses the `config.yaml` prefix; upstream reads the stored
+  one.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
 - Where upstream output order is random (Go map order), the parity tests

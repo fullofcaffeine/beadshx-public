@@ -18,9 +18,8 @@ private typedef PreviousDiscovery = {
 
 	Why: before a command runs, the `.beads/.env` step, the `json` setting and
 	the command itself each look up the selected workspace. A native discovery
-	runs git and reloads the config. When config.yaml has no issue-prefix, it
-	also opens the embedded database to read the prefix. So each repeat costs
-	tens of milliseconds and finds the same workspace.
+	runs git and reloads the config, so each repeat costs time and finds the
+	same workspace.
 
 	What: a WorkspacePort that gives the previous answer again when a discovery
 	repeats the previous one and nothing that discovery reads has changed.
@@ -29,9 +28,9 @@ private typedef PreviousDiscovery = {
 	directory and the complete process environment. A discovery with the same
 	values gets that answer. Any other discovery asks the native discovery and
 	replaces the kept answer. So a variable that `.beads/.env` adds always
-	causes a new discovery. The files and the database that discovery reads do
-	not change between these lookups: they all happen before the command reads
-	the store, and no command in this build writes them.
+	causes a new discovery. The files that discovery reads do not change
+	between these lookups: they all happen before the command reads the store,
+	and no command in this build writes them.
 **/
 @:goNative
 final class InvocationWorkspace implements WorkspacePort {

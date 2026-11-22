@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/steveyegge/beads/internal/beads"
-	"github.com/steveyegge/beads/internal/beadshx/readonlyfacade"
 	"github.com/steveyegge/beads/internal/config"
 	"github.com/steveyegge/beads/internal/configfile"
 	dbidentifier "github.com/steveyegge/beads/internal/storage/domain/db"
@@ -50,12 +49,12 @@ func Discover() *Location {
 }
 
 func discoverLocation(path string) *Location {
+	// Only the config.yaml prefix: discovery runs before every command and
+	// opens no database. Haxe reads the stored issue_prefix when a command
+	// needs it.
 	prefix := config.GetStringFromDir(path, "issue-prefix")
 	if prefix == "" {
 		prefix = config.GetStringFromDir(path, "issue_prefix")
-	}
-	if prefix == "" {
-		prefix, _ = readonlyfacade.ReadLocalPrefix(path)
 	}
 	// FindDatabasePath reads metadata with a call that rewrites a legacy
 	// config.json as metadata.json. Haxe refuses a legacy-only workspace, so

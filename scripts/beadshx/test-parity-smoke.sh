@@ -2851,6 +2851,36 @@ compare_real_database orphans-label-short exact orphans -l parity
 compare_real_database orphans-label-short-equals exact orphans -l=parity
 compare_real_database orphans-label-any exact orphans --label-any alpha,parity
 compare_real_database orphans-label-miss-json exact orphans --label absent-orphan-label --json
+# Issue prefix. Workspace discovery reads only config.yaml; each command that needs the prefix takes
+# it from upstream's own source, and only when it needs it. where prints config.yaml's issue-prefix
+# or issue_prefix, or else the stored issue_prefix, or no prefix line; it ignores BD_ISSUE_PREFIX.
+# After an exact miss, partial-ID lookup takes the stored issue_prefix, also when config.yaml names
+# another prefix (upstream ResolvePartialID). orphans takes the issue-prefix setting, which
+# BD_ISSUE_PREFIX sets and the issue_prefix spelling does not, then the stored one, then bd.
+lazy_prefix_no_stored="DELETE FROM config WHERE \`key\` = 'issue_prefix'"
+compare_real_database lazy-prefix-where-stored exact where
+compare_real_database lazy-prefix-where-stored-json exact where --json
+compare_real_database_config lazy-prefix-where-yaml exact 'issue-prefix: yaml-prefix' where
+compare_real_database_config lazy-prefix-where-yaml-json exact 'issue-prefix: yaml-prefix' where --json
+compare_real_database_config lazy-prefix-where-yaml-underscore-json exact 'issue_prefix: yaml_prefix' where --json
+compare_real_database_env lazy-prefix-where-ignores-env exact BD_ISSUE_PREFIX=other where
+compare_real_database_sql lazy-prefix-where-none exact "$lazy_prefix_no_stored" where
+compare_real_database_sql lazy-prefix-where-none-json exact "$lazy_prefix_no_stored" where --json
+compare_real_database lazy-prefix-show-prefixless exact show "${real_database_issue_id#test-}"
+compare_real_database_config lazy-prefix-show-prefixless-yaml exact 'issue-prefix: test' \
+	show "${real_database_issue_id#test-}" --json
+compare_real_database_config lazy-prefix-show-prefixless-other-yaml exact 'issue-prefix: other' \
+	show "${real_database_issue_id#test-}" --short
+compare_real_database_config lazy-prefix-show-abbreviated-other-yaml exact 'issue-prefix: other' show abcd1 --short
+real_database_extra_config='issue-prefix: test'
+real_database_extra_sql="$lazy_prefix_no_stored"
+compare_real_database lazy-prefix-show-prefixless-yaml-no-stored exact show "${real_database_issue_id#test-}" --short
+real_database_extra_config=""
+real_database_extra_sql=""
+compare_real_database_config lazy-prefix-orphans-yaml exact 'issue-prefix: other' orphans
+compare_real_database_config lazy-prefix-orphans-yaml-underscore exact 'issue_prefix: other' orphans
+compare_real_database_env lazy-prefix-orphans-env exact BD_ISSUE_PREFIX=other orphans --json
+compare_real_database_sql lazy-prefix-orphans-none exact "$lazy_prefix_no_stored" orphans
 compare_real_database ready-priority-json exact ready --priority 1 --json
 compare_real_database ready-priority-outside-json exact ready --priority 5 --json
 compare_real_database ready-type-json exact ready --type task --json

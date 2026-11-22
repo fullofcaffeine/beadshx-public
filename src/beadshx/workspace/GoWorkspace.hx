@@ -26,7 +26,7 @@ final class GoWorkspace implements WorkspacePort {
 		return Found({
 			path: path,
 			redirectedFrom: native.redirectedFrom(),
-			prefix: native.prefix(),
+			yamlPrefix: native.prefix(),
 			databasePath: native.databasePath(),
 			databaseName: native.databaseName(),
 			databaseMissing: native.databaseMissing(),
