@@ -371,7 +371,16 @@ final class Application {
 		this.watch = watch;
 	}
 
+	/**
+		Runs one process's command. Upstream's package init loads config.yaml
+		before it parses any argument, so a file that does not parse prints its
+		warning first, once, for every command, and the command continues with
+		what loaded. That load reads the process's own directory, never -C.
+	**/
 	public function run(args:Array<String>):Int {
+		final startup = LayeredConfig.atStartup();
+		if (startup.failure != null)
+			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
 		return switch parser.parse(args) {
 			case UsageFailure(message):
 				output.writeStderr('Error: ${message}\n');
@@ -2370,7 +2379,7 @@ final class Application {
 
 	/**
 		Loads config like upstream's startup and selected-workspace initializations,
-		printing each failure as upstream's warning, then opens the store when the
+		printing each selected-workspace failure as upstream's warning, then opens the store when the
 		command needs it and runs `action`. Upstream initializes for the selected
 		workspace once without a database and twice with one (once when it finds
 		the .beads directory, unless --db names it, and once when it binds the
@@ -2385,9 +2394,8 @@ final class Application {
 	function runWithLayeredConfig(invocation:Invocation, storeFree:Bool, readsTable:Bool,
 			action:(LayeredConfig, Null<WorkspaceLocation>, Null<IssueQueryPort>) -> Int, preflight:ConfigPreflightInput->Null<String>,
 			?runsWithoutDatabase:WorkspaceLocation->Bool):Int {
+		// run printed this load's failure before the command started.
 		final startup = LayeredConfig.atStartup();
-		if (startup.failure != null)
-			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
 		function selected(location:WorkspaceLocation, initializations:Int):LayeredConfig {
 			final config = LayeredConfig.forWorkspace(location.path);
 			if (config.failure != null)

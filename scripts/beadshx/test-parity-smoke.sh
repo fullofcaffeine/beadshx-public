@@ -60,6 +60,8 @@ no_workspace_user_config=""
 # Names a function that prepares each side root (its argument) of a no-workspace case; the run must
 # then leave that root unchanged instead of empty. Cases that use it come after fingerprint_tree.
 no_workspace_setup=""
+# The exact stderr that both sides of a version case must print; empty by default.
+version_expected_stderr=""
 
 # Writes the case's user config.yaml under each HOME directory given.
 write_no_workspace_user_config() {
@@ -203,8 +205,8 @@ compare_no_workspace_user_config() {
 
 # `version` prints each binary's own identity, so these no-workspace cases compare only the output
 # mode: both sides print a JSON object with schema_version 1 (json), or one line that is not JSON
-# (text), with exit 0, an empty stderr and no file written. They take the same extra environment and
-# user config.yaml as compare_no_workspace.
+# (text), with exit 0, the stderr in version_expected_stderr (empty by default) and no file written.
+# They take the same extra environment and user config.yaml as compare_no_workspace.
 compare_version_mode() {
 	local name="$1"
 	local mode="$2"
@@ -238,7 +240,7 @@ compare_version_mode() {
 		if [[ -n "$no_workspace_user_config" ]]; then
 			remove_no_workspace_user_config "$name" "$side_root/home"
 		fi
-		if [[ "$side_exit" -ne 0 || -s "$case_root/$side.stderr" ]]; then
+		if [[ "$side_exit" -ne 0 || "$(cat "$case_root/$side.stderr")" != "$version_expected_stderr" ]]; then
 			printf '%s %s exited %s with stderr:\n' "$name" "$side" "$side_exit" >&2
 			cat "$case_root/$side.stderr" >&2
 			return 1
@@ -914,6 +916,8 @@ real_database_extra_import=""
 real_database_extra_sql=""
 # Names a function that prepares each state root (its argument) of a database case before the run.
 real_database_setup=""
+# A directory below the work directory that a database case starts in instead of the work directory.
+real_database_directory=""
 # When set, a database case also requires the upstream command to leave its task state unchanged,
 # and gives each side an empty TMPDIR that must stay empty.
 real_database_read_only=""
@@ -988,7 +992,7 @@ compare_real_database() {
 
 	set +e
 	(
-		cd "$oracle_root/work"
+		cd "$oracle_root/work${real_database_directory:+/$real_database_directory}"
 		env HOME="$oracle_root/user-home" \
 			XDG_CONFIG_HOME="$oracle_root/config" \
 			"${oracle_temporary[@]}" \
@@ -998,7 +1002,7 @@ compare_real_database() {
 	) >"$case_root/oracle.stdout" 2>"$case_root/oracle.stderr"
 	oracle_exit=$?
 	(
-		cd "$candidate_root/work"
+		cd "$candidate_root/work${real_database_directory:+/$real_database_directory}"
 		env HOME="$candidate_root/user-home" \
 			XDG_CONFIG_HOME="$candidate_root/config" \
 			"${candidate_temporary[@]}" \
@@ -3983,6 +3987,51 @@ compare_version_mode global_json_version_flag_with_json text --version --json
 no_workspace_user_config="$json_yaml"
 compare_version_mode global_json_user_yaml_version json version
 no_workspace_user_config=""
+# Upstream's package init loads config.yaml before it parses any argument. When a file does not
+# parse, every command prints "Warning: failed to initialize config: <error>" as its first stderr
+# line, once, before argument errors, help and every pre-run warning, and then runs with what
+# loaded. The load reads the process's own directory, never -C, and the user config.yaml.
+broken_yaml=$'list:\n  limit: [unclosed'
+compare_no_workspace_user_config config_init_warning_where "$broken_yaml" where
+compare_no_workspace_user_config config_init_warning_where_json "$broken_yaml" where --json
+compare_no_workspace_user_config config_init_warning_list "$broken_yaml" list
+compare_no_workspace_user_config config_init_warning_show_json "$broken_yaml" show test-a --json
+compare_no_workspace_user_config config_init_warning_types "$broken_yaml" types
+compare_no_workspace_user_config config_init_warning_config_get_json "$broken_yaml" config get export.auto --json
+compare_no_workspace_user_config config_init_warning_unknown_command "$broken_yaml" frobnicate
+compare_no_workspace_user_config config_init_warning_unknown_flag "$broken_yaml" count --frobnicate
+compare_no_workspace_user_config config_init_warning_bad_flag_value "$broken_yaml" list --limit x
+compare_no_workspace_user_config config_init_warning_list_help "$broken_yaml" list --help
+compare_no_workspace_user_config config_init_warning_help_list "$broken_yaml" help list
+no_workspace_user_config="$broken_yaml"
+version_expected_stderr="Warning: failed to initialize config: error reading config file: While parsing config: yaml: line 1: did not find expected ',' or ']'"
+compare_version_mode config_init_warning_version text version
+compare_version_mode config_init_warning_version_json json version --json
+version_expected_stderr=""
+no_workspace_user_config=""
+# The database cases start in work/sub, whose .beads/config.yaml does not parse, and select the
+# workspace with -C. Only the startup load reads that file, so no other config warning prints.
+write_broken_start_config() {
+	mkdir -p "$1/work/sub/.beads"
+	printf '%s\n' "$broken_yaml" >"$1/work/sub/.beads/config.yaml"
+}
+real_database_setup=write_broken_start_config
+real_database_directory=sub
+compare_real_database config-init-warning-list exact -C .. list
+compare_real_database config-init-warning-list-json exact -C .. list --json
+compare_real_database config-init-warning-show-json exact -C .. show "$real_database_issue_id" --json
+compare_real_database config-init-warning-count exact -C .. count
+compare_real_database config-init-warning-where exact -C .. where
+compare_real_database config-init-warning-types exact -C .. types
+compare_real_database config-init-warning-bad-flag-value exact -C .. ready -n x
+real_database_extra_metadata='. + {dolt_server_port: 3999}'
+compare_real_database config-init-warning-server-port exact -C .. list
+real_database_extra_metadata=""
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database config-init-warning-shared-server-notice exact -C .. where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=""
+real_database_directory=""
 # bdhx's refusals follow the same switch as upstream's errors.
 real_database_extra_env=(BD_JSON=1)
 candidate_only_setup=enable_shared_server
