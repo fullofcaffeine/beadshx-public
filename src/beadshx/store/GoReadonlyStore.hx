@@ -78,12 +78,13 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		workspace without an embedded database proves its server open here first: a closed server
 		then fails with the plain message before the command resolves an ID or reads. A server
 		workspace with a leftover embeddeddolt directory does too. Embedded reads and `--global` keep
-		their own errors.
+		their own errors. Upstream checks `--global` before it opens a proxied server, and the
+		application refuses shared-server mode before this, so a proxied `--global` fails that check.
 	**/
 	public function openIssueQuery(beadsDir:String, serverStore:Bool, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort> {
 		if (global)
 			if (proxiedServer)
-				return Failure("--global is not supported with --proxied-server");
+				return Failure("--global requires shared-server mode (set BEADS_DOLT_SHARED_SERVER=1 or dolt.shared-server: true in config.yaml)");
 		if (!proxiedServer) {
 			if (!global && (serverStore || !sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))))
 				switch validate(beadsDir, false) {

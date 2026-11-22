@@ -1,6 +1,8 @@
 package beadshx.config;
 
 import beadshx.cli.JsonSettingPort.WorkspaceSelection;
+import beadshx.config.ConfigShow.WorkspaceMetadataFields;
+import beadshx.config.ConfigShow.readMetadataFields;
 import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.config.LayeredConfig.environmentValue;
 import beadshx.nativeextern.filepath.FilepathPkg;
@@ -211,6 +213,118 @@ final class WorkspaceEnvironment {
 	/** Go's filepath.Abs, which upstream's CanonicalizePath returns for a path that does not exist. */
 	static function absolutePath(path:String):String {
 		return FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
+	}
+
+	/**
+		Upstream resolveCommandBeadsDir: the `.beads` directory that a database
+		`path` selects, where `foundBeadsDir` is the directory that upstream's
+		FindBeadsDir finds ("" for none).
+
+		Why: `where`, `version` and help pages, and commands that open a store
+		for a `db` setting, set up this directory, which can differ from the
+		workspace that this build's discovery returns for the same path. What:
+		the directory of a workspace whose metadata.json claims the path (see
+		claimingBeadsDir), or else databasePathBeadsDir. How: it only reads.
+		Upstream's configfile.Load would rewrite a legacy config.json that it
+		checks; such a directory counts as claiming the path here, without the
+		rewrite.
+	**/
+	public static function commandBeadsDir(path:String, foundBeadsDir:String):String {
+		if (path == "")
+			return "";
+		final claimed = claimingBeadsDir(path, foundBeadsDir);
+		return claimed != "" ? claimed : databasePathBeadsDir(path);
+	}
+
+	/**
+		Upstream resolveBeadsDirForDBPath. A parent directory named `.beads`
+		with a metadata.json file claims `path` first, as written and then
+		canonical. Otherwise the candidates are the path itself when it is a
+		directory, its parent directory, each `.beads` directory beside it or
+		an ancestor (and each ancestor named `.beads`), and the found directory,
+		each once. The first candidate whose config loads claims the path when
+		the candidate is the path, its parent directory, or the Dolt directory
+		that the config names. Returns "" when none does.
+	**/
+	static function claimingBeadsDir(path:String, foundBeadsDir:String):String {
+		final canonical = canonicalPath(path);
+		for (selected in [path, canonical]) {
+			final parent = FilepathPkg.dir(selected);
+			if (FilepathPkg.base(parent) == ".beads" && ConfigProbes.statSucceeds(FilepathPkg.join(parent, "metadata.json")))
+				return parent;
+		}
+		final seen = new Map<String, Bool>();
+		final candidates = new Array<String>();
+		function addCandidate(candidate:String):Void {
+			final key = comparablePath(candidate);
+			if (key == "" || seen.exists(key))
+				return;
+			seen.set(key, true);
+			candidates.push(candidate);
+		}
+		function addAncestorCandidates(start:String):Void {
+			var directory = start;
+			while (directory != "" && directory != FilepathPkg.dir(directory)) {
+				addCandidate(FilepathPkg.join(directory, ".beads"));
+				if (FilepathPkg.base(directory) == ".beads")
+					addCandidate(directory);
+				directory = FilepathPkg.dir(directory);
+			}
+		}
+		for (selected in [path, canonical])
+			switch ConfigProbes.statPath(selected) {
+				case StatDirectory:
+					addCandidate(selected);
+				case StatMissing | StatNotDirectory | StatFailed(_):
+			}
+		addCandidate(FilepathPkg.dir(path));
+		addCandidate(FilepathPkg.dir(canonical));
+		addAncestorCandidates(FilepathPkg.dir(path));
+		addAncestorCandidates(FilepathPkg.dir(canonical));
+		if (foundBeadsDir != "") {
+			addCandidate(foundBeadsDir);
+			addCandidate(canonicalPath(foundBeadsDir));
+		}
+		for (candidate in candidates) {
+			final dataDirectory = switch readMetadataFields(candidate) {
+				case MetadataFields(fields): ConfigProbes.doltDirectory(candidate, fields);
+				case MetadataFieldsLegacyOnly: ConfigProbes.doltDirectory(candidate, null);
+				case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported: null;
+			};
+			if (dataDirectory != null)
+				for (selected in [path, canonical])
+					if (samePath(candidate, selected)
+						|| samePath(FilepathPkg.dir(selected), candidate)
+						|| samePath(dataDirectory, selected))
+						return candidate;
+		}
+		return "";
+	}
+
+	/**
+		Upstream utils.CanonicalizePath without its final step: the absolute
+		path with symbolic links resolved, or the absolute path when that fails.
+		On macOS and Windows upstream also takes each name's case from the file
+		system, which comparablePath makes irrelevant here.
+	**/
+	static function canonicalPath(path:String):String {
+		final absolute = absolutePath(path);
+		final resolved = FilepathPkg.evalSymlinks(absolute);
+		return resolved.value2 == null ? resolved.value1 : absolute;
+	}
+
+	/** Upstream utils.NormalizePathForComparison: canonicalPath, in lower case on macOS and Windows; "" for "". */
+	static function comparablePath(path:String):String {
+		if (path == "")
+			return "";
+		final canonical = canonicalPath(path);
+		final system = Sys.systemName();
+		return system == "Mac" || system == "Windows" ? canonical.toLowerCase() : canonical;
+	}
+
+	/** Upstream utils.PathsEqual. */
+	static function samePath(first:String, second:String):Bool {
+		return comparablePath(first) == comparablePath(second);
 	}
 
 	/**

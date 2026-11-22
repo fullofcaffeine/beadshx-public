@@ -221,10 +221,17 @@ Limits:
   `BEADS_DOLT_SHARED_SERVER` or `BD_DOLT_SHARED_SERVER`. Like upstream, `bdhx`
   ignores the `db` setting when `--db`, `-C`, `BEADS_DB`, `BD_DB` or
   `BEADS_DIR` selects the workspace. In a shared-server workspace that has no
-  database, `config get` of a key that needs no database still runs, unless
-  `.beads/metadata.json` sets `dolt_mode` to `embedded`. When it does, upstream
-  prints a three-line notice on stderr before every command. `bdhx` prints it
-  for `where`, `version` and help pages only, and not before these refusals.
+  database, upstream writes nothing, and these commands run as upstream does:
+  they report `no beads database found` with the hint that names `bd doctor`,
+  and `config get` of a key that needs no database prints its value.
+  `config show`, `config validate` and `config drift` still report that they
+  are not available yet there, and so does every command when a `--db` path
+  names the database. When `.beads/metadata.json` sets `dolt_mode` to
+  `embedded`, upstream prints a three-line notice on stderr in shared-server
+  mode, and so does `bdhx`, also before these refusals. Like upstream, it reads
+  the metadata of the workspace that a `BEADS_DB`, `BD_DB` or `db` setting path
+  selects. `bdhx` does not print the notice before it refuses a `BEADS_DB` path
+  that it cannot follow for a command that reads the database.
   Like upstream, `where` in shared-server mode reads the issue prefix from the
   embedded database, unless `BEADS_DOLT_SHARED_SERVER` or `dolt_mode` makes the
   workspace a server workspace.

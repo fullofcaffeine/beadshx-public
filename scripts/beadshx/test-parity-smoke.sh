@@ -1755,11 +1755,17 @@ real_database_read_only=""
 enable_shared_server() {
 	printf 'dolt:\n  shared-server: true\n' >>"$1/work/.beads/config.yaml"
 }
+# In shared-server mode upstream's setup for the workspace it selects first prints this notice on
+# stderr when metadata.json pins dolt_mode embedded, as the fixture's does; bdhx prints it before
+# its refusals too.
+shared_server_notice='Notice: shared-server mode is enabled (BEADS_DOLT_SHARED_SERVER or dolt.shared-server in config.yaml) but .beads/metadata.json pins dolt_mode="embedded". Using the shared server for this run.
+  To persist server mode: set dolt_mode to "server" in .beads/metadata.json and commit it.
+  To stay embedded: unset BEADS_DOLT_SHARED_SERVER (or remove dolt.shared-server from config.yaml).'
 candidate_only_setup=enable_shared_server
 expect_candidate_failure config-validate-shared-server-unported "" \
-	"Error: config validate is not available yet in shared-server mode in this build" "" config validate
+	"$shared_server_notice"$'\n'"Error: config validate is not available yet in shared-server mode in this build" "" config validate
 expect_candidate_failure config-drift-shared-server-unported \
-	'{"error":"config drift is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	'{"error":"config drift is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" \
 	config drift --json
 candidate_only_setup=""
 real_database_extra_env=(BEADS_DOLT_SERVER_PORT=3307)
@@ -1791,20 +1797,24 @@ candidate_only_setup=""
 # creates the database that the db setting names.
 candidate_only_setup=enable_shared_server
 expect_candidate_failure config-get-shared-server-unported "" \
-	"Error: config get is not available yet in shared-server mode in this build" "" config get issue_prefix
+	"$shared_server_notice"$'\n'"Error: config get is not available yet in shared-server mode in this build" "" config get issue_prefix
 expect_candidate_failure config-get-yaml-shared-server-json-unported \
-	'{"error":"config get is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	'{"error":"config get is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" \
 	config get routing.mode --json
 expect_candidate_failure config-list-shared-server-unported "" \
-	"Error: config list is not available yet in shared-server mode in this build" "" config list
+	"$shared_server_notice"$'\n'"Error: config list is not available yet in shared-server mode in this build" "" config list
 expect_candidate_failure config-list-shared-server-json-unported \
-	'{"error":"config list is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	'{"error":"config list is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" \
 	config list --json
 expect_candidate_failure config-show-shared-server-unported "" \
-	"Error: config show is not available yet in shared-server mode in this build" "" config show
+	"$shared_server_notice"$'\n'"Error: config show is not available yet in shared-server mode in this build" "" config show
 expect_candidate_failure config-show-shared-server-json-unported \
-	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "" "" \
+	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" \
 	config show --json
+# The notice also comes before the --database check, which upstream reaches after it has written.
+expect_candidate_failure config-get-database-flag-shared-server-notice "" \
+	"$shared_server_notice"$'\n'"Error: --database (or a --db value naming a database) is only supported in proxied-server mode" "" \
+	config get issue_prefix --database other
 candidate_only_setup=""
 # Upstream also turns shared-server mode on from config.local.yaml and from both variables.
 enable_local_shared_server() {
@@ -1812,24 +1822,32 @@ enable_local_shared_server() {
 }
 candidate_only_setup=enable_local_shared_server
 expect_candidate_failure config-show-local-shared-server-unported "" \
-	"Error: config show is not available yet in shared-server mode in this build" "" config show
+	"$shared_server_notice"$'\n'"Error: config show is not available yet in shared-server mode in this build" "" config show
 candidate_only_setup=""
 real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
 expect_candidate_failure config-get-shared-server-env-unported "" \
-	"Error: config get is not available yet in shared-server mode in this build" "" config get beads.role
+	"$shared_server_notice"$'\n'"Error: config get is not available yet in shared-server mode in this build" "" config get beads.role
 real_database_extra_env=(BD_DOLT_SHARED_SERVER=true)
 expect_candidate_failure config-list-shared-server-bd-env-unported "" \
-	"Error: config list is not available yet in shared-server mode in this build" "" config list
+	"$shared_server_notice"$'\n'"Error: config list is not available yet in shared-server mode in this build" "" config list
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
-# Without a database upstream opens no store for a key that needs none, but it prints a notice when
-# metadata.json pins dolt_mode embedded, as this fixture's does.
+# Without a database upstream finds none and writes nothing (see the database cases below). It opens
+# the database that a --db path names, so config get refuses that even for a key that needs no
+# database, and config show would create an embedded database.
 enable_shared_server_without_database() {
 	enable_shared_server "$1"
 	remove_embedded_database "$1"
 }
 candidate_only_setup=enable_shared_server_without_database
-expect_candidate_failure config-get-shared-server-no-database-unported "" \
-	"Error: config get is not available yet in shared-server mode in this build" "" config get routing.mode
+expect_candidate_failure config-get-db-path-shared-server-no-database-unported "" \
+	"$shared_server_notice"$'\n'"Error: config get is not available yet in shared-server mode in this build" "" \
+	--db .beads config get routing.mode
+expect_candidate_failure config-show-shared-server-no-database-unported "" \
+	"$shared_server_notice"$'\n'"Error: config show is not available yet for a workspace without a database in this build" "" \
+	config show
+expect_candidate_failure config-validate-shared-server-no-database-unported "" \
+	"$shared_server_notice"$'\n'"Error: config validate is not available yet in shared-server mode in this build" "" \
+	config validate
 candidate_only_setup=set_database_path
 expect_candidate_failure config-get-db-setting-unported "" \
 	"Error: config get is not available yet when the db setting names a database in this build" "" config get issue_prefix
@@ -1879,18 +1897,25 @@ real_database_read_only=""
 # shared-server mode upstream creates ~/.beads/shared-server/dolt and a TMPDIR circuit file, then
 # fails to reach the server; with a db setting it creates an embedded database at that path.
 # expect_store_refusal <case> <reason> <command path> <args>... expects the refusal in text, or in
-# JSON on stdout when the arguments include --json.
+# JSON on stdout when the arguments include --json. A set store_refusal_notice is the stderr that
+# comes before it.
+store_refusal_notice=""
 expect_store_refusal() {
 	local name="$1"
 	local message="$3 is not available yet $2 in this build"
 	shift 3
+	local notice_lines=""
+	if [[ -n "$store_refusal_notice" ]]; then
+		notice_lines="$store_refusal_notice"$'\n'
+	fi
 	if [[ " $* " == *" --json "* ]]; then
-		expect_candidate_failure "$name" "{\"error\":\"$message\",\"schema_version\":1}" "" "" "$@"
+		expect_candidate_failure "$name" "{\"error\":\"$message\",\"schema_version\":1}" "$store_refusal_notice" "" "$@"
 	else
-		expect_candidate_failure "$name" "" "Error: $message" "" "$@"
+		expect_candidate_failure "$name" "" "${notice_lines}Error: $message" "" "$@"
 	fi
 }
 shared_reason="in shared-server mode"
+store_refusal_notice="$shared_server_notice"
 candidate_only_setup=enable_shared_server
 expect_store_refusal count-shared-server-unported "$shared_reason" count count
 expect_store_refusal count-shared-server-json-unported "$shared_reason" count count --json
@@ -1940,19 +1965,21 @@ expect_store_refusal dep-tree-shared-server-env-unported "$shared_reason" "dep t
 real_database_extra_env=(BD_DOLT_SHARED_SERVER=true)
 expect_store_refusal comments-shared-server-bd-env-json-unported "$shared_reason" comments comments "$real_database_issue_id" --json
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
-# Without a database upstream writes nothing, but it prints a notice when metadata.json pins
-# dolt_mode embedded and always gives the server-mode hint, which this build does not print.
+# Upstream opens the database that a --db path names, also in a workspace without one.
 candidate_only_setup=enable_shared_server_without_database
-expect_store_refusal count-shared-server-no-database-unported "$shared_reason" count count
+expect_store_refusal count-db-path-shared-server-no-database-json-unported "$shared_reason" count --db .beads count --json
 candidate_only_setup=""
+store_refusal_notice=""
 enable_shared_server_without_database_or_mode() {
 	enable_shared_server_without_database "$1"
 	jq 'del(.dolt_mode)' "$1/work/.beads/metadata.json" >"$1/metadata.json"
 	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
 	rm -f "$1/metadata.json"
 }
+# Without dolt_mode no notice prints, and a --db path still makes upstream reach the shared server.
 candidate_only_setup=enable_shared_server_without_database_or_mode
-expect_store_refusal list-shared-server-no-database-unported "$shared_reason" list list
+expect_store_refusal config-get-db-path-shared-server-no-mode-unported "$shared_reason" "config get" \
+	--db .beads config get routing.mode
 candidate_only_setup=""
 database_reason="when the db setting names a database"
 candidate_only_setup=set_database_path
@@ -2046,6 +2073,83 @@ compare_real_database_metadata shared-server-no-mode-where exact 'del(.dolt_mode
 compare_real_database_metadata shared-server-server-mode-where-json exact '.dolt_mode = "server"' where --json
 real_database_setup=enable_shared_server_without_database
 compare_real_database shared-server-notice-no-database-where exact where
+# A BEADS_DB, BD_DB or db setting path makes where, version and help pages set up the directory that
+# upstream derives from the path: a parent .beads directory with metadata.json, a workspace that
+# claims the path, or else the first .beads directory above the path's directory. They print the
+# notice for that directory.
+real_database_setup=enable_shared_server
+real_database_extra_env=("BEADS_DB=<work>/.beads")
+compare_real_database shared-server-notice-beads-db-version stderr-only version
+compare_real_database shared-server-notice-beads-db-help-command exact help count
+compare_real_database shared-server-notice-beads-db-root stderr-only
+real_database_extra_env=(BD_DB=.beads/embeddeddolt)
+compare_real_database shared-server-notice-bd-db-version-json stderr-only version --json
+real_database_extra_env=(BD_DB=.beads/beads.db)
+compare_real_database shared-server-notice-bd-db-file-help-command exact help ready
+real_database_extra_env=(BEADS_DB=../work/sub/beads.db)
+compare_real_database shared-server-notice-beads-db-above-version stderr-only version
+# A path that selects no workspace sets up a directory without metadata.json: no notice.
+real_database_extra_env=(BEADS_DB=.beads/sub/beads.db)
+compare_real_database shared-server-notice-beads-db-elsewhere-version stderr-only version
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+enable_shared_server_with_database_setting() {
+	enable_shared_server "$1"
+	printf 'db: .beads/beads.db\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=enable_shared_server_with_database_setting
+compare_real_database shared-server-notice-db-setting-where exact where
+compare_real_database shared-server-notice-db-setting-version stderr-only version
+compare_real_database shared-server-notice-db-setting-help-command exact help list
+real_database_setup=""
+# Commands that open a store set up the same directory for the db setting, and upstream's where for a
+# BEADS_DB path, before the step that this build refuses.
+candidate_only_setup=enable_shared_server_with_database_setting
+store_refusal_notice="$shared_server_notice"
+expect_store_refusal count-db-setting-shared-server-notice-unported "$database_reason" count count
+expect_store_refusal list-db-setting-shared-server-notice-json-unported "$database_reason" list list --json
+store_refusal_notice=""
+candidate_only_setup=enable_shared_server
+real_database_extra_env=(BEADS_DB=../work/sub/beads.db)
+expect_candidate_failure where-beads-db-shared-server-notice-unported "" \
+	"$shared_server_notice"$'\n'"Error: where is not available yet when BEADS_DB names this path in this build" "" where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
+# A found workspace without a database: upstream finds none and writes nothing. It prints the notice
+# when metadata.json pins dolt_mode embedded, then its hint, which names bd doctor in shared-server
+# mode, as text even with --json; a config key that needs no database runs as usual.
+real_database_setup=enable_shared_server_without_database
+compare_real_database shared-server-no-database-count exact count
+compare_real_database shared-server-no-database-count-json exact count --json
+compare_real_database shared-server-no-database-show-json exact show "$real_database_issue_id" --json
+compare_real_database shared-server-no-database-ready-bad-sort exact ready --sort bogus
+compare_real_database shared-server-no-database-dep-tree exact dep tree "$real_database_issue_id"
+compare_real_database shared-server-no-database-info exact info
+compare_real_database shared-server-no-database-directory-list exact -C . list
+compare_real_database shared-server-no-database-types exact types
+compare_real_database shared-server-no-database-statuses-json exact statuses --json
+compare_real_database shared-server-no-database-config-get exact config get routing.mode
+compare_real_database shared-server-no-database-config-get-json exact config get routing.mode --json
+compare_real_database shared-server-no-database-config-get-table exact config get issue_prefix
+compare_real_database shared-server-no-database-config-list-json exact config list --json
+compare_real_database shared-server-no-database-backup exact config get backup.enabled
+real_database_setup=enable_shared_server_without_database_or_mode
+compare_real_database shared-server-no-database-no-mode-list exact list
+compare_real_database shared-server-no-database-no-mode-config-list exact config list
+real_database_setup=remove_embedded_database
+real_database_extra_env=(BD_DOLT_SHARED_SERVER=true)
+compare_real_database shared-server-no-database-bd-env-count exact count
+compare_real_database shared-server-no-database-bd-env-config-get-json exact config get export.auto --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# The config warning of each selected-workspace setup comes before the notice.
+break_workspace_config_without_database() {
+	remove_embedded_database "$1"
+	printf '[a, b\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=break_workspace_config_without_database
+real_database_extra_env=(BD_DOLT_SHARED_SERVER=1)
+compare_real_database shared-server-no-database-broken-config-types exact types
+compare_real_database shared-server-no-database-broken-config-get exact config get routing.mode
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_setup=""
 # Shared-server mode is off unless the variable is 1 or true.
 compare_real_database_env count-shared-server-env-off exact BEADS_DOLT_SHARED_SERVER=0 count
@@ -2403,6 +2507,18 @@ compare_real_database_metadata deprecated-port-zero exact '.dolt_server_port = 0
 compare_real_database_metadata deprecated-port-negative exact '.dolt_server_port = -1' count
 compare_real_database_metadata deprecated-port-readonly-missing-db exact \
 	'.dolt_server_port = 3307 | .dolt_database = "other"' --readonly count
+# A server workspace warns too before the --global check, which fails outside shared-server mode
+# before upstream dials a server. A proxied-server workspace warns the same way, and its --global
+# check fails with the same error.
+real_database_extra_metadata='.dolt_mode = "server" | .dolt_server_port = 3307'
+compare_real_database deprecated-port-server-global exact count --global
+compare_real_database deprecated-port-server-global-list-json exact list --global --json
+compare_real_database deprecated-port-server-global-info exact info --global
+real_database_extra_metadata='.dolt_mode = "proxied-server" | .dolt_server_port = 3307'
+compare_real_database deprecated-port-proxied-global exact count --global
+compare_real_database deprecated-port-proxied-global-show-json exact show "$real_database_issue_id" --global --json
+compare_real_database deprecated-port-proxied-global-types exact types --global
+real_database_extra_metadata=""
 real_database_read_only=""
 # Upstream's show also records the issue in .beads/last-touched, so these compare without the
 # read-only check; an empty new database would print a not-found error instead.
@@ -4036,7 +4152,7 @@ real_database_directory=""
 real_database_extra_env=(BD_JSON=1)
 candidate_only_setup=enable_shared_server
 expect_candidate_failure global-json-env-shared-server-refusal \
-	'{"error":"count is not available yet in shared-server mode in this build","schema_version":1}' "" "" count
+	'{"error":"count is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" count
 candidate_only_setup=set_database_path
 expect_candidate_failure global-json-env-db-setting-refusal \
 	'{"error":"ready is not available yet when the db setting names a database in this build","schema_version":1}' "" "" ready
@@ -4047,9 +4163,9 @@ enable_shared_server_with_json() {
 }
 candidate_only_setup=enable_shared_server_with_json
 expect_candidate_failure global-json-yaml-shared-server-refusal \
-	'{"error":"list is not available yet in shared-server mode in this build","schema_version":1}' "" "" list
+	'{"error":"list is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" list
 expect_candidate_failure global-json-yaml-shared-server-flag-false-refusal "" \
-	"Error: list is not available yet in shared-server mode in this build" "" list --json=false
+	"$shared_server_notice"$'\n'"Error: list is not available yet in shared-server mode in this build" "" list --json=false
 candidate_only_setup=""
 
 # Upstream's pre-run loads the selected workspace's .beads/.env with gotenv before it reads any
@@ -4228,10 +4344,12 @@ real_database_read_only=""
 # Shared-server mode and the db setting from .env meet the same refusals as from the environment.
 candidate_only_setup=write_dotenv
 dotenv_contents=$'BEADS_DOLT_SHARED_SERVER=1\n'
+store_refusal_notice="$shared_server_notice"
 expect_store_refusal dotenv-shared-server-unported "$shared_reason" count count
+store_refusal_notice=""
 dotenv_contents=$'BD_DOLT_SHARED_SERVER=true\nBD_JSON=1\n'
 expect_candidate_failure dotenv-bd-shared-server-json-unported \
-	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "" "" config show
+	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" config show
 candidate_only_setup=write_dotenv_with_database_path
 dotenv_contents=$'BD_JSON=1\n'
 expect_candidate_failure dotenv-db-setting-json-unported \
