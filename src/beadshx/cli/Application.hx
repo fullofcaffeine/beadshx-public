@@ -3697,12 +3697,23 @@ final class Application {
 		return 0;
 	}
 
+	/**
+		Chooses between upstream's recursive tree walk and its one-page parent filter.
+
+		Only the tree view (`--tree`, `--pretty`, `--deps` or `--watch`) walks every level
+		below `--parent`. `--flat`, `--json` and `--format` read one page of direct children.
+	**/
 	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
-		final hierarchical = invocation.listRequest.parentId != ""
-			&& !invocation.listRequest.ready
-			&& (invocation.watchMode || (invocation.output == Human && invocation.listRequest.format == ""));
-		return hierarchical ? loadIssueHierarchy(invocation, location, effectiveLimit,
+		return isListHierarchy(invocation) ? loadIssueHierarchy(invocation, location, effectiveLimit,
 			query) : query.issueList(location.path, invocation.listRequest, effectiveLimit, invocation.global);
+	}
+
+	/** True for the `--parent` tree view; its empty result prints "Issue 'X' has no children". */
+	static function isListHierarchy(invocation:Invocation):Bool {
+		return invocation.listRequest.parentId != ""
+			&& !invocation.listRequest.ready
+			&& !invocation.listFlat
+			&& (invocation.watchMode || (invocation.output == Human && invocation.listRequest.format == ""));
 	}
 
 	/**
@@ -3846,9 +3857,8 @@ final class Application {
 				} else
 					switch invocation.output {
 						case Human:
-							if (page.items.length == 0
-								&& invocation.listRequest.parentId != ""
-								&& !invocation.listRequest.ready) output.writeStdout('Issue \'${invocation.listRequest.parentId}\' has no children\n'); else
+							if (page.items.length == 0 && isListHierarchy(invocation))
+								output.writeStdout('Issue \'${invocation.listRequest.parentId}\' has no children\n'); else
 								output.writeStdout(invocation.listFlat ? renderListFlat(page, invocation.listLong, invocation.listRequest.skipLabels,
 								invocation.listRequest.brief) : renderListHuman(page, invocation.listRequest.skipLabels, invocation.listDepsMode));
 						case Json: return writeRenderedJsonStdout(renderListJson(page, invocation.listRequest.skipLabels));

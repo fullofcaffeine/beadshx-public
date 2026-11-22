@@ -807,6 +807,7 @@ real_database_molecule_id="$(jq -er '.id' "$real_database_seed/molecule.json")"
 real_database_gated_molecule_id="$(jq -er '.id' "$real_database_seed/gated-molecule.json")"
 real_database_gated_step_id="$(jq -er '.id' "$real_database_seed/gated-step.json")"
 real_database_child_id="$(jq -er '.id' "$real_database_seed/child.json")"
+real_database_grandchild_id="$(jq -er '.id' "$real_database_seed/grandchild.json")"
 real_database_progress_id="$(jq -er '.id' "$real_database_seed/progress.json")"
 real_database_closed_id="$(jq -er '.id' "$real_database_seed/closed.json")"
 real_database_labeled_relation_id="$(jq -er '.id' "$real_database_seed/labeled-relation.json")"
@@ -2653,6 +2654,26 @@ compare_real_database list-pinned-json exact list --pinned --json
 compare_real_database list-all-no-pinned-json exact list --all --no-pinned --json
 compare_real_database list-no-parent-json exact list --no-parent --json
 compare_real_database list-parent-human exact list --parent "$real_database_epic_id"
+# Only the tree view walks every level below --parent and adds the parent as its root. --flat,
+# --long --flat and --json list the direct children: rows with a parent-child edge to the
+# parent, plus dotted IDs below it that have no parent-child edge. They print nothing and
+# exit 0 when the parent has no children or does not exist. --pretty still wins over --flat.
+compare_real_database list-parent-flat-human exact list --parent "$real_database_epic_id" --flat
+compare_real_database list-parent-flat-json exact list --parent "$real_database_epic_id" --flat --json
+compare_real_database list-parent-json exact list --parent "$real_database_epic_id" --json
+compare_real_database list-parent-flat-long-human exact list --parent "$real_database_epic_id" --flat --long
+compare_real_database list-parent-flat-long-brief-human exact list --parent "$real_database_epic_id" --flat --long --brief
+compare_real_database list-parent-tree-flat-human exact list --parent "$real_database_epic_id" --tree --flat
+compare_real_database list-parent-pretty-flat-human exact list --parent "$real_database_epic_id" --pretty --flat
+compare_real_database list-parent-flat-middle-human exact list --parent "$real_database_child_id" --flat
+compare_real_database list-parent-flat-all-human exact list --parent "$real_database_gated_molecule_id" --flat --all --include-gates
+compare_real_database list-parent-flat-all-json exact list --parent "$real_database_gated_molecule_id" --flat --all --include-gates --json
+compare_real_database list-parent-flat-closed-human exact list --parent "$real_database_gated_molecule_id" --flat --status closed --include-gates
+compare_real_database list-parent-flat-fallback-human exact list --parent "$real_database_molecule_id" --flat
+compare_real_database list-parent-flat-leaf-human exact list --parent "$real_database_grandchild_id" --flat
+compare_real_database list-parent-flat-missing-human exact list --parent test-missing --flat
+compare_real_database list-parent-missing-json exact list --parent test-missing --json
+compare_real_database list-parent-missing-human exact list --parent test-missing
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json
 compare_real_database children-pretty exact children "$real_database_gated_molecule_id" --pretty
@@ -2725,7 +2746,6 @@ compare_real_database_sql blocked-flags-json exact "$blocked_flags_sql" blocked 
 compare_real_database_sql blocked-flags-parent-json exact "$blocked_flags_sql" blocked --parent "$real_database_molecule_id" --json
 # dep tree walks parent-child chains (grandchild -> child -> epic), a molecule whose second step
 # blocks on the first, and a gated step whose gate is closed. Cycles come from dep_cycle_sql.
-real_database_grandchild_id="$(jq -er '.id' "$real_database_seed/grandchild.json")"
 molecule_step_two_id="$(jq -er '.id' "$real_database_seed/molecule-step-two.json")"
 compare_real_database dep-tree-down-human exact dep tree "$real_database_grandchild_id"
 compare_real_database dep-tree-down-json exact dep tree "$real_database_grandchild_id" --json
