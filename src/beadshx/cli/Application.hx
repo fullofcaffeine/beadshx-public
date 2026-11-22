@@ -2626,7 +2626,11 @@ final class Application {
 							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
-								final result = switch query.issueCount(location.path, invocation.countRequest, invocation.countGroup, invocation.global) {
+								// Upstream parseCountRequest checks its flags first in the command body.
+								final deferredExit = runDeferredChecks(invocation);
+								final result = if (deferredExit != null) {
+									deferredExit;
+								} else switch query.issueCount(location.path, invocation.countRequest, invocation.countGroup, invocation.global) {
 									case Failure(message): runStoreFailure(message);
 									case Success(count): renderCount(invocation, count);
 								};
@@ -2637,8 +2641,6 @@ final class Application {
 	}
 
 	function runReady(invocation:Invocation):Int {
-		if (invocation.readyClaim)
-			return runModeAwareFailure(invocation.output, "operation 'ready --claim' is not allowed in read-only mode");
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
@@ -2651,18 +2653,7 @@ final class Application {
 							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
-								// Upstream checks --offset in the command body, after its pre-run opened the store.
-								final offset = switch invocation.readyRequest.offset {
-									case IntPresent(value): value;
-									case IntAbsent: 0;
-								};
-								final result = if (!location.proxiedServer && offset > 0) {
-									runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
-								} else if (location.proxiedServer && offset < 0) {
-									runStoreFailure("--offset must be >= 0");
-								} else {
-									runReadyView(invocation, location, query);
-								};
+								final result = runReadyBody(invocation, location, query);
 								closeIssueQuery(query, result);
 						}
 				}
@@ -2670,27 +2661,89 @@ final class Application {
 	}
 
 	/**
-		Upstream ready after its --offset checks. The proxied route gathers the
-		input before it picks a view; the direct --gated, --mol and --explain
-		views never gather it, so their output ignores what it would report.
+		Upstream ready's command body, after its pre-run opened the store. It
+		checks the --brief rules first. Under a proxied server it then reads
+		--max-rows and BEADS_MAX_ROWS, refuses a negative --offset and gathers
+		its input before it picks a view. Otherwise it refuses a positive
+		--offset, and --gated, --mol and --explain answer without gathering the
+		input, so their output ignores what the gathering would report.
 	**/
-	function runReadyView(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+	function runReadyBody(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		final modeExit = reportDeferredCheck(invocation, invocation.readyModeCheck);
+		if (modeExit != null)
+			return modeExit;
+		final offset = switch invocation.readyRequest.offset {
+			case IntPresent(value): value;
+			case IntAbsent: 0;
+		};
 		if (location.proxiedServer) {
-			final deferredExit = runDeferredChecks(invocation);
-			if (deferredExit != null)
-				return deferredExit;
+			// Upstream rejectMaxRowsUnderProxiedServer; only --claim takes a cap here, and ignores it.
+			final maxRowsExit = runMaxRowsCheck(invocation);
+			if (maxRowsExit != null)
+				return maxRowsExit;
+			switch invocation.readyRequest.maxRows {
+				case IntPresent(value) if (value > 0 && !invocation.readyClaim):
+					return runModeAwareFailure(invocation.output, "--max-rows / BEADS_MAX_ROWS is not supported in proxied-server mode");
+				case IntPresent(_) | IntAbsent:
+			}
+			if (offset < 0)
+				return runStoreFailure("--offset must be >= 0");
+			final gatherExit = reportDeferredCheck(invocation, invocation.deferredCheck);
+			if (gatherExit != null)
+				return gatherExit;
+			final filterExit = reportDeferredCheck(invocation, invocation.readyFilterCheck);
+			if (filterExit != null)
+				return filterExit;
+			if (invocation.readyClaim)
+				return runReadyClaimRefusal();
+			return runReadyView(invocation, location, query);
 		}
+		if (offset > 0)
+			return runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
+		if (invocation.readyGated) {
+			if (invocation.readyClaim)
+				return runModeAwareFailure(invocation.output, "--claim cannot be combined with --gated");
+			return runReadyGated(invocation, location, query);
+		}
+		if (invocation.readyMolecule != "") {
+			if (invocation.readyClaim)
+				return runModeAwareFailure(invocation.output, "--claim cannot be combined with --mol");
+			return runReadyMolecule(invocation, location, query);
+		}
+		if (invocation.readyExplain) {
+			if (invocation.readyClaim)
+				return runModeAwareFailure(invocation.output, "--claim cannot be combined with --explain");
+			return runReadyExplain(invocation, location, query);
+		}
+		final deferredExit = runDeferredChecks(invocation);
+		if (deferredExit != null)
+			return deferredExit;
+		if (invocation.readyClaim)
+			return runReadyClaimRefusal();
+		return runReadyList(invocation, location, query);
+	}
+
+	/**
+		`ready --claim` writes, so this build refuses it where upstream claims.
+		That is also where upstream's CheckReadonly refuses it under --readonly,
+		with this message.
+	**/
+	function runReadyClaimRefusal():Int {
+		return runStoreFailure("operation 'ready --claim' is not allowed in read-only mode");
+	}
+
+	/** The proxied route's view, after it gathered its input. */
+	function runReadyView(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		if (invocation.readyGated)
 			return runReadyGated(invocation, location, query);
 		if (invocation.readyMolecule != "")
 			return runReadyMolecule(invocation, location, query);
 		if (invocation.readyExplain)
 			return runReadyExplain(invocation, location, query);
-		if (!location.proxiedServer) {
-			final deferredExit = runDeferredChecks(invocation);
-			if (deferredExit != null)
-				return deferredExit;
-		}
+		return runReadyList(invocation, location, query);
+	}
+
+	function runReadyList(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		return switch query.issueReady(location.path, invocation.readyRequest, invocation.global) {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
@@ -5633,15 +5686,32 @@ final class Application {
 
 	/**
 		Reports what upstream's command body finds while it gathers its input,
-		after the root pre-run opened the store: the BEADS_MAX_ROWS warning,
-		then the first failed argument check (see DeferredCheck). Each command
-		calls this where upstream gathers its input. Returns the exit code when
-		a check failed.
+		after the root pre-run opened the store: the first failed argument check
+		(see DeferredCheck), then what upstream finds when it reads --max-rows
+		and BEADS_MAX_ROWS, then ready's metadata filter and --sort checks. Each
+		command calls this where upstream gathers its input. Returns the exit
+		code when a check failed.
 	**/
 	function runDeferredChecks(invocation:Invocation):Null<Int> {
+		final checkExit = reportDeferredCheck(invocation, invocation.deferredCheck);
+		if (checkExit != null)
+			return checkExit;
+		final maxRowsExit = runMaxRowsCheck(invocation);
+		if (maxRowsExit != null)
+			return maxRowsExit;
+		return reportDeferredCheck(invocation, invocation.readyFilterCheck);
+	}
+
+	/** Upstream resolveMaxRows: the BEADS_MAX_ROWS warning, or the error for a negative --max-rows. */
+	function runMaxRowsCheck(invocation:Invocation):Null<Int> {
 		if (invocation.listWarning != "")
 			output.writeStderr(invocation.listWarning);
-		return switch invocation.deferredCheck {
+		return reportDeferredCheck(invocation, invocation.maxRowsCheck);
+	}
+
+	/** Prints a failed check as upstream does and returns its exit code, or returns null when it passed. */
+	function reportDeferredCheck(invocation:Invocation, check:DeferredCheck):Null<Int> {
+		return switch check {
 			case ChecksPassed: null;
 			case PlainCheckFailure(message): runStoreFailure(message);
 			case OutputCheckFailure(message): runModeAwareFailure(invocation.output, message);

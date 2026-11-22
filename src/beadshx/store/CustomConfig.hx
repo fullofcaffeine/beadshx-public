@@ -210,8 +210,8 @@ function goTrimSpace(value:String):String {
 	return value.substring(start, end);
 }
 
-/** Go's unicode.IsSpace. */
-private function isGoSpace(code:Null<Int>):Bool {
+/** Go's unicode.IsSpace, which matches the spaces that fmt's scanning skips. */
+function isGoSpace(code:Null<Int>):Bool {
 	if (code == null)
 		return false;
 	return switch code {

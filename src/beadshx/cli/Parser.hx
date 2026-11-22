@@ -7,6 +7,9 @@ import beadshx.cli.Invocation.EventsInvocation;
 import beadshx.cli.Invocation.GraphInvocation;
 import beadshx.cli.Invocation.HistoryInvocation;
 import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
+import beadshx.config.LayeredConfig.goQuote;
+import beadshx.store.CustomConfig.goTrimSpace;
+import beadshx.store.CustomConfig.isGoSpace;
 import beadshx.store.OptionalInt;
 import beadshx.store.CountGroup;
 import beadshx.store.IssueListMetadataFilter;
@@ -129,14 +132,12 @@ final class Parser {
 		var infoWhatsNew = false;
 		var statusSkipBlocked = false;
 		var statusAssigned = false;
-		var countGroup = CountGroup.Ungrouped;
-		var countGroupConflict = false;
 		final countOnlyFlags = new Array<String>();
-		function selectCountGroup(flag:String, group:CountGroup):Void {
+		// The last value of each --by-* flag; upstream's count groups by the flags that end up true.
+		final countGroupFlags = new Map<String, Bool>();
+		function setCountGroupFlag(flag:String, enabled:Bool):Void {
 			countOnlyFlags.push(flag);
-			if (countGroup != CountGroup.Ungrouped && countGroup != group)
-				countGroupConflict = true;
-			countGroup = group;
+			countGroupFlags.set(flag, enabled);
 		}
 		var listStatus = "";
 		var listAssignee = "";
@@ -144,10 +145,19 @@ final class Parser {
 		var depTypeRaw = "";
 		var listTitle = "";
 		var listSpec = "";
+		// Upstream checks these filter values in the command body, so the parser keeps the last raw value.
 		var listPriority = OptionalInt.IntAbsent;
-		var listPriorityRaw = "";
+		var listPriorityRaw:Null<String> = null;
 		var listPriorityMin = OptionalInt.IntAbsent;
+		var listPriorityMinRaw:Null<String> = null;
 		var listPriorityMax = OptionalInt.IntAbsent;
+		var listPriorityMaxRaw:Null<String> = null;
+		var listMoleculeTypeRaw = "";
+		var listWispTypeRaw = "";
+		var listHasMetadataKeyRaw = "";
+		final listMetadataFieldsRaw = new Array<String>();
+		// By flag name without the dashes.
+		final listTimeRaw = new Map<String, String>();
 		var listLimit = OptionalInt.IntAbsent;
 		var listOffset = OptionalInt.IntAbsent;
 		var listMaxRows = OptionalInt.IntAbsent;
@@ -240,22 +250,21 @@ final class Parser {
 		final eventsOnlyFlags = new Array<String>();
 		// pflag reports an unknown flag before it parses the value, so the values wait for the command.
 		final eventsFlagValues = new Array<{flag:String, raw:String}>();
-		var readyAwareUsageFailure = "";
-		function rememberReadyAwareUsageFailure(message:String):Void {
-			if (readyAwareUsageFailure == "")
-				readyAwareUsageFailure = message;
-		}
 		// Upstream runs these checks in the command body, after its pre-run; the first one in its order wins.
 		var deferredCheck = DeferredCheck.ChecksPassed;
-		function checksPassed():Bool {
-			return switch deferredCheck {
-				case ChecksPassed: true;
-				case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _): false;
-			};
-		}
 		function deferCheck(failure:DeferredCheck):Void {
-			if (checksPassed())
+			if (checkPassed(deferredCheck))
 				deferredCheck = failure;
+		}
+		// ready's --brief rules, which its command body checks before anything else.
+		var readyModeCheck = DeferredCheck.ChecksPassed;
+		// A negative --max-rows, which list and ready report where they read BEADS_MAX_ROWS.
+		var maxRowsCheck = DeferredCheck.ChecksPassed;
+		// ready's metadata filter and --sort checks, which come after it reads --max-rows.
+		var readyFilterCheck = DeferredCheck.ChecksPassed;
+		function deferFilterCheck(failure:DeferredCheck):Void {
+			if (checkPassed(readyFilterCheck))
+				readyFilterCheck = failure;
 		}
 		var showShort = false;
 		var showLong = false;
@@ -356,42 +365,23 @@ final class Parser {
 					case ListExternalRef:
 						listExternalRef = argument;
 					case ListPriorityMin:
-						final priority = parsePriority(argument);
-						if (priority < 0)
-							return UsageFailure('parsing --priority-min: invalid priority: ${argument} (must be 0-4 or P0-P4)');
-						listPriorityMin = IntPresent(priority);
+						listPriorityMinRaw = argument;
 					case ListPriorityMax:
-						final priority = parsePriority(argument);
-						if (priority < 0)
-							return UsageFailure('parsing --priority-max: invalid priority: ${argument} (must be 0-4 or P0-P4)');
-						listPriorityMax = IntPresent(priority);
+						listPriorityMaxRaw = argument;
 					case ListExcludeType:
 						addCommaSeparated(listExcludeTypes, argument);
 					case ListParent:
 						listParent = argument;
 					case ListMoleculeType:
-						if (!isMoleculeType(argument))
-							rememberReadyAwareUsageFailure('invalid mol-type "${argument}" (must be swarm, patrol, or work)');
-						else
-							listMoleculeType = argument;
+						listMoleculeTypeRaw = argument;
 					case ListWispType:
-						if (!isWispType(argument))
-							return UsageFailure('invalid wisp-type "${argument}" (must be heartbeat, ping, patrol, gc_report, recovery, error, or escalation)');
-						listWispType = argument;
+						listWispTypeRaw = argument;
 					case ListMetadataField:
-						final metadataError = addMetadataFilter(listMetadataFields, argument);
-						if (metadataError != null)
-							rememberReadyAwareUsageFailure(metadataError);
+						listMetadataFieldsRaw.push(argument);
 					case ListHasMetadataKey:
-						final metadataError = validateMetadataKey("--has-metadata-key", argument);
-						if (metadataError != null)
-							rememberReadyAwareUsageFailure(metadataError);
-						else
-							listHasMetadataKey = argument;
+						listHasMetadataKeyRaw = argument;
 					case ListTime(field):
-						final timeError = addListTimeFilter(listTimeFilters, field, argument);
-						if (timeError != null)
-							return UsageFailure(timeError);
+						listTimeRaw.set(listTimeFlag(field), argument);
 					case ListOffset:
 						final offset = parseSignedInt(argument);
 						if (offset == null)
@@ -401,9 +391,7 @@ final class Parser {
 						final maxRows = parseSignedInt(argument);
 						if (maxRows == null)
 							return invalidMaxRows(argument);
-						// dep tree and graph report a negative cap themselves, after their other checks.
-						if (maxRows < 0 && !inDepTree() && !inGraph())
-							return UsageFailure('--max-rows must be non-negative; got ${maxRows}');
+						// Each command checks the sign itself, after its pre-run.
 						listMaxRows = IntPresent(maxRows);
 						listMaxRowsSource = "--max-rows";
 					case ReadyMolecule:
@@ -643,20 +631,12 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--priority-min=")) {
 				markListOnly("--priority-min");
-				final raw = argument.substr(15);
-				final priority = parsePriority(raw);
-				if (priority < 0)
-					return UsageFailure('parsing --priority-min: invalid priority: ${raw} (must be 0-4 or P0-P4)');
-				listPriorityMin = IntPresent(priority);
+				listPriorityMinRaw = argument.substr(15);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--priority-max=")) {
 				markListOnly("--priority-max");
-				final raw = argument.substr(15);
-				final priority = parsePriority(raw);
-				if (priority < 0)
-					return UsageFailure('parsing --priority-max: invalid priority: ${raw} (must be 0-4 or P0-P4)');
-				listPriorityMax = IntPresent(priority);
+				listPriorityMaxRaw = argument.substr(15);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--exclude-type=")) {
@@ -671,11 +651,7 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--mol-type=")) {
 				markListOnly("--mol-type");
-				final value = argument.substr(11);
-				if (!isMoleculeType(value))
-					rememberReadyAwareUsageFailure('invalid mol-type "${value}" (must be swarm, patrol, or work)');
-				else
-					listMoleculeType = value;
+				listMoleculeTypeRaw = argument.substr(11);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--mol=")) {
@@ -685,27 +661,17 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--wisp-type=")) {
 				markListOnly("--wisp-type");
-				final value = argument.substr(12);
-				if (!isWispType(value))
-					return UsageFailure('invalid wisp-type "${value}" (must be heartbeat, ping, patrol, gc_report, recovery, error, or escalation)');
-				listWispType = value;
+				listWispTypeRaw = argument.substr(12);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--metadata-field=")) {
 				markListOnly("--metadata-field");
-				final metadataError = addMetadataFilter(listMetadataFields, argument.substr(17));
-				if (metadataError != null)
-					rememberReadyAwareUsageFailure(metadataError);
+				listMetadataFieldsRaw.push(argument.substr(17));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--has-metadata-key=")) {
 				markListOnly("--has-metadata-key");
-				final value = argument.substr(19);
-				final metadataError = validateMetadataKey("--has-metadata-key", value);
-				if (metadataError != null)
-					rememberReadyAwareUsageFailure(metadataError);
-				else
-					listHasMetadataKey = value;
+				listHasMetadataKeyRaw = argument.substr(19);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--offset=")) {
@@ -723,8 +689,6 @@ final class Parser {
 				final maxRows = parseSignedInt(raw);
 				if (maxRows == null)
 					return invalidMaxRows(raw);
-				if (maxRows < 0 && !inDepTree() && !inGraph())
-					return UsageFailure('--max-rows must be non-negative; got ${maxRows}');
 				listMaxRows = IntPresent(maxRows);
 				listMaxRowsSource = "--max-rows";
 				continue;
@@ -762,25 +726,18 @@ final class Parser {
 			final equalsIndex = argument.indexOf("=");
 			if (equalsIndex > 0) {
 				final flag = argument.substr(0, equalsIndex);
-				switch countGroupFlag(flag) {
-					case null:
-					case group:
-						final value = argument.substr(equalsIndex + 1);
-						if (!isBooleanFlagValue(value))
-							return UsageFailure('invalid argument "${value}" for "${flag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
-						if (booleanFlagValue(value))
-							selectCountGroup(flag, group);
-						else
-							countOnlyFlags.push(flag);
-						continue;
+				if (countGroupFlag(flag) != null) {
+					final value = argument.substr(equalsIndex + 1);
+					if (!isBooleanFlagValue(value))
+						return UsageFailure('invalid argument "${value}" for "${flag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					setCountGroupFlag(flag, booleanFlagValue(value));
+					continue;
 				}
 				switch listTimeField(flag) {
 					case null:
 					case field:
 						markListOnly(flag);
-						final timeError = addListTimeFilter(listTimeFilters, field, argument.substr(equalsIndex + 1));
-						if (timeError != null)
-							return UsageFailure(timeError);
+						listTimeRaw.set(listTimeFlag(field), argument.substr(equalsIndex + 1));
 						continue;
 				}
 				if (isListBooleanFlag(flag)) {
@@ -974,16 +931,8 @@ final class Parser {
 					expectedValue = MemProfile;
 				case "--id":
 					expectedValue = IssueID;
-				case "--by-status":
-					selectCountGroup(argument, CountGroup.ByStatus);
-				case "--by-priority":
-					selectCountGroup(argument, CountGroup.ByPriority);
-				case "--by-type":
-					selectCountGroup(argument, CountGroup.ByType);
-				case "--by-assignee":
-					selectCountGroup(argument, CountGroup.ByAssignee);
-				case "--by-label":
-					selectCountGroup(argument, CountGroup.ByLabel);
+				case "--by-status" | "--by-priority" | "--by-type" | "--by-assignee" | "--by-label":
+					setCountGroupFlag(argument, true);
 				case "--status":
 					markListOnly(argument);
 					expectedValue = ListStatus;
@@ -1357,6 +1306,19 @@ final class Parser {
 			case NoVariable | UnsupportedPath(_):
 		}
 
+		// Upstream countGroupFlag: the --by-* flags that end up true, in its order.
+		var countGroup = CountGroup.Ungrouped;
+		var countGroupsSelected = 0;
+		for (flag in ["--by-status", "--by-priority", "--by-type", "--by-assignee", "--by-label"])
+			if (countGroupFlags.get(flag) == true) {
+				countGroupsSelected++;
+				switch countGroupFlag(flag) {
+					case null:
+					case group:
+						countGroup = group;
+				}
+			}
+
 		final formatJson = formatFlagSet && isJsonFormat(formatFlagValue);
 		if (formatFlagSet && !formatJson)
 			listFormat = formatFlagValue;
@@ -1612,6 +1574,9 @@ final class Parser {
 				listRequest: makeListRequest(""),
 				listWarning: listWarning,
 				deferredCheck: deferredCheck,
+				readyModeCheck: readyModeCheck,
+				maxRowsCheck: maxRowsCheck,
+				readyFilterCheck: readyFilterCheck,
 				listFlat: !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat)),
 				listLong: listLong,
 				listNoPager: listNoPager,
@@ -1670,30 +1635,120 @@ final class Parser {
 			listParent = positional[1];
 			listAll = true;
 		}
-		if (readyAwareUsageFailure != "")
-			return name == "ready" ? OutputFailure(outputMode(), readyAwareUsageFailure) : UsageFailure(readyAwareUsageFailure);
 		if (shorthandS != "") {
 			if (name == "ready")
 				listSort = shorthandS;
 			else
 				listStatus = shorthandS;
 		}
-		if (listPriorityRaw != "") {
-			if (name == "ready") {
-				final priority = parseSignedInt(listPriorityRaw);
-				if (priority == null)
-					return UsageFailure('invalid argument "${listPriorityRaw}" for "-p, --priority" flag: expected an integer');
-				listPriority = IntPresent(priority);
-			} else {
-				final priority = parsePriority(listPriorityRaw);
-				if (priority < 0)
-					return UsageFailure('invalid priority: ${listPriorityRaw} (must be 0-4 or P0-P4)');
-				listPriority = IntPresent(priority);
+		// list checks --priority in its command body, below.
+		if (listPriorityRaw != null && name == "ready") {
+			final priority = parseSignedInt(listPriorityRaw);
+			if (priority == null)
+				return UsageFailure('invalid argument "${listPriorityRaw}" for "-p, --priority" flag: expected an integer');
+			listPriority = IntPresent(priority);
+		}
+
+		// The filter values that upstream checks in the command body. Each command reports a failure in its own order.
+		var priorityMinFailure = "";
+		if (listPriorityMinRaw != null) {
+			final priority = goPriority(listPriorityMinRaw);
+			if (priority < 0)
+				priorityMinFailure = 'parsing --priority-min: ${invalidPriority(listPriorityMinRaw)}';
+			else
+				listPriorityMin = IntPresent(priority);
+		}
+		var priorityMaxFailure = "";
+		if (listPriorityMaxRaw != null) {
+			final priority = goPriority(listPriorityMaxRaw);
+			if (priority < 0)
+				priorityMaxFailure = 'parsing --priority-max: ${invalidPriority(listPriorityMaxRaw)}';
+			else
+				listPriorityMax = IntPresent(priority);
+		}
+		var moleculeTypeFailure = "";
+		if (listMoleculeTypeRaw != "") {
+			if (isMoleculeType(listMoleculeTypeRaw))
+				listMoleculeType = listMoleculeTypeRaw;
+			else
+				moleculeTypeFailure = 'invalid mol-type ${goQuote(listMoleculeTypeRaw)} (must be swarm, patrol, or work)';
+		}
+		var wispTypeFailure = "";
+		if (listWispTypeRaw != "") {
+			if (isWispType(listWispTypeRaw))
+				listWispType = listWispTypeRaw;
+			else
+				wispTypeFailure = 'invalid wisp-type ${goQuote(listWispTypeRaw)} (must be heartbeat, ping, patrol, gc_report, recovery, error, or escalation)';
+		}
+		// Upstream parses the date filters in this order and stops at the first that fails.
+		var timeFailure = "";
+		for (field in [
+			TimeCreatedAfter,
+			TimeCreatedBefore,
+			TimeUpdatedAfter,
+			TimeUpdatedBefore,
+			TimeClosedAfter,
+			TimeClosedBefore,
+			TimeDeferAfter,
+			TimeDeferBefore,
+			TimeDueAfter,
+			TimeDueBefore
+		]) {
+			final raw = listTimeRaw.get(listTimeFlag(field));
+			if (timeFailure != "" || raw == null || raw == "")
+				continue;
+			final timeError = addListTimeFilter(listTimeFilters, field, raw);
+			if (timeError != null)
+				timeFailure = timeError;
+		}
+		var metadataFieldFailure = "";
+		for (raw in listMetadataFieldsRaw) {
+			final metadataError = addMetadataFilter(listMetadataFields, raw);
+			if (metadataError != null) {
+				metadataFieldFailure = metadataError;
+				break;
 			}
 		}
-		// list checks its sort field with its other flags below.
-		if (name == "ready" && listSort != "" && !isReadySort(listSort))
-			deferCheck(OutputCheckFailure('invalid sort policy \'${listSort}\'. Valid values: hybrid, priority, oldest'));
+		var hasMetadataKeyFailure = "";
+		if (listHasMetadataKeyRaw != "") {
+			final metadataError = validateMetadataKey("--has-metadata-key", listHasMetadataKeyRaw);
+			if (metadataError != null)
+				hasMetadataKeyFailure = metadataError;
+			else
+				listHasMetadataKey = listHasMetadataKeyRaw;
+		}
+		// Upstream resolveMaxRows: a --max-rows value wins; otherwise a malformed BEADS_MAX_ROWS warns and sets no cap.
+		function resolveMaxRows():Void {
+			switch listMaxRows {
+				case IntPresent(value) if (value < 0):
+					maxRowsCheck = OutputCheckFailure('--max-rows must be non-negative; got ${value}');
+				case IntPresent(_):
+				case IntAbsent:
+					final rawMaxRows = environment.value("BEADS_MAX_ROWS");
+					if (rawMaxRows != "") {
+						final parsedMaxRows = parseSignedInt(rawMaxRows);
+						if (parsedMaxRows == null || parsedMaxRows < 0) {
+							listWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
+						} else {
+							listMaxRows = IntPresent(parsedMaxRows);
+							listMaxRowsSource = "BEADS_MAX_ROWS";
+						}
+					}
+			}
+		}
+		// count takes its priorities as int flags upstream; this build still reads them as list priorities, at once.
+		if (name == "count") {
+			if (listPriorityRaw != null) {
+				final priority = goPriority(listPriorityRaw);
+				if (priority < 0)
+					return UsageFailure(invalidPriority(listPriorityRaw));
+				listPriority = IntPresent(priority);
+			}
+			if (priorityMinFailure != "")
+				return UsageFailure(priorityMinFailure);
+			if (priorityMaxFailure != "")
+				return UsageFailure(priorityMaxFailure);
+		}
 		if (name == "search" && listSort != "" && !isListSort(listSort))
 			return UsageFailure(invalidListSort(listSort));
 		if (name != "count" && countOnlyFlags.length > 0)
@@ -1728,8 +1783,6 @@ final class Parser {
 		if ((name != "comments" || (positional.length > 1 && (positional[1] == "list" || positional[1] == "add")))
 			&& commentsOnlyFlags.length > 0)
 			return UsageFailure('unknown flag: ${commentsOnlyFlags[0]}');
-		if (name == "count" && countGroupConflict)
-			return UsageFailure("only one --by-* flag can be specified");
 		if (name != "list") {
 			var incompatibleListFlag = "";
 			for (flag in listOnlyFlags)
@@ -1783,12 +1836,44 @@ final class Parser {
 				if (conflicts.length > 0)
 					deferCheck(ExactCheckFailure(formatSkipLabelsConflict(conflicts), 2));
 			}
+			if (listPriorityRaw != null) {
+				final priority = goPriority(listPriorityRaw);
+				if (priority < 0)
+					deferCheck(PlainCheckFailure(invalidPriority(listPriorityRaw)));
+				else
+					listPriority = IntPresent(priority);
+			}
+			if (priorityMinFailure != "")
+				deferCheck(PlainCheckFailure(priorityMinFailure));
+			if (priorityMaxFailure != "")
+				deferCheck(PlainCheckFailure(priorityMaxFailure));
 			if (listPinned && listNoPinned)
 				deferCheck(PlainCheckFailure("--pinned and --no-pinned are mutually exclusive"));
 			if (listParent != "" && listNoParent)
 				deferCheck(PlainCheckFailure("--parent and --no-parent are mutually exclusive"));
-			if (listBrief && watchMode)
-				deferCheck(PlainCheckFailure("--watch cannot be combined with --brief"));
+			if (moleculeTypeFailure != "")
+				deferCheck(PlainCheckFailure(moleculeTypeFailure));
+			if (wispTypeFailure != "")
+				deferCheck(PlainCheckFailure(wispTypeFailure));
+			if (timeFailure != "")
+				deferCheck(PlainCheckFailure(timeFailure));
+			if (metadataFieldFailure != "")
+				deferCheck(OutputCheckFailure(metadataFieldFailure));
+			if (hasMetadataKeyFailure != "")
+				deferCheck(OutputCheckFailure(hasMetadataKeyFailure));
+			if (listBrief) {
+				// Upstream's pretty view: the tree unless --flat, outside --json and --format, and always with --watch.
+				final pretty = ((listPretty || (listTree && !listFlat))
+					&& outputMode() != OutputMode.Json
+					&& listFormat == "")
+					|| watchMode;
+				if (watchMode)
+					deferCheck(PlainCheckFailure("--watch cannot be combined with --brief"));
+				else if (listFormat != "")
+					deferCheck(PlainCheckFailure("--format cannot be combined with --brief; a template can print a field --brief omits, with nothing to mark it"));
+				else if (listParent != "" && pretty)
+					deferCheck(PlainCheckFailure("--parent with --pretty cannot be combined with --brief; the hierarchical walk is a different query"));
+			}
 			if (listDepsMode != "") {
 				if (listDepsMode != "scheduling" && listDepsMode != "all")
 					deferCheck(OutputCheckFailure('invalid --deps value "${listDepsMode}" (valid: scheduling, all)'));
@@ -1810,53 +1895,80 @@ final class Parser {
 					deferCheck(PlainCheckFailure("--offset is not supported with --sort id (sort requires fetching the full result set)"));
 				case IntAbsent | IntPresent(_):
 			}
-			// Upstream returns before it reads BEADS_MAX_ROWS when a check above fails.
-			if (!showHelp && checksPassed()) {
-				switch listMaxRows {
-					case IntPresent(_):
-					case IntAbsent:
-						final rawMaxRows = environment.value("BEADS_MAX_ROWS");
-						if (rawMaxRows != "") {
-							final parsedMaxRows = parseSignedInt(rawMaxRows);
-							if (parsedMaxRows == null || parsedMaxRows < 0) {
-								listWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
-							} else {
-								listMaxRows = IntPresent(parsedMaxRows);
-								listMaxRowsSource = "BEADS_MAX_ROWS";
-							}
-						}
-				}
-			}
+			// Then upstream reads --max-rows and BEADS_MAX_ROWS (the command reports them after the checks above).
+			if (!showHelp)
+				resolveMaxRows();
 		}
 		if (name == "ready") {
-			if (listBrief && outputMode() != OutputMode.Json)
-				return OutputFailure(outputMode(), "--brief requires --json; the text renderings print none of the fields it omits");
-			if (listBrief && readyClaim)
-				return OutputFailure(outputMode(), "--claim cannot be combined with --brief");
-			if (listBrief && readyGated)
-				return OutputFailure(outputMode(), "--gated cannot be combined with --brief");
-			if (listBrief && readyMolecule != "")
-				return OutputFailure(outputMode(), "--mol cannot be combined with --brief");
-			if (listBrief && readyExplain)
-				return OutputFailure(outputMode(), "--explain cannot be combined with --brief");
-			if (!showHelp) {
-				switch listMaxRows {
-					case IntPresent(_):
-					case IntAbsent:
-						final rawMaxRows = environment.value("BEADS_MAX_ROWS");
-						if (rawMaxRows != "") {
-							final parsedMaxRows = parseSignedInt(rawMaxRows);
-							if (parsedMaxRows == null || parsedMaxRows < 0) {
-								listWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
-							} else {
-								listMaxRows = IntPresent(parsedMaxRows);
-								listMaxRowsSource = "BEADS_MAX_ROWS";
-							}
-						}
+			// Upstream briefModeConflict, which the command body checks before it picks a route or a view.
+			if (listBrief) {
+				final conflict = if (readyClaim) {
+					"--claim cannot be combined with --brief";
+				} else if (readyGated) {
+					"--gated cannot be combined with --brief";
+				} else if (readyMolecule != "") {
+					"--mol cannot be combined with --brief";
+				} else if (readyExplain) {
+					"--explain cannot be combined with --brief";
+				} else if (outputMode() != OutputMode.Json) {
+					"--brief requires --json; the text renderings print none of the fields it omits";
+				} else {
+					"";
 				}
+				if (conflict != "")
+					readyModeCheck = OutputCheckFailure(conflict);
 			}
+			// Upstream gatherReadyInput, in its order, up to where it reads --max-rows and BEADS_MAX_ROWS.
+			if (moleculeTypeFailure != "")
+				deferCheck(OutputCheckFailure(moleculeTypeFailure));
+			if (readyClaim && listAssignee != "")
+				deferCheck(OutputCheckFailure("--claim cannot be combined with --assignee"));
+			if (readyClaim && readyGated)
+				deferCheck(OutputCheckFailure("--claim cannot be combined with --gated"));
+			if (readyClaim && readyMolecule != "")
+				deferCheck(OutputCheckFailure("--claim cannot be combined with --mol"));
+			if (readyClaim && readyExplain)
+				deferCheck(OutputCheckFailure("--claim cannot be combined with --explain"));
+			final positiveOffset = switch listOffset {
+				case IntPresent(value): value > 0;
+				case IntAbsent: false;
+			};
+			if (positiveOffset && readyClaim)
+				deferCheck(OutputCheckFailure("--offset cannot be combined with --claim"));
+			if (positiveOffset && readyGated)
+				deferCheck(OutputCheckFailure("--offset cannot be combined with --gated"));
+			if (positiveOffset && readyMolecule != "")
+				deferCheck(OutputCheckFailure("--offset cannot be combined with --mol"));
+			if (positiveOffset && readyExplain)
+				deferCheck(OutputCheckFailure("--offset cannot be combined with --explain"));
+			if (!showHelp)
+				resolveMaxRows();
+			if (metadataFieldFailure != "")
+				deferFilterCheck(OutputCheckFailure(metadataFieldFailure));
+			if (hasMetadataKeyFailure != "")
+				deferFilterCheck(OutputCheckFailure(hasMetadataKeyFailure));
+			if (listSort != "" && !isReadySort(listSort))
+				deferFilterCheck(OutputCheckFailure('invalid sort policy \'${listSort}\'. Valid values: hybrid, priority, oldest'));
+		}
+		if (name == "count") {
+			// Upstream parseCountRequest, in its order.
+			if (countGroupsSelected > 1)
+				deferCheck(OutputCheckFailure("only one --by-* flag can be specified"));
+			if (timeFailure != "")
+				deferCheck(OutputCheckFailure(timeFailure));
 		}
 		if (name == "search") {
+			// Upstream search checks these in its command body too; this build still reports them at once.
+			if (timeFailure != "")
+				return UsageFailure(timeFailure);
+			if (priorityMinFailure != "")
+				return UsageFailure(priorityMinFailure);
+			if (priorityMaxFailure != "")
+				return UsageFailure(priorityMaxFailure);
+			if (metadataFieldFailure != "")
+				return UsageFailure(metadataFieldFailure);
+			if (hasMetadataKeyFailure != "")
+				return UsageFailure(hasMetadataKeyFailure);
 			switch listLimit {
 				case IntAbsent:
 					listLimit = IntPresent(50);
@@ -1964,6 +2076,9 @@ final class Parser {
 				listRequest: makeListRequest(listIdFilter),
 				listWarning: listWarning,
 				deferredCheck: deferredCheck,
+				readyModeCheck: readyModeCheck,
+				maxRowsCheck: maxRowsCheck,
+				readyFilterCheck: readyFilterCheck,
 				listFlat: !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat)),
 				listLong: listLong,
 				listNoPager: listNoPager,
@@ -2339,7 +2454,7 @@ final class Parser {
 	static function addMetadataFilter(filters:Array<IssueListMetadataFilter>, raw:String):Null<String> {
 		final separator = raw.indexOf("=");
 		if (separator <= 0)
-			return 'invalid --metadata-field: expected key=value, got "${raw}"';
+			return 'invalid --metadata-field: expected key=value, got ${goQuote(raw)}';
 		final key = raw.substr(0, separator);
 		final keyError = validateMetadataKey("--metadata-field key", key);
 		if (keyError != null)
@@ -2358,7 +2473,7 @@ final class Parser {
 			}
 		}
 		if (!valid)
-			return 'invalid ${flag}: invalid metadata key "${key}": must match ^[a-zA-Z_][a-zA-Z0-9_./]*$$';
+			return 'invalid ${flag}: invalid metadata key ${goQuote(key)}: must match ^[a-zA-Z_][a-zA-Z0-9_./]*$$';
 		return null;
 	}
 
@@ -2395,10 +2510,52 @@ final class Parser {
 		};
 	}
 
-	static function parsePriority(value:String):Int {
-		final raw = value.length == 2 && (value.charAt(0) == "P" || value.charAt(0) == "p") ? value.substr(1) : value;
-		final parsed = parseSignedInt(raw);
-		return parsed != null && parsed >= 0 && parsed <= 4 ? parsed : -1;
+	/**
+		Upstream validation.ParsePriority: Go's strings.TrimSpace, one leading
+		`P` or `p` dropped, then fmt.Sscanf with `%d`. That skips spaces (a
+		newline fails), reads an optional sign and at least one digit, and
+		ignores the rest, so `1x` and ` P2` are valid. Returns -1 unless the
+		number is 0 to 4.
+	**/
+	static function goPriority(value:String):Int {
+		var content = goTrimSpace(value);
+		if (StringTools.startsWith(content, "P") || StringTools.startsWith(content, "p"))
+			content = content.substr(1);
+		var index = 0;
+		while (index < content.length && isGoSpace(content.charCodeAt(index))) {
+			if (content.charAt(index) == "\n")
+				return -1;
+			index++;
+		}
+		var negative = false;
+		if (index < content.length && (content.charAt(index) == "+" || content.charAt(index) == "-")) {
+			negative = content.charAt(index) == "-";
+			index++;
+		}
+		var digits = 0;
+		var priority = 0;
+		while (index < content.length && content.charAt(index) >= "0" && content.charAt(index) <= "9") {
+			// A value past 4 is invalid however long it gets, so it stops growing there.
+			if (priority <= 4)
+				priority = priority * 10 + content.charCodeAt(index) - "0".code;
+			digits++;
+			index++;
+		}
+		if (digits == 0 || priority > 4 || (negative && priority != 0))
+			return -1;
+		return priority;
+	}
+
+	/** Upstream validation.ValidatePriority's error. */
+	static function invalidPriority(value:String):String {
+		return 'invalid priority ${goQuote(value)} (expected 0-4 or P0-P4, not words like high/medium/low)';
+	}
+
+	static function checkPassed(check:DeferredCheck):Bool {
+		return switch check {
+			case ChecksPassed: true;
+			case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _): false;
+		};
 	}
 
 	static function parseSignedInt(value:String):Null<Int> {

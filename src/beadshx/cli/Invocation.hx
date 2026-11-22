@@ -55,11 +55,24 @@ typedef Invocation = {
 	final orphansFix:Bool;
 	final listRequest:IssueListRequest;
 
-	/** The BEADS_MAX_ROWS warning of `list` and `ready`, which prints where the command reports `deferredCheck`. */
+	/** The BEADS_MAX_ROWS warning of `list` and `ready`, which prints where the command reads BEADS_MAX_ROWS. */
 	final listWarning:String;
 
-	/** The first argument check that upstream runs in the command body, after its pre-run. */
+	/**
+		The first argument check that upstream runs in the command body, after
+		its pre-run. For `list` and `ready`, the checks before the command reads
+		--max-rows and BEADS_MAX_ROWS.
+	**/
 	final deferredCheck:DeferredCheck;
+
+	/** `ready`'s --brief rules, which its command body checks before it picks a route or a view. */
+	final readyModeCheck:DeferredCheck;
+
+	/** A negative --max-rows of `list` or `ready`; when it is set, the command reads no BEADS_MAX_ROWS. */
+	final maxRowsCheck:DeferredCheck;
+
+	/** `ready`'s metadata filter and --sort checks, which come after it reads --max-rows and BEADS_MAX_ROWS. */
+	final readyFilterCheck:DeferredCheck;
 
 	final listFlat:Bool;
 	final listLong:Bool;

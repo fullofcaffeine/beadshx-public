@@ -641,6 +641,34 @@ compare_store_failure unavailable-server ready-bad-sort ready --sort bogus
 compare_store_failure unavailable-server ready-bad-sort-json ready --sort bogus --json
 compare_store_failure missing-embedded list-bad-sort list --sort bogus
 compare_store_failure missing-embedded query-negative-offset-json query status=open --offset -1 --json
+# The other checks of list's gatherListInput, ready's --brief rules and its gather, and count's --by-*
+# and date checks also run in the command body, after the store-open error.
+compare_store_failure unavailable-server list-bad-priority list --priority bogus
+compare_store_failure unavailable-server list-bad-priority-min-json list --priority-min bogus --json
+compare_store_failure unavailable-server list-bad-priority-max list --priority-max 9
+compare_store_failure unavailable-server list-bad-mol-type list --mol-type bogus
+compare_store_failure unavailable-server list-bad-wisp-type-json list --wisp-type bogus --json
+compare_store_failure unavailable-server list-bad-created-after list --created-after bogus
+compare_store_failure unavailable-server list-bad-metadata-field-json list --metadata-field bad --json
+compare_store_failure unavailable-server list-bad-has-metadata-key list --has-metadata-key 1bad
+compare_store_failure unavailable-server list-negative-max-rows-json list --max-rows -1 --json
+compare_store_failure unavailable-server list-brief-format list --brief --format '{{.ID}}'
+compare_store_failure unavailable-server list-brief-parent list --brief --parent test-1
+compare_store_failure unavailable-server ready-brief ready --brief
+compare_store_failure unavailable-server ready-brief-gated-json ready --brief --gated --json
+compare_store_failure unavailable-server ready-bad-mol-type-json ready --mol-type bogus --json
+compare_store_failure unavailable-server ready-bad-metadata-field ready --metadata-field bad
+compare_store_failure unavailable-server ready-bad-has-metadata-key-json ready --has-metadata-key 1bad --json
+compare_store_failure unavailable-server ready-negative-max-rows-json ready --max-rows -1 --json
+compare_store_failure unavailable-server readonly-ready-claim-gated --readonly ready --claim --gated
+compare_store_failure unavailable-server count-by-conflict count --by-status --by-type
+compare_store_failure unavailable-server count-by-conflict-json count --by-status --by-type --json
+compare_store_failure unavailable-server count-bad-created-after-json count --created-after bogus --json
+compare_store_failure missing-embedded list-bad-mol-type-json list --mol-type bogus --json
+compare_store_failure missing-embedded list-negative-max-rows list --max-rows -1
+compare_store_failure missing-embedded ready-brief-json ready --brief --explain --json
+compare_store_failure missing-embedded ready-bad-metadata-field-json ready --metadata-field bad --json
+compare_store_failure missing-embedded count-by-conflict-json count --by-status --by-label --json
 compare_store_failure missing-embedded types types
 compare_store_failure missing-embedded statuses statuses
 compare_store_failure unavailable-server config-show config show
@@ -661,6 +689,11 @@ compare_store_failure deprecated-port-server config-get config get issue_prefix
 compare_store_failure deprecated-port-server types types
 compare_store_failure deprecated-port-server list-bad-sort list --sort bogus
 compare_store_failure deprecated-port-server ready-bad-sort-json ready --sort bogus --json
+compare_store_failure deprecated-port-server list-bad-priority list --priority bogus
+compare_store_failure deprecated-port-server list-bad-due-before-json list --due-before bogus --json
+compare_store_failure deprecated-port-server ready-brief-mol ready --brief --mol test-1
+compare_store_failure deprecated-port-server ready-bad-mol-type ready --mol-type bogus
+compare_store_failure deprecated-port-server count-by-conflict-json count --by-priority --by-assignee --json
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -2023,6 +2056,24 @@ compare_raw_metadata metadata-type-ready-bad-sort-json exact "$type_error_metada
 compare_raw_metadata metadata-type-list-negative-offset exact "$type_error_metadata" list --offset -1
 compare_raw_metadata metadata-type-query-negative-offset-json exact "$type_error_metadata" query status=open --offset -1 --json
 compare_raw_metadata metadata-type-list-pinned-conflict exact "$type_error_metadata" list --pinned --no-pinned
+compare_raw_metadata metadata-type-list-bad-priority exact "$type_error_metadata" list --priority bogus
+compare_raw_metadata metadata-type-list-bad-priority-min-json exact "$type_error_metadata" list --priority-min 7 --json
+compare_raw_metadata metadata-type-list-bad-mol-type exact "$type_error_metadata" list --mol-type bogus
+compare_raw_metadata metadata-type-list-bad-wisp-type-json exact "$type_error_metadata" list --wisp-type bogus --json
+compare_raw_metadata metadata-type-list-bad-closed-after exact "$type_error_metadata" list --closed-after bogus
+compare_raw_metadata metadata-type-list-bad-metadata-field exact "$type_error_metadata" list --metadata-field bad
+compare_raw_metadata metadata-type-list-bad-has-metadata-key-json exact "$type_error_metadata" list --has-metadata-key 1bad --json
+compare_raw_metadata metadata-type-list-negative-max-rows exact "$type_error_metadata" list --max-rows -1
+compare_raw_metadata metadata-type-list-brief-format exact "$type_error_metadata" list --brief --format '{{.ID}}'
+compare_raw_metadata metadata-type-ready-brief exact "$type_error_metadata" ready --brief
+compare_raw_metadata metadata-type-ready-brief-gated-json exact "$type_error_metadata" ready --brief --gated --json
+compare_raw_metadata metadata-type-ready-bad-mol-type-json exact "$type_error_metadata" ready --mol-type bogus --json
+compare_raw_metadata metadata-type-ready-bad-metadata-field exact "$type_error_metadata" ready --metadata-field bad
+compare_raw_metadata metadata-type-ready-negative-max-rows-json exact "$type_error_metadata" ready --max-rows -1 --json
+compare_raw_metadata metadata-type-readonly-ready-claim-brief-json exact "$type_error_metadata" --readonly ready --claim --brief --json
+compare_raw_metadata metadata-type-count-by-conflict exact "$type_error_metadata" count --by-status --by-type
+compare_raw_metadata metadata-type-count-by-conflict-json exact "$type_error_metadata" count --by-status --by-type --json
+compare_raw_metadata metadata-type-count-bad-created-before exact "$type_error_metadata" count --created-before bogus
 # Go's scanner names a syntax error; a type error names the Go struct field by its tag, or the Go type.
 compare_raw_metadata metadata-truncated exact '{"database":"dolt",' count
 compare_raw_metadata metadata-empty exact '' count
@@ -2125,9 +2176,33 @@ compare_real_database no-metadata-default-ready-bad-sort-json exact ready --sort
 compare_real_database no-metadata-default-list-negative-offset exact list --offset -1
 compare_real_database no-metadata-default-query-negative-offset-json exact query status=open --offset -1 --json
 compare_real_database no-metadata-default-list-pinned-conflict-json exact list --pinned --no-pinned --json
+compare_real_database no-metadata-default-list-bad-priority exact list --priority bogus
+compare_real_database no-metadata-default-list-bad-priority-min exact list --priority-min high
+compare_real_database no-metadata-default-list-bad-mol-type-json exact list --mol-type bogus --json
+compare_real_database no-metadata-default-list-bad-wisp-type exact list --wisp-type bogus
+compare_real_database no-metadata-default-list-bad-defer-after exact list --defer-after bogus
+compare_real_database no-metadata-default-list-bad-metadata-field-json exact list --metadata-field 'bad$key=x' --json
+compare_real_database no-metadata-default-list-bad-has-metadata-key exact list --has-metadata-key 1bad
+compare_real_database no-metadata-default-list-negative-max-rows-json exact list --max-rows -1 --json
+compare_real_database no-metadata-default-list-brief-format exact list --brief --format '{{.ID}}'
+compare_real_database no-metadata-default-ready-brief exact ready --brief
+compare_real_database no-metadata-default-ready-brief-explain-json exact ready --brief --explain --json
+compare_real_database no-metadata-default-ready-bad-mol-type exact ready --mol-type bogus
+compare_real_database no-metadata-default-ready-bad-has-metadata-key-json exact ready --has-metadata-key 1bad --json
+compare_real_database no-metadata-default-ready-negative-max-rows-json exact ready --max-rows -1 --json
+compare_real_database no-metadata-default-readonly-ready-claim exact --readonly ready --claim
+compare_real_database no-metadata-default-readonly-ready-claim-assignee exact --readonly ready --claim --assignee fixture
+compare_real_database no-metadata-default-count-by-conflict exact count --by-status --by-priority
+compare_real_database no-metadata-default-count-by-conflict-json exact count --by-status --by-priority --json
+compare_real_database no-metadata-default-count-bad-updated-after-json exact count --updated-after bogus --json
 real_database_extra_env=(BEADS_MAX_ROWS=bogus)
 compare_real_database no-metadata-default-max-rows-list exact list
 compare_real_database no-metadata-default-max-rows-ready-bad-sort exact ready --sort bogus
+# The warning prints when the command reads BEADS_MAX_ROWS: after list's checks and ready's mol-type
+# check, before ready's metadata checks.
+compare_real_database no-metadata-default-max-rows-list-bad-wisp-type exact list --wisp-type bogus
+compare_real_database no-metadata-default-max-rows-ready-bad-mol-type exact ready --mol-type bogus
+compare_real_database no-metadata-default-max-rows-ready-bad-metadata-field exact ready --metadata-field bad
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config='json: true'
 compare_real_database no-metadata-default-json-setting exact count
@@ -2181,6 +2256,18 @@ compare_real_database deprecated-port-ready-bad-sort-json exact ready --sort bog
 compare_real_database deprecated-port-list-negative-offset-json exact list --offset -1 --json
 compare_real_database deprecated-port-query-negative-offset exact query status=open --offset -1
 compare_real_database deprecated-port-list-pinned-conflict exact list --pinned --no-pinned
+compare_real_database deprecated-port-list-bad-priority-max-json exact list --priority-max P9 --json
+compare_real_database deprecated-port-list-bad-wisp-type exact list --wisp-type bogus
+compare_real_database deprecated-port-list-bad-updated-before-json exact list --updated-before bogus --json
+compare_real_database deprecated-port-list-bad-has-metadata-key-json exact list --has-metadata-key 1bad --json
+compare_real_database deprecated-port-list-negative-max-rows exact list --max-rows -1
+compare_real_database deprecated-port-list-brief-parent exact list --brief --parent "$real_database_epic_id"
+compare_real_database deprecated-port-ready-brief-claim-json exact ready --brief --claim --json
+compare_real_database deprecated-port-ready-bad-metadata-field-json exact ready --metadata-field '1bad=x' --json
+compare_real_database deprecated-port-ready-negative-max-rows exact ready --max-rows -1
+compare_real_database deprecated-port-readonly-ready-claim-mol-type exact --readonly ready --claim --mol-type bogus
+compare_real_database deprecated-port-count-by-conflict exact count --by-type --by-label
+compare_real_database deprecated-port-count-bad-closed-before exact count --closed-before bogus
 real_database_extra_env=(BD_JSON_ENVELOPE=1)
 compare_real_database deprecated-port-json-envelope exact list --json
 real_database_extra_env=(BEADS_DOLT_SERVER_PORT=3307)
@@ -2372,6 +2459,18 @@ compare_real_database count-json exact count --json
 compare_real_database count-status-json exact count --status open --json
 compare_real_database count-by-status-json exact count --by-status --json
 compare_real_database count-by-label-human exact count --by-label
+# The command body checks the --by-* flags, then the date filters in a fixed order, and only the last
+# value of each flag counts. Cobra's own errors come first.
+compare_real_database count-by-conflict exact count --by-status --by-type
+compare_real_database count-by-conflict-json exact count --by-status --by-type --json
+compare_real_database count-by-conflict-before-date exact count --created-after bogus --by-status --by-type
+compare_real_database count-by-status-reset-json exact count --by-status --by-status=false --by-type --json
+compare_real_database count-bad-created-after-json exact count --created-after bogus --json
+compare_real_database count-dates-in-order exact count --closed-before bogus --updated-after bogus
+compare_real_database count-date-last-value-json exact count --created-after bogus --created-after 2000-01-01 --json
+compare_real_database count-by-conflict-unknown-flag exact count --by-status --by-type --mol-type bogus
+compare_real_database count-by-conflict-bad-boolean exact count --by-status --by-type --by-label=maybe
+compare_real_database count-by-conflict-help exact count --by-status --by-type --help
 compare_real_database ready-human exact ready
 compare_real_database ready-plain exact ready --plain
 compare_real_database ready-json exact ready --json
@@ -2430,6 +2529,10 @@ compare_real_database search-status exact search parity --status open
 compare_real_database search-label exact search parity --label smoke
 compare_real_database search-label-any exact search parity --label-any alpha,smoke
 compare_real_database search-priority-range exact search parity --priority-min P0 --priority-max P1
+# search checks the date filters, then the priority range, then the metadata filters.
+compare_real_database search-bad-priority-min exact search parity --priority-min bogus
+compare_real_database search-date-before-priority exact search parity --priority-max 9 --closed-before bogus
+compare_real_database search-priority-before-metadata exact search parity --has-metadata-key 1bad --priority-min high
 compare_real_database search-description exact search issue --desc-contains 'Description body'
 compare_real_database search-notes exact search issue --notes-contains 'Notes body'
 compare_real_database search-external exact search issue --external-contains gh-42
@@ -2489,6 +2592,40 @@ compare_real_database ready-invalid-metadata-json exact ready --metadata-field m
 compare_real_database ready-offset-direct-json exact ready --offset 1 --json
 compare_real_database ready-max-rows exact ready --max-rows 1 --limit 0 --json
 compare_real_database ready-claim-readonly exact --readonly ready --claim
+# The command body checks the --brief rules first, then --offset, then picks --gated, --mol or
+# --explain, which never check the rest. The default view then checks --mol-type and --claim, reads
+# --max-rows and BEADS_MAX_ROWS, checks the metadata filters and the sort, and only then refuses
+# --claim under --readonly. Cobra's own errors come first.
+compare_real_database ready-brief-human exact ready --brief
+compare_real_database ready-brief-gated exact ready --brief --gated
+compare_real_database ready-brief-mol-json exact ready --brief --mol "$real_database_molecule_id" --json
+compare_real_database ready-brief-before-offset exact ready --brief --offset 1
+compare_real_database ready-offset-before-mol-type exact ready --offset 1 --mol-type bogus
+compare_real_database ready-gated-ignores-mol-type exact ready --gated --mol-type bogus
+compare_real_database ready-explain-ignores-metadata-json exact ready --explain --metadata-field bad --json
+compare_real_database ready-gated-ignores-negative-max-rows-json exact ready --gated --max-rows -1 --json
+compare_real_database ready-molecule-ignores-has-metadata-key exact ready --mol "$real_database_molecule_id" --has-metadata-key 1bad
+compare_real_database ready-invalid-mol-type exact ready --mol-type invalid
+compare_real_database ready-mol-type-empty-json exact ready --mol-type '' --json
+compare_real_database ready-mol-type-last-value-json exact ready --mol-type bogus --mol-type swarm --json
+compare_real_database ready-mol-type-before-max-rows exact ready --mol-type bogus --max-rows -1
+compare_real_database ready-negative-max-rows-json exact ready --max-rows -1 --json
+compare_real_database ready-max-rows-before-metadata exact ready --metadata-field bad --max-rows -1
+compare_real_database ready-metadata-before-sort-json exact ready --sort bogus --has-metadata-key 1bad --json
+compare_real_database ready-mol-type-bad-boolean exact ready --mol-type bogus --plain=maybe
+compare_real_database ready-brief-unknown-flag exact ready --brief --wisp-type bogus
+compare_real_database ready-brief-help exact ready --brief --help
+compare_real_database_env ready-mol-type-max-rows-malformed exact BEADS_MAX_ROWS=bogus ready --mol-type bogus
+compare_real_database_env ready-metadata-max-rows-malformed-json exact BEADS_MAX_ROWS=bogus ready --metadata-field bad --json
+compare_real_database_env ready-gated-max-rows-malformed exact BEADS_MAX_ROWS=bogus ready --gated
+compare_real_database ready-claim-readonly-json exact --readonly ready --claim --json
+compare_real_database ready-claim-brief-readonly-json exact --readonly ready --claim --brief --json
+compare_real_database ready-claim-gated-readonly exact --readonly ready --claim --gated
+compare_real_database ready-claim-mol-readonly-json exact --readonly ready --claim --mol "$real_database_molecule_id" --json
+compare_real_database ready-claim-explain-readonly exact --readonly ready --claim --explain
+compare_real_database ready-claim-assignee-readonly exact --readonly ready --claim --assignee fixture
+compare_real_database ready-claim-mol-type-readonly exact --readonly ready --claim --mol-type bogus
+compare_real_database ready-claim-sort-readonly exact --readonly ready --claim --sort bogus
 compare_real_database list-human exact list
 compare_real_database list-json exact list --json
 compare_real_database list-status-json exact list -s in_progress --json
@@ -3127,6 +3264,50 @@ compare_real_database list-invalid-deps-json exact list --deps=bogus --json
 compare_real_database list-invalid-sort-unknown-flag exact list --sort bogus --days 3
 compare_real_database list-pinned-conflict-help exact list --pinned --no-pinned --help
 compare_real_database_env list-pinned-conflict-max-rows-malformed exact BEADS_MAX_ROWS=bogus list --pinned --no-pinned
+# The full order: --skip-labels, --priority, --priority-min, --priority-max, --pinned, --parent,
+# --mol-type, --wisp-type, the date filters (in a fixed order), --metadata-field, --has-metadata-key,
+# the --brief rules, --deps, --sort, --offset, then --max-rows. Only the last value of a flag counts.
+compare_real_database list-bad-priority exact list --priority bogus
+compare_real_database list-bad-priority-json exact list --priority high --json
+compare_real_database list-priority-empty exact list --priority ''
+compare_real_database list-priority-trailing-text-json exact list --priority 1x --json
+compare_real_database list-priority-padded-json exact list --priority ' P1 ' --json
+compare_real_database list-priority-signed-json exact list --priority +1 --json
+compare_real_database list-bad-priority-min exact list --priority-min 5
+compare_real_database list-bad-priority-max-json exact list --priority-max -1 --json
+compare_real_database list-skip-labels-before-priority exact list --priority bogus --skip-labels --label parity
+compare_real_database list-priority-before-priority-min exact list --priority-min bogus --priority bogus
+compare_real_database list-priority-max-before-pinned exact list --pinned --no-pinned --priority-max bogus
+compare_real_database list-parent-before-mol-type exact list --mol-type bogus --parent x --no-parent
+compare_real_database list-mol-type-before-wisp-type exact list --wisp-type bogus --mol-type bogus
+compare_real_database list-mol-type-empty-json exact list --mol-type '' --json
+compare_real_database list-mol-type-last-value-json exact list --mol-type bogus --mol-type swarm --json
+compare_real_database list-wisp-type-before-date exact list --created-after bogus --wisp-type bogus
+compare_real_database list-invalid-wisp-type-json exact list --wisp-type invalid --json
+compare_real_database list-dates-in-order exact list --due-before bogus --defer-after bogus --closed-before bogus
+compare_real_database list-date-last-value-json exact list --created-after bogus --created-after 2000-01-01 --json
+compare_real_database list-date-before-metadata exact list --metadata-field bad --updated-before bogus
+compare_real_database list-invalid-metadata-syntax-json exact list --metadata-field missing-equals --json
+compare_real_database list-invalid-metadata-key-json exact list --metadata-field 'bad$key=value' --json
+compare_real_database list-metadata-fields-in-order exact list --metadata-field team=port --metadata-field 'bad$key=x' --metadata-field bad
+compare_real_database list-metadata-field-before-has-metadata-key exact list --has-metadata-key 1bad --metadata-field bad
+compare_real_database list-invalid-has-metadata-key-json exact list --has-metadata-key 'bad$key' --json
+compare_real_database list-has-metadata-key-before-brief exact list --brief --watch --has-metadata-key 1bad
+compare_real_database list-brief-format exact list --brief --format '{{.ID}}'
+compare_real_database list-brief-parent exact list --brief --parent "$real_database_epic_id"
+compare_real_database list-brief-parent-json exact list --brief --parent "$real_database_epic_id" --json
+compare_real_database list-brief-watch-before-format exact list --brief --format '{{.ID}}' --watch
+compare_real_database list-brief-format-before-deps exact list --brief --format '{{.ID}}' --deps
+compare_real_database list-negative-max-rows exact list --max-rows -1
+compare_real_database list-negative-max-rows-json exact list --max-rows -1 --json
+compare_real_database list-offset-before-negative-max-rows exact list --max-rows -1 --offset -1
+compare_real_database list-sort-before-negative-max-rows-json exact list --max-rows -1 --sort bogus --json
+compare_real_database list-bad-priority-unknown-flag exact list --priority bogus --days 3
+compare_real_database list-bad-mol-type-bad-boolean exact list --mol-type bogus --all=maybe
+compare_real_database list-bad-created-after-help exact list --created-after bogus --help
+compare_real_database list-negative-max-rows-bad-boolean exact list --max-rows -1 --pinned=maybe
+compare_real_database_env list-negative-max-rows-max-rows-malformed exact BEADS_MAX_ROWS=bogus list --max-rows -1
+compare_real_database_env list-bad-mol-type-max-rows-malformed exact BEADS_MAX_ROWS=bogus list --mol-type bogus
 compare_real_database list-skip-labels-conflict-json exact list --skip-labels --label parity --json
 compare_real_database list-flat-human exact list --flat
 compare_real_database list-flat-long-human exact list --flat --long

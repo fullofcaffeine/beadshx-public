@@ -117,16 +117,33 @@ directory, or a `dolt.port` setting more than 0. The warning comes before the
 output and the errors of the command, and the exit code does not change.
 `where`, `version` and help pages print no warning.
 
-Like upstream, `list`, `ready` and `query` check some arguments only after
-the warnings above and after the database opens. A `.beads/metadata.json` load
-error, a missing database or a store error thus comes first. These checks are
-a negative `--offset` for `list` and `query`, and an invalid `--sort` value for
-`list` and `ready`. For `list`, they also include `--pinned` with
-`--no-pinned`, `--parent` with `--no-parent`, `--skip-labels` with a label
-filter, `--watch` with `--brief`, and an invalid use of `--deps`. Outside a
-proxied workspace, `ready` checks `--sort` only in its default view, and not
-with `--gated`, `--mol` or `--explain`. The `BEADS_MAX_ROWS` warning of `list`
-and `ready` comes at the same point.
+Like upstream, `list`, `ready`, `count` and `query` check most of their
+arguments only after the warnings above and after the database opens. A
+`.beads/metadata.json` load error, a missing database or a store error thus
+comes first. Errors from the flag parser, such as an unknown flag or a value
+that is not a number, still come before all of them. The checks come in
+upstream's order:
+
+- `list`: `--skip-labels` with a label filter, `--priority`, `--priority-min`,
+  `--priority-max`, `--pinned` with `--no-pinned`, `--parent` with
+  `--no-parent`, `--mol-type`, `--wisp-type`, the date filters,
+  `--metadata-field`, `--has-metadata-key`, the `--brief` rules, `--deps`,
+  `--sort`, `--offset`, and then a negative `--max-rows`.
+- `ready`: the `--brief` rules first. Outside a proxied workspace, a positive
+  `--offset` fails next, and `--gated`, `--mol` and `--explain` then run
+  without the other checks. The default view checks `--mol-type` and the
+  `--claim` rules, then a negative `--max-rows`, the metadata filters and
+  `--sort`. In a proxied workspace, `ready` reads `--max-rows` and
+  `BEADS_MAX_ROWS` after the `--brief` rules. It refuses a cap more than 0
+  unless `--claim` is set, then checks a negative `--offset` and the rest.
+- `count`: more than one `--by-*` flag, then the date filters.
+- `query`: a negative `--offset`, after the check for a missing expression.
+
+`list` and `ready` print the `BEADS_MAX_ROWS` warning where they read
+`--max-rows`, so a check that fails before that point prints no warning.
+`ready --claim` fails after all of these checks with upstream's
+`--readonly` error. `bdhx` prints this error also without `--readonly`,
+because it does not write.
 
 Limits:
 
@@ -217,14 +234,13 @@ Limits:
   source of the server port and prints no `dolt_server_port` warning.
   Upstream also prints the warning when Dolt cannot parse that file, or when
   the file sets the port to 0 or less.
-- Some other argument checks that upstream makes after the database opens
-  still fail first in `bdhx`, before the warnings and errors above. For
-  `list`, these are an invalid `--priority`, `--mol-type`, `--wisp-type`,
-  date or metadata filter, and a negative `--max-rows`. For `ready`, these are
-  the `--brief` rules and an invalid `--mol-type` or metadata filter. For
-  `count`, this is more than one `--by-*` flag. `search` refuses an invalid
-  `--sort` value, which upstream accepts, and `list` accepts positional
-  arguments, which upstream refuses.
+- `search` checks its date, priority range and metadata filters before the
+  warnings and errors above. Upstream checks them after the database opens.
+  `search` also refuses an invalid `--sort` value, which upstream accepts,
+  and `list` accepts positional arguments, which upstream refuses.
+- `count` reads `--priority`, `--priority-min` and `--priority-max` like
+  `list` does: it accepts `P1`, and it reports an invalid value before the
+  warnings above. Upstream reads them as integer flags.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
 - Where upstream output order is random (Go map order), the parity tests
