@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `815afa7853ef11810c696530048ceb6dbb9302ce`.
+Required BeadsHX compiler revision: `61105e04155797badbd808b0fcf8ee85c16c947d`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -111,6 +111,14 @@ generated file. haxe_go-91p8 lowers `return` inside value `switch`, `if` and
 case returns. haxe_go-ymtk emits only the `Sys`, `sys.FileSystem` and
 `sys.io.File` methods a program reaches, so `Sys.environment()` no longer
 copies the terminal runtime.
+Compiler task haxe_go-ecxy converts an Int value to Float at every typed slot
+that expects a Float, such as returns, arguments, Array and Map entries and
+structure fields. haxe_go-0a8l stores `Null<Float>`, `Null<Int>` and
+`Null<Bool>` class fields as nullable values, and haxe_go-zuq3 lowers `++`,
+`--`, unary `-`, `~` and `!` on nullable primitive storage. haxe_go-ss2a adds
+tests for a return inside a mixed value switch arm, and haxe_go-6ad2 and
+haxe_go-cbve fix two timing failures in the dev-watch tests. BeadsHX output
+did not change.
 
 Reviewed current authority:
 

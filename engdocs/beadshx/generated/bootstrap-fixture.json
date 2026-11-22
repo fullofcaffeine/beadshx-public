@@ -1050,9 +1050,9 @@
     },
     "compilerLock": {
       "path": "upstream/locks/haxe-go.json",
-      "sha256": "51799cc46c5a6b6eed7b7260ef8f5d8ca3e109890a8884221e0677c61f21bcfe"
+      "sha256": "ab1bdf9fda5cee594dce84e7971c50ade91bb9598f9d588d04753dce481583d7"
     },
-    "compilerRevision": "815afa7853ef11810c696530048ceb6dbb9302ce"
+    "compilerRevision": "61105e04155797badbd808b0fcf8ee85c16c947d"
   },
   "files": [
     {
