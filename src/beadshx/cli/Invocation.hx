@@ -54,7 +54,13 @@ typedef Invocation = {
 	final orphansDetails:Bool;
 	final orphansFix:Bool;
 	final listRequest:IssueListRequest;
+
+	/** The BEADS_MAX_ROWS warning of `list` and `ready`, which prints where the command reports `deferredCheck`. */
 	final listWarning:String;
+
+	/** The first argument check that upstream runs in the command body, after its pre-run. */
+	final deferredCheck:DeferredCheck;
+
 	final listFlat:Bool;
 	final listLong:Bool;
 	final listNoPager:Bool;

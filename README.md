@@ -117,6 +117,17 @@ directory, or a `dolt.port` setting more than 0. The warning comes before the
 output and the errors of the command, and the exit code does not change.
 `where`, `version` and help pages print no warning.
 
+Like upstream, `list`, `ready` and `query` check some arguments only after
+the warnings above and after the database opens. A `.beads/metadata.json` load
+error, a missing database or a store error thus comes first. These checks are
+a negative `--offset` for `list` and `query`, and an invalid `--sort` value for
+`list` and `ready`. For `list`, they also include `--pinned` with
+`--no-pinned`, `--parent` with `--no-parent`, `--skip-labels` with a label
+filter, `--watch` with `--brief`, and an invalid use of `--deps`. Outside a
+proxied workspace, `ready` checks `--sort` only in its default view, and not
+with `--gated`, `--mol` or `--explain`. The `BEADS_MAX_ROWS` warning of `list`
+and `ready` comes at the same point.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
@@ -206,6 +217,14 @@ Limits:
   source of the server port and prints no `dolt_server_port` warning.
   Upstream also prints the warning when Dolt cannot parse that file, or when
   the file sets the port to 0 or less.
+- Some other argument checks that upstream makes after the database opens
+  still fail first in `bdhx`, before the warnings and errors above. For
+  `list`, these are an invalid `--priority`, `--mol-type`, `--wisp-type`,
+  date or metadata filter, and a negative `--max-rows`. For `ready`, these are
+  the `--brief` rules and an invalid `--mol-type` or metadata filter. For
+  `count`, this is more than one `--by-*` flag. `search` refuses an invalid
+  `--sort` value, which upstream accepts, and `list` accepts positional
+  arguments, which upstream refuses.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
 - Where upstream output order is random (Go map order), the parity tests

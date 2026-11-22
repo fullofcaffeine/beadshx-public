@@ -245,6 +245,18 @@ final class Parser {
 			if (readyAwareUsageFailure == "")
 				readyAwareUsageFailure = message;
 		}
+		// Upstream runs these checks in the command body, after its pre-run; the first one in its order wins.
+		var deferredCheck = DeferredCheck.ChecksPassed;
+		function checksPassed():Bool {
+			return switch deferredCheck {
+				case ChecksPassed: true;
+				case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _): false;
+			};
+		}
+		function deferCheck(failure:DeferredCheck):Void {
+			if (checksPassed())
+				deferredCheck = failure;
+		}
 		var showShort = false;
 		var showLong = false;
 		var showCurrent = false;
@@ -1599,6 +1611,7 @@ final class Parser {
 				orphansFix: orphansFix,
 				listRequest: makeListRequest(""),
 				listWarning: listWarning,
+				deferredCheck: deferredCheck,
 				listFlat: !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat)),
 				listLong: listLong,
 				listNoPager: listNoPager,
@@ -1678,12 +1691,11 @@ final class Parser {
 				listPriority = IntPresent(priority);
 			}
 		}
-		if (listSort != "") {
-			if (name == "ready" && !isReadySort(listSort))
-				return OutputFailure(outputMode(), 'invalid sort policy \'${listSort}\'. Valid values: hybrid, priority, oldest');
-			if ((name == "list" || name == "search") && !isListSort(listSort))
-				return UsageFailure('invalid sort field "${listSort}" (valid: priority, created, updated, closed, status, id, title, type, assignee)');
-		}
+		// list checks its sort field with its other flags below.
+		if (name == "ready" && listSort != "" && !isReadySort(listSort))
+			deferCheck(OutputCheckFailure('invalid sort policy \'${listSort}\'. Valid values: hybrid, priority, oldest'));
+		if (name == "search" && listSort != "" && !isListSort(listSort))
+			return UsageFailure(invalidListSort(listSort));
 		if (name != "count" && countOnlyFlags.length > 0)
 			return UsageFailure('unknown flag: ${countOnlyFlags[0]}');
 		if (name != "search" && searchQueryUsed)
@@ -1765,40 +1777,41 @@ final class Parser {
 			}
 		}
 		if (name == "list") {
-			switch listOffset {
-				case IntPresent(value) if (value < 0):
-					return UsageFailure("--offset must be >= 0");
-				case IntAbsent | IntPresent(_):
-			}
+			// Upstream gatherListInput, in its order.
 			if (listSkipLabels) {
 				final conflicts = skipLabelsConflicts(listLabels, listLabelsAny, listLabelPattern, listLabelRegex, listExcludeLabels, listNoLabels);
 				if (conflicts.length > 0)
-					return ExactFailure(formatSkipLabelsConflict(conflicts), 2);
+					deferCheck(ExactCheckFailure(formatSkipLabelsConflict(conflicts), 2));
 			}
 			if (listPinned && listNoPinned)
-				return UsageFailure("--pinned and --no-pinned are mutually exclusive");
+				deferCheck(PlainCheckFailure("--pinned and --no-pinned are mutually exclusive"));
 			if (listParent != "" && listNoParent)
-				return UsageFailure("--parent and --no-parent are mutually exclusive");
+				deferCheck(PlainCheckFailure("--parent and --no-parent are mutually exclusive"));
 			if (listBrief && watchMode)
-				return UsageFailure("--watch cannot be combined with --brief");
+				deferCheck(PlainCheckFailure("--watch cannot be combined with --brief"));
 			if (listDepsMode != "") {
 				if (listDepsMode != "scheduling" && listDepsMode != "all")
-					return UsageFailure('invalid --deps value "${listDepsMode}" (valid: scheduling, all)');
+					deferCheck(OutputCheckFailure('invalid --deps value "${listDepsMode}" (valid: scheduling, all)'));
 				if (outputMode() == OutputMode.Json)
-					return OutputFailure(outputMode(), "--deps is not supported with --json output");
+					deferCheck(OutputCheckFailure("--deps is not supported with --json output"));
 				if (listFormat != "")
-					return UsageFailure("--deps is not supported with --format output");
+					deferCheck(OutputCheckFailure("--deps is not supported with --format output"));
 				if (listFlat)
-					return UsageFailure("--deps requires the tree view and cannot be combined with --flat");
+					deferCheck(OutputCheckFailure("--deps requires the tree view and cannot be combined with --flat"));
 				if (watchMode)
-					return OutputFailure(outputMode(), "--deps is not supported with --watch");
+					deferCheck(OutputCheckFailure("--deps is not supported with --watch"));
 			}
+			if (listSort != "" && !isListSort(listSort))
+				deferCheck(PlainCheckFailure(invalidListSort(listSort)));
 			switch listOffset {
+				case IntPresent(value) if (value < 0):
+					deferCheck(PlainCheckFailure("--offset must be >= 0"));
 				case IntPresent(value) if (value > 0 && listSort == "id"):
-					return UsageFailure("--offset is not supported with --sort id (sort requires fetching the full result set)");
+					deferCheck(PlainCheckFailure("--offset is not supported with --sort id (sort requires fetching the full result set)"));
 				case IntAbsent | IntPresent(_):
 			}
-			if (!showHelp) {
+			// Upstream returns before it reads BEADS_MAX_ROWS when a check above fails.
+			if (!showHelp && checksPassed()) {
 				switch listMaxRows {
 					case IntPresent(_):
 					case IntAbsent:
@@ -1856,9 +1869,10 @@ final class Parser {
 					listLimit = IntPresent(50);
 				case IntPresent(_):
 			}
+			// Upstream gatherQueryInput asks for the expression first; the command checks that.
 			switch listOffset {
 				case IntPresent(value) if (value < 0):
-					return UsageFailure("--offset must be non-negative");
+					deferCheck(OutputCheckFailure("--offset must be non-negative"));
 				case IntAbsent | IntPresent(_):
 			}
 		}
@@ -1949,6 +1963,7 @@ final class Parser {
 				orphansFix: orphansFix,
 				listRequest: makeListRequest(listIdFilter),
 				listWarning: listWarning,
+				deferredCheck: deferredCheck,
 				listFlat: !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat)),
 				listLong: listLong,
 				listNoPager: listNoPager,
@@ -2408,6 +2423,10 @@ final class Parser {
 			case "priority" | "created" | "updated" | "closed" | "status" | "id" | "title" | "type" | "assignee": true;
 			case _: false;
 		};
+	}
+
+	static function invalidListSort(value:String):String {
+		return 'invalid sort field "${value}" (valid: priority, created, updated, closed, status, id, title, type, assignee)';
 	}
 }
 

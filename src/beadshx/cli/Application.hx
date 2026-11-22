@@ -481,8 +481,6 @@ final class Application {
 			output.writeStdout(commandHelp(invocation.command));
 			return 0;
 		}
-		if (invocation.listWarning != "")
-			output.writeStderr(invocation.listWarning);
 		if (usesStore(invocation.command) && databaseSettingSelects(invocation))
 			return runModeAwareFailure(invocation.output, databaseSettingRefusal(commandPath(invocation.command)));
 		switch invocation.databaseVariable {
@@ -963,7 +961,10 @@ final class Application {
 										case IntPresent(value): value > 0;
 										case IntAbsent: false;
 									};
-									final result = if (positiveOffset && !location.proxiedServer) {
+									final deferredExit = runDeferredChecks(invocation);
+									final result = if (deferredExit != null) {
+										deferredExit;
+									} else if (positiveOffset && !location.proxiedServer) {
 										runStoreFailure("--offset is only supported under --proxied-server");
 									} else if (invocation.watchMode) {
 										runListWatch(invocation, location, effectiveLimit, query);
@@ -2659,20 +2660,41 @@ final class Application {
 									runModeAwareFailure(invocation.output, "--offset is only supported under --proxied-server");
 								} else if (location.proxiedServer && offset < 0) {
 									runStoreFailure("--offset must be >= 0");
-								} else if (invocation.readyGated) {
-									runReadyGated(invocation, location, query);
-								} else if (invocation.readyMolecule != "") {
-									runReadyMolecule(invocation, location, query);
-								} else if (invocation.readyExplain) {
-									runReadyExplain(invocation, location, query);
-								} else switch query.issueReady(location.path, invocation.readyRequest, invocation.global) {
-									case ReadyFailure(message): runStoreFailure(message);
-									case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-									case ReadySuccess(ready): renderReady(invocation, location.proxiedServer, ready, query, location);
+								} else {
+									runReadyView(invocation, location, query);
 								};
 								closeIssueQuery(query, result);
 						}
 				}
+		};
+	}
+
+	/**
+		Upstream ready after its --offset checks. The proxied route gathers the
+		input before it picks a view; the direct --gated, --mol and --explain
+		views never gather it, so their output ignores what it would report.
+	**/
+	function runReadyView(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		if (location.proxiedServer) {
+			final deferredExit = runDeferredChecks(invocation);
+			if (deferredExit != null)
+				return deferredExit;
+		}
+		if (invocation.readyGated)
+			return runReadyGated(invocation, location, query);
+		if (invocation.readyMolecule != "")
+			return runReadyMolecule(invocation, location, query);
+		if (invocation.readyExplain)
+			return runReadyExplain(invocation, location, query);
+		if (!location.proxiedServer) {
+			final deferredExit = runDeferredChecks(invocation);
+			if (deferredExit != null)
+				return deferredExit;
+		}
+		return switch query.issueReady(location.path, invocation.readyRequest, invocation.global) {
+			case ReadyFailure(message): runStoreFailure(message);
+			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
+			case ReadySuccess(ready): renderReady(invocation, location.proxiedServer, ready, query, location);
 		};
 	}
 
@@ -2861,9 +2883,13 @@ final class Application {
 	function runQueryBody(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		if (!invocation.queryRequest.provided) {
 			output.writeStderr("Error: query expression is required\n\n");
-			output.writeStderr(queryHelp());
+			// Cobra's Help writes to stdout.
+			output.writeStdout(queryHelp());
 			return 1;
 		}
+		final deferredExit = runDeferredChecks(invocation);
+		if (deferredExit != null)
+			return deferredExit;
 		if (invocation.queryRequest.parseOnly)
 			return switch QuerySyntax.parse(invocation.queryRequest.expression) {
 				case Parsed(expression):
@@ -5603,6 +5629,26 @@ final class Application {
 	function runStoreFailure(message:String):Int {
 		output.writeStderr('Error: ${message}\n');
 		return 1;
+	}
+
+	/**
+		Reports what upstream's command body finds while it gathers its input,
+		after the root pre-run opened the store: the BEADS_MAX_ROWS warning,
+		then the first failed argument check (see DeferredCheck). Each command
+		calls this where upstream gathers its input. Returns the exit code when
+		a check failed.
+	**/
+	function runDeferredChecks(invocation:Invocation):Null<Int> {
+		if (invocation.listWarning != "")
+			output.writeStderr(invocation.listWarning);
+		return switch invocation.deferredCheck {
+			case ChecksPassed: null;
+			case PlainCheckFailure(message): runStoreFailure(message);
+			case OutputCheckFailure(message): runModeAwareFailure(invocation.output, message);
+			case ExactCheckFailure(message, exitCode):
+				output.writeStderr(message);
+				exitCode;
+		};
 	}
 
 	/**

@@ -627,6 +627,20 @@ compare_store_failure missing-embedded list-offset list --offset 1
 compare_store_failure missing-embedded list-offset-json list --offset 1 --json
 compare_store_failure missing-embedded ready-offset ready --offset 1
 compare_store_failure missing-embedded ready-offset-json ready --offset 1 --json
+# A negative --offset, --pinned with --no-pinned and an unknown --sort value fail in the command body
+# too, so the store-open error (or the missing database) comes first.
+compare_store_failure unavailable-server list-negative-offset list --offset -1
+compare_store_failure unavailable-server list-negative-offset-json list --offset -1 --json
+compare_store_failure unavailable-server query-negative-offset query status=open --offset -1
+compare_store_failure unavailable-server query-negative-offset-json query status=open --offset -1 --json
+compare_store_failure unavailable-server list-pinned-conflict list --pinned --no-pinned
+compare_store_failure unavailable-server list-pinned-conflict-json list --pinned --no-pinned --json
+compare_store_failure unavailable-server list-bad-sort list --sort bogus
+compare_store_failure unavailable-server list-bad-sort-json list --sort bogus --json
+compare_store_failure unavailable-server ready-bad-sort ready --sort bogus
+compare_store_failure unavailable-server ready-bad-sort-json ready --sort bogus --json
+compare_store_failure missing-embedded list-bad-sort list --sort bogus
+compare_store_failure missing-embedded query-negative-offset-json query status=open --offset -1 --json
 compare_store_failure missing-embedded types types
 compare_store_failure missing-embedded statuses statuses
 compare_store_failure unavailable-server config-show config show
@@ -645,6 +659,8 @@ compare_store_failure deprecated-port-server list-json list --json
 compare_store_failure deprecated-port-server dep-tree dep tree test-1
 compare_store_failure deprecated-port-server config-get config get issue_prefix
 compare_store_failure deprecated-port-server types types
+compare_store_failure deprecated-port-server list-bad-sort list --sort bogus
+compare_store_failure deprecated-port-server ready-bad-sort-json ready --sort bogus --json
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -1753,6 +1769,10 @@ expect_store_refusal ready-shared-server-unported "$shared_reason" ready ready
 expect_store_refusal blocked-shared-server-unported "$shared_reason" blocked blocked
 expect_store_refusal search-shared-server-unported "$shared_reason" search search parity
 expect_store_refusal query-shared-server-unported "$shared_reason" query query status=open
+# The refusal stands for upstream's pre-run, so it comes before the command body's argument checks.
+expect_store_refusal list-bad-sort-shared-server-unported "$shared_reason" list list --sort bogus
+expect_store_refusal ready-bad-sort-shared-server-json-unported "$shared_reason" ready ready --sort bogus --json
+expect_store_refusal query-negative-offset-shared-server-unported "$shared_reason" query query status=open --offset -1
 expect_store_refusal stale-shared-server-unported "$shared_reason" stale stale
 expect_store_refusal orphans-shared-server-unported "$shared_reason" orphans orphans
 expect_store_refusal dep-list-shared-server-unported "$shared_reason" "dep list" dep list "$real_database_issue_id"
@@ -1995,6 +2015,14 @@ compare_raw_metadata metadata-type-root stderr-only "$type_error_metadata"
 compare_raw_metadata metadata-type-help-command exact "$type_error_metadata" help count
 compare_raw_metadata metadata-type-help-flag exact "$type_error_metadata" count --help
 compare_raw_metadata metadata-type-label-group exact "$type_error_metadata" label
+# The load error stops the pre-run before the command body checks its arguments.
+compare_raw_metadata metadata-type-list-bad-sort exact "$type_error_metadata" list --sort bogus
+compare_raw_metadata metadata-type-list-bad-sort-json exact "$type_error_metadata" list --sort bogus --json
+compare_raw_metadata metadata-type-ready-bad-sort exact "$type_error_metadata" ready --sort bogus
+compare_raw_metadata metadata-type-ready-bad-sort-json exact "$type_error_metadata" ready --sort bogus --json
+compare_raw_metadata metadata-type-list-negative-offset exact "$type_error_metadata" list --offset -1
+compare_raw_metadata metadata-type-query-negative-offset-json exact "$type_error_metadata" query status=open --offset -1 --json
+compare_raw_metadata metadata-type-list-pinned-conflict exact "$type_error_metadata" list --pinned --no-pinned
 # Go's scanner names a syntax error; a type error names the Go struct field by its tag, or the Go type.
 compare_raw_metadata metadata-truncated exact '{"database":"dolt",' count
 compare_raw_metadata metadata-empty exact '' count
@@ -2089,6 +2117,18 @@ compare_real_database no-metadata-default-global exact count --global
 compare_real_database no-metadata-default-database-flag-json exact count --database other --json
 compare_real_database no-metadata-default-db-flag exact --db .beads/embeddeddolt count
 compare_real_database no-metadata-default-directory-flag-list-json exact -C . list --json
+# The command body checks its arguments, and reads BEADS_MAX_ROWS, after the pre-run's warning.
+compare_real_database no-metadata-default-list-bad-sort exact list --sort bogus
+compare_real_database no-metadata-default-list-bad-sort-json exact list --sort bogus --json
+compare_real_database no-metadata-default-ready-bad-sort exact ready --sort bogus
+compare_real_database no-metadata-default-ready-bad-sort-json exact ready --sort bogus --json
+compare_real_database no-metadata-default-list-negative-offset exact list --offset -1
+compare_real_database no-metadata-default-query-negative-offset-json exact query status=open --offset -1 --json
+compare_real_database no-metadata-default-list-pinned-conflict-json exact list --pinned --no-pinned --json
+real_database_extra_env=(BEADS_MAX_ROWS=bogus)
+compare_real_database no-metadata-default-max-rows-list exact list
+compare_real_database no-metadata-default-max-rows-ready-bad-sort exact ready --sort bogus
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config='json: true'
 compare_real_database no-metadata-default-json-setting exact count
 real_database_extra_config=""
@@ -2136,6 +2176,11 @@ compare_real_database deprecated-port-help-flag exact count --help
 compare_real_database deprecated-port-global exact count --global
 compare_real_database deprecated-port-database-flag-json exact count --database other --json
 compare_real_database deprecated-port-missing-issue exact dep tree test-missing
+compare_real_database deprecated-port-list-bad-sort exact list --sort bogus
+compare_real_database deprecated-port-ready-bad-sort-json exact ready --sort bogus --json
+compare_real_database deprecated-port-list-negative-offset-json exact list --offset -1 --json
+compare_real_database deprecated-port-query-negative-offset exact query status=open --offset -1
+compare_real_database deprecated-port-list-pinned-conflict exact list --pinned --no-pinned
 real_database_extra_env=(BD_JSON_ENVELOPE=1)
 compare_real_database deprecated-port-json-envelope exact list --json
 real_database_extra_env=(BEADS_DOLT_SERVER_PORT=3307)
@@ -2376,6 +2421,10 @@ compare_real_database query-sort-limit-json exact query status=open --sort title
 compare_real_database query-long exact query status=open --long --limit 1
 compare_real_database query-no-match exact query title=absent-query-token
 compare_real_database query-offset-direct exact query status=open --offset 1 --json
+# A negative --offset fails after the missing expression, and as JSON under --json.
+compare_real_database query-negative-offset exact query status=open --offset -1
+compare_real_database query-negative-offset-json exact query status=open --offset -1 --json
+compare_real_database query-negative-offset-no-expression exact query --offset -1
 compare_real_database search-id-prefix exact search test-abcd
 compare_real_database search-status exact search parity --status open
 compare_real_database search-label exact search parity --label smoke
@@ -2428,6 +2477,13 @@ compare_real_database ready-brief-json exact ready --brief --json
 compare_real_database ready-include-deferred-json exact ready --include-deferred --json
 compare_real_database ready-include-ephemeral-json exact ready --include-ephemeral --json
 compare_real_database ready-invalid-sort-json exact ready --sort invalid --json
+# Only the default view checks the sort policy, after --offset and the BEADS_MAX_ROWS warning.
+compare_real_database ready-invalid-sort exact ready --sort invalid
+compare_real_database ready-invalid-sort-offset exact ready --sort invalid --offset 1
+compare_real_database ready-invalid-sort-explain exact ready --explain --sort invalid
+compare_real_database ready-invalid-sort-gated-json exact ready --gated --sort invalid --json
+compare_real_database_env ready-invalid-sort-max-rows-malformed exact BEADS_MAX_ROWS=bogus ready --sort invalid
+compare_real_database_env ready-explain-max-rows-malformed exact BEADS_MAX_ROWS=bogus ready --explain
 compare_real_database ready-invalid-mol-type-json exact ready --mol-type invalid --json
 compare_real_database ready-invalid-metadata-json exact ready --metadata-field missing-equals --json
 compare_real_database ready-offset-direct-json exact ready --offset 1 --json
@@ -3058,6 +3114,19 @@ compare_real_database list-offset-json exact list --offset 1 --limit 2 --json
 compare_real_database list-skip-labels-json exact list --skip-labels --json
 compare_real_database list-skip-labels-human exact list --skip-labels
 compare_real_database list-skip-labels-conflicts exact list --skip-labels --label parity --label-any alpha --label-pattern 'par*' --label-regex parity --exclude-label smoke --no-labels
+# The command body checks --skip-labels, --pinned, --parent, --brief, --deps, --sort and --offset in
+# that order, and reads BEADS_MAX_ROWS only when they pass. Cobra's own errors and --help come first.
+compare_real_database list-pinned-conflict exact list --pinned --no-pinned
+compare_real_database list-pinned-conflict-before-sort exact list --sort bogus --pinned --no-pinned
+compare_real_database list-pinned-conflict-before-offset-json exact list --offset -1 --pinned --no-pinned --json
+compare_real_database list-skip-labels-before-pinned exact list --pinned --no-pinned --skip-labels --label parity
+compare_real_database list-invalid-sort exact list --sort bogus
+compare_real_database list-invalid-sort-before-offset exact list --offset -1 --sort bogus
+compare_real_database list-negative-offset-sort-id exact list --sort id --offset -1
+compare_real_database list-invalid-deps-json exact list --deps=bogus --json
+compare_real_database list-invalid-sort-unknown-flag exact list --sort bogus --days 3
+compare_real_database list-pinned-conflict-help exact list --pinned --no-pinned --help
+compare_real_database_env list-pinned-conflict-max-rows-malformed exact BEADS_MAX_ROWS=bogus list --pinned --no-pinned
 compare_real_database list-skip-labels-conflict-json exact list --skip-labels --label parity --json
 compare_real_database list-flat-human exact list --flat
 compare_real_database list-flat-long-human exact list --flat --long
