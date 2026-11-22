@@ -25,7 +25,7 @@ gzip -dc "$inventory" | jq -e '
     .schemaVersion == 1 and
     .source.version == "v1.2.1" and
     .source.commit == "634cbbc4bc580fa5124f63fdf65d137a46d5b4ff" and
-    .compilerEvidence.commit == "61105e04155797badbd808b0fcf8ee85c16c947d" and
+    .compilerEvidence.commit == "c6e27fdfa836a35ada66dc923c7d8bfa006717d6" and
     .toolchain.go == "go1.26.5" and
     .toolchain.analyzer == "golang.org/x/tools/go/packages+go/types" and
     ([.profiles[].id] | sort) == ["portable-nocgo", "release-cgo"] and

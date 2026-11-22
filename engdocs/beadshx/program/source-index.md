@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `61105e04155797badbd808b0fcf8ee85c16c947d`.
+Required BeadsHX compiler revision: `c6e27fdfa836a35ada66dc923c7d8bfa006717d6`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -119,6 +119,17 @@ structure fields. haxe_go-0a8l stores `Null<Float>`, `Null<Int>` and
 tests for a return inside a mixed value switch arm, and haxe_go-6ad2 and
 haxe_go-cbve fix two timing failures in the dev-watch tests. BeadsHX output
 did not change.
+Compiler task haxe_go-tmrg raises the catchable "Invalid operation: null"
+error for arithmetic on a null `Null<Float>` and reads it as NaN in ordered
+comparisons. haxe_go-i91r converts the Int side of a mixed Float and Int
+comparison to Float. haxe_go-zv09 reads an omitted or null optional Int, Float
+or Bool argument as Haxe null instead of crashing with a Go panic, and
+haxe_go-jnvy applies a parameter's default value when the argument is null,
+not only when it is omitted. BeadsHX output changed in seven modules: the
+configuration validator, `haxe.io.Input`, `haxe.io.Output` and `StringTools`
+lose type assertions that could panic, and the CLI application, the layered
+configuration and `haxe.exceptions.NotImplementedException` replace a nil
+argument with its default at function entry.
 
 Reviewed current authority:
 
