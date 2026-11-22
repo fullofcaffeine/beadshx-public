@@ -4286,25 +4286,34 @@ compare_real_database reinit-merged-config-warning-where exact where
 compare_real_database reinit-merged-config-warning-db-path-where exact --db .beads where
 compare_real_database reinit-merged-config-warning-db-path-version stderr-only --db .beads/embeddeddolt version
 compare_real_database reinit-merged-config-warning-db-path-show-json exact --db .beads show "$real_database_bug_id" --json
+# The commands that the native read-only store serves also warn and run with the settings that loaded
+# (beadshx-m08-02.13), as do show and label list for an issue that has dependencies.
+real_database_setup=break_workspace_config
+compare_real_database reinit-config-warning-list exact list
+compare_real_database reinit-config-warning-count-json exact count --json
+compare_real_database reinit-config-warning-ready exact ready
+# Human `info` also checks the Git hooks, which this build does not port.
+compare_real_database reinit-config-warning-info-json exact info --json
+compare_real_database reinit-config-warning-children exact children "$real_database_epic_id"
+compare_real_database reinit-config-warning-search exact search parity
+compare_real_database reinit-config-warning-query-json exact query status=open --json
+compare_real_database reinit-config-warning-stale exact stale
+compare_real_database reinit-config-warning-orphans exact orphans
+compare_real_database reinit-config-warning-status exact status
+compare_real_database reinit-config-warning-ping ping-human ping
+compare_real_database reinit-config-warning-label-list-all exact label list-all
+compare_real_database reinit-config-warning-show-dependencies exact show test-abcd11
+compare_real_database reinit-config-warning-show-parent exact show "$real_database_child_id"
+compare_real_database reinit-config-warning-label-list-dependencies exact label list test-abcd11
+compare_real_database reinit-config-warning-show-refs exact show "$real_database_epic_id" --refs
+compare_real_database reinit-config-warning-show-thread exact show test-msg-leaf --thread
+compare_real_database reinit-config-warning-show-children exact show "$real_database_epic_id" --children
+# A --db path sets up the workspace once.
+compare_real_database reinit-config-warning-db-path-count exact --db .beads count
 real_database_setup=""
-# The native read-only store refuses to open when the selected config does not parse
-# (beadshx-m08-02.13), where upstream warns and runs. The warnings before that refusal match.
 reinit_config_failure="error reading config file: While parsing config: yaml: line 1: did not find expected ',' or ']'"
 reinit_config_warning="Warning: failed to reinitialize config for selected beads dir: $reinit_config_failure"
 reinit_store_warnings="Warning: failed to initialize config: $reinit_config_failure"$'\n'"$reinit_config_warning"$'\n'"$reinit_config_warning"
-candidate_only_setup=break_workspace_config
-expect_candidate_failure reinit-config-warning-list-loading-config "" \
-	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" list
-expect_candidate_failure reinit-config-warning-count-json-loading-config "" \
-	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" count --json
-expect_candidate_failure reinit-config-warning-ready-loading-config "" \
-	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" ready
-expect_candidate_failure reinit-config-warning-info-loading-config "" \
-	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" info
-# A --db path sets up the workspace once.
-expect_candidate_failure reinit-config-warning-db-path-count-loading-config "" \
-	"Warning: failed to initialize config: $reinit_config_failure"$'\n'"$reinit_config_warning"$'\n'"Error: loading config: $reinit_config_failure" \
-	"" --db .beads count
 # Without metadata.json upstream creates the database "beads"; both setups warn before that.
 candidate_only_setup=break_workspace_config_without_metadata
 expect_candidate_failure reinit-config-warning-no-metadata-count-unported "" \

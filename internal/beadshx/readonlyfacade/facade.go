@@ -1363,5 +1363,8 @@ func initializeSelectedConfig(beadsDir string) error {
 			_ = os.Unsetenv("BEADS_DIR")
 		}
 	}()
-	return config.Initialize()
+	// Upstream warns and continues with the settings that loaded
+	// (cmd/bd/main.go prepareSelectedCommandContext). Haxe prints the warnings.
+	_ = config.Initialize()
+	return nil
 }
