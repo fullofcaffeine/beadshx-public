@@ -4148,6 +4148,112 @@ compare_real_database config-init-warning-shared-server-notice exact -C .. where
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_setup=""
 real_database_directory=""
+# Upstream's pre-run sets up the workspace it selects with prepareSelectedCommandContext, which loads
+# the config again with BEADS_DIR set to it. When the workspace's config.yaml or config.local.yaml, or
+# the user config.yaml, does not parse, each setup prints "Warning: failed to reinitialize config for
+# selected beads dir: <error>" after the startup warning: once for version, the root help and bd help
+# <command>, never for --help, twice for where (its command body sets up again), and twice for commands
+# that open a store, once with a --db path. The first setup then prints the shared-server notice. A
+# metadata.json that does not load stops the first setup after its warning. where still reads the
+# prefix from the embedded database; without metadata.json it reads the database "beads", which the
+# fixture does not have, and prints no prefix.
+break_workspace_config() {
+	printf '%s\n' "$broken_yaml" >"$1/work/.beads/config.yaml"
+}
+real_database_setup=break_workspace_config
+compare_real_database reinit-config-warning-version stderr-only version
+compare_real_database reinit-config-warning-version-json stderr-only version --json
+compare_real_database reinit-config-warning-root stderr-only
+compare_real_database reinit-config-warning-help-command exact help list
+compare_real_database reinit-config-warning-help-flag exact list --help
+compare_real_database reinit-config-warning-where exact where
+compare_real_database reinit-config-warning-where-json exact where --json
+compare_real_database reinit-config-warning-directory-where exact -C . where
+compare_real_database reinit-config-warning-db-path-where exact --db .beads where
+compare_real_database reinit-config-warning-db-path-version stderr-only --db .beads/embeddeddolt version
+compare_real_database reinit-config-warning-show exact show "$real_database_bug_id"
+compare_real_database reinit-config-warning-show-json exact show "$real_database_bug_id" --json
+compare_real_database reinit-config-warning-db-path-show exact --db .beads show "$real_database_bug_id"
+compare_real_database reinit-config-warning-comments exact comments "$real_database_issue_id"
+compare_real_database reinit-config-warning-dep-tree exact dep tree "$real_database_issue_id"
+compare_real_database reinit-config-warning-blocked-json exact blocked --json
+compare_real_database reinit-config-warning-label-list exact label list "$real_database_bug_id"
+compare_real_database reinit-config-warning-types exact types
+compare_real_database reinit-config-warning-types-database-flag exact types --database other
+compare_real_database reinit-config-warning-show-database-flag-json exact show "$real_database_issue_id" --database other --json
+real_database_extra_env=("BEADS_DIR=<work>/.beads")
+compare_real_database reinit-config-warning-beads-dir-version stderr-only version
+compare_real_database reinit-config-warning-beads-dir-where exact where
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database reinit-config-warning-shared-server-where exact where
+compare_real_database reinit-config-warning-shared-server-version stderr-only version
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+break_workspace_config_and_metadata() {
+	break_workspace_config "$1"
+	printf '{not json' >"$1/work/.beads/metadata.json"
+}
+real_database_setup=break_workspace_config_and_metadata
+compare_real_database reinit-config-warning-bad-metadata-where exact where
+compare_real_database reinit-config-warning-bad-metadata-version stderr-only version
+compare_real_database reinit-config-warning-bad-metadata-count exact count
+break_workspace_config_without_metadata() {
+	break_workspace_config "$1"
+	rm -f "$1/work/.beads/metadata.json"
+}
+real_database_setup=break_workspace_config_without_metadata
+compare_real_database reinit-config-warning-no-metadata-where exact where
+compare_real_database reinit-config-warning-no-metadata-where-json exact where --json
+write_broken_user_config() {
+	mkdir -p "$1/user-home/.config/bd"
+	printf '%s\n' "$broken_yaml" >"$1/user-home/.config/bd/config.yaml"
+}
+real_database_setup=write_broken_user_config
+compare_real_database reinit-user-config-warning-where exact where
+compare_real_database reinit-user-config-warning-version stderr-only version
+compare_real_database reinit-user-config-warning-show-json exact show "$real_database_bug_id" --json
+write_broken_local_config() {
+	printf '%s\n' "$broken_yaml" >"$1/work/.beads/config.local.yaml"
+}
+real_database_setup=write_broken_local_config
+compare_real_database reinit-local-config-warning-where exact where
+compare_real_database reinit-local-config-warning-help-command exact help count
+# After a user config.yaml that loads, the error names the workspace's config.yaml as BEADS_DIR names
+# it: for a --db path, the directory that upstream derives from the path as given.
+write_user_config_and_break_workspace_config() {
+	break_workspace_config "$1"
+	mkdir -p "$1/user-home/.config/bd"
+	printf 'parity: true\n' >"$1/user-home/.config/bd/config.yaml"
+}
+real_database_setup=write_user_config_and_break_workspace_config
+compare_real_database reinit-merged-config-warning-where exact where
+compare_real_database reinit-merged-config-warning-db-path-where exact --db .beads where
+compare_real_database reinit-merged-config-warning-db-path-version stderr-only --db .beads/embeddeddolt version
+compare_real_database reinit-merged-config-warning-db-path-show-json exact --db .beads show "$real_database_bug_id" --json
+real_database_setup=""
+# The native read-only store refuses to open when the selected config does not parse
+# (beadshx-m08-02.13), where upstream warns and runs. The warnings before that refusal match.
+reinit_config_failure="error reading config file: While parsing config: yaml: line 1: did not find expected ',' or ']'"
+reinit_config_warning="Warning: failed to reinitialize config for selected beads dir: $reinit_config_failure"
+reinit_store_warnings="Warning: failed to initialize config: $reinit_config_failure"$'\n'"$reinit_config_warning"$'\n'"$reinit_config_warning"
+candidate_only_setup=break_workspace_config
+expect_candidate_failure reinit-config-warning-list-loading-config "" \
+	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" list
+expect_candidate_failure reinit-config-warning-count-json-loading-config "" \
+	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" count --json
+expect_candidate_failure reinit-config-warning-ready-loading-config "" \
+	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" ready
+expect_candidate_failure reinit-config-warning-info-loading-config "" \
+	"$reinit_store_warnings"$'\n'"Error: loading config: $reinit_config_failure" "" info
+# A --db path sets up the workspace once.
+expect_candidate_failure reinit-config-warning-db-path-count-loading-config "" \
+	"Warning: failed to initialize config: $reinit_config_failure"$'\n'"$reinit_config_warning"$'\n'"Error: loading config: $reinit_config_failure" \
+	"" --db .beads count
+# Without metadata.json upstream creates the database "beads"; both setups warn before that.
+candidate_only_setup=break_workspace_config_without_metadata
+expect_candidate_failure reinit-config-warning-no-metadata-count-unported "" \
+	"$reinit_store_warnings"$'\n'"$no_metadata_warning"$'\n'"Error: count is not available yet when the embedded store has no database named \"beads\" in this build" \
+	"" count
+candidate_only_setup=""
 # bdhx's refusals follow the same switch as upstream's errors.
 real_database_extra_env=(BD_JSON=1)
 candidate_only_setup=enable_shared_server

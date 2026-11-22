@@ -495,8 +495,8 @@ final class Application {
 			return 0;
 		}
 		if (usesStore(invocation.command) && databaseSettingSelects(invocation)) {
-			// Upstream sets up the directory that the path selects, as for `where`, before it opens the database there.
-			warnSharedServerMismatch(noStoreBeadsDir(invocation));
+			// Upstream sets up the directory that the path selects once, as for `where`, before it opens the database there.
+			prepareNoStoreWorkspace(invocation, 1);
 			return runModeAwareFailure(invocation.output, databaseSettingRefusal(commandPath(invocation.command)));
 		}
 		switch invocation.databaseVariable {
@@ -595,10 +595,11 @@ final class Application {
 		it, that is the path as given, or another directory where upstream opens
 		or creates a database, so this build refuses instead.
 
-		When the file loads, `where`, `version` and help pages print upstream's
-		shared-server notice instead, for the directory that upstream selects
-		(see noStoreBeadsDir). Commands that open a store print it when they
-		take the workspace (see validateStoreSelection).
+		Upstream's setup for the selected directory reloads the config first,
+		so its reinitialize warning comes before the metadata warning, once.
+		When the file loads, `where`, `version` and help pages run that setup
+		instead (see prepareNoStoreWorkspace). Commands that open a store run
+		it when they take the workspace (see validateStoreSelection).
 	**/
 	function checkWorkspaceMetadata(invocation:Invocation):Null<Int> {
 		var stops = true;
@@ -618,7 +619,7 @@ final class Application {
 			case Found(location): location;
 			case NotFound:
 				if (!opensStore)
-					warnSharedServerMismatch(noStoreBeadsDir(invocation));
+					prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
 				return null;
 			case InvalidSelection(_): return null;
 		};
@@ -634,9 +635,14 @@ final class Application {
 				refusal = '${path} is not available yet when .beads/metadata.json does not decode in this build';
 			case MetadataFields(_) | MetadataAbsent | MetadataFieldsLegacyOnly:
 				if (!opensStore)
-					warnSharedServerMismatch(noStoreBeadsDir(invocation));
+					prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
 				return null;
 		}
+		// The setup stops at this file, before the notice and before `where` sets up again.
+		if (opensStore)
+			loadSelectedConfig(location.path, 1);
+		else
+			prepareNoStoreWorkspace(invocation, 1);
 		if (refusal != "") {
 			// `version` and help pages run without the warning they cannot match.
 			if (!stops)
@@ -655,21 +661,63 @@ final class Application {
 		setup runs for the `.beads` directory `beadsDir` that it selects: once
 		per process, it prints a three-line notice on stderr when that
 		directory's metadata.json loads and pins dolt_mode embedded, and
-		shared-server mode is on for the directory. An empty `beadsDir` means
-		upstream selected none.
+		shared-server mode is on in `config`, the config reloaded for the
+		directory.
 	**/
-	function warnSharedServerMismatch(beadsDir:String):Void {
-		if (sharedServerNoticeEmitted || beadsDir == "")
+	function warnSharedServerMismatch(beadsDir:String, config:LayeredConfig):Void {
+		if (sharedServerNoticeEmitted)
 			return;
 		switch readMetadataFields(beadsDir) {
 			case MetadataFields(fields) if (pinsEmbeddedMode(fields)):
 			case MetadataFields(_) | MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
 				return;
 		}
-		if (!LayeredConfig.forWorkspace(beadsDir).sharedServerMode())
+		if (!config.sharedServerMode())
 			return;
 		sharedServerNoticeEmitted = true;
 		output.writeStderr(SHARED_SERVER_EMBEDDED_NOTICE);
+	}
+
+	/**
+		Upstream prepareSelectedCommandContext for the `.beads` directory
+		`beadsDir`, which upstream runs `initializations` times for one
+		command. Each run reloads the layered config with BEADS_DIR set to that
+		directory and prints upstream's reinitialize warning when a config file
+		does not parse: the workspace's config.yaml or config.local.yaml, or the
+		user config.yaml. The first run then prints the shared-server notice.
+		Returns the config, which keeps what loaded before the failure.
+	**/
+	function loadSelectedConfig(beadsDir:String, initializations:Int):LayeredConfig {
+		final config = LayeredConfig.forWorkspace(beadsDir);
+		for (initialization in 0...initializations) {
+			if (config.failure != null)
+				output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${config.failure}\n');
+			if (initialization == 0)
+				warnSharedServerMismatch(beadsDir, config);
+		}
+		return config;
+	}
+
+	/** loadSelectedConfig for the directory that `where`, `version` and help pages set up (see noStoreBeadsDir), when upstream selects one. */
+	function prepareNoStoreWorkspace(invocation:Invocation, initializations:Int):Void {
+		final beadsDir = noStoreBeadsDir(invocation);
+		if (beadsDir != "")
+			loadSelectedConfig(beadsDir, initializations);
+	}
+
+	/** `where` sets up its directory in the pre-run and again in its command body; `version` and help pages only in the pre-run. */
+	static function noStoreInitializations(invocation:Invocation):Int {
+		return invocation.command == Where && !invocation.helpCommand ? 2 : 1;
+	}
+
+	/**
+		How often upstream sets up the workspace that a command which opens a
+		store takes: when it finds the `.beads` directory and again when it
+		binds the database. It sets up only once when a --db or BEADS_DB path
+		selects the database, and when it finds no database and stops.
+	**/
+	static function storeInitializations(invocation:Invocation, location:WorkspaceLocation):Int {
+		return hasSelectedDatabase(location) && invocation.databasePath == "" ? 2 : 1;
 	}
 
 	/**
@@ -2415,9 +2463,8 @@ final class Application {
 		Loads config like upstream's startup and selected-workspace initializations,
 		printing each selected-workspace failure as upstream's warning, then opens the store when the
 		command needs it and runs `action`. Upstream initializes for the selected
-		workspace once without a database and twice with one (once when it finds
-		the .beads directory, unless --db names it, and once when it binds the
-		database). Upstream also opens the store before any config command runs;
+		workspace once without a database and twice with one (see
+		storeInitializations). Upstream also opens the store before any config command runs;
 		when `action` reads no table, an empty-key read stands for that open, so a
 		database route this build does not read is refused either way. For a found
 		workspace, a non-null `preflight` message refuses the command before the
@@ -2430,17 +2477,6 @@ final class Application {
 			?runsWithoutDatabase:WorkspaceLocation->Bool):Int {
 		// run printed this load's failure before the command started.
 		final startup = LayeredConfig.atStartup();
-		// Each selected-workspace initialization warns about its config; the first then prints the shared-server notice.
-		function selected(location:WorkspaceLocation, initializations:Int):LayeredConfig {
-			final config = LayeredConfig.forWorkspace(location.path);
-			for (initialization in 0...initializations) {
-				if (config.failure != null)
-					output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${config.failure}\n');
-				if (initialization == 0)
-					warnSharedServerMismatch(location.path);
-			}
-			return config;
-		}
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: storeFree ? action(startup, null, null) : runDatabaseNotFound(startup.sharedServerMode());
@@ -2449,23 +2485,23 @@ final class Application {
 				final defaultDirectory = missingMetadataDirectory(invocation, location);
 				switch validateDatabaseSelection(invocation, location) {
 					case PlainFailure(message):
-						warnSharedServerMismatch(location.path);
+						loadSelectedConfig(location.path, storeInitializations(invocation, location));
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runStoreFailure(message);
 					case ModeAwareFailure(message):
-						warnSharedServerMismatch(location.path);
+						loadSelectedConfig(location.path, storeInitializations(invocation, location));
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						final reachesServer = reachesSharedServer(invocation, location);
 						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
-							final config = selected(location, 1);
+							final config = loadSelectedConfig(location.path, 1);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound(config.sharedServerMode());
 						} else {
-							final config = selected(location, invocation.databasePath == "" ? 2 : 1);
+							final config = loadSelectedConfig(location.path, storeInitializations(invocation, location));
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
@@ -5682,19 +5718,19 @@ final class Application {
 	/**
 		The prefix `bd where` prints. Workspace discovery takes config.yaml's
 		issue-prefix, or else reads issue_prefix from the embedded database, but
-		in shared-server mode it reads no database. Upstream's where still reads
-		the embedded database there, unless the workspace is proxied or
-		configfile IsDoltServerMode makes it a server workspace
-		(BEADS_DOLT_SHARED_SERVER counts, the dolt.shared-server setting does
-		not). It opens the database that GetDoltDatabase names, with `-` and `.`
-		changed to `_`, without creating it, and prints no prefix when the read
-		fails.
+		it reads no database in shared-server mode, or when a config file does
+		not parse for the workspace. Upstream's where still reads the embedded
+		database then, unless the workspace is proxied or configfile
+		IsDoltServerMode makes it a server workspace (BEADS_DOLT_SHARED_SERVER
+		counts, the dolt.shared-server setting does not). It opens the database
+		that GetDoltDatabase names, with `-` and `.` changed to `_`, without
+		creating it, and prints no prefix when the read fails.
 	**/
 	function wherePrefix(location:WorkspaceLocation):String {
 		if (location.prefix != "" || location.databasePath == "" || location.proxiedServer)
 			return location.prefix;
 		final config = LayeredConfig.forWorkspace(location.path);
-		if (!config.sharedServerMode())
+		if (!config.sharedServerMode() && config.failure == null)
 			return location.prefix;
 		final metadata = switch readMetadataFields(location.path) {
 			case MetadataFields(fields): fields;
@@ -5848,14 +5884,16 @@ final class Application {
 		without shared-server mode. Commands that load layered config take this
 		refusal from their runWithLayeredConfig preflight instead.
 
-		Upstream's setup for the workspace it takes prints the shared-server
-		notice first. Its warning for a workspace without metadata.json, or for
-		a deprecated dolt_server_port, comes next, before the database
-		selection checks.
+		Upstream's setups for the workspace it takes come first (see
+		loadSelectedConfig and storeInitializations): each prints the
+		reinitialize warning for a config file that does not parse, and the
+		first also the shared-server notice. Its warning for a workspace without
+		metadata.json, or for a deprecated dolt_server_port, comes next, before
+		the database selection checks.
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
-		warnSharedServerMismatch(location.path);
-		if (LayeredConfig.forWorkspace(location.path).sharedServerMode() && reachesSharedServer(invocation, location))
+		final config = loadSelectedConfig(location.path, storeInitializations(invocation, location));
+		if (config.sharedServerMode() && reachesSharedServer(invocation, location))
 			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
 		final defaultDirectory = missingMetadataDirectory(invocation, location);
 		warnStoreConfiguration(location, defaultDirectory, invocation.global);

@@ -117,6 +117,21 @@ directory, or a `dolt.port` setting more than 0. The warning comes before the
 output and the errors of the command, and the exit code does not change.
 `where`, `version` and help pages print no warning.
 
+Like upstream, `bdhx` prints `Warning: failed to initialize config: <error>`
+first when a `config.yaml` file that it loads at start does not parse. Then it
+prints `Warning: failed to reinitialize config for selected beads dir:
+<error>` each time upstream sets up the selected workspace and one of its
+config files does not parse: `.beads/config.yaml`, `.beads/config.local.yaml`
+or the user `config.yaml`. That is once for `version`, the root help and
+`bd help <command>`, and twice for `where`. It is twice for every command that
+reads the database, or once when a `--db` or `BEADS_DB` path selects the
+database or upstream finds no database. A `--help` flag prints no warning.
+The first setup then prints the shared-server notice. A
+`.beads/metadata.json` load error stops the first setup after its warning.
+Upstream then runs the command with the settings that loaded, and so does
+`bdhx`, except as the limits below say. `where` still prints the issue prefix
+from the embedded database, as upstream does.
+
 Like upstream, `list`, `ready`, `count`, `query` and `search` check most of
 their arguments only after the warnings above and after the database opens. A
 `.beads/metadata.json` load error, a missing database or a store error thus
@@ -173,6 +188,13 @@ Limits:
   available yet when the user `config.yaml` exists.
 - `config show` reports that it is not available yet in a workspace that has
   no database (upstream creates the embedded database there).
+- When a config file of the selected workspace does not parse, `list`,
+  `children`, `count`, `ready`, `search`, `query`, `stale`, `orphans`,
+  `status`, `ping`, `info` and `label list-all` print the same warnings as
+  upstream, and then stop with `Error: loading config: <error>`. So do `show`
+  and `label list` for an issue that has dependencies, and `show --refs`,
+  `--thread` and `--children`. Upstream runs them with the settings that
+  loaded.
 - When `--db` selects a workspace whose `.beads/metadata.json` cannot be read
   or does not decode, `where` and every command that reads the database
   report that they are not available yet. For `where`, `BEADS_DB`, `BD_DB`
