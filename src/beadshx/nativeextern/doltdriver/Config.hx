@@ -27,4 +27,13 @@ extern class Config {
 
 	@:go.name("MultiStatements")
 	public var multiStatements:Bool;
+
+	/**
+		The retry policy for opening a locked database (Go type `backoff.BackOff`).
+		The field is narrowed to the one concrete policy that BeadsHX sets, and
+		Haxe only writes it: the Go compiler still checks that
+		`*backoff.ExponentialBackOff` implements the interface.
+	**/
+	@:go.name("BackOff")
+	public var backOff:beadshx.nativeextern.backoff.ExponentialBackOff;
 }

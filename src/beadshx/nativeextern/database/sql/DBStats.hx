@@ -8,6 +8,9 @@ package beadshx.nativeextern.database.sql;
 extern class DBStats {
 	public function new();
 
+	@:go.name("MaxOpenConnections")
+	public var maxOpenConnections:Int;
+
 	@:go.name("Idle")
 	public var idle:Int;
 

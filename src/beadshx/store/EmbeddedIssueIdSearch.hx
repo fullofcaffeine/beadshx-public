@@ -1,13 +1,10 @@
 package beadshx.store;
 
-import beadshx.nativeextern.context.ContextPkg;
+import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.NullString;
-import beadshx.nativeextern.database.sql.SqlPkg;
-import beadshx.nativeextern.database.sql.TxOptions;
-import beadshx.nativeextern.doltdriver.Config;
-import beadshx.nativeextern.doltdriver.DoltDriverPkg;
+import beadshx.nativeextern.database.sql.Tx;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
-import haxe.io.Path;
+import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 
 /** Result of one Haxe-owned partial-ID candidate scan. */
 enum EmbeddedIssueIdSearchResult {
@@ -22,6 +19,9 @@ final class EmbeddedIssueIdSearch {
 	static final READ_IDS = "SELECT id FROM (" + "SELECT id FROM issues WHERE LOWER(id) LIKE ? " + "UNION SELECT id FROM wisps WHERE LOWER(id) LIKE ?"
 		+ ") candidates ORDER BY id ASC";
 
+	static final WORDING = new EmbeddedReadWording("open embedded issue-ID connector", "ping embedded issue-ID database",
+		"begin embedded issue-ID transaction", "roll back embedded issue-ID search", "close embedded issue-ID database", "close embedded issue-ID connector");
+
 	final beadsDir:String;
 	final databaseName:String;
 
@@ -31,41 +31,19 @@ final class EmbeddedIssueIdSearch {
 	}
 
 	public function read(query:String):EmbeddedIssueIdSearchResult {
-		final config = new Config();
-		config.directory = Path.join([beadsDir, "embeddeddolt"]);
-		config.commitName = "BeadsHX read-only issue ID search";
-		config.commitEmail = "beadshx-readonly@invalid";
-		config.database = databaseName;
-		config.multiStatements = true;
+		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readIds(context, transaction, query));
+		return switch WORDING.bodyFailureFirst(read) {
+			case Failure(message): EmbeddedIssueIdSearchFailure(message);
+			case Success(ids): EmbeddedIssueIds(ids);
+		};
+	}
 
-		final openedConnector = DoltDriverPkg.newConnector(config);
-		if (openedConnector.value2 != null)
-			return EmbeddedIssueIdSearchFailure('open embedded issue-ID connector: ${openedConnector.value2.toString()}');
-		final connector = openedConnector.value1;
-		final database = SqlPkg.openDoltDB(connector);
-		final context = ContextPkg.background();
-		final pingError = database.pingContext(context);
-		if (pingError != null) {
-			database.close();
-			connector.close();
-			return EmbeddedIssueIdSearchFailure('ping embedded issue-ID database: ${pingError.toString()}');
-		}
-
-		final openedTransaction = database.beginTx(context, new TxOptions());
-		if (openedTransaction.value2 != null) {
-			database.close();
-			connector.close();
-			return EmbeddedIssueIdSearchFailure('begin embedded issue-ID transaction: ${openedTransaction.value2.toString()}');
-		}
-		final transaction = openedTransaction.value1;
+	/** Every failure of the query or its rows wins over the session's release steps. */
+	static function readIds(context:Context, transaction:Tx, query:String):StoreResult<Array<String>> {
 		final pattern = "%" + query.toLowerCase() + "%";
 		final queried = transaction.queryContext(context, READ_IDS, pattern, pattern);
-		if (queried.value2 != null) {
-			transaction.rollback();
-			database.close();
-			connector.close();
-			return EmbeddedIssueIdSearchFailure('search embedded issue IDs: ${queried.value2.toString()}');
-		}
+		if (queried.value2 != null)
+			return Failure('search embedded issue IDs: ${queried.value2.toString()}');
 
 		final rows = queried.value1;
 		final ids = new Array<String>();
@@ -82,21 +60,12 @@ final class EmbeddedIssueIdSearch {
 		}
 		final rowError = rows.err();
 		final closeRowsError = rows.close();
-		final rollbackError = transaction.rollback();
-		final closeDatabaseError = database.close();
-		final closeConnectorError = connector.close();
 		if (failure != "")
-			return EmbeddedIssueIdSearchFailure(failure);
+			return Failure(failure);
 		if (rowError != null)
-			return EmbeddedIssueIdSearchFailure('finish embedded issue-ID search: ${rowError.toString()}');
+			return Failure('finish embedded issue-ID search: ${rowError.toString()}');
 		if (closeRowsError != null)
-			return EmbeddedIssueIdSearchFailure('close embedded issue-ID search: ${closeRowsError.toString()}');
-		if (rollbackError != null)
-			return EmbeddedIssueIdSearchFailure('roll back embedded issue-ID search: ${rollbackError.toString()}');
-		if (closeDatabaseError != null)
-			return EmbeddedIssueIdSearchFailure('close embedded issue-ID database: ${closeDatabaseError.toString()}');
-		if (closeConnectorError != null)
-			return EmbeddedIssueIdSearchFailure('close embedded issue-ID connector: ${closeConnectorError.toString()}');
-		return EmbeddedIssueIds(ids);
+			return Failure('close embedded issue-ID search: ${closeRowsError.toString()}');
+		return Success(ids);
 	}
 }

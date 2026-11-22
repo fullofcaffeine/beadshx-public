@@ -180,6 +180,14 @@
         "sha256": "d48186390332910c74941755df587fe778038eea89218fbe5ce31c35e29a976d"
       },
       {
+        "path": "src/beadshx/nativeextern/backoff/BackoffPkg.hx",
+        "sha256": "c3a69d86760f063b7dd6ca5a0660d1fa8c4ee9a86573d2f2faad55722f8bfb5e"
+      },
+      {
+        "path": "src/beadshx/nativeextern/backoff/ExponentialBackOff.hx",
+        "sha256": "fea2c3b02642b99efef17afaecdea5a9b29770c07bc221a46ebf9efcaec805b3"
+      },
+      {
         "path": "src/beadshx/nativeextern/bytes/Buffer.hx",
         "sha256": "d00e15ba537601144ea4764ad8b2bd9182c1bad94a5fec2e760345f250b27eb2"
       },
@@ -197,7 +205,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/DB.hx",
-        "sha256": "d0839f7804201a1146f61ec2bf4f6c7e3ef84fa4753f9c200ddafc39beb59e29"
+        "sha256": "dddd1d2d158e4fed79a65167fdb853bc4b5eabfc38a64223c1dc78646f223a5f"
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/DBBeginTxResult.hx",
@@ -205,7 +213,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/DBStats.hx",
-        "sha256": "72b0aec867cdc286ad1574b8e448748514928a6ca302662e357fa345a5eaaedb"
+        "sha256": "20ba16d3b89b2ff7a4614331b01415d9fa5b353ceccae600d2a231f03d7832d6"
       },
       {
         "path": "src/beadshx/nativeextern/database/sql/NativeTxQueryResult.hx",
@@ -253,7 +261,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/doltdriver/Config.hx",
-        "sha256": "9c7c9b5487c901bb715c429ddde4ad802b02af3fc37aec8c607a8736931f4aa8"
+        "sha256": "4ba5387fe38208870353904967e233579d2b36cef7565427381c2b7d7ec51f90"
       },
       {
         "path": "src/beadshx/nativeextern/doltdriver/Connector.hx",
@@ -673,11 +681,11 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedAssignedIssueReader.hx",
-        "sha256": "35393450115d7ba340d9a4b71f0a23f0174cc4c0a59efdce305c66dcd8310e0b"
+        "sha256": "ac9d247566ddba021a93adaf49fbd14c06ed5c15a7af2f80a3f51846b76ca09c"
       },
       {
         "path": "src/beadshx/store/EmbeddedBlockedReader.hx",
-        "sha256": "3e5da7cdb80dc8166acb2847aaabebb6564ad7c95f9e4f478a3295319bbab190"
+        "sha256": "c264753e3abdf1162830ef7af0e3276ecfe3166884fbeb6f01e843ab9d9e89d3"
       },
       {
         "path": "src/beadshx/store/EmbeddedCgoStore.hx",
@@ -685,15 +693,15 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedCommentReader.hx",
-        "sha256": "16059839a1681ec0a33fa66dbdbb2194a5e779961e3065b65565dd865bcf0c00"
+        "sha256": "32d95ebdc53a598bab1aaa6e7828a8fc1f54f519202e4e1bfdf8d86f661418e3"
       },
       {
         "path": "src/beadshx/store/EmbeddedCustomConfigReader.hx",
-        "sha256": "4a064a73be344981af9a764862a82ef8e995baba349bb19a21f66c22c0f5b2cd"
+        "sha256": "b8fc8c70e6292ba7375497f3113ef9a7f020b58d6ca0d7b89a64c0de49a92c28"
       },
       {
         "path": "src/beadshx/store/EmbeddedCycleReader.hx",
-        "sha256": "fb3235cbda1725c21f06e3f6b147be1cd51ee2e117aa3a684988e7506ffb552f"
+        "sha256": "a416bc08eef30bc8fe71239d5fe5f2fdc78389bf2718d7d3a15cf342d5db494b"
       },
       {
         "path": "src/beadshx/store/EmbeddedDatabaseLookup.hx",
@@ -705,35 +713,39 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedDependencyReader.hx",
-        "sha256": "b8db6e79c32e6b80df8aa994ea2561a3766bfdddf7e342231c5eec0f50418088"
+        "sha256": "ff7904bdc9471c447724be74801c1ab2aa641e73d13449e696b48a04d3b6d01f"
       },
       {
         "path": "src/beadshx/store/EmbeddedEventsJournalReader.hx",
-        "sha256": "bb25ccb3042b7ee016a7fb59eab34e046fa2b3c4dfc498670337cba61fb0a154"
+        "sha256": "0838122b0aff12bdd7ba8ae89bba7d373d71455174d676b466d3f7655b75b596"
       },
       {
         "path": "src/beadshx/store/EmbeddedGraphReader.hx",
-        "sha256": "21b19c33427756ac0303c558175ffe65cd3e99b3016da572cc315e49f4c3f5e8"
+        "sha256": "614cfd806c873a94ccadcc6ec4004fb22fe5b0343f423765c99911dbf5211e67"
       },
       {
         "path": "src/beadshx/store/EmbeddedHistoryReader.hx",
-        "sha256": "599c0cbc90e032936416515a2cccb70358886793ec76ba02c0cd7e7ce6942515"
+        "sha256": "262c3f34d0d65c8fad0cca12a8a3b2771679ce10f8f4e97c1d417d9adb52fd9d"
       },
       {
         "path": "src/beadshx/store/EmbeddedIssueIdSearch.hx",
-        "sha256": "90a1d1ab2f68af4683bc338b464739a2984403a507e8d6f4feed7a06bfe20848"
+        "sha256": "95aa319951952963d4ae5d0f870f8f437cc2fc19cc128007762aeb51711f6794"
       },
       {
         "path": "src/beadshx/store/EmbeddedIssueSummaryReader.hx",
-        "sha256": "7dd67e10356e44a5de99532f52b9d5e109be45575215e842550f5e29c40af7c3"
+        "sha256": "44dfb00bb200b65af8c2a25826c466d0f21ca09ca21f55bda363eacc528d960b"
       },
       {
         "path": "src/beadshx/store/EmbeddedRelationReader.hx",
-        "sha256": "f8b9b7fd2b7678b9b0d93a9a38c3a77cda6f4667329e39bb55e170e98f86b2e1"
+        "sha256": "9c6fa84290dd3b71f0a2ffefc6a60022940cc6e2974a74799b5b076250fb1103"
       },
       {
         "path": "src/beadshx/store/EmbeddedScalarIssueDetailsReader.hx",
-        "sha256": "475a15fdbb45fb00cbb152243f848f4450ce53dd85fcde9cc4ede435c9195b3b"
+        "sha256": "e5ddef471cd7d70c4efef798a4f569dc8877b7898d8bdaf8fa39c136b2c39a3a"
+      },
+      {
+        "path": "src/beadshx/store/EmbeddedSession.hx",
+        "sha256": "e714aab04b6b2cfd16bab9693606ca9a3add3fbf89c38d3845d021e445053db5"
       },
       {
         "path": "src/beadshx/store/EmbeddedStoreAccess.hx",
@@ -745,7 +757,7 @@
       },
       {
         "path": "src/beadshx/store/EmbeddedTreeReader.hx",
-        "sha256": "8619de1c35a54a6904b67260ff77323132596adf10d4daf1cec7c3599e42b961"
+        "sha256": "3a56bde830c2620fb941fb394e4da5b9a2bb5b28daf9e2245a98252c36becf39"
       },
       {
         "path": "src/beadshx/store/EpicProgress.hx",
@@ -1057,11 +1069,11 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "12533af0a8e0cfa2381e66a091f007b28c090586af4ea81aaa6f8c67a66c4845"
+      "sha256": "55175889b253052d5d445723b2b52f2f751c5d3d4eff6250dcfa28b8f99bb1c2"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "6bc1c184a1670b082b64ca6b3a4c4304a4809e13742f6fbea3011d56df073b75"
+      "sha256": "c250f9c936e2327fb12286524f21bad7adfdcf08d86477e0bda9c31a3efc4110"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_bootstrap_commandprocess.go",
@@ -1417,11 +1429,11 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedassignedissuereader.go",
-      "sha256": "bae4c6a90e66b04193093d26dc06c729430dd2d2e23abe3bb8e76a8c655ce833"
+      "sha256": "1b758d4ac24969037edc1e34473568e9215649b8aa4cbfcc1472877ed1dd36f9"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedblockedreader.go",
-      "sha256": "9b1612265b52cce5e50641e23f42133feb750ffcb0c76da58ab6e8415403acc6"
+      "sha256": "da1ade8214ab11076a113cae6c3c2585a6957ef4efc4355686f7266299780b09"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedcgostore.go",
@@ -1429,15 +1441,15 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedcommentreader.go",
-      "sha256": "402fd2d069a551d05cb1492592cd9b16278a962544e33c4993d924a1aacbb29d"
+      "sha256": "59c0d7ab4c02d3b12cdb4467cac3be99c07b0f17ec5294b098c1058dec07fe3b"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedcustomconfigreader.go",
-      "sha256": "8e126c233229eab761679a857188ca1659289873649659a97e6dbd8548aa121e"
+      "sha256": "f471e357a489d523a3f0b46a5840fa94178aff0bac8d98ad9c3a6fb219652ea1"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedcyclereader.go",
-      "sha256": "c6a5f218702f41c10db02f958d9505398b1401937a9d90a412daba4a3599af29"
+      "sha256": "410d456d3670fd9a563f5c3ccd5c18b192379dab4ef177b559916bab8cb172cf"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddeddatabaselookup.go",
@@ -1449,35 +1461,39 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddeddependencyreader.go",
-      "sha256": "892b52901b6c6f497ce6a401d55ada115437971c662b2b81c6d057210e18f80b"
+      "sha256": "807583bc0d33ed0e3e94258b21ef971e32d5b3bb86edef396d8b3f8cc79153cb"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedeventsjournalreader.go",
-      "sha256": "4a6972e4aebf9a8c409a844311507cd207cc26888e0ea36e781076329d864962"
+      "sha256": "beae28086e0d8e179c449aa5da1a4808f2e66d5843fa80211aafba79ad12b5fb"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedgraphreader.go",
-      "sha256": "86d006c2bb8a6c535ba19595a9fee14b5180f0e0de08346bade4a8c0e5fdd867"
+      "sha256": "5894ecb405d36f38a7132ee01836f631553e73e1c47f70bb5817b90fb85bc291"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedhistoryreader.go",
-      "sha256": "36fadd42469d36db8c825e8658ea64a30f401ba0c69bf96ef4fcaa9a2b9eb251"
+      "sha256": "dc2aa80e4e608fd973a0c1dcc337b5cf2b8087f57e505f933f098aa49b8fbf2c"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedissueidsearch.go",
-      "sha256": "68952b3beb5e5ce8a5f80de2d749da13ceed3715a33604a728fc78001432ef64"
+      "sha256": "7534b57d8f302a20fc6b2fec3046d4c36f5aee83a33e04d30bf90ddd697a3374"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedissuesummaryreader.go",
-      "sha256": "8954a18784b929c7b0074d82231ab93bde655ddf282de5b06bb1f0635cc90577"
+      "sha256": "955bb84ace983312d92d90f44cb1261c5e4c51ee35763af292a18d908a6b0264"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedrelationreader.go",
-      "sha256": "dd52ed2c900d7f4e47da6519e30440173f35b68d3396ceee0df5e916533887ce"
+      "sha256": "34554e169c384e34ef4b78b0885ec93ab3e06566164b5274b567cdba058272bb"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedscalarissuedetailsreader.go",
-      "sha256": "a27b5b5f9aad94b9c925694c38cd83fa5157cf1eca6e7f5c967636d7c8bf806f"
+      "sha256": "d9a99ba6b87699e7a5262d020a8d949ebcc438964d6bdcd92de3f0bd8ce76875"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_store_embeddedsession.go",
+      "sha256": "8a8aa5855b1e2efd0347fe292d595a3ab6ecb66093cbc7e43bcdfe9bc9c2ea37"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedstoreaccess.go",
@@ -1489,7 +1505,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_embeddedtreereader.go",
-      "sha256": "5a0bec525342ad8281cac93c1e491de0760bba976024426fd1d18b54a8cc7c4c"
+      "sha256": "6be817a4dd01f1e3482a58c6874d1db7e9b7577622b42c9ed245c97358fa09eb"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_epicprogress.go",
@@ -1837,11 +1853,11 @@
     },
     {
       "path": "bdhx/haxego_generated_recovery_0.go",
-      "sha256": "64e873e204d030bdfd528323e509c017fe75605a94ad013d97c2d3d4ca7540a9"
+      "sha256": "0a147fa6a71847ec603fd843aa052753a8738429f09fdb3d4cd260737f45ca02"
     },
     {
       "path": "bdhx/haxego_generated_recovery_1.go",
-      "sha256": "5144b51a0fe9e65027683c36e667b6bc7353d973d059d60e1b3daecd8e0bcabd"
+      "sha256": "141873ad05ec5db5de2e00f333234c753123f4bf69555bcc85aa63adb9b1e8ca"
     },
     {
       "path": "hxrt/anonymous.go",

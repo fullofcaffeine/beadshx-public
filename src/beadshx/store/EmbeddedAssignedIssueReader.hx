@@ -1,13 +1,10 @@
 package beadshx.store;
 
-import beadshx.nativeextern.context.ContextPkg;
+import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.NullString;
-import beadshx.nativeextern.database.sql.SqlPkg;
-import beadshx.nativeextern.database.sql.TxOptions;
-import beadshx.nativeextern.doltdriver.Config;
-import beadshx.nativeextern.doltdriver.DoltDriverPkg;
+import beadshx.nativeextern.database.sql.Tx;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
-import haxe.io.Path;
+import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 
 /** Result of one Haxe-owned assigned-issue lookup. */
 enum EmbeddedAssignedIssueResult {
@@ -25,6 +22,10 @@ final class EmbeddedAssignedIssueReader {
 		+ "UNION ALL SELECT id, priority, created_at FROM wisps WHERE assignee = ? AND status = ?"
 		+ ") assigned ORDER BY priority ASC, created_at DESC, id ASC LIMIT 1";
 
+	static final WORDING = new EmbeddedReadWording("open embedded assigned-issue connector", "ping embedded assigned-issue database",
+		"begin embedded assigned-issue transaction", "roll back assigned issue", "close embedded assigned-issue database",
+		"close embedded assigned-issue connector");
+
 	final beadsDir:String;
 	final databaseName:String;
 
@@ -34,40 +35,21 @@ final class EmbeddedAssignedIssueReader {
 	}
 
 	public function read(actor:String, status:String):EmbeddedAssignedIssueResult {
-		final config = new Config();
-		config.directory = Path.join([beadsDir, "embeddeddolt"]);
-		config.commitName = "BeadsHX read-only assigned issue";
-		config.commitEmail = "beadshx-readonly@invalid";
-		config.database = databaseName;
-		config.multiStatements = true;
+		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readAssigned(context, transaction, actor, status));
+		return switch WORDING.bodyFailureFirst(read) {
+			case Failure(message): EmbeddedAssignedIssueFailure(message);
+			case Success(result): result;
+		};
+	}
 
-		final openedConnector = DoltDriverPkg.newConnector(config);
-		if (openedConnector.value2 != null)
-			return EmbeddedAssignedIssueFailure('open embedded assigned-issue connector: ${openedConnector.value2.toString()}');
-		final connector = openedConnector.value1;
-		final database = SqlPkg.openDoltDB(connector);
-		final context = ContextPkg.background();
-		final pingError = database.pingContext(context);
-		if (pingError != null) {
-			database.close();
-			connector.close();
-			return EmbeddedAssignedIssueFailure('ping embedded assigned-issue database: ${pingError.toString()}');
-		}
-
-		final openedTransaction = database.beginTx(context, new TxOptions());
-		if (openedTransaction.value2 != null) {
-			database.close();
-			connector.close();
-			return EmbeddedAssignedIssueFailure('begin embedded assigned-issue transaction: ${openedTransaction.value2.toString()}');
-		}
-		final transaction = openedTransaction.value1;
+	/**
+		A failed query or row iteration wins over the session's release steps.
+		A failed scan is a result: a failed release step still replaces it.
+	**/
+	static function readAssigned(context:Context, transaction:Tx, actor:String, status:String):StoreResult<EmbeddedAssignedIssueResult> {
 		final queried = transaction.queryContext(context, READ_ASSIGNED, actor, status, actor, status);
-		if (queried.value2 != null) {
-			transaction.rollback();
-			database.close();
-			connector.close();
-			return EmbeddedAssignedIssueFailure('read assigned issue: ${queried.value2.toString()}');
-		}
+		if (queried.value2 != null)
+			return Failure('read assigned issue: ${queried.value2.toString()}');
 
 		final rows = queried.value1;
 		var result:EmbeddedAssignedIssueResult = EmbeddedAssignedIssueMissing;
@@ -83,19 +65,10 @@ final class EmbeddedAssignedIssueReader {
 		}
 		final rowError = rows.err();
 		final closeRowsError = rows.close();
-		final rollbackError = transaction.rollback();
-		final closeDatabaseError = database.close();
-		final closeConnectorError = connector.close();
 		if (rowError != null)
-			return EmbeddedAssignedIssueFailure('finish assigned issue: ${rowError.toString()}');
+			return Failure('finish assigned issue: ${rowError.toString()}');
 		if (closeRowsError != null)
-			return EmbeddedAssignedIssueFailure('close assigned issue: ${closeRowsError.toString()}');
-		if (rollbackError != null)
-			return EmbeddedAssignedIssueFailure('roll back assigned issue: ${rollbackError.toString()}');
-		if (closeDatabaseError != null)
-			return EmbeddedAssignedIssueFailure('close embedded assigned-issue database: ${closeDatabaseError.toString()}');
-		if (closeConnectorError != null)
-			return EmbeddedAssignedIssueFailure('close embedded assigned-issue connector: ${closeConnectorError.toString()}');
-		return result;
+			return Failure('close assigned issue: ${closeRowsError.toString()}');
+		return Success(result);
 	}
 }

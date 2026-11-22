@@ -1,20 +1,16 @@
 package beadshx.store;
 
-import beadshx.nativeextern.context.ContextPkg;
 import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.Rows;
-import beadshx.nativeextern.database.sql.SqlPkg;
 import beadshx.nativeextern.database.sql.Tx;
-import beadshx.nativeextern.database.sql.TxOptions;
-import beadshx.nativeextern.doltdriver.Config;
-import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
+import beadshx.store.EmbeddedSession.EmbeddedReadWording;
+import beadshx.store.EmbeddedSession.EmbeddedSessionCleanupFailure;
 import beadshx.store.DatabaseErrors.isTableNotExist;
 import beadshx.store.SqlIssueRow.SQL_READ_ISSUE;
 import beadshx.store.SqlIssueRow.SQL_READ_WISP;
 import beadshx.store.SqlIssueRow.scanSqlIssueFieldsNative;
 import beadshx.store.SqlIssueRow.SqlIssueNativeScanResult;
-import haxe.io.Path;
 
 /** Result of one Haxe-owned exact embedded issue-summary lookup. */
 enum EmbeddedIssueSummaryResult {
@@ -35,6 +31,8 @@ enum EmbeddedIssueSummaryResult {
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedIssueSummaryReader {
+	static final WORDING = EmbeddedReadWording.forNoun("issue", true);
+
 	final beadsDir:String;
 	final databaseName:String;
 
@@ -44,52 +42,32 @@ final class EmbeddedIssueSummaryReader {
 	}
 
 	public function read(id:String):EmbeddedIssueSummaryResult {
-		final config = new Config();
-		config.directory = Path.join([beadsDir, "embeddeddolt"]);
-		config.commitName = "BeadsHX read-only issue summary";
-		config.commitEmail = "beadshx-readonly@invalid";
-		config.database = databaseName;
-		config.multiStatements = true;
-
-		final openedConnector = DoltDriverPkg.newConnector(config);
-		if (openedConnector.value2 != null)
-			return EmbeddedIssueSummaryFailure('open embedded issue connector: ${openedConnector.value2.toString()}');
-		final connector = openedConnector.value1;
-		final database = SqlPkg.openDoltDB(connector);
-		final context = ContextPkg.background();
-		final pingError = database.pingContext(context);
-		if (pingError != null) {
-			database.close();
-			connector.close();
-			return EmbeddedIssueSummaryFailure('ping embedded issue database: ${pingError.toString()}');
-		}
-
-		final openedTransaction = database.beginTx(context, new TxOptions());
-		if (openedTransaction.value2 != null) {
-			database.close();
-			connector.close();
-			return EmbeddedIssueSummaryFailure('begin embedded issue transaction: ${openedTransaction.value2.toString()}');
-		}
-		final transaction = openedTransaction.value1;
-		final result = finishSummaryTransaction(readSummaryInTx(context, transaction, id), transaction);
-		final closeDatabaseError = database.close();
-		final closeConnectorError = connector.close();
-		final readFailure = switch result {
-			case EmbeddedIssueSummaryFailure(_): true;
-			case _: false;
+		return switch EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSummaryInTx(context, transaction, id)) {
+			case EmbeddedReadNotStarted(stage, error, _): EmbeddedIssueSummaryFailure(WORDING.stageMessage(stage, error));
+			case EmbeddedReadFinished(result, cleanup): finishSummaryRead(result, cleanup);
 		};
-		if (readFailure)
-			return result;
-		if (closeDatabaseError != null)
-			return EmbeddedIssueSummaryFailure('close embedded issue database: ${closeDatabaseError.toString()}');
-		if (closeConnectorError != null)
-			return EmbeddedIssueSummaryFailure('close embedded issue connector: ${closeConnectorError.toString()}');
-		return result;
+	}
+
+	/** A failed rollback joins the read's result; a failed close counts only after a successful read. */
+	private static function finishSummaryRead(result:EmbeddedIssueSummaryResult, cleanup:Array<EmbeddedSessionCleanupFailure>):EmbeddedIssueSummaryResult {
+		var rollbackError:Null<go.Error> = null;
+		final closeFailures = new Array<EmbeddedSessionCleanupFailure>();
+		for (failure in cleanup)
+			switch failure {
+				case SessionRollbackFailed(error):
+					rollbackError = error;
+				case SessionCloseDatabaseFailed(_) | SessionCloseConnectorFailed(_):
+					closeFailures.push(failure);
+			}
+		final rolledBack = finishSummaryTransaction(result, rollbackError);
+		return switch rolledBack {
+			case EmbeddedIssueSummaryFailure(_): rolledBack;
+			case _: closeFailures.length == 0 ? rolledBack : EmbeddedIssueSummaryFailure(WORDING.cleanupMessage(closeFailures[0]));
+		};
 	}
 
 	/** Owns the read transaction's rollback result, independently of connection cleanup. */
-	private static function finishSummaryTransaction(result:EmbeddedIssueSummaryResult, transaction:Tx):EmbeddedIssueSummaryResult {
-		final rollbackError = transaction.rollback();
+	private static function finishSummaryTransaction(result:EmbeddedIssueSummaryResult, rollbackError:Null<go.Error>):EmbeddedIssueSummaryResult {
 		if (rollbackError == null)
 			return result;
 		final rollbackMessage = rollbackError.toString();

@@ -1,20 +1,12 @@
 package beadshx.store;
 
 import beadshx.nativeextern.context.Context;
-import beadshx.nativeextern.context.ContextPkg;
-import beadshx.nativeextern.database.sql.DB;
 import beadshx.nativeextern.database.sql.NullString;
-import beadshx.nativeextern.database.sql.Rows;
-import beadshx.nativeextern.database.sql.SqlPkg;
 import beadshx.nativeextern.database.sql.Tx;
-import beadshx.nativeextern.database.sql.TxOptions;
-import beadshx.nativeextern.doltdriver.Config;
-import beadshx.nativeextern.doltdriver.Connector;
-import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.relation.DependencySnapshot;
 import beadshx.relation.RawDependencyEdge;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
-import haxe.io.Path;
+import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 
 /** Result of one Haxe-owned embedded dependency snapshot. */
 enum EmbeddedDependencyResult {
@@ -25,7 +17,7 @@ enum EmbeddedDependencyResult {
 /**
 	Reads stored dependency facts directly through independent Go APIs.
 
-	What: owns one embedded Dolt connector, SQL transaction, row scan, and cleanup.
+	What: owns one read transaction of the shared `EmbeddedSession`, and the row scan.
 	Why: first-party Beads `issueops.EdgeReader` is migration scaffolding, not a
 	permanent implementation boundary for the Haxe port.
 	How: query issue and wisp presence plus both edge planes inside one transaction,
@@ -57,51 +49,24 @@ final class EmbeddedDependencyReader {
 		if (anchors.length == 0)
 			return EmbeddedDependencySnapshot({presentIds: [], edges: []});
 
-		final config = new Config();
-		config.directory = Path.join([beadsDir, "embeddeddolt"]);
-		config.commitName = "BeadsHX read-only dependency snapshot";
-		config.commitEmail = "beadshx-readonly@invalid";
-		config.database = databaseName;
-		config.multiStatements = true;
+		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readAnchors(context, transaction, anchors));
+		// A failed anchor read wins over the session's release steps.
+		return switch EmbeddedReadWording.forNoun("dependency", true).bodyFailureFirst(read) {
+			case Failure(message): EmbeddedDependencyFailure(message);
+			case Success(snapshot): EmbeddedDependencySnapshot(snapshot);
+		};
+	}
 
-		final openedConnector = DoltDriverPkg.newConnector(config);
-		if (openedConnector.value2 != null)
-			return EmbeddedDependencyFailure('open embedded dependency connector: ${openedConnector.value2.toString()}');
-		final connector = openedConnector.value1;
-		final database = SqlPkg.openDoltDB(connector);
-		final context = ContextPkg.background();
-		final pingError = database.pingContext(context);
-		if (pingError != null)
-			return failAfterDatabase('ping embedded dependency database: ${pingError.toString()}', database, connector);
-
-		final openedTransaction = database.beginTx(context, new TxOptions());
-		if (openedTransaction.value2 != null)
-			return failAfterDatabase('begin embedded dependency transaction: ${openedTransaction.value2.toString()}', database, connector);
-		final transaction = openedTransaction.value1;
+	function readAnchors(context:Context, transaction:Tx, anchors:Array<String>):StoreResult<DependencySnapshot> {
 		final present = new Map<String, Bool>();
 		final edges = new Array<RawDependencyEdge>();
-		for (anchor in anchors) {
-			final read = readAnchor(context, transaction, anchor, present, edges);
-			switch read {
+		for (anchor in anchors)
+			switch readAnchor(context, transaction, anchor, present, edges) {
 				case EmbeddedDependencyFailure(message):
-					return failAfterTransaction(message, transaction, database, connector);
+					return Failure(message);
 				case EmbeddedDependencySnapshot(_):
 			}
-		}
-
-		final rollbackError = transaction.rollback();
-		if (rollbackError != null)
-			return failAfterDatabase('roll back embedded dependency transaction: ${rollbackError.toString()}', database, connector);
-		final closeDatabaseError = database.close();
-		if (closeDatabaseError != null) {
-			connector.close();
-			return EmbeddedDependencyFailure('close embedded dependency database: ${closeDatabaseError.toString()}');
-		}
-		final closeConnectorError = connector.close();
-		if (closeConnectorError != null)
-			return EmbeddedDependencyFailure('close embedded dependency connector: ${closeConnectorError.toString()}');
-
-		return EmbeddedDependencySnapshot({presentIds: [for (anchor in anchors) if (present.exists(anchor)) anchor], edges: edges});
+		return Success({presentIds: [for (anchor in anchors) if (present.exists(anchor)) anchor], edges: edges});
 	}
 
 	function readAnchor(context:Context, transaction:Tx, anchor:String, present:Map<String, Bool>, edges:Array<RawDependencyEdge>):EmbeddedDependencyResult {
@@ -165,16 +130,5 @@ final class EmbeddedDependencyReader {
 		if (value.length < 19 || value.charAt(10) != " ")
 			return value;
 		return value.substr(0, 10) + "T" + value.substr(11) + "Z";
-	}
-
-	static function failAfterTransaction(message:String, transaction:Tx, database:DB, connector:Connector):EmbeddedDependencyResult {
-		transaction.rollback();
-		return failAfterDatabase(message, database, connector);
-	}
-
-	static function failAfterDatabase(message:String, database:DB, connector:Connector):EmbeddedDependencyResult {
-		database.close();
-		connector.close();
-		return EmbeddedDependencyFailure(message);
 	}
 }

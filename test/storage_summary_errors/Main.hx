@@ -271,7 +271,7 @@ class Main {
 		if (begun.value2 != null)
 			throw begun.value2.toString();
 		final input = readFailed ? EmbeddedIssueSummaryFailure("summary read failed") : EmbeddedIssueSummaryMissing;
-		final result = beadshx.store.EmbeddedIssueSummaryReader.finishSummaryTransaction(input, begun.value1);
+		final result = beadshx.store.EmbeddedIssueSummaryReader.finishSummaryTransaction(input, begun.value1.rollback());
 		final closed = opened.database.close();
 		if (closed != null)
 			throw closed.toString();

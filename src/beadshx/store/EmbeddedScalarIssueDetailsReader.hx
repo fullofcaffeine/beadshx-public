@@ -1,17 +1,10 @@
 package beadshx.store;
 
 import beadshx.nativeextern.context.Context;
-import beadshx.nativeextern.context.ContextPkg;
-import beadshx.nativeextern.database.sql.DB;
 import beadshx.nativeextern.database.sql.NullString;
-import beadshx.nativeextern.database.sql.SqlPkg;
 import beadshx.nativeextern.database.sql.Tx;
-import beadshx.nativeextern.database.sql.TxOptions;
-import beadshx.nativeextern.doltdriver.Config;
-import beadshx.nativeextern.doltdriver.Connector;
-import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
-import haxe.io.Path;
+import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 import beadshx.store.SqlIssueRow.SqlIssueFields;
 import beadshx.store.SqlIssueRow.SQL_READ_ISSUE;
 import beadshx.store.SqlIssueRow.SQL_READ_WISP;
@@ -35,7 +28,7 @@ enum EmbeddedScalarIssueDetailsResult {
 /**
 	Hydrates one edge-free issue entirely in authored Haxe.
 
-	The reader owns one connector and rollback-only transaction. It returns a
+	The reader owns one rollback-only read of the shared `EmbeddedSession`. It returns a
 	distinct relation result when the issue has edges, so callers can
 	retain the transitional native path without silently returning partial data.
 **/
@@ -57,32 +50,19 @@ final class EmbeddedScalarIssueDetailsReader {
 	}
 
 	public function read(id:String, request:IssueDetailsRequest):EmbeddedScalarIssueDetailsResult {
-		final config = new Config();
-		config.directory = Path.join([beadsDir, "embeddeddolt"]);
-		config.commitName = "BeadsHX read-only scalar issue details";
-		config.commitEmail = "beadshx-readonly@invalid";
-		config.database = databaseName;
-		config.multiStatements = true;
+		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readOutcome(context, transaction, id, request));
+		// A failed read wins over the session's release steps.
+		return switch EmbeddedReadWording.forNoun("detail", true).bodyFailureFirst(read) {
+			case Failure(message): EmbeddedScalarDetailsFailure(message);
+			case Success(result): result;
+		};
+	}
 
-		final openedConnector = DoltDriverPkg.newConnector(config);
-		if (openedConnector.value2 != null)
-			return EmbeddedScalarDetailsFailure('open embedded detail connector: ${openedConnector.value2.toString()}');
-		final connector = openedConnector.value1;
-		final database = SqlPkg.openDoltDB(connector);
-		final context = ContextPkg.background();
-		final pingError = database.pingContext(context);
-		if (pingError != null)
-			return failAfterDatabase('ping embedded detail database: ${pingError.toString()}', database, connector);
-		final openedTransaction = database.beginTx(context, new TxOptions());
-		if (openedTransaction.value2 != null)
-			return failAfterDatabase('begin embedded detail transaction: ${openedTransaction.value2.toString()}', database, connector);
-		final transaction = openedTransaction.value1;
-
+	/** A failed assembly is the body failure that `bodyFailureFirst` lets win over the release steps. */
+	static function readOutcome(context:Context, transaction:Tx, id:String, request:IssueDetailsRequest):StoreResult<EmbeddedScalarIssueDetailsResult> {
 		return switch readFromTransaction(context, transaction, id, request) {
-			case EmbeddedScalarDetailsFailure(message):
-				failAfterTransaction(message, transaction, database, connector);
-			case result:
-				finish(result, transaction, database, connector);
+			case EmbeddedScalarDetailsFailure(message): Failure(message);
+			case result: Success(result);
 		};
 	}
 
@@ -269,28 +249,4 @@ final class EmbeddedScalarIssueDetailsReader {
 
 	static inline function value(field:NullString):String
 		return field.valid ? field.string : "";
-
-	static function finish(result:EmbeddedScalarIssueDetailsResult, transaction:Tx, database:DB, connector:Connector):EmbeddedScalarIssueDetailsResult {
-		final rollbackError = transaction.rollback();
-		if (rollbackError != null)
-			return failAfterDatabase('roll back embedded detail transaction: ${rollbackError.toString()}', database, connector);
-		final closeDatabaseError = database.close();
-		if (closeDatabaseError != null) {
-			connector.close();
-			return EmbeddedScalarDetailsFailure('close embedded detail database: ${closeDatabaseError.toString()}');
-		}
-		final closeConnectorError = connector.close();
-		return closeConnectorError == null ? result : EmbeddedScalarDetailsFailure('close embedded detail connector: ${closeConnectorError.toString()}');
-	}
-
-	static function failAfterTransaction(message:String, transaction:Tx, database:DB, connector:Connector):EmbeddedScalarIssueDetailsResult {
-		transaction.rollback();
-		return failAfterDatabase(message, database, connector);
-	}
-
-	static function failAfterDatabase(message:String, database:DB, connector:Connector):EmbeddedScalarIssueDetailsResult {
-		database.close();
-		connector.close();
-		return EmbeddedScalarDetailsFailure(message);
-	}
 }
