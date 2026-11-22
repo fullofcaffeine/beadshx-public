@@ -295,6 +295,14 @@ Limits:
 Run the parity suite with `make beadshx-parity`; it lives in
 [scripts/beadshx/test-parity-smoke.sh](scripts/beadshx/test-parity-smoke.sh).
 
+The handwritten Go islands under `internal/beadshx/` may only shrink.
+`make beadshx-test-native-pressure` fails when their non-test lines or imports
+grow above
+[compatibility/native-islands/baseline.json](compatibility/native-islands/baseline.json),
+or when an island calls `configfile.Load` or opens a writable store. After a
+deletion, it fails until `go run ./scripts/beadshx/island-guard --update`
+lowers the baseline in the same commit.
+
 ## Upstream Beads overview
 
 The text below describes the upstream Beads product. BeadsHX keeps this

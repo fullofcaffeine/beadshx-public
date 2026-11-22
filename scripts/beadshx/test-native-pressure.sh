@@ -15,6 +15,11 @@ if [[ ! -d node_modules || ! -d haxe_libraries ]]; then
     ./scripts/beadshx/setup-haxe.sh
 fi
 
+# The handwritten Go islands under internal/beadshx may only shrink and may
+# not write. See scripts/beadshx/island-guard/main.go for the exact rules.
+go test ./scripts/beadshx/island-guard
+go run ./scripts/beadshx/island-guard --repository "$repository_root"
+
 go test ./scripts/beadshx/native-pressure
 go run ./scripts/beadshx/native-pressure \
     --repository "$repository_root" \
