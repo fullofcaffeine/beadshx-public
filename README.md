@@ -241,9 +241,6 @@ Limits:
   source of the server port and prints no `dolt_server_port` warning.
   Upstream also prints the warning when Dolt cannot parse that file, or when
   the file sets the port to 0 or less.
-- `count` reads `--priority`, `--priority-min` and `--priority-max` like
-  `list` does: it accepts `P1`, and it reports an invalid value before the
-  warnings above. Upstream reads them as integer flags.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
 - Where upstream output order is random (Go map order), the parity tests

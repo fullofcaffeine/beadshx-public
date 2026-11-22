@@ -348,6 +348,67 @@ compare_no_workspace config_validate_help config validate --help
 compare_no_workspace config_drift config drift
 compare_no_workspace config_drift_json config drift --json
 compare_no_workspace config_drift_help config drift --help
+# pflag parses an int flag's value with strconv.ParseInt(value, 0, 64) as it reads the flag, before the
+# pre-run: a bad value prints `invalid argument "x" for "-n, --limit" flag: strconv.ParseInt: ...` also
+# with --json. Go's 0x, 0o, 0b, leading-zero octal, sign and `_` forms are values. A shorthand takes its
+# value from the next argument or from the rest of its own, after an optional "=". A flag that the
+# command lacks is an unknown flag, and the first error in argument order wins.
+compare_no_workspace list_invalid_limit list --limit x
+compare_no_workspace list_invalid_limit_shorthand_json list -n x --json
+compare_no_workspace list_empty_limit list --limit=
+compare_no_workspace list_empty_limit_shorthand list -n ''
+compare_no_workspace list_limit_out_of_range list --limit 999999999999999999999
+compare_no_workspace list_limit_quoted list --limit '"é'
+compare_no_workspace list_invalid_limit_attached list -n5x
+compare_no_workspace list_invalid_limit_shorthand_equals list -n=x
+compare_no_workspace list_missing_limit_shorthand list -n
+compare_no_workspace list_limit_go_syntax list --limit 0x10 -n 1_0 --limit=+5 -n010 -n=0b1
+compare_no_workspace list_invalid_limit_before_command --limit x list
+compare_no_workspace list_invalid_limit_before_unknown_flag list --limit x --bogus
+compare_no_workspace list_invalid_offset_json list --offset=x --json
+compare_no_workspace list_invalid_max_rows list --max-rows 1.5
+compare_no_workspace list_bad_boolean_quoted list --all='"'
+compare_no_workspace ready_invalid_limit_shorthand ready -n x
+compare_no_workspace ready_empty_limit ready --limit=
+compare_no_workspace ready_invalid_priority ready --priority P1
+compare_no_workspace ready_invalid_priority_shorthand_json ready -p 1x --json
+compare_no_workspace ready_invalid_priority_attached ready -px
+compare_no_workspace ready_missing_priority_shorthand ready -p
+compare_no_workspace ready_invalid_priority_before_unknown_flag ready -p x --title x
+compare_no_workspace ready_invalid_offset ready --offset 0x
+compare_no_workspace ready_invalid_max_rows ready --max-rows=x
+compare_no_workspace count_invalid_priority count --priority P1
+compare_no_workspace count_invalid_priority_shorthand_json count -p high --json
+compare_no_workspace count_invalid_priority_attached count -p=x
+compare_no_workspace count_missing_priority_shorthand count -p
+compare_no_workspace count_invalid_priority_min count --priority-min P1
+compare_no_workspace count_invalid_priority_max_json count --priority-max=high --json
+compare_no_workspace count_priority_out_of_range count -p 99999999999999999999
+compare_no_workspace count_priority_any_integer count -p 7 --priority-min -1 --priority-max=0x10
+compare_no_workspace count_invalid_priority_before_command -p x count
+compare_no_workspace count_invalid_priority_before_bad_boolean count --priority x --by-status=maybe
+compare_no_workspace count_bad_boolean_before_priority count --by-status=maybe --priority x
+compare_no_workspace count_invalid_priority_max_before_min count --priority-max=x --priority-min=y
+compare_no_workspace count_unknown_offset count --offset x
+compare_no_workspace search_invalid_limit_shorthand search foo -n x
+compare_no_workspace search_invalid_limit search foo --limit=1.0
+compare_no_workspace search_missing_limit_shorthand search foo -n
+compare_no_workspace query_invalid_limit query status=open -n x
+compare_no_workspace query_invalid_offset_json query status=open --offset x --json
+compare_no_workspace stale_invalid_days stale -d x
+compare_no_workspace stale_invalid_days_equals stale --days=x
+compare_no_workspace stale_invalid_days_attached stale -dx
+compare_no_workspace stale_missing_days_shorthand stale -d
+compare_no_workspace stale_invalid_limit stale -n x
+compare_no_workspace dep_tree_invalid_max_depth_attached dep tree test-a -dx
+compare_no_workspace dep_tree_max_depth_out_of_range dep tree test-a --max-depth 99999999999999999999
+compare_no_workspace dep_tree_invalid_max_depth_before_subcommand dep --max-depth x tree test-a
+compare_no_workspace graph_empty_max_rows graph test-a --max-rows=
+compare_no_workspace graph_check_unknown_max_rows graph check --max-rows x
+compare_no_workspace history_limit_out_of_range history test-a --limit 99999999999999999999
+compare_no_workspace history_unknown_limit_attached history test-a -n5
+compare_no_workspace show_unknown_limit show test-a --limit x
+compare_no_workspace help_list_unknown_limit help list --limit x
 # In shared-server mode upstream's hint also names `bd doctor`. Without a workspace it reads the mode
 # from BEADS_DOLT_SHARED_SERVER (1 or true in any case), BD_DOLT_SHARED_SERVER and the user
 # config.yaml. Neither side writes.
@@ -2506,11 +2567,18 @@ compare_real_database count-date-last-value-json exact count --created-after bog
 compare_real_database count-by-conflict-unknown-flag exact count --by-status --by-type --mol-type bogus
 compare_real_database count-by-conflict-bad-boolean exact count --by-status --by-type --by-label=maybe
 compare_real_database count-by-conflict-help exact count --by-status --by-type --help
+# count's --priority, --priority-min and --priority-max are int flags: any integer filters.
+compare_real_database count-priority-json exact count --priority 1 --json
+compare_real_database count-priority-outside-json exact count -p 9 --json
+compare_real_database count-priority-range exact count --priority-min 1 --priority-max 0x2
+compare_real_database count-priority-negative-min-json exact count --priority-min -1 --by-priority --json
 compare_real_database ready-human exact ready
 compare_real_database ready-plain exact ready --plain
 compare_real_database ready-json exact ready --json
 compare_real_database ready-limit-human exact ready --limit 2
 compare_real_database ready-limit-json exact ready --limit 2 --json
+compare_real_database ready-limit-attached-json exact ready -n1 --json
+compare_real_database list-limit-binary-json exact list --all -n 0b1 --json
 compare_real_database ready-molecule-human exact ready --mol "$real_database_molecule_id"
 compare_real_database ready-molecule-json molecule-ready-json ready --mol "$real_database_molecule_id" --json
 compare_real_database ready-explain-human exact ready --explain

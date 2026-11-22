@@ -6,6 +6,8 @@ import beadshx.cli.Invocation.DepTreeInvocation;
 import beadshx.cli.Invocation.EventsInvocation;
 import beadshx.cli.Invocation.GraphInvocation;
 import beadshx.cli.Invocation.HistoryInvocation;
+import beadshx.cli.PflagValue.Int64FlagValue;
+import beadshx.cli.PflagValue.IntFlagValue;
 import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.config.LayeredConfig.goQuote;
 import beadshx.store.CustomConfig.goTrimSpace;
@@ -32,6 +34,18 @@ private enum ListTimeField {
 	TimeDueBefore;
 }
 
+/** The flags that are int flags on a ported command. list and search read the priority flags as strings. */
+private enum IntegerFlag {
+	LimitFlag;
+	OffsetFlag;
+	MaxRowsFlag;
+	PriorityFlag;
+	PriorityMinFlag;
+	PriorityMaxFlag;
+	DaysFlag;
+	MaxDepthFlag;
+}
+
 private enum ExpectedValue {
 	Actor;
 	ShortDirectory;
@@ -46,8 +60,6 @@ private enum ExpectedValue {
 	ListStatus;
 	ListAssignee;
 	ListIssueType;
-	ListPriority;
-	ListLimit;
 	ListSort;
 	ListTitle;
 	ListSpec;
@@ -61,8 +73,6 @@ private enum ExpectedValue {
 	ListNotesContains;
 	ListExternalContains;
 	ListExternalRef;
-	ListPriorityMin;
-	ListPriorityMax;
 	ListExcludeType;
 	ListParent;
 	ListMoleculeType;
@@ -70,13 +80,13 @@ private enum ExpectedValue {
 	ListMetadataField;
 	ListHasMetadataKey;
 	ListTime(field:ListTimeField);
-	ListOffset;
-	ListMaxRows;
+
+	/** The value of an int flag, or of a priority flag, as `typed` (such as `-n` or `--limit`). */
+	IntegerValue(flag:IntegerFlag, typed:String);
+
 	ReadyMolecule;
 	SearchQuery;
-	StaleDays;
 	DepDirection;
-	DepTreeMaxDepth(shorthand:Bool);
 	EventsSince;
 	EventsLimit;
 	EventsBefore;
@@ -283,21 +293,76 @@ final class Parser {
 		function inDepTree():Bool {
 			return positional.length > 1 && positional[0] == "dep" && positional[1] == "tree";
 		}
-		// `bd graph <id>` declares --max-rows as a plain int flag and checks its sign after the load.
-		function inGraph():Bool {
-			return positional.length > 0 && positional[0] == "graph" && !(positional.length > 1 && positional[1] == "check");
-		}
-		// `bd history` declares --limit as a plain int flag, without the -n shorthand.
-		function invalidLimit(raw:String):ParseResult {
-			final history = positional.length > 0 && positional[0] == "history";
-			return UsageFailure(history ? invalidIntegerFlag("--limit", raw) : 'invalid argument "${raw}" for "-n, --limit" flag: expected an integer');
-		}
 		// `bd events tail` and `export` declare --limit as a plain int flag, without the -n shorthand.
 		function inEvents():Bool {
 			return positional.length > 0 && positional[0] == "events";
 		}
-		function invalidMaxRows(raw:String):ParseResult {
-			return UsageFailure(inGraph() ? invalidIntegerFlag("--max-rows", raw) : 'invalid argument "${raw}" for "--max-rows" flag: expected an integer');
+		// The shorthands of the int flags. -d is --max-depth in `dep tree` and --days elsewhere.
+		function integerShorthand(typed:String):Null<IntegerFlag> {
+			return switch typed {
+				case "-n": LimitFlag;
+				case "-p": PriorityFlag;
+				case "-d": inDepTree() ? MaxDepthFlag : DaysFlag;
+				case _: null;
+			};
+		}
+		// The int values read before the command that has their flag; pflag parses them once cobra has found it.
+		final pendingIntegers = new Array<{flag:IntegerFlag, typed:String, raw:String}>();
+		// Takes a value for the command in `positional`, which pflag parses as it reads the flag.
+		function applyIntegerValue(flag:IntegerFlag, typed:String, raw:String):Null<String> {
+			final name = integerFlagName(flag, typed, positional);
+			if (name == null) {
+				// `bd help` has no command flags.
+				if (positional.length > 0 && positional[0] == "help")
+					return unknownFlag(typed);
+				// A string flag of this command, or a flag that it lacks, which a later check reports.
+				switch flag {
+					case PriorityFlag:
+						listPriorityRaw = raw;
+					case PriorityMinFlag:
+						listPriorityMinRaw = raw;
+					case PriorityMaxFlag:
+						listPriorityMaxRaw = raw;
+					case LimitFlag if (typed == "--limit" && inEvents()):
+						eventsFlagValues.push({flag: "--limit", raw: raw});
+					case _:
+				}
+				return null;
+			}
+			switch PflagValue.parseInt(name, raw) {
+				case IntRejected(message):
+					return message;
+				case IntAccepted(value):
+					switch flag {
+						case LimitFlag:
+							listLimit = IntPresent(value);
+						case OffsetFlag:
+							listOffset = IntPresent(value);
+						case MaxRowsFlag:
+							// Each command checks the sign itself, after its pre-run.
+							listMaxRows = IntPresent(value);
+							listMaxRowsSource = "--max-rows";
+						case PriorityFlag:
+							listPriority = IntPresent(value);
+						case PriorityMinFlag:
+							listPriorityMin = IntPresent(value);
+						case PriorityMaxFlag:
+							listPriorityMax = IntPresent(value);
+						case DaysFlag:
+							staleDays = value;
+						case MaxDepthFlag:
+							depTreeMaxDepth = value;
+					}
+			}
+			return null;
+		}
+		// A flag that the command typed so far lacks can belong to a later subcommand, so its value waits.
+		function readIntegerValue(flag:IntegerFlag, typed:String, raw:String):Null<String> {
+			if (integerFlagName(flag, typed, positional) == null) {
+				pendingIntegers.push({flag: flag, typed: typed, raw: raw});
+				return null;
+			}
+			return applyIntegerValue(flag, typed, raw);
 		}
 		for (argument in args) {
 			if (expectedValue != null) {
@@ -331,13 +396,10 @@ final class Parser {
 					case ListIssueType:
 						depTypeRaw = argument;
 						listIssueType = normalizeIssueType(argument);
-					case ListPriority:
-						listPriorityRaw = argument;
-					case ListLimit:
-						final limit = parseSignedInt(argument);
-						if (limit == null)
-							return invalidLimit(argument);
-						listLimit = IntPresent(limit);
+					case IntegerValue(flag, typed):
+						final failure = readIntegerValue(flag, typed, argument);
+						if (failure != null)
+							return UsageFailure(failure);
 					case ListSort:
 						listSort = argument;
 					case ListTitle:
@@ -364,10 +426,6 @@ final class Parser {
 						listExternalContains = argument;
 					case ListExternalRef:
 						listExternalRef = argument;
-					case ListPriorityMin:
-						listPriorityMinRaw = argument;
-					case ListPriorityMax:
-						listPriorityMaxRaw = argument;
 					case ListExcludeType:
 						addCommaSeparated(listExcludeTypes, argument);
 					case ListParent:
@@ -382,34 +440,12 @@ final class Parser {
 						listHasMetadataKeyRaw = argument;
 					case ListTime(field):
 						listTimeRaw.set(listTimeFlag(field), argument);
-					case ListOffset:
-						final offset = parseSignedInt(argument);
-						if (offset == null)
-							return UsageFailure('invalid argument "${argument}" for "--offset" flag: expected an integer');
-						listOffset = IntPresent(offset);
-					case ListMaxRows:
-						final maxRows = parseSignedInt(argument);
-						if (maxRows == null)
-							return invalidMaxRows(argument);
-						// Each command checks the sign itself, after its pre-run.
-						listMaxRows = IntPresent(maxRows);
-						listMaxRowsSource = "--max-rows";
 					case ReadyMolecule:
 						readyMolecule = argument;
 					case SearchQuery:
 						searchQueryFlag = argument;
-					case StaleDays:
-						final days = parseSignedInt(argument);
-						if (days == null)
-							return UsageFailure('invalid argument "${argument}" for "-d, --days" flag: expected an integer');
-						staleDays = days;
 					case DepDirection:
 						depDirection = argument;
-					case DepTreeMaxDepth(_):
-						final depth = parseSignedInt(argument);
-						if (depth == null)
-							return UsageFailure(invalidIntegerFlag("-d, --max-depth", argument));
-						depTreeMaxDepth = depth;
 					case EventsSince:
 						eventsFlagValues.push({flag: "--since", raw: argument});
 					case EventsLimit:
@@ -456,7 +492,7 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--json=")) {
 				final value = argument.substr(7);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure(invalidBooleanFlag("--json", value));
+					return UsageFailure(PflagValue.invalidBoolean("--json", value));
 				jsonFlagSet = true;
 				jsonFlagValue = booleanFlagValue(value);
 				continue;
@@ -478,11 +514,9 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--days=")) {
 				staleDaysUsed = true;
-				final raw = argument.substr(7);
-				final days = parseSignedInt(raw);
-				if (days == null)
-					return UsageFailure('invalid argument "${raw}" for "-d, --days" flag: expected an integer');
-				staleDays = days;
+				final failure = readIntegerValue(DaysFlag, "--days", argument.substr(7));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--direction=")) {
@@ -503,7 +537,7 @@ final class Parser {
 				final flag = argument.substr(0, separator);
 				final value = argument.substr(separator + 1);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "${flag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean(flag, value));
 				if (flag == "--details") {
 					orphansDetailsUsed = true;
 					orphansDetails = booleanFlagValue(value);
@@ -538,7 +572,9 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--priority=")) {
 				markListOnly("--priority");
-				listPriorityRaw = argument.substr(11);
+				final failure = readIntegerValue(PriorityFlag, "--priority", argument.substr(11));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--limit=")) {
@@ -548,10 +584,9 @@ final class Parser {
 					eventsFlagValues.push({flag: "--limit", raw: raw});
 					continue;
 				}
-				final limit = parseSignedInt(raw);
-				if (limit == null)
-					return invalidLimit(raw);
-				listLimit = IntPresent(limit);
+				final failure = readIntegerValue(LimitFlag, "--limit", raw);
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--sort=")) {
@@ -631,12 +666,16 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--priority-min=")) {
 				markListOnly("--priority-min");
-				listPriorityMinRaw = argument.substr(15);
+				final failure = readIntegerValue(PriorityMinFlag, "--priority-min", argument.substr(15));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--priority-max=")) {
 				markListOnly("--priority-max");
-				listPriorityMaxRaw = argument.substr(15);
+				final failure = readIntegerValue(PriorityMaxFlag, "--priority-max", argument.substr(15));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--exclude-type=")) {
@@ -676,37 +715,30 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--offset=")) {
 				markListOnly("--offset");
-				final raw = argument.substr(9);
-				final offset = parseSignedInt(raw);
-				if (offset == null)
-					return UsageFailure('invalid argument "${raw}" for "--offset" flag: expected an integer');
-				listOffset = IntPresent(offset);
+				final failure = readIntegerValue(OffsetFlag, "--offset", argument.substr(9));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--max-rows=")) {
 				markListOnly("--max-rows");
-				final raw = argument.substr(11);
-				final maxRows = parseSignedInt(raw);
-				if (maxRows == null)
-					return invalidMaxRows(raw);
-				listMaxRows = IntPresent(maxRows);
-				listMaxRowsSource = "--max-rows";
+				final failure = readIntegerValue(MaxRowsFlag, "--max-rows", argument.substr(11));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--max-depth=")) {
 				depTreeOnlyFlags.push("--max-depth");
-				final raw = argument.substr(12);
-				final depth = parseSignedInt(raw);
-				if (depth == null)
-					return UsageFailure(invalidIntegerFlag("-d, --max-depth", raw));
-				depTreeMaxDepth = depth;
+				final failure = readIntegerValue(MaxDepthFlag, "--max-depth", argument.substr(12));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--show-all-paths=")) {
 				depTreeOnlyFlags.push("--show-all-paths");
 				final value = argument.substr(17);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "--show-all-paths" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("--show-all-paths", value));
 				continue;
 			}
 			final graphFlag = argument.indexOf("=") > 0 ? argument.substr(0, argument.indexOf("=")) : "";
@@ -714,7 +746,7 @@ final class Parser {
 				graphOnlyFlags.push(graphFlag);
 				final value = argument.substr(graphFlag.length + 1);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "${graphFlag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean(graphFlag, value));
 				graphViews.set(graphFlag, booleanFlagValue(value));
 				continue;
 			}
@@ -729,7 +761,7 @@ final class Parser {
 				if (countGroupFlag(flag) != null) {
 					final value = argument.substr(equalsIndex + 1);
 					if (!isBooleanFlagValue(value))
-						return UsageFailure('invalid argument "${value}" for "${flag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+						return UsageFailure(PflagValue.invalidBoolean(flag, value));
 					setCountGroupFlag(flag, booleanFlagValue(value));
 					continue;
 				}
@@ -744,7 +776,7 @@ final class Parser {
 					markListOnly(flag);
 					final value = argument.substr(equalsIndex + 1);
 					if (!isBooleanFlagValue(value))
-						return UsageFailure('invalid argument "${value}" for "${flag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+						return UsageFailure(PflagValue.invalidBoolean(flag, value));
 					final enabled = booleanFlagValue(value);
 					switch flag {
 						case "--all":
@@ -815,20 +847,20 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--cpu-profile=")) {
 				final value = argument.substr(14);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "--cpu-profile" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("--cpu-profile", value));
 				cpuProfile = booleanFlagValue(value);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--ignore-schema-skew=")) {
 				final value = argument.substr(21);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "--ignore-schema-skew" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("--ignore-schema-skew", value));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--global=")) {
 				final value = argument.substr(9);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "--global" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("--global", value));
 				global = booleanFlagValue(value);
 				continue;
 			}
@@ -842,7 +874,7 @@ final class Parser {
 				final value = argument.substr(argument.indexOf("=") + 1);
 				if (!isBooleanFlagValue(value)) {
 					final flag = argument.substr(0, argument.indexOf("="));
-					return UsageFailure('invalid argument "${value}" for "${flag}" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean(flag, value));
 				}
 				final enabled = booleanFlagValue(value);
 				if (StringTools.startsWith(argument, "--watch="))
@@ -876,7 +908,7 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--events=")) {
 				final value = argument.substr(9);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "--events" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("--events", value));
 				historyEventsUsed = true;
 				historyEvents = booleanFlagValue(value);
 				continue;
@@ -884,7 +916,7 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--local-time=")) {
 				final value = argument.substr(13);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "--local-time" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("--local-time", value));
 				commentsOnlyFlags.push("--local-time");
 				commentsLocalTime = booleanFlagValue(value);
 				continue;
@@ -892,11 +924,27 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--verbose=") || StringTools.startsWith(argument, "-v=")) {
 				final value = argument.substr(argument.indexOf("=") + 1);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure('invalid argument "${value}" for "-v, --verbose" flag: strconv.ParseBool: parsing "${value}": invalid syntax');
+					return UsageFailure(PflagValue.invalidBoolean("-v, --verbose", value));
 				continue;
 			}
 			if (argument != "-C" && StringTools.startsWith(argument, "-C")) {
 				directory = argument.substr(2);
+				continue;
+			}
+			// pflag also takes a shorthand's value from the rest of its argument, after an optional "=".
+			// Other shorthands, and these where the command lacks them, keep the errors below.
+			final shorthand = argument.substr(0, 2);
+			final shorthandFlag = argument.length > 2 ? integerShorthand(shorthand) : null;
+			if (shorthandFlag != null
+				&& (integerFlagName(shorthandFlag, shorthand, positional) != null
+					|| (shorthand == "-p" && positional.length > 0 && positional[0] == "list"))) {
+				if (shorthand != "-d")
+					markListOnly(shorthand);
+				else if (!inDepTree())
+					staleDaysUsed = true;
+				final failure = readIntegerValue(shorthandFlag, shorthand, argument.charAt(2) == "=" ? argument.substr(3) : argument.substr(2));
+				if (failure != null)
+					return UsageFailure(failure);
 				continue;
 			}
 			switch argument {
@@ -950,7 +998,7 @@ final class Parser {
 					expectedValue = ListIssueType;
 				case "--priority" | "-p":
 					markListOnly(argument);
-					expectedValue = ListPriority;
+					expectedValue = IntegerValue(PriorityFlag, argument);
 				case "--limit" if (inEvents()):
 					markListOnly(argument);
 					expectedValue = EventsLimit;
@@ -958,7 +1006,7 @@ final class Parser {
 					return UsageFailure("unknown shorthand flag: 'n' in -n");
 				case "--limit" | "-n":
 					markListOnly(argument);
-					expectedValue = ListLimit;
+					expectedValue = IntegerValue(LimitFlag, argument);
 				case "--sort":
 					markListOnly(argument);
 					expectedValue = ListSort;
@@ -1000,10 +1048,10 @@ final class Parser {
 					expectedValue = ListExternalRef;
 				case "--priority-min":
 					markListOnly(argument);
-					expectedValue = ListPriorityMin;
+					expectedValue = IntegerValue(PriorityMinFlag, argument);
 				case "--priority-max":
 					markListOnly(argument);
-					expectedValue = ListPriorityMax;
+					expectedValue = IntegerValue(PriorityMaxFlag, argument);
 				case "--exclude-type":
 					markListOnly(argument);
 					expectedValue = ListExcludeType;
@@ -1029,13 +1077,13 @@ final class Parser {
 					queryParseOnlyUsed = true;
 					queryParseOnly = true;
 				case "-d" if (inDepTree()):
-					expectedValue = DepTreeMaxDepth(true);
+					expectedValue = IntegerValue(MaxDepthFlag, argument);
 				case "--days" | "-d":
 					staleDaysUsed = true;
-					expectedValue = StaleDays;
+					expectedValue = IntegerValue(DaysFlag, argument);
 				case "--max-depth":
 					depTreeOnlyFlags.push(argument);
-					expectedValue = DepTreeMaxDepth(false);
+					expectedValue = IntegerValue(MaxDepthFlag, argument);
 				case "--show-all-paths":
 					// Deprecated upstream no-op: accepted and ignored.
 					depTreeOnlyFlags.push(argument);
@@ -1077,10 +1125,10 @@ final class Parser {
 					expectedValue = ListTime(TimeDueBefore);
 				case "--offset":
 					markListOnly(argument);
-					expectedValue = ListOffset;
+					expectedValue = IntegerValue(OffsetFlag, argument);
 				case "--max-rows":
 					markListOnly(argument);
-					expectedValue = ListMaxRows;
+					expectedValue = IntegerValue(MaxRowsFlag, argument);
 				case "--reverse" | "-r":
 					markListOnly(argument);
 					listReverse = true;
@@ -1242,6 +1290,11 @@ final class Parser {
 					positional.push(value);
 			}
 		}
+		for (entry in pendingIntegers) {
+			final failure = applyIntegerValue(entry.flag, entry.typed, entry.raw);
+			if (failure != null)
+				return UsageFailure(failure);
+		}
 		if (expectedValue != null) {
 			return switch expectedValue {
 				case Actor: UsageFailure("--actor requires a value");
@@ -1257,8 +1310,6 @@ final class Parser {
 				case ListStatus: UsageFailure("flag needs an argument: --status");
 				case ListAssignee: UsageFailure("flag needs an argument: --assignee");
 				case ListIssueType: UsageFailure("flag needs an argument: --type");
-				case ListPriority: UsageFailure("flag needs an argument: --priority");
-				case ListLimit: UsageFailure("flag needs an argument: --limit");
 				case ListSort: UsageFailure("flag needs an argument: --sort");
 				case ListTitle: UsageFailure("flag needs an argument: --title");
 				case ListSpec: UsageFailure("flag needs an argument: --spec");
@@ -1272,8 +1323,6 @@ final class Parser {
 				case ListNotesContains: UsageFailure("flag needs an argument: --notes-contains");
 				case ListExternalContains: UsageFailure("flag needs an argument: --external-contains");
 				case ListExternalRef: UsageFailure("flag needs an argument: --external-ref");
-				case ListPriorityMin: UsageFailure("flag needs an argument: --priority-min");
-				case ListPriorityMax: UsageFailure("flag needs an argument: --priority-max");
 				case ListExcludeType: UsageFailure("flag needs an argument: --exclude-type");
 				case ListParent: UsageFailure("flag needs an argument: --parent");
 				case ListMoleculeType: UsageFailure("flag needs an argument: --mol-type");
@@ -1281,13 +1330,10 @@ final class Parser {
 				case ListMetadataField: UsageFailure("flag needs an argument: --metadata-field");
 				case ListHasMetadataKey: UsageFailure("flag needs an argument: --has-metadata-key");
 				case ListTime(field): UsageFailure('flag needs an argument: --${listTimeFlag(field)}');
-				case ListOffset: UsageFailure("flag needs an argument: --offset");
-				case ListMaxRows: UsageFailure("flag needs an argument: --max-rows");
+				case IntegerValue(_, typed): UsageFailure(missingArgument(typed));
 				case ReadyMolecule: UsageFailure("flag needs an argument: --mol");
 				case SearchQuery: UsageFailure("flag needs an argument: --query");
-				case StaleDays: UsageFailure("flag needs an argument: --days");
 				case DepDirection: UsageFailure("flag needs an argument: --direction");
-				case DepTreeMaxDepth(shorthand): UsageFailure(shorthand ? "flag needs an argument: 'd' in -d" : "flag needs an argument: --max-depth");
 				case EventsSince: UsageFailure("flag needs an argument: --since");
 				case EventsLimit: UsageFailure("flag needs an argument: --limit");
 				case EventsBefore: UsageFailure("flag needs an argument: --before");
@@ -1641,15 +1687,8 @@ final class Parser {
 			else
 				listStatus = shorthandS;
 		}
-		// list checks --priority in its command body, below.
-		if (listPriorityRaw != null && name == "ready") {
-			final priority = parseSignedInt(listPriorityRaw);
-			if (priority == null)
-				return UsageFailure('invalid argument "${listPriorityRaw}" for "-p, --priority" flag: expected an integer');
-			listPriority = IntPresent(priority);
-		}
-
 		// The filter values that upstream checks in the command body. Each command reports a failure in its own order.
+		// list and search read --priority-min and --priority-max as strings; count takes them as int flags, above.
 		var priorityMinFailure = "";
 		if (listPriorityMinRaw != null) {
 			final priority = goPriority(listPriorityMinRaw);
@@ -1735,19 +1774,6 @@ final class Parser {
 						}
 					}
 			}
-		}
-		// count takes its priorities as int flags upstream; this build still reads them as list priorities, at once.
-		if (name == "count") {
-			if (listPriorityRaw != null) {
-				final priority = goPriority(listPriorityRaw);
-				if (priority < 0)
-					return UsageFailure(invalidPriority(listPriorityRaw));
-				listPriority = IntPresent(priority);
-			}
-			if (priorityMinFailure != "")
-				return UsageFailure(priorityMinFailure);
-			if (priorityMaxFailure != "")
-				return UsageFailure(priorityMaxFailure);
 		}
 		if (name != "count" && countOnlyFlags.length > 0)
 			return UsageFailure('unknown flag: ${countOnlyFlags[0]}');
@@ -2175,18 +2201,19 @@ final class Parser {
 			for (entry in eventsFlagValues) {
 				if (entry.flag == "--follow") {
 					if (!isBooleanFlagValue(entry.raw))
-						return UsageFailure('invalid argument "${entry.raw}" for "--follow" flag: strconv.ParseBool: parsing "${entry.raw}": invalid syntax');
+						return UsageFailure(PflagValue.invalidBoolean("--follow", entry.raw));
 					eventsFollow = booleanFlagValue(entry.raw);
 					continue;
 				}
-				final failure = GoIntFlag.parse(entry.flag, entry.raw, value -> {
-					if (entry.flag == "--since")
-						eventsSince = value;
-					else if (entry.flag == "--limit")
-						eventsLimit = value;
-				});
-				if (failure != null)
-					return UsageFailure(failure);
+				switch PflagValue.parseInt64(entry.flag, entry.raw) {
+					case Int64Rejected(message):
+						return UsageFailure(message);
+					case Int64Accepted(value):
+						if (entry.flag == "--since")
+							eventsSince = value;
+						else if (entry.flag == "--limit")
+							eventsLimit = value;
+				}
 			}
 			switch eventsSubcommand {
 				case "prune":
@@ -2346,16 +2373,42 @@ final class Parser {
 		return flag == "--status" || flag == "--reverse" || flag == "--max-rows";
 	}
 
-	/** Upstream's pflag message for an int flag whose value strconv.ParseInt rejects. */
-	static function invalidIntegerFlag(flag:String, value:String):String {
-		final quoted = haxe.Json.stringify(value);
-		return 'invalid argument ${quoted} for "${flag}" flag: strconv.ParseInt: parsing ${quoted}: invalid syntax';
+	/**
+		pflag's name for an int flag of the command in `path`: `-s, --name` when the
+		flag has a shorthand. Null when the command has no such int flag, and when
+		`typed` is a shorthand that its flag lacks.
+	**/
+	static function integerFlagName(flag:IntegerFlag, typed:String, path:Array<String>):Null<String> {
+		final command = path.length > 0 ? path[0] : "";
+		final subcommand = path.length > 1 ? path[1] : "";
+		final name:Null<String> = switch [flag, command] {
+			case [LimitFlag, "list" | "ready" | "search" | "query" | "stale"]: "-n, --limit";
+			// `bd history` declares --limit without the -n shorthand.
+			case [LimitFlag, "history"]: "--limit";
+			case [OffsetFlag, "list" | "ready" | "query"]: "--offset";
+			case [MaxRowsFlag, "list" | "ready"]: "--max-rows";
+			case [MaxRowsFlag, "graph"] if (subcommand != "check"): "--max-rows";
+			case [MaxRowsFlag, "dep"] if (subcommand == "tree"): "--max-rows";
+			case [PriorityFlag, "ready" | "count"]: "-p, --priority";
+			case [PriorityMinFlag, "count"]: "--priority-min";
+			case [PriorityMaxFlag, "count"]: "--priority-max";
+			case [DaysFlag, "stale"]: "-d, --days";
+			case [MaxDepthFlag, "dep"] if (subcommand == "tree"): "-d, --max-depth";
+			case _: null;
+		};
+		if (name == null || (!StringTools.startsWith(typed, "--") && !StringTools.startsWith(name, typed + ",")))
+			return null;
+		return name;
 	}
 
-	/** Upstream's pflag message for a bool flag whose value strconv.ParseBool rejects. */
-	static function invalidBooleanFlag(flag:String, value:String):String {
-		final quoted = haxe.Json.stringify(value);
-		return 'invalid argument ${quoted} for "${flag}" flag: strconv.ParseBool: parsing ${quoted}: invalid syntax';
+	/** pflag's error for a flag, as typed, that has no value after it. */
+	static function missingArgument(typed:String):String {
+		return StringTools.startsWith(typed, "--") ? 'flag needs an argument: ${typed}' : 'flag needs an argument: \'${typed.charAt(1)}\' in ${typed}';
+	}
+
+	/** pflag's error for a flag, as typed, that the command does not have. */
+	static function unknownFlag(typed:String):String {
+		return StringTools.startsWith(typed, "--") ? 'unknown flag: ${typed}' : 'unknown shorthand flag: \'${typed.charAt(1)}\' in ${typed}';
 	}
 
 	/**
