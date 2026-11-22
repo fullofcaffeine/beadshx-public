@@ -1,6 +1,8 @@
 package workspacefacade
 
 import (
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,6 +178,149 @@ func TestDiscoverFromUsesSharedServerDatabasePathWithoutOpeningEmbedded(t *testi
 	if _, statErr := os.Stat(filepath.Join(beadsDir, "embeddeddolt")); !os.IsNotExist(statErr) {
 		t.Fatalf("discovery created embedded data: %v", statErr)
 	}
+}
+
+// Upstream migrates a legacy config.json to metadata.json only when a command
+// opens its store. Discovery must read it without that write, for -C and for a
+// --db path that resolves the workspace.
+func TestDiscoverFromLeavesLegacyConfigInPlace(t *testing.T) {
+	tests := []struct {
+		name      string
+		selection func(project string) (directory, database string)
+	}{
+		{name: "directory", selection: func(project string) (string, string) { return project, "" }},
+		{name: "database path", selection: func(project string) (string, string) { return "", filepath.Join(project, ".beads") }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			project := createLegacyProject(t)
+			beadsDir := filepath.Join(project, ".beads")
+			before := directoryEntries(t, beadsDir)
+
+			directory, database := test.selection(project)
+			location, err := DiscoverFrom(directory, database)
+			if err != nil {
+				t.Fatalf("DiscoverFrom: %v", err)
+			}
+			if location.Path() != beadsDir {
+				t.Fatalf("Path() = %q, want %q", location.Path(), beadsDir)
+			}
+			if location.DatabasePath() != "" {
+				t.Fatalf("DatabasePath() = %q, want empty for a legacy-only workspace", location.DatabasePath())
+			}
+			if after := directoryEntries(t, beadsDir); after != before {
+				t.Fatalf("discovery changed the legacy workspace: before %q, after %q", before, after)
+			}
+		})
+	}
+}
+
+func TestDiscoverFromLeavesRedirectedLegacyConfigInPlace(t *testing.T) {
+	target := createLegacyProject(t)
+	targetBeadsDir := filepath.Join(target, ".beads")
+	source := createRedirectProject(t, targetBeadsDir)
+	before := directoryEntries(t, targetBeadsDir)
+
+	location, err := DiscoverFrom(source, "")
+	if err != nil {
+		t.Fatalf("DiscoverFrom: %v", err)
+	}
+	if location.Path() != targetBeadsDir {
+		t.Fatalf("Path() = %q, want redirect target %q", location.Path(), targetBeadsDir)
+	}
+	if location.DatabasePath() != "" {
+		t.Fatalf("DatabasePath() = %q, want empty for a legacy-only target", location.DatabasePath())
+	}
+	if after := directoryEntries(t, targetBeadsDir); after != before {
+		t.Fatalf("discovery changed the legacy redirect target: before %q, after %q", before, after)
+	}
+}
+
+// configfile.Load rewrites a legacy config.json as metadata.json. The
+// read-only build reads workspace metadata with configfile.LoadForDiscovery.
+func TestIslandsDoNotCallMigratingConfigLoad(t *testing.T) {
+	needle := "configfile." + "Load("
+	scanned := 0
+	err := filepath.WalkDir("..", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		scanned++
+		if strings.Contains(string(source), needle) {
+			t.Errorf("%s calls %s, which migrates a legacy config.json; use configfile.LoadForDiscovery", path, needle)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan internal/beadshx: %v", err)
+	}
+	if scanned == 0 {
+		t.Fatal("scan of internal/beadshx found no Go files")
+	}
+}
+
+func createLegacyProject(t *testing.T) string {
+	t.Helper()
+	project := t.TempDir()
+	beadsDir := filepath.Join(project, ".beads")
+	if err := os.Mkdir(beadsDir, 0o700); err != nil {
+		t.Fatalf("Mkdir .beads: %v", err)
+	}
+	legacy := []byte(`{"backend":"dolt","dolt_mode":"embedded","dolt_database":"legacy"}`)
+	if err := os.WriteFile(filepath.Join(beadsDir, "config.json"), legacy, 0o600); err != nil {
+		t.Fatalf("WriteFile config.json: %v", err)
+	}
+	// config.yaml makes the directory a project that a redirect may select.
+	if err := os.WriteFile(filepath.Join(beadsDir, "config.yaml"), []byte("list:\n  limit: 2\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile config.yaml: %v", err)
+	}
+	canonical, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatalf("EvalSymlinks project: %v", err)
+	}
+	return canonical
+}
+
+func createRedirectProject(t *testing.T, target string) string {
+	t.Helper()
+	project := t.TempDir()
+	beadsDir := filepath.Join(project, ".beads")
+	if err := os.Mkdir(beadsDir, 0o700); err != nil {
+		t.Fatalf("Mkdir .beads: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "redirect"), []byte(target+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile redirect: %v", err)
+	}
+	canonical, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatalf("EvalSymlinks project: %v", err)
+	}
+	return canonical
+}
+
+// directoryEntries names each entry of dir with its size, in directory order.
+func directoryEntries(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir %s: %v", dir, err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		information, err := entry.Info()
+		if err != nil {
+			t.Fatalf("Info %s: %v", entry.Name(), err)
+		}
+		names = append(names, fmt.Sprintf("%s:%d", entry.Name(), information.Size()))
+	}
+	return strings.Join(names, ",")
 }
 
 func createProject(t *testing.T) string {

@@ -57,7 +57,13 @@ func discoverLocation(path string) *Location {
 	if prefix == "" {
 		prefix, _ = readonlyfacade.ReadLocalPrefix(path)
 	}
-	databasePath := beads.FindDatabasePath()
+	// FindDatabasePath reads metadata with a call that rewrites a legacy
+	// config.json as metadata.json. Haxe refuses a legacy-only workspace, so
+	// discovery leaves the database path empty there and writes nothing.
+	databasePath := ""
+	if !hasOnlyLegacyConfig(path) && !hasOnlyLegacyConfig(redirectTarget(path)) {
+		databasePath = beads.FindDatabasePath()
+	}
 	databaseMissing := false
 	proxiedServer := false
 	fileConfig, configErr := configfile.LoadForDiscovery(path)
@@ -200,7 +206,7 @@ func resolveDatabaseBeadsDir(database, selectedBeadsDir string) string {
 	addCandidate(beads.FindBeadsDir())
 
 	for _, candidate := range candidates {
-		fileConfig, err := configfile.Load(candidate)
+		fileConfig, err := configfile.LoadForDiscovery(candidate)
 		if err != nil || fileConfig == nil {
 			continue
 		}
@@ -246,5 +252,26 @@ func findOriginalBeadsDir(resolved string) string {
 
 func hasRedirect(beadsDir string) bool {
 	_, err := os.Stat(filepath.Join(beadsDir, beads.RedirectFileName))
+	return err == nil
+}
+
+// redirectTarget is the directory that FindDatabasePath reads for beadsDir,
+// or "" when beadsDir has no redirect file.
+func redirectTarget(beadsDir string) string {
+	if !hasRedirect(beadsDir) {
+		return ""
+	}
+	return beads.FollowRedirect(beadsDir)
+}
+
+// hasOnlyLegacyConfig reports a config.json without metadata.json.
+func hasOnlyLegacyConfig(beadsDir string) bool {
+	if beadsDir == "" {
+		return false
+	}
+	if _, err := os.Stat(configfile.ConfigPath(beadsDir)); !os.IsNotExist(err) {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(beadsDir, "config.json"))
 	return err == nil
 }

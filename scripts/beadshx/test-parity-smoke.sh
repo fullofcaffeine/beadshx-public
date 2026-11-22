@@ -2304,6 +2304,63 @@ legacy_config_type_error() {
 real_database_setup=legacy_config_type_error
 compare_real_database metadata-legacy-type-error exact count
 compare_real_database metadata-legacy-type-error-where exact where
+# A legacy-only workspace has a valid .beads/config.json and no metadata.json. Upstream rewrites it as
+# metadata.json when `where` or a command that opens a store runs. version, help pages and unknown
+# commands leave it in place, and so does this build, which matches them exactly. Until migration
+# parity (M12), `where` and every command that reads the database refuse here instead of writing,
+# also when a --db path or a redirect selects the workspace.
+use_legacy_config() {
+	mv -f "$1/work/.beads/metadata.json" "$1/work/.beads/config.json"
+}
+real_database_setup=use_legacy_config
+compare_real_database legacy-config-version stderr-only version
+compare_real_database legacy-config-version-json stderr-only version --json
+compare_real_database legacy-config-root stderr-only
+compare_real_database legacy-config-root-help-flag stderr-only --help
+compare_real_database legacy-config-help-command exact help list
+compare_real_database legacy-config-help-flag exact list --help
+compare_real_database legacy-config-unknown-command exact frobnicate
+compare_real_database legacy-config-directory-version stderr-only -C . version
+# With a --db path, upstream's pre-run finds the workspace with configfile.Load, which rewrites the file
+# even for version and help pages. This build prints the same output and writes nothing.
+real_database_read_only=""
+compare_real_database legacy-config-db-path-version stderr-only --db .beads version
+compare_real_database legacy-config-db-embedded-path-help-command exact --db .beads/embeddeddolt help count
+real_database_read_only=1
+legacy_config_refusal() {
+	printf '%s is not available yet when the workspace has only a legacy config.json in this build' "$1"
+}
+candidate_only_setup=use_legacy_config
+expect_candidate_failure legacy-config-where-unported "" "Error: $(legacy_config_refusal where)" "" where
+expect_candidate_failure legacy-config-where-json-unported \
+	"{\"error\":\"$(legacy_config_refusal where)\",\"schema_version\":1}" "" "" where --json
+expect_candidate_failure legacy-config-list-unported "" "Error: $(legacy_config_refusal list)" "" list
+expect_candidate_failure legacy-config-show-unported "" "Error: $(legacy_config_refusal show)" "" \
+	show "$real_database_issue_id"
+expect_candidate_failure legacy-config-count-json-unported \
+	"{\"error\":\"$(legacy_config_refusal count)\",\"schema_version\":1}" "" "" count --json
+expect_candidate_failure legacy-config-label-list-all-unported "" "Error: $(legacy_config_refusal 'label list-all')" "" \
+	label list-all
+expect_candidate_failure legacy-config-directory-list-unported "" "Error: $(legacy_config_refusal list)" "" -C . list
+expect_candidate_failure legacy-config-db-path-where-unported "" "Error: $(legacy_config_refusal where)" "" --db .beads where
+expect_candidate_failure legacy-config-db-path-list-unported "" "Error: $(legacy_config_refusal list)" "" --db .beads list
+expect_candidate_failure legacy-config-db-embedded-path-count-unported "" "Error: $(legacy_config_refusal count)" "" \
+	--db .beads/embeddeddolt count
+# A redirect into a legacy-only workspace selects that workspace.
+redirect_to_legacy_config() {
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+	mv -f "$1/work/sub/.beads/metadata.json" "$1/work/sub/.beads/config.json"
+}
+real_database_setup=redirect_to_legacy_config
+compare_real_database legacy-config-redirect-version stderr-only version
+compare_real_database legacy-config-redirect-help-command exact help count
+candidate_only_setup=redirect_to_legacy_config
+expect_candidate_failure legacy-config-redirect-where-unported "" "Error: $(legacy_config_refusal where)" "" where
+expect_candidate_failure legacy-config-redirect-list-unported "" "Error: $(legacy_config_refusal list)" "" list
+candidate_only_setup=""
 duplicate_dolt_database() {
 	jq -c . "$1/work/.beads/metadata.json" |
 		sed 's/"dolt_database":"test"/"dolt_database":"other","dolt_database":"test"/' >"$1/metadata.json"

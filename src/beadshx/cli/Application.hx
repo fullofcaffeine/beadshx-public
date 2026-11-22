@@ -595,6 +595,11 @@ final class Application {
 		it, that is the path as given, or another directory where upstream opens
 		or creates a database, so this build refuses instead.
 
+		When only a legacy config.json exists, upstream's store open rewrites it
+		as metadata.json for `where` and every command that opens a store. This
+		read-only build refuses those commands there until migration parity
+		(M12); `version` and help pages run as upstream does.
+
 		Upstream's setup for the selected directory reloads the config first,
 		so its reinitialize warning comes before the metadata warning, once.
 		When the file loads, `where`, `version` and help pages run that setup
@@ -633,6 +638,8 @@ final class Application {
 					refusal = '${path} is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build';
 			case MetadataFieldsUnsupported:
 				refusal = '${path} is not available yet when .beads/metadata.json does not decode in this build';
+			case MetadataFieldsLegacyOnly if (stops):
+				refusal = '${path} is not available yet when the workspace has only a legacy config.json in this build';
 			case MetadataFields(_) | MetadataAbsent | MetadataFieldsLegacyOnly:
 				if (!opensStore)
 					prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));

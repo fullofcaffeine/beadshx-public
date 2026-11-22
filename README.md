@@ -208,10 +208,16 @@ Limits:
   database, a server-mode, proxied or redirected workspace, a path deeper in a
   `.beads` directory and a path with a trailing slash. For most of these paths
   upstream creates an embedded database. `version` and help pages still run.
-- In a workspace that has only a legacy `.beads/config.json`, workspace
-  discovery rewrites it as `.beads/metadata.json` for every command. Upstream
-  does this only for `where` and the commands that read the database, not for
-  `version`, help pages or an unknown command.
+- In a workspace that has a legacy `.beads/config.json` and no
+  `.beads/metadata.json`, `where` and every command that reads the database
+  stop with `Error: <command> is not available yet when the workspace has
+  only a legacy config.json in this build`, also when `-C`, a `--db` path or a
+  redirect selects the workspace. Upstream rewrites the file as
+  `.beads/metadata.json` and runs them. `bdhx` leaves the file in place.
+  `version`, help pages and unknown commands run as upstream does. With a
+  `--db` path, upstream also rewrites the file for `version` and
+  `bd help <command>`; `bdhx` prints the same output and writes nothing.
+  Migration parity (M12) removes this limit.
 - In an embedded workspace, every command that reads the database reports
   that it is not available yet when the embedded store has no database with
   the name that `.beads/metadata.json` selects. This applies to `null`, `{}`

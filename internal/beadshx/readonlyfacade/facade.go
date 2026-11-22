@@ -1289,7 +1289,9 @@ func openStore(ctx context.Context, beadsDir string, global bool) (readonlyStore
 	if err := initializeSelectedConfig(beadsDir); err != nil {
 		return nil, "", "", fmt.Errorf("loading config: %w", err)
 	}
-	fileConfig, err := configfile.Load(beadsDir)
+	// LoadForDiscovery leaves a legacy config.json in place; Haxe refuses such
+	// a workspace before it opens a store.
+	fileConfig, err := configfile.LoadForDiscovery(beadsDir)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("loading config: %w", err)
 	}
