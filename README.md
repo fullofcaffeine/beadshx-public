@@ -117,11 +117,12 @@ directory, or a `dolt.port` setting more than 0. The warning comes before the
 output and the errors of the command, and the exit code does not change.
 `where`, `version` and help pages print no warning.
 
-Like upstream, `list`, `ready`, `count` and `query` check most of their
-arguments only after the warnings above and after the database opens. A
+Like upstream, `list`, `ready`, `count`, `query` and `search` check most of
+their arguments only after the warnings above and after the database opens. A
 `.beads/metadata.json` load error, a missing database or a store error thus
 comes first. Errors from the flag parser, such as an unknown flag or a value
-that is not a number, still come before all of them. The checks come in
+that is not a number, still come before all of them. So does the error for a
+positional argument to `list`, which takes none. The checks come in
 upstream's order:
 
 - `list`: `--skip-labels` with a label filter, `--priority`, `--priority-min`,
@@ -138,6 +139,12 @@ upstream's order:
   unless `--claim` is set, then checks a negative `--offset` and the rest.
 - `count`: more than one `--by-*` flag, then the date filters.
 - `query`: a negative `--offset`, after the check for a missing expression.
+- `search`: the check for a missing query, then `--status`, the date filters,
+  `--priority-min`, `--priority-max`, `--metadata-field` and
+  `--has-metadata-key`. In a proxied workspace, `--status` comes last, and
+  the other checks print a JSON error with `--json`. `search` accepts any
+  `--sort` value. With a value that it does not know, it keeps the order of
+  the database.
 
 `list` and `ready` print the `BEADS_MAX_ROWS` warning where they read
 `--max-rows`, so a check that fails before that point prints no warning.
@@ -234,10 +241,6 @@ Limits:
   source of the server port and prints no `dolt_server_port` warning.
   Upstream also prints the warning when Dolt cannot parse that file, or when
   the file sets the port to 0 or less.
-- `search` checks its date, priority range and metadata filters before the
-  warnings and errors above. Upstream checks them after the database opens.
-  `search` also refuses an invalid `--sort` value, which upstream accepts,
-  and `list` accepts positional arguments, which upstream refuses.
 - `count` reads `--priority`, `--priority-min` and `--priority-max` like
   `list` does: it accepts `P1`, and it reports an invalid value before the
   warnings above. Upstream reads them as integer flags.

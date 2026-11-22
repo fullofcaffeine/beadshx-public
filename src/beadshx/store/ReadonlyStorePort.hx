@@ -2,7 +2,9 @@ package beadshx.store;
 
 /** Behavior-oriented read-only store boundary for the first command family. */
 interface ReadonlyStorePort extends IssueQueryPort {
-	function openIssueQuery(beadsDir:String, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort>;
+	/** `serverStore`: upstream opens a SQL server for the workspace, even when it holds an embeddeddolt directory. */
+	function openIssueQuery(beadsDir:String, serverStore:Bool, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort>;
+
 	function validate(beadsDir:String, global:Bool):StoreResult<Bool>;
 	function info(beadsDir:String, includeSchema:Bool, global:Bool):StoreResult<InfoSnapshot>;
 	function ping(beadsDir:String, global:Bool):StoreResult<PingSnapshot>;

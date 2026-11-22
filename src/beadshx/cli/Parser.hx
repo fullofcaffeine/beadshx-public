@@ -1749,8 +1749,6 @@ final class Parser {
 			if (priorityMaxFailure != "")
 				return UsageFailure(priorityMaxFailure);
 		}
-		if (name == "search" && listSort != "" && !isListSort(listSort))
-			return UsageFailure(invalidListSort(listSort));
 		if (name != "count" && countOnlyFlags.length > 0)
 			return UsageFailure('unknown flag: ${countOnlyFlags[0]}');
 		if (name != "search" && searchQueryUsed)
@@ -1958,17 +1956,17 @@ final class Parser {
 				deferCheck(OutputCheckFailure(timeFailure));
 		}
 		if (name == "search") {
-			// Upstream search checks these in its command body too; this build still reports them at once.
+			// Upstream search's command body, in its order, after it checks --status. It takes any --sort value.
 			if (timeFailure != "")
-				return UsageFailure(timeFailure);
+				deferCheck(PlainCheckFailure(timeFailure));
 			if (priorityMinFailure != "")
-				return UsageFailure(priorityMinFailure);
+				deferCheck(PlainCheckFailure(priorityMinFailure));
 			if (priorityMaxFailure != "")
-				return UsageFailure(priorityMaxFailure);
+				deferCheck(PlainCheckFailure(priorityMaxFailure));
 			if (metadataFieldFailure != "")
-				return UsageFailure(metadataFieldFailure);
+				deferCheck(PlainCheckFailure(metadataFieldFailure));
 			if (hasMetadataKeyFailure != "")
-				return UsageFailure(hasMetadataKeyFailure);
+				deferCheck(PlainCheckFailure(hasMetadataKeyFailure));
 			switch listLimit {
 				case IntAbsent:
 					listLimit = IntPresent(50);
@@ -2235,11 +2233,30 @@ final class Parser {
 				return UsageFailure('accepts 1 arg(s), received ${positional.length - 1}');
 			return parsedCommand(Command.History);
 		}
-		if (name == "list")
+		if (name == "list") {
+			// Upstream listCmd's cobra Args, which run after flag parsing and --help but before the pre-run.
+			if (!showHelp && positional.length > 1)
+				return UsageFailure(listArgumentsRefusal(positional.slice(1)));
 			return parsedCommand(Command.List);
+		}
 		if (name == "show" || name == "view")
 			return parsedCommand(Command.Show);
 		return helpCommand ? UsageFailure('unknown command "${name}"') : UnknownCommand(name);
+	}
+
+	/**
+		Upstream listCmd's Args: the first argument that names a list flag
+		(upstream knownListFlags) gets a hint, and other arguments the general
+		refusal.
+	**/
+	static function listArgumentsRefusal(arguments:Array<String>):String {
+		for (argument in arguments)
+			switch argument {
+				case "ready" | "tree" | "flat" | "all" | "long" | "watch" | "pretty" | "pinned" | "overdue":
+					return 'unknown argument "${argument}"; did you mean "--${argument}" or \'bd ${argument}\'?';
+				case _:
+			}
+		return "bd list does not accept positional arguments; use flags instead (see bd list --help)";
 	}
 
 	/** Upstream validateCommentsArgs for `bd comments <id> add ...`. */

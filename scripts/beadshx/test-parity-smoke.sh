@@ -295,6 +295,14 @@ compare_no_workspace unknown_command frobnicate
 compare_no_workspace unknown_command_help frobnicate --help
 compare_no_workspace list_help list --help
 compare_no_workspace help_list help list
+# list refuses positional arguments (with a hint for a bare flag name) after flag parsing and --help,
+# but before it looks for a workspace.
+compare_no_workspace list_positional list foo
+compare_no_workspace list_positional_hint_json list foo bar overdue --json
+compare_no_workspace list_positional_after_dashes list -- tree
+compare_no_workspace list_positional_unknown_flag list foo --bogus
+compare_no_workspace list_positional_help list foo --help
+compare_no_workspace help_list_positional help list foo
 compare_no_workspace show_help show --help
 compare_no_workspace help_show help show
 compare_no_workspace count count
@@ -443,7 +451,7 @@ compare_store_failure() {
 		metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}'
 		config_yaml='issue-prefix: test'
 		;;
-	unavailable-server | deprecated-port-server)
+	unavailable-server | deprecated-port-server | stale-embedded-server)
 		metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads"}'
 		# metadata.json also names the server port, which upstream warns is deprecated.
 		if [[ "$scenario" == deprecated-port-server ]]; then
@@ -470,6 +478,10 @@ compare_store_failure() {
 		chmod 700 "$command_root/work/.beads"
 		printf '%s\n' "$metadata" >"$command_root/work/.beads/metadata.json"
 		printf '%s\n' "$config_yaml" >"$command_root/work/.beads/config.yaml"
+		# A server workspace that still holds the directory of an earlier embedded store.
+		if [[ "$scenario" == stale-embedded-server ]]; then
+			mkdir "$command_root/work/.beads/embeddeddolt"
+		fi
 	done
 	oracle_before="$(fingerprint_task_state_tree "$oracle_root")"
 	candidate_before="$(fingerprint_task_state_tree "$candidate_root")"
@@ -694,6 +706,28 @@ compare_store_failure deprecated-port-server list-bad-due-before-json list --due
 compare_store_failure deprecated-port-server ready-brief-mol ready --brief --mol test-1
 compare_store_failure deprecated-port-server ready-bad-mol-type ready --mol-type bogus
 compare_store_failure deprecated-port-server count-by-conflict-json count --by-priority --by-assignee --json
+# search checks its dates, priority range and metadata filters in its command body, and takes any
+# --sort value, so the store-open error comes first.
+compare_store_failure unavailable-server search-bad-sort search parity --sort bogus
+compare_store_failure unavailable-server search-bad-sort-json search parity --sort bogus --json
+compare_store_failure unavailable-server search-bad-created-after search parity --created-after bogus
+compare_store_failure unavailable-server search-bad-priority-min-json search parity --priority-min 9 --json
+compare_store_failure unavailable-server search-bad-metadata-field search parity --metadata-field bad
+compare_store_failure unavailable-server search-bad-has-metadata-key-json search parity --has-metadata-key 1bad --json
+compare_store_failure missing-embedded search-bad-closed-before search parity --closed-before bogus
+# list refuses positional arguments before the pre-run, so that error comes first.
+compare_store_failure unavailable-server list-positional list foo
+compare_store_failure unavailable-server list-positional-hint-json list foo ready --json
+compare_store_failure missing-embedded list-positional list foo
+# A leftover .beads/embeddeddolt directory does not make a server workspace embedded: the store-open
+# error still comes before the checks of the command body.
+compare_store_failure stale-embedded-server list list
+compare_store_failure stale-embedded-server list-bad-sort list --sort bogus
+compare_store_failure stale-embedded-server ready-bad-sort-json ready --sort bogus --json
+compare_store_failure stale-embedded-server count-by-conflict count --by-status --by-type
+compare_store_failure stale-embedded-server search-no-query search
+compare_store_failure stale-embedded-server search-bad-created-after-json search parity --created-after bogus --json
+compare_store_failure stale-embedded-server query-negative-offset query status=open --offset -1
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -2483,6 +2517,10 @@ compare_real_database ready-explain-human exact ready --explain
 compare_real_database ready-explain-json exact ready --explain --json
 compare_real_database ready-gated-human exact ready --gated
 compare_real_database ready-gated-json exact ready --gated --json
+# With the gate open again, no molecule is ready for gate-resume dispatch.
+reopen_gate_sql="UPDATE issues SET status = 'open', closed_at = NULL WHERE issue_type = 'gate'"
+compare_real_database_sql ready-gated-none-human exact "$reopen_gate_sql" ready --gated
+compare_real_database_sql ready-gated-none-json exact "$reopen_gate_sql" ready --gated --json
 compare_real_database search-human exact search parity
 compare_real_database search-long exact search parity --long
 compare_real_database search-json exact search parity --json
@@ -2539,6 +2577,14 @@ compare_real_database search-notes exact search issue --notes-contains 'Notes bo
 compare_real_database search-external exact search issue --external-contains gh-42
 compare_real_database search-metadata exact search issue --metadata-field team=port --has-metadata-key rank
 compare_real_database search-sort-reverse exact search parity --sort title --reverse
+# search takes any --sort value; one it does not know keeps the storage order.
+compare_real_database search-unknown-sort exact search parity --sort bogus
+compare_real_database search-unknown-sort-json exact search parity --sort bogus --reverse --json
+# search asks for the query, then checks --status, before its date, priority and metadata checks.
+compare_real_database search-missing-before-date exact search --created-after bogus
+compare_real_database search-status-before-date exact search parity --status bogus --created-after bogus
+compare_real_database search-status-before-metadata-json exact search parity --status open,all --metadata-field bad --json
+compare_real_database search-valid-status-then-priority exact search parity --status open --priority-min 9
 compare_real_database search-no-match exact search absent-search-token
 compare_real_database stale-default exact stale
 compare_real_database stale-human exact stale --days 1
@@ -2629,6 +2675,8 @@ compare_real_database ready-claim-mol-type-readonly exact --readonly ready --cla
 compare_real_database ready-claim-sort-readonly exact --readonly ready --claim --sort bogus
 compare_real_database list-human exact list
 compare_real_database list-json exact list --json
+compare_real_database list-positional exact list parity
+compare_real_database list-positional-hint-json exact list all --json
 compare_real_database list-status-json exact list -s in_progress --json
 compare_real_database list-type-json exact list -t bug --json
 compare_real_database list-priority-json exact list -p P1 --json

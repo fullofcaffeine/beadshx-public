@@ -914,8 +914,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query): closeIssueQuery(query, runShowQuery(invocation, location, query));
 						}
@@ -953,7 +952,7 @@ final class Application {
 							runDatabaseNotFound();
 						} else {
 							final effectiveLimit = resolveListLimit(invocation, location);
-							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							switch openIssueQuery(invocation, location) {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
 									// Upstream checks --offset in the command body, after its pre-run opened the store.
@@ -987,8 +986,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runDepListQuery(invocation, location, query);
@@ -1060,8 +1058,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.dependencyCycles(location.path, location.databaseName, invocation.global) {
@@ -1149,8 +1146,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runDepTreeQuery(invocation, location, query);
@@ -1364,8 +1360,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.graphCycles(location.path, location.databaseName, invocation.global) {
@@ -1437,8 +1432,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runGraphQuery(invocation, location, query);
@@ -1758,8 +1752,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query): closeIssueQuery(query, action(query, location));
 						}
@@ -1833,8 +1826,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.blockedIssues(location.path, location.databaseName, invocation.listRequest.parentId,
@@ -1897,8 +1889,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runCommentsQuery(invocation, location, query);
@@ -2435,7 +2426,7 @@ final class Application {
 								case ModeAwareFailure(message): return runModeAwareFailure(invocation.output, message);
 								case Accepted:
 							}
-							switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+							switch openIssueQuery(invocation, location) {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
 									final probe = readsTable ? Success("") : query.configValue(location.path, selectedDatabaseName(invocation, location), "",
@@ -2459,8 +2450,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = invocation.command == LabelListAll ? runLabelListAll(invocation, location,
@@ -2622,8 +2612,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								// Upstream parseCountRequest checks its flags first in the command body.
@@ -2649,8 +2638,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runReadyBody(invocation, location, query);
@@ -2894,23 +2882,47 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
-								// Upstream asks for the query in the command body, after its pre-run opened the store.
-								final result = if (invocation.searchQuery == "") {
-									output.writeStdout(searchHelp());
-									location.proxiedServer ? runModeAwareFailure(invocation.output,
-										"search query is required") : runStoreFailure("search query is required");
-								} else switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
-									case ListFailure(message): runStoreFailure(message);
-									case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-									case ListSuccess(page): renderSearch(invocation, page);
-								};
+								final result = runSearchBody(invocation, location, query);
 								closeIssueQuery(query, result);
 						}
 				}
+		};
+	}
+
+	/**
+		Upstream search's command body, after its pre-run opened the store. It
+		asks for the query first. The direct route then checks --status, which
+		reads the custom statuses, before the date, priority and metadata
+		checks. The proxied route makes those checks first, and prints them as
+		a JSON error under --json.
+	**/
+	function runSearchBody(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
+		if (invocation.searchQuery == "") {
+			output.writeStdout(searchHelp());
+			return location.proxiedServer ? runModeAwareFailure(invocation.output, "search query is required") : runStoreFailure("search query is required");
+		}
+		switch invocation.deferredCheck {
+			case ChecksPassed:
+			case PlainCheckFailure(message) if (location.proxiedServer):
+				return runModeAwareFailure(invocation.output, message);
+			case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _):
+				// The native search checks --status, so this build searches to find a bad status first.
+				if (invocation.listRequest.status != "")
+					switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
+						case ListFailure(message): return runStoreFailure(message);
+						case ListRowLimitExceeded(_, _, _) | ListSuccess(_):
+					}
+				final checkExit = reportDeferredCheck(invocation, invocation.deferredCheck);
+				if (checkExit != null)
+					return checkExit;
+		}
+		return switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
+			case ListFailure(message): runStoreFailure(message);
+			case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
+			case ListSuccess(page): renderSearch(invocation, page);
 		};
 	}
 
@@ -2923,8 +2935,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query): closeIssueQuery(query, runQueryBody(invocation, location, query));
 						}
@@ -3068,8 +3079,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch store.openIssueQuery(location.path,
-							selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global) {
+						if (!hasSelectedDatabase(location)) runDatabaseNotFound(); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								// Upstream checks --days and --status in the command body, after its pre-run opened the store.
@@ -3129,8 +3139,7 @@ final class Application {
 					case Accepted:
 						if (!hasSelectedDatabase(location)) {
 							runDatabaseNotFound();
-						} else switch store.openIssueQuery(location.path, selectedDatabaseName(invocation, location), location.proxiedServer,
-							invocation.global) {
+						} else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.issueOrphanCandidates(location.path, invocation.listRequest, invocation.global) {
@@ -3393,7 +3402,12 @@ final class Application {
 	}
 
 	static function renderGatedReadyJson(molecules:Array<GatedMolecule>):StoreResult<String> {
-		final lines = ["{", '  "count": ${molecules.length},', '  "molecules": ['];
+		// Go's encoder writes an empty array as [].
+		final lines = [
+			"{",
+			'  "count": ${molecules.length},',
+			molecules.length == 0 ? '  "molecules": [],' : '  "molecules": ['
+		];
 		for (index in 0...molecules.length) {
 			final molecule = molecules[index];
 			final closedGate = switch renderGatedIssueField("closed_gate", molecule.closedGate) {
@@ -3418,7 +3432,8 @@ final class Application {
 			}
 			lines.push(index == molecules.length - 1 ? "    }" : "    },");
 		}
-		lines.push("  ],");
+		if (molecules.length > 0)
+			lines.push("  ],");
 		lines.push('  "schema_version": 1');
 		lines.push("}");
 		return Success(lines.join("\n") + "\n");
@@ -5579,6 +5594,25 @@ final class Application {
 
 	static function selectedDatabaseName(invocation:Invocation, location:WorkspaceLocation):String {
 		return invocation.databaseName == "" ? location.databaseName : invocation.databaseName;
+	}
+
+	/** Opens the command's query session, as upstream's root pre-run opens the store. */
+	function openIssueQuery(invocation:Invocation, location:WorkspaceLocation):StoreResult<IssueQueryPort> {
+		return store.openIssueQuery(location.path, opensServerStore(location), selectedDatabaseName(invocation, location), location.proxiedServer,
+			invocation.global);
+	}
+
+	/**
+		Whether upstream's pre-run opens a SQL server for the workspace:
+		configfile IsDoltServerMode, from metadata.json and the layered config.
+		An embeddeddolt directory left in the workspace does not change it.
+	**/
+	static function opensServerStore(location:WorkspaceLocation):Bool {
+		final metadata = switch readMetadataFields(location.path) {
+			case MetadataFields(fields): fields;
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: new Map<String, String>();
+		};
+		return LayeredConfig.forWorkspace(location.path).doltServerMode(metadataField(metadata, "dolt_mode"), metadataField(metadata, "dolt_server_host"));
 	}
 
 	function closeIssueQuery(query:IssueQueryPort, operationResult:Int):Int {
