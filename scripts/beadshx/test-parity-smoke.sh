@@ -2790,6 +2790,40 @@ compare_real_database list-parent-flat-leaf-human exact list --parent "$real_dat
 compare_real_database list-parent-flat-missing-human exact list --parent test-missing --flat
 compare_real_database list-parent-missing-json exact list --parent test-missing --json
 compare_real_database list-parent-missing-human exact list --parent test-missing
+# The tree view prints a closed issue as "✓ ID P1 type Title": the plain type for every type,
+# custom types too, and never the [epic] or [bug] badge that open issues get. The flat view
+# keeps its own format. The records add an open epic with a closed child of each built-in
+# type, a closed gate, an open bug, and a closed grandchild below the closed epic.
+closed_tree_record() {
+	local id="$1" title="$2" state="$3" priority="$4" type="$5" parent="$6"
+	jq -nc --arg id "$id" --arg title "$title" --arg status "$state" --argjson priority "$priority" \
+		--arg type "$type" --arg parent "$parent" '{
+		id: $id, title: $title, status: $status, priority: $priority, issue_type: $type,
+		created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z"}
+		+ (if $status == "closed" then {closed_at: "2026-08-21T13:00:00Z", close_reason: "done"} else {} end)
+		+ (if $parent == "" then {} else {dependencies: [{issue_id: $id, depends_on_id: $parent,
+			type: "parent-child", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]} end)'
+}
+closed_tree_records="$(
+	closed_tree_record test-tc "Closed types parent" open 1 epic ""
+	closed_tree_record test-tc-task "Closed task child" closed 1 task test-tc
+	closed_tree_record test-tc-bug "Closed bug child" closed 0 bug test-tc
+	closed_tree_record test-tc-epic "Closed epic child" closed 2 epic test-tc
+	closed_tree_record test-tc-feature "Closed feature child" closed 3 feature test-tc
+	closed_tree_record test-tc-chore "Closed chore child" closed 4 chore test-tc
+	closed_tree_record test-tc-decision "Closed decision child" closed 2 decision test-tc
+	closed_tree_record test-tc-gate "Closed gate child" closed 2 gate test-tc
+	closed_tree_record test-tc-open "Open bug child" open 2 bug test-tc
+	closed_tree_record test-tc-grand "Closed grandchild" closed 2 task test-tc-epic
+)"
+compare_real_database_import list-tree-closed-types-human exact "$closed_tree_records" list --parent test-tc --all --include-gates
+compare_real_database_import list-tree-closed-status-human exact "$closed_tree_records" list --parent test-tc --status closed
+compare_real_database_import list-tree-closed-long-human exact "$closed_tree_records" list --parent test-tc --all --long
+compare_real_database_import list-tree-closed-deps-human exact "$closed_tree_records" list --parent test-tc --all --deps=all
+compare_real_database_import list-tree-closed-flat-human exact "$closed_tree_records" list --parent test-tc --all --flat --include-gates
+compare_real_database_import list-tree-closed-long-flat-human exact "$closed_tree_records" list --parent test-tc --all --long --flat
+compare_real_database_import list-tree-closed-all-pretty-human exact "$closed_tree_records" list --all --pretty
+compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json
 compare_real_database children-pretty exact children "$real_database_gated_molecule_id" --pretty

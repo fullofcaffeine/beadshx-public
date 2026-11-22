@@ -3992,6 +3992,10 @@ final class Application {
 	}
 
 	static function renderListLine(issue:IssueListItem):String {
+		// Upstream mutes the whole line of a closed issue and prints its plain type, for every type,
+		// in place of the [epic] or [bug] badge.
+		if (issue.status == "closed")
+			return '${statusIcon(issue.status)} ${issue.id} P${issue.priority} ${issue.issueType} ${issue.title}\n';
 		final typeBadge = switch issue.issueType {
 			case "epic": "[epic] ";
 			case "bug": "[bug] ";
