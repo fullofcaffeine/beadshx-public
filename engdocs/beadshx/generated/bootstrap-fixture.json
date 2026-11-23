@@ -1102,14 +1102,14 @@
     },
     "compilerLock": {
       "path": "upstream/locks/haxe-go.json",
-      "sha256": "1cf9cf8c2a707ccf60e5d380a76789a84a960a6b4be944bd24782ebc8f2243f4"
+      "sha256": "83d5e54ec73a9600c63a9321b70b3db82e476b817130fff6cb312ffc9124c5f6"
     },
-    "compilerRevision": "f467944699949909614ca3b72ad545d1ff915d53"
+    "compilerRevision": "3c099227602afad9ec758d1c2413066c2ea80387"
   },
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "563b1c427a4de48f9355e2ac6b0ddd5b5493d7c7595ffccd3a018984d7a5caff"
+      "sha256": "dd69031b335b0d1c02c4e4e2d6cd62f0c66cde137aebff067bddf0c00b781835"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -1985,7 +1985,7 @@
     },
     {
       "path": "hxrt/json.go",
-      "sha256": "4567bc327b02ff8803b94ff010e5813108ad0e822e171352c4c9857464ab5700"
+      "sha256": "77ed545a8cc1af7bbc802fce8c43930f1bdf18cb2b574a032a8e4a11f24f3766"
     },
     {
       "path": "hxrt/map_int.go",
@@ -2021,7 +2021,7 @@
     },
     {
       "path": "hxrt/string.go",
-      "sha256": "05bea7ffeed8ebf1b18225222d342aab2f496014eeb032f38f1a093ff8de6904"
+      "sha256": "4b75b6daa4f8bfe2b42cf7275cc668b5abab61ce53ee1080263f124f48c55af8"
     },
     {
       "path": "hxrt/string_compare.go",

@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `f467944699949909614ca3b72ad545d1ff915d53`.
+Required BeadsHX compiler revision: `3c099227602afad9ec758d1c2413066c2ea80387`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -145,6 +145,22 @@ comments view and parser, the configuration validator, the dotenv reader, the
 query page and query syntax, the embedded scalar issue-details reader, the
 read-only store, `JsonInteger` and `JsonValue` call the new helpers, and
 `haxe.CallStack` checks for a null column before it compares it.
+Compiler task haxe_go-c2rm reads an extern Go package variable, such as
+`io.EOF`, through the same native boundary as an extern struct field, so a
+`go.NativeError` variable becomes the native error carrier. haxe_go-dumy and
+haxe_go-b9sn treat a null optional argument as omitted, as Haxe does, for the
+`substr`, `substring`, `indexOf` and `lastIndexOf` String methods and for the
+`indexOf`, `lastIndexOf` and `slice` Array methods; before, a null value
+stopped the program with a Go panic. haxe_go-lkgv lowers a field read or write
+on a `Dynamic` value to `Reflect.field` and `Reflect.setField`, and
+haxe_go-wqb4 evaluates operators on `Dynamic` values with the Haxe rules
+through the new runtime file `hxrt/dynamic_ops.go`. haxe_go-rlvo makes
+`Std.string`, string concatenation and `haxe.Json` print a Float as Haxe does,
+so 1e12 prints `1e+12`. BeadsHX printed the legacy JSON since, floor and head
+of a truncated events journal through `haxe.Json`, so beadshx-m08.16 first
+moved them to Go's own `encoding/json` number text, as upstream prints them.
+BeadsHX output changed only in the copied runtime files `hxrt/string.go` and
+`hxrt/json.go`; the other compiler fixes give byte-identical output.
 
 Reviewed current authority:
 
