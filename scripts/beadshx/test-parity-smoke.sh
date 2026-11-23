@@ -4426,6 +4426,30 @@ compare_real_database_sql events-export-huge-head-json exact "$events_huge_head_
 real_database_extra_sql="$events_huge_head_sql"
 compare_real_database_env events-export-huge-head-envelope-json exact BD_JSON_ENVELOPE=1 events export --json
 real_database_extra_sql=""
+# Go's encoder prints that float64 in plain digits below 1e21: 1e12 is 1000000000000, and every value
+# near the int64 limit rounds to 9223372036854776000. Here since is 1e12 and the floor 2e12 (one past
+# the head of an emptied journal); then since and floor sit just above 2^53; then all three near the limit.
+events_trillion_sql="$events_rows_sql
+DELETE FROM bd_events_journal
+UPDATE bd_events_seq SET next_seq = 1999999999999 WHERE id = 0"
+compare_real_database_sql events-tail-trillion-json exact "$events_trillion_sql" \
+	events tail --since 1000000000000 --json
+events_past_2p53_sql="$events_pruned_sql
+UPDATE bd_events_journal SET seq = seq + 9007199254740992
+UPDATE bd_events_seq SET next_seq = 9007199254740996 WHERE id = 0"
+compare_real_database_sql events-tail-past-2p53-json exact "$events_past_2p53_sql" \
+	events tail --since 9007199254740993 --json
+events_near_int64_max_sql="$events_rows_sql
+DELETE FROM bd_events_journal
+UPDATE bd_events_seq SET next_seq = 9223372036854775806 WHERE id = 0"
+compare_real_database_sql events-tail-near-int64-max-human exact "$events_near_int64_max_sql" \
+	events tail --since 9223372036854775805
+compare_real_database_sql events-tail-near-int64-max-json exact "$events_near_int64_max_sql" \
+	events tail --since 9223372036854775805 --json
+real_database_extra_sql="$events_near_int64_max_sql"
+compare_real_database_env events-tail-near-int64-max-envelope-json exact BD_JSON_ENVELOPE=1 \
+	events tail --since 9223372036854775805 --json
+real_database_extra_sql=""
 # A missing counter row is a head of 0; a missing table fails the read.
 compare_real_database_sql events-export-no-counter-human exact "$events_pruned_sql
 DELETE FROM bd_events_seq" events export

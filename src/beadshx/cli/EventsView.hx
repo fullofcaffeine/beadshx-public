@@ -179,7 +179,7 @@ function renderEventsRecords(rows:Array<EventsJournalRow>):EventsRecordLines {
 **/
 function renderEventsTruncatedJson(window:EventsJournalWindow, envelope:Bool):String {
 	function number(value:Int64):String {
-		return envelope ? Int64.toStr(value) : Json.stringify(Std.parseFloat(Int64.toStr(value)));
+		return envelope ? Int64.toStr(value) : goJsonFloat64(Std.parseFloat(Int64.toStr(value)));
 	}
 	return [
 		"{",
@@ -192,6 +192,19 @@ function renderEventsTruncatedJson(window:EventsJournalWindow, envelope:Bool):St
 		"}",
 		""
 	].join("\n");
+}
+
+/**
+	What: The text Go's encoding/json writes for a float64, such as the legacy truncation fields after
+	upstream's JSON round trip: plain digits below 1e21, so 1e12 is `1000000000000` and int64 max is
+	`9223372036854776000`.
+	Why: Haxe prints a Float differently (`1e+12`), and haxe.Json follows Haxe.
+	How: Go's own encoder formats the number. Marshal fails only for NaN and the infinities, and the
+	caller passes an Int64 that Std.parseFloat rounded to the nearest float64, as json.Unmarshal does.
+**/
+@:goNative
+function goJsonFloat64(value:Float):String {
+	return BytesPkg.newBuffer(JsonPkg.marshalFloat64(value).value1).stringValue();
 }
 
 /** The hint upstream reportEventsTruncated prints under the human error. */
