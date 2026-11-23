@@ -88,6 +88,7 @@ import beadshx.config.LayeredConfig.gitHasRemote;
 import beadshx.config.LayeredConfig.goQuote;
 import beadshx.config.LayeredConfig.userConfigYamlDisplayPath;
 import beadshx.config.LayeredConfig.userConfigYamlPresent;
+import beadshx.config.UserRole;
 import beadshx.config.ConfigKeys.CONFIG_ROUTE_UNAVAILABLE;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
@@ -1139,10 +1140,14 @@ final class Application {
 										deferredExit;
 									} else if (positiveOffset && !location.proxiedServer) {
 										runStoreFailure("--offset is only supported under --proxied-server");
-									} else if (invocation.watchMode) {
-										runListWatch(invocation, location, effectiveLimit, query);
 									} else {
-										renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query));
+										// Upstream's openRoutedReadStore asks for the user's role before it reads.
+										if (!location.proxiedServer)
+											warnUnconfiguredRole();
+										if (invocation.watchMode)
+											runListWatch(invocation, location, effectiveLimit, query);
+										else
+											renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query));
 									}
 									closeIssueQuery(query, result);
 							}
@@ -1174,7 +1179,7 @@ final class Application {
 		final batch = invocation.showIds.length > 1;
 		final resolved = new Array<String>();
 		for (id in invocation.showIds)
-			switch lookupIssueSummary(location, id, invocation.global, query) {
+			switch lookupIssueWithRouting(location, id, invocation.global, query) {
 				case Failure(message):
 					if (!batch)
 						return runModeAwareFailure(invocation.output, 'resolving ${id}: ${message}');
@@ -1346,7 +1351,7 @@ final class Application {
 			return runModeAwareFailure(invocation.output, '--max-rows must be non-negative; got ${maxRows}');
 		if (request.maxRowsWarning != "")
 			output.writeStderr(request.maxRowsWarning);
-		final rootId = switch lookupIssueSummary(location, request.root, invocation.global, query) {
+		final rootId = switch lookupIssueWithRouting(location, request.root, invocation.global, query) {
 			case Failure(message):
 				return runModeAwareFailure(invocation.output, 'resolving issue ID ${request.root}: ${message}');
 			case Success(IssueMissing):
@@ -2078,7 +2083,7 @@ final class Application {
 		final request = invocation.comments;
 		if (request.misplacedList)
 			return runModeAwareFailure(invocation.output, MISPLACED_COMMENTS_LIST);
-		final issueId = switch lookupIssueSummary(location, request.issueId, invocation.global, query) {
+		final issueId = switch lookupIssueWithRouting(location, request.issueId, invocation.global, query) {
 			case Failure(message): return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: ${message}');
 			case Success(IssueMissing):
 				return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: no issue found matching "${request.issueId}"');
@@ -2886,6 +2891,8 @@ final class Application {
 			return deferredExit;
 		if (invocation.readyClaim)
 			return runReadyClaimRefusal();
+		// Upstream's openRoutedReadStore asks for the user's role before it reads.
+		warnUnconfiguredRole();
 		return runReadyList(invocation, location, query);
 	}
 
@@ -4547,9 +4554,9 @@ final class Application {
 	}
 
 	function loadWatchedIssue(location:WorkspaceLocation, id:String, global:Bool, includeComments:Bool, query:IssueQueryPort):StoreResult<IssueDetailsLookup> {
-		return switch lookupIssueSummary(location, id, global, query) {
+		return switch lookupIssueWithRouting(location, id, global, query) {
 			case Failure(message): Failure(message);
-			case Success(IssueMissing): Success(DetailsMissing);
+			case Success(IssueMissing): Failure('no issue found matching "${id}"');
 			case Success(IssueFound(summary)):
 				query.issueDetails(location.path, summary.id, {
 					includeDependents: true,
@@ -4578,7 +4585,7 @@ final class Application {
 
 		final requestedId = ids[0];
 		var canonicalId = "";
-		switch lookupIssueSummary(location, requestedId, invocation.global, query) {
+		switch lookupIssueWithRouting(location, requestedId, invocation.global, query) {
 			case Failure(_) | Success(IssueMissing):
 				if (invocation.output == Human)
 					return runShowHuman(invocation, location, query);
@@ -4697,11 +4704,11 @@ final class Application {
 			return runModeAwareFailure(invocation.output, "at least one issue ID is required (use positional args, --id flag, or --current)");
 		final groups = new Array<ShowDependencyGroup>();
 		for (id in ids) {
-			switch lookupIssueSummary(location, id, invocation.global, query) {
+			switch lookupIssueWithRouting(location, id, invocation.global, query) {
 				case Failure(message):
 					output.writeStderr('Error resolving ${id}: ${message}\n');
 				case Success(IssueMissing):
-					output.writeStderr('Issue ${id} not found\n');
+					output.writeStderr('Error resolving ${id}: no issue found matching "${id}"\n');
 				case Success(IssueFound(summary)):
 					switch query.issueDependents(location.path, summary.id, invocation.global) {
 						case Failure(message): output.writeStderr('Error getting refs for ${id}: ${message}\n');
@@ -4790,11 +4797,11 @@ final class Application {
 			return runModeAwareFailure(invocation.output, "at least one issue ID is required (use positional args, --id flag, or --current)");
 		final groups = new Array<ShowDependencyGroup>();
 		for (id in ids) {
-			switch lookupIssueSummary(location, id, invocation.global, query) {
+			switch lookupIssueWithRouting(location, id, invocation.global, query) {
 				case Failure(message):
 					output.writeStderr('Error resolving ${id}: ${message}\n');
 				case Success(IssueMissing):
-					output.writeStderr('Issue ${id} not found\n');
+					output.writeStderr('Error resolving ${id}: no issue found matching "${id}"\n');
 				case Success(IssueFound(summary)):
 					switch query.issueDependents(location.path, summary.id, invocation.global) {
 						case Failure(message): output.writeStderr('Error getting children for ${id}: ${message}\n');
@@ -4921,11 +4928,11 @@ final class Application {
 		};
 		final found = new Array<IssueDetails>();
 		for (id in ids) {
-			switch lookupIssueSummary(location, id, invocation.global, query) {
+			switch lookupIssueWithRouting(location, id, invocation.global, query) {
 				case Failure(message):
 					output.writeStderr('Error fetching ${id}: ${message}\n');
 				case Success(IssueMissing):
-					output.writeStderr('Issue ${id} not found\n');
+					output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
 				case Success(IssueFound(summary)):
 					switch query.issueDetails(location.path, summary.id, request, invocation.global) {
 						case Failure(message): output.writeStderr('Error fetching ${id}: ${message}\n');
@@ -4960,7 +4967,7 @@ final class Application {
 			return runModeAwareFailure(invocation.output, "at least one issue ID is required (use positional args, --id flag, or --current)");
 		final found = new Array<IssueSummary>();
 		for (id in ids) {
-			switch lookupIssueSummary(location, id, invocation.global, query) {
+			switch lookupIssueWithRouting(location, id, invocation.global, query) {
 				case Failure(message):
 					output.writeStderr('Error fetching ${id}: ${message}\n');
 				case Success(IssueMissing):
@@ -5009,7 +5016,7 @@ final class Application {
 			briefDependencies: invocation.showBriefDependencies
 		};
 		for (id in ids) {
-			switch lookupIssueSummary(location, id, invocation.global, query) {
+			switch lookupIssueWithRouting(location, id, invocation.global, query) {
 				case Failure(message):
 					output.writeStderr('Error fetching ${id}: ${message}\n');
 				case Success(IssueMissing):
@@ -5041,6 +5048,29 @@ final class Application {
 				}
 			case Success(IssueFound(_)) | Failure(_): exact;
 		};
+	}
+
+	/**
+		Upstream resolveAndGetIssueWithRouting, the lookup of show, comments,
+		dep list and dep tree. After a miss upstream tries contributor
+		auto-routing, which asks for the user's role and so prints the
+		beads.role warning when Git sets no role. A proxied workspace does not
+		route.
+	**/
+	function lookupIssueWithRouting(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):StoreResult<IssueLookup> {
+		final lookup = lookupIssueSummary(location, id, global, query);
+		switch lookup {
+			case Success(IssueMissing) if (!location.proxiedServer):
+				warnUnconfiguredRole();
+			case Success(_) | Failure(_):
+		}
+		return lookup;
+	}
+
+	/** Upstream routing.DetectUserRole's warning on stderr, when Git sets no beads.role. It only reads Git's config. */
+	function warnUnconfiguredRole():Void {
+		if (!UserRole.configured())
+			output.writeStderr(UserRole.WARNING);
 	}
 
 	/**

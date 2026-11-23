@@ -195,6 +195,18 @@ does.
 `--readonly` error. `bdhx` prints this error also without `--readonly`,
 because it does not write.
 
+Like upstream, `list`, `ready` and `children` ask for the role of the user
+after these checks and before they read issues. `show`, `comments`,
+`dep list` and `dep tree` ask for it each time they do not find an issue ID.
+The role is the value of `git config --get beads.role` in the current
+directory, so Git's system, global and repository config count. In a jj
+secondary workspace, the config of its primary workspace also counts. When the
+value is not `maintainer` or `contributor`, for example outside a Git
+repository, the command prints upstream's three-line
+`warning: beads.role not configured (GH#2950).` on stderr each time it asks,
+also with `--json`. In a proxied workspace these commands do not ask. `bdhx`
+only reads this setting; it never writes it.
+
 In an embedded workspace, every command that reads the database first
 compares the highest version in the `schema_migrations` table with the
 version of the binary, v65, as upstream does. Errors from the flag parser

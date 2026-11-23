@@ -1932,6 +1932,72 @@ compare_real_database_env config-drift-test-database-allowed exact BEADS_TEST_SE
 real_database_extra_metadata=""
 real_database_setup=""
 real_database_read_only=""
+# Upstream asks for the user's role (git config --get beads.role in the current directory) before
+# list, ready and children read issues, and when show, comments, dep list or dep tree look up an ID
+# that they do not find. Without maintainer or contributor there, it prints a three-line warning on
+# stderr each time, also with --json. The fixture's Git repository sets the role; without it, the
+# disposable HOME and XDG_CONFIG_HOME set none.
+real_database_setup=remove_git_checkout
+compare_real_database role-warning-list exact list
+compare_real_database role-warning-list-json exact list --json
+compare_real_database role-warning-ready exact ready
+compare_real_database role-warning-ready-json exact ready --json
+compare_real_database role-warning-children exact children "$real_database_epic_id"
+compare_real_database role-warning-children-missing exact children test-missing
+compare_real_database role-warning-show-missing exact show test-missing
+compare_real_database role-warning-show-missing-json exact show test-missing --json
+compare_real_database role-warning-show-short-missing exact show test-missing --short
+compare_real_database role-warning-show-each-missing exact show "$real_database_issue_id" test-missing test-gone
+compare_real_database role-warning-show-thread-missing exact show --thread test-missing
+compare_real_database role-warning-show-refs-missing exact show --refs test-missing
+compare_real_database role-warning-show-children-missing exact show --children test-missing
+compare_real_database role-warning-show-watch-missing exact show --watch test-missing
+compare_real_database role-warning-comments-missing exact comments test-missing
+compare_real_database role-warning-dep-list-missing exact dep list test-missing
+compare_real_database role-warning-dep-list-batch exact dep list "$real_database_issue_id" test-missing
+compare_real_database role-warning-dep-tree-missing exact dep tree test-missing --json
+# The BEADS_MAX_ROWS warning and the argument checks come first; a check that fails prints no warning.
+compare_real_database_env role-warning-after-max-rows-warning exact BEADS_MAX_ROWS=banana ready
+compare_real_database role-warning-list-check-first exact list --priority 9
+compare_real_database role-warning-list-max-rows-first exact list --max-rows -1
+# Other reads and a found ID ask for no role.
+compare_real_database role-warning-none-show exact show "$real_database_issue_id"
+compare_real_database role-warning-none-count exact count
+compare_real_database role-warning-none-graph-missing exact graph test-missing
+compare_real_database role-warning-none-label-missing exact label list test-missing
+compare_real_database role-warning-none-ready-explain exact ready --explain
+# The role counts from any config that Git reads: here the user's global config.
+set_global_role() {
+	remove_git_checkout "$1"
+	printf '[beads]\n\trole = contributor\n' >"$1/user-home/.gitconfig"
+}
+real_database_setup=set_global_role
+compare_real_database role-global-config-list exact list
+# Upstream accepts only maintainer and contributor.
+set_unknown_role() {
+	git -C "$1/work" config beads.role admin
+}
+real_database_setup=set_unknown_role
+compare_real_database role-unknown-value-list exact list
+# A jj secondary workspace has no Git repository; upstream then asks the primary workspace that its
+# .jj/repo file names, relative to .jj or absolute.
+make_jj_secondary_workspace() {
+	remove_git_checkout "$1"
+	mkdir -p "$1/primary/.jj/repo" "$1/work/.jj"
+	git -C "$1/primary" init -q
+	git -C "$1/primary" config beads.role "$2"
+	printf '%s\n' "$3" >"$1/work/.jj/repo"
+}
+jj_secondary_relative() { make_jj_secondary_workspace "$1" maintainer ../../primary/.jj/repo; }
+jj_secondary_absolute() { make_jj_secondary_workspace "$1" contributor "$1/primary/.jj/repo"; }
+jj_secondary_unknown_role() { make_jj_secondary_workspace "$1" admin ../../primary/.jj/repo; }
+real_database_setup=jj_secondary_relative
+compare_real_database role-jj-primary-relative exact list
+real_database_setup=jj_secondary_absolute
+compare_real_database role-jj-primary-absolute exact show test-missing
+real_database_setup=jj_secondary_unknown_role
+compare_real_database role-jj-primary-unknown exact ready
+real_database_setup=""
 # In shared-server mode, or with a configured server address or port, upstream connects to that
 # server or creates state for it; bdhx refuses before it dials or opens anything.
 enable_shared_server() {

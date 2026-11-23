@@ -403,9 +403,12 @@ private function isLocalHost(host:String):Bool {
 	return ["", "localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"].contains(goTrimSpace(host).toLowerCase());
 }
 
-/** `git config --get beads.role` in the current directory, trimmed, or "" when Git fails. */
-function gitBeadsRole():String {
-	final output = commandOutput(ExecPkg.command("git", "config", "--get", "beads.role"));
+/** `git config --get beads.role` in `directory`, or else in the current directory, trimmed, or "" when Git fails. */
+function gitBeadsRole(?directory:String):String {
+	var command = ExecPkg.command("git", "config", "--get", "beads.role");
+	if (directory != null)
+		command = ExecPkg.command("git", "-C", directory, "config", "--get", "beads.role");
+	final output = commandOutput(command);
 	return output == null ? "" : goTrimSpace(output);
 }
 
