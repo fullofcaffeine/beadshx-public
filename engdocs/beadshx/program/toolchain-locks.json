@@ -10,7 +10,7 @@
     "golangciLint": "v2.10.1",
     "preCommit": "4.3.0",
     "preCommitRequirementsSha256": "18448d25f3c7690e70977f522cd7fd2326da0948c2a3b0be5c99e6b39d80dee8",
-    "haxeGoCommit": "c6e27fdfa836a35ada66dc923c7d8bfa006717d6",
+    "haxeGoCommit": "f467944699949909614ca3b72ad545d1ff915d53",
     "goSourceSha256": "sha256-1EEBsP8n7SpMda1GwXucdDWSCeLrLKfJ32y0/baOGWk="
   },
   "linuxCi": {

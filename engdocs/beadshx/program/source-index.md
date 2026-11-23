@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `c6e27fdfa836a35ada66dc923c7d8bfa006717d6`.
+Required BeadsHX compiler revision: `f467944699949909614ca3b72ad545d1ff915d53`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -130,6 +130,21 @@ configuration validator, `haxe.io.Input`, `haxe.io.Output` and `StringTools`
 lose type assertions that could panic, and the CLI application, the layered
 configuration and `haxe.exceptions.NotImplementedException` replace a nil
 argument with its default at function entry.
+Compiler task haxe_go-uvri stores a value of an abstract over String as a Go
+`*string` in every position. Before, such an abstract fell back to Go `any`
+when Haxe's dead code elimination marked its implementation class extern, and
+simple functions that return the value as a String did not compile.
+haxe_go-wr4m makes an ordered comparison (`<`, `<=`, `>`, `>=`) with a null
+`Null<Int>` operand follow the Haxe rule: one null operand gives `false`, and
+two null operands compare as equal numbers. The comparison calls a small,
+inlinable helper from the new runtime file `hxrt/nullable_compare.go`. BeadsHX
+output changed in 16 modules. The CLI application, parser and parse result,
+`main` and `recovery_1` lose boxing and type assertions around String
+abstracts, and `hxrt/equality.go` is no longer copied. The CLI application,
+comments view and parser, the configuration validator, the dotenv reader, the
+query page and query syntax, the embedded scalar issue-details reader, the
+read-only store, `JsonInteger` and `JsonValue` call the new helpers, and
+`haxe.CallStack` checks for a null column before it compares it.
 
 Reviewed current authority:
 
