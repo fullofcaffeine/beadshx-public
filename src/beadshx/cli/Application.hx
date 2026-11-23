@@ -106,6 +106,11 @@ import beadshx.store.EmbeddedDatabaseLookup.missingConfigurationWarning;
 import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
+import beadshx.store.SchemaSkew.SCHEMA_SKEW_ESCAPE_HINT;
+import beadshx.store.SchemaSkew.SchemaSkewBoundary;
+import beadshx.store.SchemaSkew.SchemaSkewRefusal;
+import beadshx.store.SchemaSkew.schemaSkewRefusalError;
+import beadshx.store.SchemaSkew.schemaSkewUserMessage;
 import beadshx.store.EventsJournal.eventsTruncatedMessage;
 import beadshx.cli.HistoryView.renderHistoryEventsJson;
 import beadshx.cli.HistoryView.renderHistoryEventsText;
@@ -348,6 +353,12 @@ private typedef StoredPrefixRead = {
 	final value:String;
 }
 
+/** An embedded store that the command opened and no read checked yet; see `Application.uncheckedStore`. */
+private typedef UncheckedStore = {
+	final beadsDir:String;
+	final databaseName:String;
+}
+
 /** What a stored issue_prefix read does when the dolt.shared-server setting turns on shared-server mode. */
 private enum SharedServerSettingRead {
 	/** Upstream's where still reads the embedded database. */
@@ -368,7 +379,7 @@ final class Application {
 	static final jsonDeprecation = "NOTE: bd --json output format will change in v2.0. Set BD_JSON_ENVELOPE=1 to opt in early. See docs/reference/json-schema.md for migration details.";
 
 	final parser:Parser;
-	final output:OutputPort;
+	final output:SchemaSkewWarningOutput;
 	final actor:ActorPort;
 	final gitHistory:GitHistoryPort;
 	final workspace:WorkspacePort;
@@ -381,10 +392,18 @@ final class Application {
 	/** The last stored issue_prefix read, so one command opens its database for the prefix at most once. */
 	var storedPrefixRead:Null<StoredPrefixRead> = null;
 
+	/**
+		The embedded store that the command opened at upstream's pre-run point,
+		until something checks its schema. Upstream checks at that open, before
+		the command body; here the first read checks. A failure that the body
+		reports before any read runs the check first (`checkSchemaBeforeFailure`).
+	**/
+	var uncheckedStore:Null<UncheckedStore> = null;
+
 	public function new(parser:Parser, output:OutputPort, actor:ActorPort, gitHistory:GitHistoryPort, workspace:WorkspacePort, store:ReadonlyStorePort,
 			profiler:ProfilePort, watch:WatchPort) {
 		this.parser = parser;
-		this.output = output;
+		this.output = new SchemaSkewWarningOutput(output);
 		this.actor = actor;
 		this.gitHistory = gitHistory;
 		this.workspace = workspace;
@@ -423,7 +442,9 @@ final class Application {
 			case Parsed(invocation):
 				if (invocation.cpuProfile && !invocation.showHelp && usesStore(invocation.command))
 					profiler.startCpu(commandName(invocation.command));
-				final exitCode = runInvocation(invocation);
+				final exitCode = SchemaSkewBoundary.runCommand(() -> runInvocation(invocation), refusal -> runSchemaSkewRefusal(invocation.output, refusal));
+				// A command that wrote nothing after its schema check still prints the escape-hatch warning.
+				output.flushHeldWarning();
 				if (exitCode == 0 && !invocation.showHelp)
 					profiler.finish(invocation.memProfilePath);
 				exitCode;
@@ -505,6 +526,9 @@ final class Application {
 	}
 
 	function runInvocation(invocation:Invocation):Int {
+		// Upstream's pre-run sets the escape hatch for every store open, before it opens any.
+		if (invocation.ignoreSchemaSkew)
+			SchemaSkewBoundary.ignoreForProcess();
 		final metadataExit = checkWorkspaceMetadata(invocation);
 		if (metadataExit != null)
 			return metadataExit;
@@ -5735,8 +5759,28 @@ final class Application {
 
 	/** Opens the command's query session, as upstream's root pre-run opens the store. */
 	function openIssueQuery(invocation:Invocation, location:WorkspaceLocation):StoreResult<IssueQueryPort> {
-		return store.openIssueQuery(location.path, opensServerStore(location), selectedDatabaseName(invocation, location), location.proxiedServer,
-			invocation.global);
+		final serverStore = opensServerStore(location);
+		final opened = store.openIssueQuery(location.path, serverStore, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global);
+		switch opened {
+			case Success(_) if (!serverStore && !location.proxiedServer && !invocation.global):
+				uncheckedStore = {beadsDir: location.path, databaseName: selectedDatabaseName(invocation, location)};
+			case Success(_) | Failure(_):
+		}
+		return opened;
+	}
+
+	/**
+		Runs the pending schema check of the command's embedded store before the
+		command reports a failure: upstream's pre-run would have stopped at schema
+		skew before its command body found that failure. After a read it costs
+		nothing, as that read checked.
+	**/
+	function checkSchemaBeforeFailure():Void {
+		final pending = uncheckedStore;
+		if (pending == null)
+			return;
+		uncheckedStore = null;
+		store.checkSchema(pending.beadsDir, pending.databaseName);
 	}
 
 	/**
@@ -5768,7 +5812,10 @@ final class Application {
 		issue-prefix, or else its issue_prefix, or else the stored issue_prefix.
 	**/
 	function wherePrefix(location:WorkspaceLocation):String {
-		return location.yamlPrefix != "" ? location.yamlPrefix : storedIssuePrefix(location, ReadEmbedded);
+		if (location.yamlPrefix != "")
+			return location.yamlPrefix;
+		// Upstream's where ignores a store that does not open, also for schema skew, and prints no prefix.
+		return SchemaSkewBoundary.orElse(() -> storedIssuePrefix(location, ReadEmbedded), "");
 	}
 
 	/**
@@ -5903,8 +5950,43 @@ final class Application {
 	}
 
 	function runStoreFailure(message:String):Int {
+		checkSchemaBeforeFailure();
 		output.writeStderr('Error: ${message}\n');
 		return 1;
+	}
+
+	/**
+		Upstream's pre-run when its store open stops at schema skew
+		(cmd/bd/main.go): a database ahead of the binary prints the stale-binary
+		block, or under JSON output `handleSchemaSkewJSON`'s error on stderr. Any
+		other refusal is a plain open error in every mode.
+	**/
+	function runSchemaSkewRefusal(mode:OutputMode, refusal:SchemaSkewRefusal):Int {
+		switch refusal {
+			case DatabaseAhead(database, binary):
+				switch mode {
+					case Human:
+						output.writeStderr(schemaSkewUserMessage(database, binary));
+					case Json:
+						output.writeStderr(renderSchemaSkewJson(refusal, database, binary, output.usesJsonEnvelope()));
+				}
+			case DatabaseBehind(_, _) | SchemaCheckFailed(_):
+				output.writeStderr('Error: failed to open database: ${schemaSkewRefusalError(refusal)}\n');
+		}
+		return 1;
+	}
+
+	/**
+		Upstream `handleSchemaSkewJSON`: `buildJSONError` with the escape hint,
+		plus `schema_skew` in the outer object, so it stays outside `data` under
+		BD_JSON_ENVELOPE=1. Go's encoder prints the map keys in byte order.
+	**/
+	static function renderSchemaSkewJson(refusal:SchemaSkewRefusal, database:Int, binary:Int, envelope:Bool):String {
+		final error = '"error": ${Json.stringify(schemaSkewRefusalError(refusal))}';
+		final hint = '"hint": ${Json.stringify(SCHEMA_SKEW_ESCAPE_HINT)}';
+		final skew = '"schema_skew": {\n    "current_version": ${database},\n    "delta": ${database - binary},\n    "required_version": ${binary}\n  }';
+		final document = envelope ? '{\n  "data": {\n    ${error},\n    ${hint}\n  },\n  ${skew},\n  "schema_version": 1\n}\n' : '{\n  ${error},\n  ${hint},\n  ${skew},\n  "schema_version": 1\n}\n';
+		return escapeJsonHtml(document);
 	}
 
 	/**
@@ -5939,6 +6021,7 @@ final class Application {
 			case PlainCheckFailure(message): runStoreFailure(message);
 			case OutputCheckFailure(message): runModeAwareFailure(invocation.output, message);
 			case ExactCheckFailure(message, exitCode):
+				checkSchemaBeforeFailure();
 				output.writeStderr(message);
 				exitCode;
 		};
@@ -6150,6 +6233,7 @@ final class Application {
 	}
 
 	function runModeAwareFailure(mode:OutputMode, message:String):Int {
+		checkSchemaBeforeFailure();
 		switch mode {
 			case Human:
 				output.writeStderr('Error: ${message}\n');

@@ -134,6 +134,7 @@ final class Parser {
 		var databaseName = "";
 		var global = false;
 		var readonly = false;
+		var ignoreSchemaSkew = false;
 		var cpuProfile = false;
 		var memProfilePath = "";
 		var expectedValue:Null<ExpectedValue> = null;
@@ -855,6 +856,7 @@ final class Parser {
 				final value = argument.substr(21);
 				if (!isBooleanFlagValue(value))
 					return UsageFailure(PflagValue.invalidBoolean("--ignore-schema-skew", value));
+				ignoreSchemaSkew = booleanFlagValue(value);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--global=")) {
@@ -1275,7 +1277,9 @@ final class Parser {
 				case "--readonly":
 					// Strict read-only mode changes only how upstream opens a store that lacks its database.
 					readonly = true;
-				case "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v" | "--ignore-schema-skew":
+				case "--ignore-schema-skew":
+					ignoreSchemaSkew = true;
+				case "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v":
 					// This command profile is already read-only, unstyled, and synchronous.
 				case "--version" | "-V":
 					versionFlag = true;
@@ -1578,6 +1582,7 @@ final class Parser {
 				databaseName: databaseName,
 				global: global,
 				readonly: readonly,
+				ignoreSchemaSkew: ignoreSchemaSkew,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,
@@ -2058,6 +2063,7 @@ final class Parser {
 				databaseName: databaseName,
 				global: global,
 				readonly: readonly,
+				ignoreSchemaSkew: ignoreSchemaSkew,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,

@@ -18,6 +18,10 @@ final class EmbeddedStoreAccess {
 		return true;
 	}
 
+	public static function checkSchema(beadsDir:String, databaseName:String):Void {
+		implementation.checkSchema(beadsDir, databaseName);
+	}
+
 	public static function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return implementation.dependencyEdges(beadsDir, databaseName, plan);
 	}
@@ -103,6 +107,8 @@ final class EmbeddedStoreAccess {
 
 private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	public function new() {}
+
+	public function checkSchema(beadsDir:String, databaseName:String):Void {}
 
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
 		return null;

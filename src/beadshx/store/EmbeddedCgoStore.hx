@@ -15,6 +15,15 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 
 	public function new() {}
 
+	public function checkSchema(beadsDir:String, databaseName:String):Void {
+		switch EmbeddedSession.open(beadsDir, databaseName) {
+			case EmbeddedSessionOpened(session):
+				session.close();
+			// The command's own read reports a store that does not open.
+			case EmbeddedSessionUnavailable(_, _, _):
+		}
+	}
+
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
 		return EmbeddedRelationReader.read(beadsDir, databaseName, plan);
 	}

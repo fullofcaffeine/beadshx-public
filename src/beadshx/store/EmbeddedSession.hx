@@ -12,7 +12,13 @@ import beadshx.nativeextern.doltdriver.Config;
 import beadshx.nativeextern.doltdriver.Connector;
 import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.nativeextern.time.TimePkg;
+import beadshx.store.DatabaseErrors.isDatabaseNotFound;
+import beadshx.store.DatabaseErrors.isTableNotExist;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
+import beadshx.store.SchemaSkew.SchemaCursorRead;
+import beadshx.store.SchemaSkew.SchemaSkewAbort;
+import beadshx.store.SchemaSkew.SchemaSkewChecks;
+import beadshx.store.SchemaSkew.checkSchemaCursor;
 import haxe.io.Path;
 
 /** The step that failed before a read could run its body. */
@@ -64,7 +70,8 @@ enum EmbeddedRead<T> {
 	- `open` is `OpenSQL` (open.go): commit identity `beads` / `beads@local`,
 	  multi-statement mode, the selected database, an exponential backoff that
 	  waits up to 5 seconds between attempts until the context ends, a pool of
-	  at most two connections, and a ping;
+	  at most two connections, and a ping. The first open of a workspace in the
+	  process then runs the schema skew check of `openReadOnly` (store.go);
 	- `read` is the read half of `withConn` (store.go): begin a transaction,
 	  run the body, and roll the transaction back;
 	- `close` is `OpenSQL`'s cleanup function: close the `*sql.DB`, then the
@@ -83,7 +90,8 @@ enum EmbeddedRead<T> {
 	  branch head with `SET`. Those need an exec outside a transaction, which
 	  this read-only build does not have. The connector already starts every
 	  connection in the selected database. An invalid or missing name therefore
-	  fails at the first query of the body, as the readers did before.
+	  fails at the first query of the body, as the readers did before; the
+	  schema check leaves that error to the body.
 	- Upstream's cleanup ignores `context.Canceled` from each close; this one
 	  does not. The pinned engine never returns it (`BackgroundThreads.Shutdown`
 	  returns nil), and haxe.go cannot yet read a Go package error variable
@@ -125,6 +133,16 @@ final class EmbeddedSession {
 		upstream `OpenSQL(ctx, <beadsDir>/embeddeddolt, database, branch)`.
 		`selectedDatabase` is a `--db` database name, or empty for the name
 		that the workspace configures (`resolveEmbeddedDatabaseName`).
+
+		The first open of `beadsDir` in the process checks the schema version
+		as upstream's read-only store open does. A database ahead of the binary,
+		or behind it, is not a session failure: upstream stops the whole command
+		at that open, so this throws `SchemaSkewAbort` after it closed the
+		session, and the command boundary reports it. With
+		BD_IGNORE_SCHEMA_SKEW=1 the check gives upstream's warning instead.
+		Every open checks as upstream's strict read-only open (`OpenReadOnly`)
+		does, also behind the binary: upstream's ordinary read commands would
+		migrate such a database first, and this build never migrates.
 	**/
 	public static function open(beadsDir:String, selectedDatabase:String):EmbeddedSessionOpen {
 		final config = new Config();
@@ -148,9 +166,63 @@ final class EmbeddedSession {
 		final pingError = database.pingContext(session.context);
 		if (pingError != null)
 			return EmbeddedSessionUnavailable(SessionPing, pingError, session.close());
-		// beadshx-m08.12 runs upstream's schema.CheckForwardDrift and CheckBehindDrift here,
-		// as upstream openReadOnly does right after OpenSQL.
+		if (!SchemaSkewChecks.isChecked(beadsDir)) {
+			final cursor = session.readSchemaCursor();
+			final refusal = checkSchemaCursor(cursor);
+			if (refusal != null) {
+				// Upstream openReadOnly ignores the errors of its cleanup here.
+				session.close();
+				throw new SchemaSkewAbort(refusal);
+			}
+			// A missing database is no check: the body's first query reports it, and a later open checks.
+			if (!cursor.match(CursorDatabaseMissing))
+				SchemaSkewChecks.markChecked(beadsDir);
+		}
 		return EmbeddedSessionOpened(session);
+	}
+
+	/**
+		Upstream `schema.CheckForwardDrift` and `schema.CheckBehindDrift`, which
+		upstream `openReadOnly` runs right after `OpenSQL`. Both read
+		`SELECT COALESCE(MAX(version), 0) FROM schema_migrations` with
+		`QueryRowContext` outside a transaction; this build has no statement
+		outside a transaction, so the read runs in its own read transaction,
+		which sees the same rows. A failed rollback after the read leaves its
+		answer as it is, as upstream's plain read has no rollback.
+	**/
+	function readSchemaCursor():SchemaCursorRead {
+		return switch read(readSchemaCursorRow) {
+			case EmbeddedReadNotStarted(_, error, _): CursorReadFailed(error.toString());
+			case EmbeddedReadFinished(cursor, _): cursor;
+		};
+	}
+
+	/** The cursor row, read as `(*sql.Row).Scan` reads it, with the same errors. */
+	static function readSchemaCursorRow(context:Context, transaction:Tx):SchemaCursorRead {
+		final queried = transaction.queryNativeContext(context, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations");
+		if (queried.error != null)
+			return schemaCursorError(queried.error);
+		final rows = queried.rows;
+		if (!rows.next()) {
+			final rowError = rows.errNative();
+			rows.close();
+			return rowError != null ? schemaCursorError(rowError) : CursorNoRow;
+		}
+		final version = go.NativePointer.of(0);
+		final scanError = rows.scanNative(version);
+		final closeError = rows.closeNative();
+		if (scanError != null)
+			return schemaCursorError(scanError);
+		if (closeError != null)
+			return schemaCursorError(closeError);
+		return CursorVersion(version.get());
+	}
+
+	/** Upstream `currentVersion` takes a missing table as version 0 (`dberrors.IsTableNotExist`). */
+	static function schemaCursorError(error:go.NativeError):SchemaCursorRead {
+		if (isDatabaseNotFound(error))
+			return CursorDatabaseMissing;
+		return isTableNotExist(error) ? CursorTableMissing(error.text()) : CursorReadFailed(error.text());
 	}
 
 	/**

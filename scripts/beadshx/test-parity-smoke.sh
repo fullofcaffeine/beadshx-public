@@ -4689,6 +4689,100 @@ expect_beads_db_refusal beads-db-workspace-without-database-unported BEADS_DB=db
 	"Error: count is not available yet when BEADS_DB names this path in this build" count
 candidate_only_setup=""
 
+# Schema skew. Upstream's store open compares the highest schema_migrations version with the
+# binary's latest migration, v65, before any command body runs. A database ahead of the binary
+# stops every store command: upstream prints its "binary is stale" block on stderr, or that error
+# as JSON on stderr under --json, and exits 1. The strict read-only open (--readonly) also stops a
+# database behind the binary, with a plain open error in every mode, and so does every open in this
+# build, which never migrates. `where` prints no stored prefix that it cannot read, and `version`
+# opens nothing. BD_IGNORE_SCHEMA_SKEW=1, or --ignore-schema-skew, warns instead and reads.
+schema_ahead_sql="INSERT INTO schema_migrations (version) VALUES (66)"
+schema_far_ahead_sql=$'INSERT INTO schema_migrations (version) VALUES (66)\nINSERT INTO schema_migrations (version) VALUES (68)'
+schema_behind_sql="DELETE FROM schema_migrations WHERE version = 65"
+# Each entry is a case name, then the command. The native facade commands open the store the same
+# way, so list and count stand for them.
+schema_skew_commands=(
+	"comments:comments $real_database_issue_id"
+	"comments-json:comments $real_database_issue_id --json"
+	"history:history $real_database_issue_id"
+	"dep-list:dep list $real_database_issue_id"
+	"dep-tree:dep tree $real_database_issue_id"
+	"dep-cycles:dep cycles"
+	"blocked:blocked"
+	"graph:graph $real_database_issue_id"
+	"events-tail:events tail"
+	"types:types"
+	"statuses:statuses"
+	"config-get:config get issue_prefix"
+	"config-list-json:config list --json"
+	"show:show $real_database_issue_id"
+	"show-json:show $real_database_issue_id --json"
+	"list:list"
+	"count-json:count --json"
+)
+real_database_read_only=1
+for schema_entry in "${schema_skew_commands[@]}"; do
+	schema_case="${schema_entry%%:*}"
+	read -r -a schema_arguments <<<"${schema_entry#*:}"
+	compare_real_database_sql "schema-ahead-$schema_case" exact "$schema_ahead_sql" "${schema_arguments[@]}"
+	compare_real_database_sql "schema-behind-readonly-$schema_case" exact "$schema_behind_sql" \
+		--readonly "${schema_arguments[@]}"
+done
+compare_real_database_sql schema-far-ahead-comments exact "$schema_far_ahead_sql" comments "$real_database_issue_id"
+# The pre-run open comes before the checks of the command body, which the read in this build follows.
+compare_real_database_sql schema-ahead-show-without-id exact "$schema_ahead_sql" show
+compare_real_database_sql schema-ahead-dep-tree-bad-direction exact "$schema_ahead_sql" \
+	dep tree "$real_database_issue_id" --direction bogus
+compare_real_database_sql schema-behind-readonly-list-bad-sort-json exact "$schema_behind_sql" --readonly list --sort bogus --json
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database_sql schema-ahead-envelope-dep-list-json exact "$schema_ahead_sql" dep list "$real_database_issue_id" --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config='json: true'
+compare_real_database_sql schema-ahead-json-setting-types exact "$schema_ahead_sql" types
+real_database_extra_config=""
+# Dolt reads no row from an empty cursor table, and the behind check reports that read, as it does
+# for a missing table.
+compare_real_database_sql schema-empty-readonly-comments exact "DELETE FROM schema_migrations" \
+	--readonly comments "$real_database_issue_id"
+compare_real_database_sql schema-missing-readonly-comments exact "DROP TABLE schema_migrations" \
+	--readonly comments "$real_database_issue_id"
+compare_real_database_sql schema-missing-readonly-count exact "DROP TABLE schema_migrations" --readonly count
+for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
+	schema_case=ahead
+	[[ "$schema_sql" == "$schema_behind_sql" ]] && schema_case=behind
+	compare_real_database_sql "schema-$schema_case-where" exact "$schema_sql" where
+	compare_real_database_sql "schema-$schema_case-where-json" exact "$schema_sql" --readonly where --json
+	compare_real_database_sql "schema-$schema_case-version" stderr-only "$schema_sql" version
+	real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+	compare_real_database_sql "schema-$schema_case-ignored-comments" exact "$schema_sql" \
+		--readonly comments "$real_database_issue_id"
+	compare_real_database_sql "schema-$schema_case-ignored-where" exact "$schema_sql" where
+	compare_real_database_sql "schema-$schema_case-ignored-count" exact "$schema_sql" --readonly count
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+	compare_real_database_sql "schema-$schema_case-flag-ignored-dep-list" exact "$schema_sql" \
+		--readonly --ignore-schema-skew dep list "$real_database_issue_id"
+	compare_real_database_sql "schema-$schema_case-flag-ignored-list" exact "$schema_sql" \
+		--readonly --ignore-schema-skew list
+	compare_real_database_sql "schema-$schema_case-flag-false-comments" exact "$schema_sql" \
+		--readonly --ignore-schema-skew=false comments "$real_database_issue_id"
+done
+real_database_read_only=""
+# Without --readonly upstream migrates a database that is behind; this build refuses as the strict
+# read-only open does and leaves the database unchanged.
+schema_behind_refusal="Error: failed to open database: schema version mismatch: database is at v64, binary expects v65, and the read-only open cannot migrate it; run any bd write command in that workspace to migrate, or set BD_IGNORE_SCHEMA_SKEW=1 to read anyway (queries touching newer schema may fail)"
+expect_candidate_failure schema-behind-comments-refused "" "$schema_behind_refusal" "$schema_behind_sql" \
+	comments "$real_database_issue_id"
+expect_candidate_failure schema-behind-show-json-refused "" "$schema_behind_refusal" "$schema_behind_sql" \
+	show "$real_database_issue_id" --json
+expect_candidate_failure schema-behind-list-refused "" "$schema_behind_refusal" "$schema_behind_sql" list
+
+# show records the issue in .beads/last-touched, so it compares without the read-only check. It reads
+# through this build's embedded session and then the native facade, and still warns once.
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_real_database_sql schema-ahead-ignored-show exact "$schema_ahead_sql" show "$real_database_issue_id"
+compare_real_database_sql schema-behind-ignored-readonly-show-json exact "$schema_behind_sql" --readonly show "$real_database_issue_id" --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+
 wait_for_watch_text() {
 	local file="$1"
 	local value="$2"

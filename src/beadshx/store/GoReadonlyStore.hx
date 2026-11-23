@@ -29,6 +29,10 @@ import go.Result;
 import beadshx.store.InfoSnapshot.ConfigEntry;
 import beadshx.store.IssueHistory.HISTORY_ROUTE_UNAVAILABLE;
 import beadshx.store.EventsJournal.EventsJournalRead;
+import beadshx.store.SchemaSkew.SchemaSkewAbort;
+import beadshx.store.SchemaSkew.SchemaSkewChecks;
+import beadshx.store.SchemaSkew.SchemaSkewWarning;
+import beadshx.store.SchemaSkew.facadeSchemaRefusal;
 
 /**
 	`bd dep cycles` reads the graph with Haxe-owned SQL, which exists only for embedded
@@ -243,15 +247,16 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
-		return projectCountOutcome(NativeReadonlyFacade.readCountOutcome(beadsDir, countOptions(request), countGroupWireValue(group), global));
+		return projectCountOutcome(facadeOpened(beadsDir,
+			NativeReadonlyFacade.readCountOutcome(beadsDir, countOptions(request), countGroupWireValue(group), global)));
 	}
 
 	public function issueReady(beadsDir:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
-		return projectReadyOutcome(NativeReadonlyFacade.readReadyOutcome(beadsDir, readyOptions(request), global));
+		return projectReadyOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readReadyOutcome(beadsDir, readyOptions(request), global)));
 	}
 
 	public function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
-		final opened = NativeReadonlyFacade.openDirectQuerySession(beadsDir, global);
+		final opened = facadeOpened(beadsDir, NativeReadonlyFacade.openDirectQuerySession(beadsDir, global));
 		if (opened.isErr())
 			return QueryRowsFailure(errorMessage(opened));
 		final native = opened.unwrap();
@@ -272,7 +277,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			if (embedded != null)
 				return embedded;
 		}
-		final opened = NativeReadonlyFacade.openDirectQuerySession(beadsDir, global);
+		final opened = facadeOpened(beadsDir, NativeReadonlyFacade.openDirectQuerySession(beadsDir, global));
 		if (opened.isErr())
 			return DependencyEdgeFailure(errorMessage(opened));
 		final native = opened.unwrap();
@@ -456,7 +461,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public static function projectQueryRowsOutcome(outcome:NativeQueryRowsOutcome):QueryRowResult {
 		if (outcome.failed())
-			return QueryRowsFailure(outcome.message());
+			return QueryRowsFailure(facadeMessage(outcome.message()));
 		final rows = new Array<IssueQueryRow>();
 		for (index in 0...outcome.count()) {
 			final native = outcome.row(index);
@@ -549,7 +554,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		if (outcome.rowLimitExceeded())
 			return ReadyRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
 		if (outcome.failed())
-			return ReadyFailure(outcome.message());
+			return ReadyFailure(facadeMessage(outcome.message()));
 		if (outcome.total() == "")
 			return readySuccess(outcome, ReadyTotal.TotalUnknown);
 		return switch JsonInteger.parse(outcome.total()) {
@@ -648,7 +653,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public static function projectCountOutcome(outcome:NativeCountOutcome):StoreResult<CountResult> {
 		if (outcome.failed())
-			return Failure(outcome.message());
+			return Failure(facadeMessage(outcome.message()));
 		return switch JsonInteger.parse(outcome.total()) {
 			case Failure(message): Failure(message);
 			case Success(total): projectCountGroups(outcome, total, 0, []);
@@ -669,12 +674,12 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function validate(beadsDir:String, global:Bool):StoreResult<Bool> {
-		final result = NativeReadonlyFacade.validateOpen(beadsDir, global);
+		final result = facadeOpened(beadsDir, NativeReadonlyFacade.validateOpen(beadsDir, global));
 		return result.isErr() ? Failure(errorMessage(result)) : Success(result.unwrap());
 	}
 
 	public function info(beadsDir:String, includeSchema:Bool, global:Bool):StoreResult<InfoSnapshot> {
-		final result = NativeReadonlyFacade.readInfo(beadsDir, includeSchema, global);
+		final result = facadeOpened(beadsDir, NativeReadonlyFacade.readInfo(beadsDir, includeSchema, global));
 		if (result.isErr())
 			return Failure(errorMessage(result));
 		final native = result.unwrap();
@@ -698,7 +703,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function ping(beadsDir:String, global:Bool):StoreResult<PingSnapshot> {
-		final result = NativeReadonlyFacade.checkPing(beadsDir, global);
+		final result = facadeOpened(beadsDir, NativeReadonlyFacade.checkPing(beadsDir, global));
 		if (result.isErr())
 			return Failure(errorMessage(result));
 		final native = result.unwrap();
@@ -711,7 +716,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function status(beadsDir:String, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot> {
-		final result = NativeReadonlyFacade.readStatus(beadsDir, skipBlocked, assignee, global);
+		final result = facadeOpened(beadsDir, NativeReadonlyFacade.readStatus(beadsDir, skipBlocked, assignee, global));
 		if (result.isErr())
 			return Failure(errorMessage(result));
 		final native = result.unwrap();
@@ -734,27 +739,28 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
 		final options = issueListOptions(request, effectiveLimit);
 		if (request.format != "") {
-			final outcome = NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, request.format);
+			final outcome = facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, request.format));
 			if (outcome.rowLimitExceeded())
 				return ListRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
 			if (outcome.failed())
-				return ListFailure(outcome.message());
+				return ListFailure(facadeMessage(outcome.message()));
 			return ListSuccess({items: [], hasMore: false, formatted: outcome.value()});
 		}
-		return projectIssueListOutcome(NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global));
+		return projectIssueListOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global)));
 	}
 
 	public function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
 		final options = searchOptions(request);
-		return projectIssueListOutcome(NativeReadonlyFacade.readSearchOutcome(beadsDir, query, options, global));
+		return projectIssueListOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readSearchOutcome(beadsDir, query, options, global)));
 	}
 
 	public function issueStale(beadsDir:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>> {
-		return projectStaleOutcome(NativeReadonlyFacade.readStaleOutcome(beadsDir, request.days, request.status, request.limit, global));
+		return projectStaleOutcome(facadeOpened(beadsDir,
+			NativeReadonlyFacade.readStaleOutcome(beadsDir, request.days, request.status, request.limit, global)));
 	}
 
 	public function issueOrphanCandidates(beadsDir:String, request:IssueListRequest, global:Bool):StoreResult<OrphanCandidateScan> {
-		return projectOrphanCandidatesResult(NativeReadonlyFacade.readOrphanCandidates(beadsDir, searchOptions(request), global));
+		return projectOrphanCandidatesResult(facadeOpened(beadsDir, NativeReadonlyFacade.readOrphanCandidates(beadsDir, searchOptions(request), global)));
 	}
 
 	public static function searchOptions(request:IssueListRequest):NativeIssueListOptions {
@@ -912,7 +918,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		if (outcome.rowLimitExceeded())
 			return ListRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
 		if (outcome.failed())
-			return ListFailure(outcome.message());
+			return ListFailure(facadeMessage(outcome.message()));
 		return switch projectIssueListPage(outcome.page()) {
 			case Failure(message): ListFailure(message);
 			case Success(page): ListSuccess(page);
@@ -921,7 +927,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public static function projectStaleOutcome(outcome:NativeIssueListOutcome):StoreResult<Array<StaleIssue>> {
 		if (outcome.failed())
-			return Failure(outcome.message());
+			return Failure(facadeMessage(outcome.message()));
 		final issues = new Array<StaleIssue>();
 		final page = outcome.page();
 		for (index in 0...page.count()) {
@@ -1112,7 +1118,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			if (embedded != null)
 				return embedded;
 		}
-		return projectIssueSummaryResult(NativeReadonlyFacade.readIssueSummary(beadsDir, id, global));
+		return projectIssueSummaryResult(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueSummary(beadsDir, id, global)));
 	}
 
 	public static function projectIssueSummaryResult(result:Result<NativeIssueLookup>):StoreResult<IssueLookup> {
@@ -1137,7 +1143,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			if (embedded != null)
 				return embedded;
 		}
-		return projectIssueDetailsResult(NativeReadonlyFacade.readIssueDetails(beadsDir, id, issueDetailsOptions(request), global));
+		return projectIssueDetailsResult(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueDetails(beadsDir, id, issueDetailsOptions(request), global)));
 	}
 
 	public static function issueDetailsOptions(request:IssueDetailsRequest):NativeIssueDetailsOptions {
@@ -1238,7 +1244,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueDependents(beadsDir:String, id:String, global:Bool):StoreResult<Array<IssueDependency>> {
-		return projectIssueDependentsResult(NativeReadonlyFacade.readIssueDependents(beadsDir, id, global));
+		return projectIssueDependentsResult(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueDependents(beadsDir, id, global)));
 	}
 
 	public static function projectIssueDependentsResult(result:Result<NativeIssueDependencyRows>):StoreResult<Array<IssueDependency>> {
@@ -1295,7 +1301,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			if (embedded != null)
 				return embedded;
 		}
-		final result = NativeReadonlyFacade.findAssignedIssue(beadsDir, actor, issueStatusWireValue(status), global);
+		final result = facadeOpened(beadsDir, NativeReadonlyFacade.findAssignedIssue(beadsDir, actor, issueStatusWireValue(status), global));
 		return result.isErr() ? Failure(errorMessage(result)) : Success(result.unwrap());
 	}
 
@@ -1309,7 +1315,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			if (embedded != null)
 				return embedded;
 		}
-		final result = NativeReadonlyFacade.searchIssueIds(beadsDir, query, global);
+		final result = facadeOpened(beadsDir, NativeReadonlyFacade.searchIssueIds(beadsDir, query, global));
 		if (result.isErr())
 			return Failure(errorMessage(result));
 		final native = result.unwrap();
@@ -1353,7 +1359,41 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public static function errorMessage<T>(result:Result<T>):String {
 		final message = result.error();
-		return message == null ? "native read-only operation failed" : message;
+		return message == null ? "native read-only operation failed" : facadeMessage(message);
+	}
+
+	/**
+		The native facade opened the store of `beadsDir` with upstream
+		`OpenReadOnly`, which runs the schema skew check itself and warns by
+		itself under the escape hatch. The embedded reads that follow in the
+		same command skip their own check, as upstream checks once per store.
+	**/
+	static function facadeOpened<T>(beadsDir:String, outcome:T):T {
+		SchemaSkewChecks.markChecked(beadsDir);
+		SchemaSkewWarning.drop();
+		return outcome;
+	}
+
+	/**
+		Upstream's store-open schema check for an embedded workspace that no
+		read of this command checked yet; a refusal throws `SchemaSkewAbort`.
+	**/
+	public function checkSchema(beadsDir:String, databaseName:String):Void {
+		if (!SchemaSkewChecks.isChecked(beadsDir) && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"])))
+			EmbeddedStoreAccess.checkSchema(beadsDir, databaseName);
+	}
+
+	/**
+		A native facade error, unless it is upstream's schema skew refusal from
+		the facade's own store open (upstream `OpenReadOnly`). Upstream's pre-run
+		stops the command at that refusal before the command body runs, so it
+		goes to the command boundary as `SchemaSkewAbort` instead.
+	**/
+	public static function facadeMessage(message:String):String {
+		final refusal = facadeSchemaRefusal(message);
+		if (refusal != null)
+			throw new SchemaSkewAbort(refusal);
+		return message;
 	}
 }
 
@@ -1435,7 +1475,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 			if (outcome.rowLimitExceeded())
 				return ListRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
 			if (outcome.failed())
-				return ListFailure(outcome.message());
+				return ListFailure(GoReadonlyStore.facadeMessage(outcome.message()));
 			return ListSuccess({items: [], hasMore: false, formatted: outcome.value()});
 		}
 		return GoReadonlyStore.projectIssueListOutcome(native.readIssueListOutcome(options));

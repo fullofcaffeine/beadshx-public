@@ -26,4 +26,18 @@ final class DatabaseErrors {
 		final message = error.text().toLowerCase();
 		return message.indexOf("error 1146") >= 0 || quotedTableMissing.matchString(message) || unquotedTableMissing.matchString(message);
 	}
+
+	/**
+		Dolt's `Error 1049: database not found`. Upstream's embedded open runs
+		``USE `db` `` and fails there before its schema check; this build starts
+		each connection in the database, so the first query meets that error.
+	**/
+	public static function isDatabaseNotFound(error:go.NativeError):Bool {
+		if (error == null)
+			return false;
+		final matchedError:ErrorMatch<MySqlError> = Errors.asType(error);
+		if (matchedError.matched)
+			return matchedError.value.number == 1049;
+		return error.text().toLowerCase().indexOf("error 1049") >= 0;
+	}
 }

@@ -178,10 +178,34 @@ upstream's order:
 `--readonly` error. `bdhx` prints this error also without `--readonly`,
 because it does not write.
 
+In an embedded workspace, every command that reads the database first
+compares the highest version in the `schema_migrations` table with the
+version of the binary, v65, as upstream does. Errors from the flag parser
+still come first, and this check comes before the other checks of the
+command's arguments. When the database is ahead of the binary, the command
+stops with upstream's
+`schema version mismatch: ... Your bd binary is stale` message on stderr, or
+with that error as JSON on stderr under JSON output, and exit code 1. When the
+database is behind the binary, the command stops with upstream's `--readonly`
+error, `Error: failed to open database: schema version mismatch: ... the
+read-only open cannot migrate it ...`, in every output mode. A failed read of
+the table stops the command with the same `failed to open database` prefix.
+`BD_IGNORE_SCHEMA_SKEW=1` or `--ignore-schema-skew` prints upstream's warning
+instead, and the command reads the database. `where` prints no stored prefix
+when the check stops, as upstream does. `version` does not check.
+
 Limits:
 
 - `bdhx` does not write yet. Commands that create, update, close or sync
   issues are not ported.
+- Without `--readonly`, upstream migrates a database whose schema is behind
+  the binary, and then runs the command. `bdhx` never migrates. It stops with
+  upstream's `--readonly` error and leaves the database unchanged. Migration
+  parity (M12) removes this limit.
+- With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
+  binary, a command that opens the native store more than once, such as `show`
+  with two IDs or `children`, prints the warning once for each open. Upstream
+  prints it once.
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
   `types`, `statuses`, `events tail`, `events export`, `config get`,
   `config list`, `config show`, `config validate` and `config drift` read

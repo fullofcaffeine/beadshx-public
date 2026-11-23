@@ -10,4 +10,13 @@ interface ReadonlyStorePort extends IssueQueryPort {
 	function ping(beadsDir:String, global:Bool):StoreResult<PingSnapshot>;
 	function status(beadsDir:String, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot>;
 	function lastTouchedId(beadsDir:String):String;
+
+	/**
+		Upstream checks the schema when its pre-run opens the store, before the
+		command body. Embedded reads here check in the first read of the command;
+		this runs that check for a command that has not read yet. A refusal
+		throws `SchemaSkewAbort`. A store that does not open is left to the
+		command's own read to report.
+	**/
+	function checkSchema(beadsDir:String, databaseName:String):Void;
 }

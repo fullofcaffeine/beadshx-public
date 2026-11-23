@@ -32,4 +32,7 @@ interface EmbeddedStorePort {
 	function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomStatuses>>;
 	function configValue(beadsDir:String, databaseName:String, key:String):Null<StoreResult<String>>;
 	function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>>;
+
+	/** Opens and closes one session for its schema check (`ReadonlyStorePort.checkSchema`); without embedded access it does nothing. */
+	function checkSchema(beadsDir:String, databaseName:String):Void;
 }

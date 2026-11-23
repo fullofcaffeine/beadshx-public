@@ -28,6 +28,9 @@ typedef Invocation = {
 	/** --readonly: upstream's strict read-only mode, which the `readonly` setting also selects when the flag is absent. */
 	final readonly:Bool;
 
+	/** --ignore-schema-skew: upstream's pre-run then sets BD_IGNORE_SCHEMA_SKEW=1 for every store open. */
+	final ignoreSchemaSkew:Bool;
+
 	final cpuProfile:Bool;
 	final memProfilePath:String;
 	final showHelp:Bool;
