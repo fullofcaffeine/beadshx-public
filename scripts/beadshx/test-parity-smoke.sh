@@ -2434,6 +2434,70 @@ real_database_extra_config='readonly: true'
 compare_raw_metadata missing-db-readonly-setting-types exact '{}' types
 real_database_extra_config=""
 compare_real_database_metadata missing-db-readonly-case-folded-name exact '.dolt_database = "TEST"' --readonly count
+# Upstream's store open refuses a database name that is not an identifier (letters, digits and `_`, not
+# starting with a digit) before it reads or creates anything. A plain read opens the store through
+# its schema initialization, which names itself and adds a hint for a hyphen; strict read-only mode
+# (--readonly, BD_READONLY or the readonly setting) refuses without either. Every mode prints the error
+# as text, also under --json. `where` still runs and prints no prefix from the database.
+compare_real_database_metadata invalid-db-name-hyphen-show exact '.dolt_database = "te-st"' show "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-hyphen-show-json exact '.dolt_database = "te-st"' show "$real_database_issue_id" --json
+compare_real_database_metadata invalid-db-name-hyphen-comments exact '.dolt_database = "te-st"' comments "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-hyphen-dep-tree exact '.dolt_database = "te-st"' dep tree "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-hyphen-types exact '.dolt_database = "te-st"' types
+compare_real_database_metadata invalid-db-name-hyphen-types-json exact '.dolt_database = "te-st"' types --json
+compare_real_database_metadata invalid-db-name-hyphen-where exact '.dolt_database = "te-st"' where
+compare_real_database_metadata invalid-db-name-hyphen-list exact '.dolt_database = "te-st"' list
+compare_real_database_metadata invalid-db-name-hyphen-count-json exact '.dolt_database = "te-st"' count --json
+compare_real_database_metadata invalid-db-name-hyphen-config-get exact '.dolt_database = "te-st"' config get issue_prefix
+compare_real_database_metadata invalid-db-name-hyphen-config-validate exact '.dolt_database = "te-st"' config validate
+compare_real_database_metadata invalid-db-name-dot-show-json exact '.dolt_database = "te.st"' show "$real_database_issue_id" --json
+compare_real_database_metadata invalid-db-name-dot-comments exact '.dolt_database = "te.st"' comments "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-dot-dep-tree exact '.dolt_database = "te.st"' dep tree "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-dot-types exact '.dolt_database = "te.st"' types
+compare_real_database_metadata invalid-db-name-dot-where-json exact '.dolt_database = "te.st"' where --json
+compare_real_database_metadata invalid-db-name-dot-list-json exact '.dolt_database = "te.st"' list --json
+compare_real_database_metadata invalid-db-name-dot-count exact '.dolt_database = "te.st"' count
+compare_real_database_metadata invalid-db-name-leading-digit-ready exact '.dolt_database = "1test"' ready
+compare_real_database_metadata invalid-db-name-quoted-count exact '.dolt_database = "te\"sté"' count
+compare_real_database_metadata invalid-db-name-hyphen-readonly-show exact '.dolt_database = "te-st"' --readonly show "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-hyphen-readonly-types-json exact '.dolt_database = "te-st"' --readonly types --json
+compare_real_database_metadata invalid-db-name-dot-readonly-comments exact '.dolt_database = "te.st"' --readonly comments "$real_database_issue_id"
+compare_real_database_metadata invalid-db-name-dot-readonly-dep-tree exact '.dolt_database = "te.st"' --readonly dep tree "$real_database_issue_id"
+real_database_extra_env=(BD_READONLY=1)
+compare_real_database_metadata invalid-db-name-hyphen-readonly-variable-list exact '.dolt_database = "te-st"' list
+real_database_extra_env=(BEADS_DOLT_SERVER_DATABASE=te-st)
+compare_real_database invalid-db-name-server-database-variable-count exact count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config='readonly: true'
+compare_real_database_metadata invalid-db-name-dot-readonly-setting-where exact '.dolt_database = "te.st"' where
+compare_real_database_metadata invalid-db-name-dot-readonly-setting-count exact '.dolt_database = "te.st"' count
+real_database_extra_config=""
+# Upstream keeps a redirecting workspace's dolt_database across the redirect, so a name there that is
+# not an identifier refuses the open, although the target names its own database.
+redirect_with_invalid_source_database() {
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+	printf '{"dolt_database":"te-st"}' >"$1/work/.beads/metadata.json"
+}
+real_database_setup=redirect_with_invalid_source_database
+compare_real_database invalid-db-name-redirect-source-count exact count
+compare_real_database invalid-db-name-redirect-source-readonly-show-json exact --readonly show "$real_database_issue_id" --json
+real_database_setup=""
+# The snapshot extension refuses as upstream's export does, which opens the store for a plain read.
+invalid_database_name_metadata() {
+	jq '.dolt_database = "te-st"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+candidate_only_setup=invalid_database_name_metadata
+expect_candidate_failure invalid-db-name-hyphen-snapshot "" \
+	"Error: failed to open database: embeddeddolt: init schema: embeddeddolt: invalid database name: \"te-st\"; hyphens are not allowed in embedded mode — replace with underscores in .beads/metadata.json dolt_database field, or run 'bd doctor'" "" \
+	snapshot
+expect_candidate_failure invalid-db-name-hyphen-readonly-snapshot "" \
+	'Error: failed to open database: embeddeddolt: invalid database name: "te-st"' "" --readonly snapshot
+candidate_only_setup=""
 # Without .beads/metadata.json (and without a legacy config.json), upstream's pre-run takes the embedded
 # database `beads` for every command that opens a store. It first prints a warning on stderr, also under
 # --json, the json setting, BD_JSON and the JSON envelope, and then checks --global and --database.

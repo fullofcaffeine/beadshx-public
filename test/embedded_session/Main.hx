@@ -2,14 +2,17 @@ import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.NullString;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.store.EmbeddedSession;
+import beadshx.store.InvalidDatabaseName;
+import beadshx.store.InvalidDatabaseName.InvalidDatabaseNameStep;
 import beadshx.store.StoreResult;
 
 /**
 	Proves the shared embedded session over an upstream-created disposable
 	workspace: one read transaction, two reads on one session, rollback of every
 	read, release after a throwing body, waiting for a locked database as
-	upstream's backoff does, and the readers' error words for a missing store
-	and a missing database.
+	upstream's backoff does, the refusal of a database name that is not an
+	identifier, and the readers' error words for a missing store and a missing
+	database.
 **/
 @:goNative
 @:access(beadshx.store.EmbeddedSession)
@@ -41,6 +44,7 @@ class Main {
 			waitsForLockedDatabase(beadsDir, issueId);
 			reportsMissingStore(missingStore);
 			reportsMissingDatabase(beadsDir);
+			refusesInvalidDatabaseName(beadsDir);
 			keepsReaderMessages(beadsDir, missingStore, issueId);
 		} catch (error:haxe.Exception) {
 			Sys.stderr().writeString('embedded session: FAIL: ${error.message}\n');
@@ -178,6 +182,41 @@ class Main {
 			case other:
 				throw 'missing database: expected the body to fail, received $other';
 		}
+	}
+
+	/** Upstream `OpenSQL` refuses a name that is not an identifier after its ping, before any read; only a hyphen adds the hint. */
+	static function refusesInvalidDatabaseName(beadsDir:String):Void {
+		final hint = "; hyphens are not allowed in embedded mode — replace with underscores in .beads/metadata.json dolt_database field, or run 'bd doctor'";
+		for (name => expected in [
+			"te-st" => 'invalid database name: "te-st"$hint',
+			"te.st" => 'invalid database name: "te.st"',
+			"1x" => 'invalid database name: "1x"'
+		]) {
+			var ran = false;
+			switch EmbeddedSession.withRead(beadsDir, name, (context, transaction) -> {
+				ran = true;
+				return true;
+			}) {
+				case EmbeddedReadNotStarted(SessionDatabaseName, error, []):
+					if (error.toString() != expected)
+						throw 'invalid name $name: expected "$expected", received "${error.toString()}"';
+				case other:
+					throw 'invalid name $name: expected a database name failure, received $other';
+			}
+			if (ran)
+				throw 'invalid name $name: the body ran';
+		}
+		// The refused session released the database: the next open does not wait for it.
+		requireNoCleanupFailure("open after an invalid name", opened(beadsDir, "").close());
+		// The store opens that a command meets first: newStore adds `embeddeddolt: init schema: `, openReadOnly drops the hint; all quote with %q.
+		for (actual => expected in [
+			InvalidDatabaseName.error("te-st", InitSchemaName) => 'embeddeddolt: init schema: embeddeddolt: invalid database name: "te-st"$hint',
+			InvalidDatabaseName.error("te-st", ReadOnlyOpenName) => 'embeddeddolt: invalid database name: "te-st"',
+			InvalidDatabaseName.error("te.st", InitSchemaName) => 'embeddeddolt: init schema: embeddeddolt: invalid database name: "te.st"',
+			InvalidDatabaseName.error('t"é\n', OpenSqlName) => 'invalid database name: "t\\"é\\n"'
+		])
+			if (actual != expected)
+				throw 'invalid name words: expected "$expected", received "$actual"';
 	}
 
 	static function keepsReaderMessages(beadsDir:String, missingStore:String, issueId:String):Void {

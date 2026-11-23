@@ -12,9 +12,12 @@ import beadshx.nativeextern.doltdriver.Config;
 import beadshx.nativeextern.doltdriver.Connector;
 import beadshx.nativeextern.doltdriver.DoltDriverPkg;
 import beadshx.nativeextern.time.TimePkg;
+import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.DatabaseErrors.isDatabaseNotFound;
 import beadshx.store.DatabaseErrors.isTableNotExist;
+import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
+import beadshx.store.InvalidDatabaseName.InvalidDatabaseNameStep;
 import beadshx.store.SchemaSkew.SchemaCursorRead;
 import beadshx.store.SchemaSkew.SchemaSkewAbort;
 import beadshx.store.SchemaSkew.SchemaSkewChecks;
@@ -28,6 +31,9 @@ enum EmbeddedSessionStage {
 
 	/** `(*sql.DB).PingContext` could not open a connection to the engine. */
 	SessionPing;
+
+	/** The selected database name is not an identifier: upstream `OpenSQL` refuses it after the ping. */
+	SessionDatabaseName;
 
 	/** `(*sql.DB).BeginTx` could not start the read transaction. */
 	SessionBegin;
@@ -70,8 +76,9 @@ enum EmbeddedRead<T> {
 	- `open` is `OpenSQL` (open.go): commit identity `beads` / `beads@local`,
 	  multi-statement mode, the selected database, an exponential backoff that
 	  waits up to 5 seconds between attempts until the context ends, a pool of
-	  at most two connections, and a ping. The first open of a workspace in the
-	  process then runs the schema skew check of `openReadOnly` (store.go);
+	  at most two connections, a ping, and the refusal of a database name that
+	  is not an identifier. The first open of a workspace in the process then
+	  runs the schema skew check of `openReadOnly` (store.go);
 	- `read` is the read half of `withConn` (store.go): begin a transaction,
 	  run the body, and roll the transaction back;
 	- `close` is `OpenSQL`'s cleanup function: close the `*sql.DB`, then the
@@ -86,12 +93,13 @@ enum EmbeddedRead<T> {
 	and is the only code that may reach a commit.
 
 	Upstream steps that are not here yet:
-	- `OpenSQL` checks the database name, runs ``USE `db` `` and sets the
-	  branch head with `SET`. Those need an exec outside a transaction, which
-	  this read-only build does not have. The connector already starts every
-	  connection in the selected database. An invalid or missing name therefore
-	  fails at the first query of the body, as the readers did before; the
-	  schema check leaves that error to the body.
+	- `OpenSQL` runs ``USE `db` `` and sets the branch head with `SET`. Those
+	  need an exec outside a transaction, which this read-only build does not
+	  have. The connector already starts every connection in the selected
+	  database. A missing database therefore fails at the first query of the
+	  body, as the readers did before; the schema check leaves that error to
+	  the body. A command refuses an invalid name before it opens a session,
+	  with the words of upstream's store open (`validateEmbeddedDatabase`).
 	- Upstream's cleanup ignores `context.Canceled` from each close; this one
 	  does not. The pinned engine never returns it (`BackgroundThreads.Shutdown`
 	  returns nil), and haxe.go cannot yet read a Go package error variable
@@ -166,6 +174,9 @@ final class EmbeddedSession {
 		final pingError = database.pingContext(session.context);
 		if (pingError != null)
 			return EmbeddedSessionUnavailable(SessionPing, pingError, session.close());
+		// Upstream's `USE` after this check needs no port: the connector already starts in the database.
+		if (goTrimSpace(config.database) != "" && !isEmbeddedDatabaseIdentifier(config.database))
+			return EmbeddedSessionUnavailable(SessionDatabaseName, new go.Error(InvalidDatabaseName.error(config.database, OpenSqlName)), session.close());
 		if (!SchemaSkewChecks.isChecked(beadsDir)) {
 			final cursor = session.readSchemaCursor();
 			final refusal = checkSchemaCursor(cursor);
@@ -352,6 +363,8 @@ final class EmbeddedReadWording {
 			case SessionConnector: connector;
 			case SessionPing: ping;
 			case SessionBegin: begin;
+			// Upstream `withConn` returns OpenSQL's refusal as it is.
+			case SessionDatabaseName: return error.toString();
 		};
 		return '$words: ${error.toString()}';
 	}

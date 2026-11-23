@@ -106,6 +106,8 @@ import beadshx.store.EmbeddedDatabaseLookup.missingConfigurationWarning;
 import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
+import beadshx.store.InvalidDatabaseName;
+import beadshx.store.InvalidDatabaseName.InvalidDatabaseNameStep;
 import beadshx.store.SchemaSkew.SCHEMA_SKEW_ESCAPE_HINT;
 import beadshx.store.SchemaSkew.SchemaSkewBoundary;
 import beadshx.store.SchemaSkew.SchemaSkewRefusal;
@@ -6206,9 +6208,14 @@ final class Application {
 			case StatDirectory: true;
 			case StatMissing | StatNotDirectory | StatFailed(_): false;
 		};
-		if (storeDirectory && (invocation.readonly || config.getBool("readonly")))
+		if (storeDirectory && strictReadonly(invocation, config))
 			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${DEFAULT_EMBEDDED_DATABASE}');
 		return ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${DEFAULT_EMBEDDED_DATABASE}" in this build');
+	}
+
+	/** Upstream's strict read-only mode: --readonly, or the `readonly` setting when the flag is absent. */
+	static function strictReadonly(invocation:Invocation, config:LayeredConfig):Bool {
+		return invocation.readonly || config.getBool("readonly");
 	}
 
 	/**
@@ -6227,8 +6234,10 @@ final class Application {
 		with the open error, which this prints as upstream does. Upstream also
 		keeps a redirecting workspace's dolt_database across the redirect; the
 		store open here takes the target's, so a different name is refused.
-		Upstream rejects a name that is not an identifier before it creates
-		anything, so that open goes ahead and fails as before.
+
+		Upstream refuses a name that is not an identifier before it reads or
+		creates anything, and so does this, with upstream's words: those of its
+		schema initialization for a plain open, or of its strict read-only open.
 	**/
 	function validateEmbeddedDatabase(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		// The workspace facade names .beads/embeddeddolt only for a workspace that upstream opens embedded.
@@ -6246,12 +6255,15 @@ final class Application {
 			if (source != "")
 				selected = source;
 		}
+		final strict = strictReadonly(invocation, LayeredConfig.forWorkspace(location.path));
+		if (!isEmbeddedDatabaseIdentifier(selected))
+			return PlainFailure('failed to open database: ${InvalidDatabaseName.error(selected, strict ? ReadOnlyOpenName : InitSchemaName)}');
 		final path = commandPath(invocation.command);
 		if (selected.toLowerCase() != opened.toLowerCase())
 			return ModeAwareFailure('${path} is not available yet when a redirect keeps the database of the redirecting workspace in this build');
-		if (!isEmbeddedDatabaseIdentifier(selected) || embeddedDatabaseExists(location.path, selected))
+		if (embeddedDatabaseExists(location.path, selected))
 			return Accepted;
-		if (invocation.readonly || LayeredConfig.forWorkspace(location.path).getBool("readonly"))
+		if (strict)
 			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${selected}');
 		return ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${selected}" in this build');
 	}

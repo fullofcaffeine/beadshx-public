@@ -194,6 +194,18 @@ the table stops the command with the same `failed to open database` prefix.
 instead, and the command reads the database. `where` prints no stored prefix
 when the check stops, as upstream does. `version` does not check.
 
+The embedded database name must be an identifier: letters, digits and `_`,
+and not a digit first. The name comes from `.beads/metadata.json`,
+`BEADS_DOLT_SERVER_DATABASE` or a redirecting workspace. For any other name,
+such as `my-db` or `my.db`, every command that reads the database stops
+before it reads or writes, as upstream does. It prints upstream's error,
+`Error: failed to open database: embeddeddolt: init schema: embeddeddolt:
+invalid database name: "my-db"`, with upstream's hint when the name has a
+hyphen. With `--readonly` or the `readonly` setting, the error is
+`Error: failed to open database: embeddeddolt: invalid database name:
+"my-db"`, without the hint. The error is text in every output mode. `where`
+prints no stored prefix then.
+
 **BeadsHX extension: `bdhx snapshot`.** This command prints a read-only
 snapshot of every issue in an embedded workspace. Upstream `bd` v1.2.1 has no
 such command, so this is a recorded extension
