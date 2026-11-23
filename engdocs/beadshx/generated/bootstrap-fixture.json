@@ -772,6 +772,10 @@
         "sha256": "a181158670a278f16409dc91fc67737561726201e50007fcc1549363854bf0dd"
       },
       {
+        "path": "src/beadshx/store/ExportIssueLine.hx",
+        "sha256": "bfce47e3fd202b4ea6577313ef031602163f0510778a51ed53c265d329bac218"
+      },
+      {
         "path": "src/beadshx/store/GoJsonSyntax.hx",
         "sha256": "1ab61aac50fe036692f91fed921aec7bdcd9a7d2e7b8ad51356c2700f6c39f76"
       },
@@ -982,6 +986,10 @@
       {
         "path": "src/beadshx/store/SqlEventsJournalReader.hx",
         "sha256": "20aefd93b0aa72ff427a6dbf18e4516520b9f12f0afda3b69a92f2990c9b48a3"
+      },
+      {
+        "path": "src/beadshx/store/SqlExportReader.hx",
+        "sha256": "18794852facc9e74f873f547fe443e808ed2eac456d88a0f3cf5b06dd872bf01"
       },
       {
         "path": "src/beadshx/store/SqlGraphReader.hx",
