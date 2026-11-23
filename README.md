@@ -206,6 +206,11 @@ hyphen. With `--readonly` or the `readonly` setting, the error is
 "my-db"`, without the hint. The error is text in every output mode. `where`
 prints no stored prefix then.
 
+Like upstream, `--readonly` also takes a value, such as `--readonly=true` or
+`--readonly=0`, in every form that Go's `strconv.ParseBool` accepts.
+`--readonly=false` turns the `readonly` setting and `BD_READONLY` off for
+one command. Any other value stops the command with upstream's flag error.
+
 **BeadsHX extension: `bdhx snapshot`.** This command prints a read-only
 snapshot of every issue in an embedded workspace. Upstream `bd` v1.2.1 has no
 such command, so this is a recorded extension
@@ -302,10 +307,19 @@ Limits:
   and an empty `dolt_database`, which select `beads`, and to every other
   missing name, also from `BEADS_DOLT_SERVER_DATABASE`. Upstream creates that
   database. With `--readonly` or the `readonly` setting, upstream does not
-  create it, and `bdhx` prints the same open error. A redirect can make
-  upstream open the database that the redirecting workspace names instead of
-  the target's; `bdhx` then reports that it is not available yet. `where`,
-  `version` and help pages still run.
+  create it, and `bdhx` prints the same open error. When a directory or a
+  file in `.beads/embeddeddolt` has the name of the missing database,
+  upstream fails without a write, and `bdhx` prints the same error.
+  `DOLT_DBNAME_REPLACE` counts as in upstream: a directory such as `my-db`
+  then holds the database `my_db`. Like upstream, `bdhx` opens the database
+  that a redirecting workspace names instead of the target's. Without a
+  `--db` path, that workspace is the `.beads` directory of the Git repository
+  root, also when `-C` or `BEADS_DIR` selects another workspace. Outside a
+  repository it is `BEADS_DIR` or the `-C` workspace, and otherwise the first
+  `.beads` directory above the current directory. `bdhx` reports that it is
+  not available yet when such a redirect involves a detached commit worktree
+  (a path with `/refs/commits/`). `where`, `version` and help pages still
+  run.
 - In a workspace without `.beads/metadata.json`, every command that reads the
   database prints upstream's warning and then reports that it is not
   available yet when the embedded store has no `beads` database. Upstream

@@ -89,9 +89,10 @@ function isEmbeddedDatabaseIdentifier(name:String):Bool {
 /**
 	Whether the embedded Dolt engine of one workspace finds the database `name`
 	without creating it. Dolt loads each directory in `.beads/embeddeddolt`
-	that holds a `.dolt` repository as a database with the directory's name,
-	and finds a database by its lower-case name, so `TEST` finds `test`.
-	`name` must be an embedded database identifier, which is ASCII.
+	that holds a `.dolt` repository, and no in-progress marker, as a database
+	named after the directory (`DoltDirectoryName`). It finds a
+	database by its lower-case name, so `TEST` finds `test`. `name` must be an
+	embedded database identifier, which is ASCII.
 **/
 function embeddedDatabaseExists(beadsDir:String, name:String):Bool {
 	final dataDir = Path.join([beadsDir, "embeddeddolt"]);
@@ -104,8 +105,48 @@ function embeddedDatabaseExists(beadsDir:String, name:String):Bool {
 	final wanted = name.toLowerCase();
 	for (entry in entries) {
 		final repository = Path.join([dataDir, entry, ".dolt"]);
-		if (entry.toLowerCase() == wanted && FileSystem.exists(repository) && FileSystem.isDirectory(repository))
+		if (DoltDirectoryName.databaseName(entry).toLowerCase() == wanted
+			&& FileSystem.exists(repository)
+			&& FileSystem.isDirectory(repository)
+			&& !FileSystem.exists(Path.join([dataDir, entry, DOLT_IN_PROGRESS_MARKER])))
 			return true;
 	}
 	return false;
+}
+
+/** Dolt dbfactory's marker file in a database directory that a create has not finished; Dolt skips such a directory. */
+private final DOLT_IN_PROGRESS_MARKER = ".dolt_safe_to_ignore";
+
+/**
+	What a missing database's own path in the store holds. Upstream's plain
+	open runs `CREATE DATABASE IF NOT EXISTS`, and Dolt then checks the path
+	named like the database before it creates anything.
+**/
+enum MissingDatabaseEntry {
+	/** Nothing, or a path that os.Stat cannot read: Dolt would create the database. */
+	EntryAbsent;
+
+	/** A directory that is no database: Dolt takes the name as used, and upstream's `USE` then fails. */
+	EntryDirectory;
+
+	/** A file: Dolt refuses to create the database. */
+	EntryFile;
+
+	/** A directory that a Dolt create left unfinished, which Dolt reports in words this build does not model. */
+	EntryIncomplete;
+}
+
+/** Dolt's check of `<store>/<name>` (database_provider.go checkDatabaseNameAvailableLocked), for a database the store lacks. */
+function missingDatabaseEntry(beadsDir:String, name:String):MissingDatabaseEntry {
+	final path = Path.join([beadsDir, "embeddeddolt", name]);
+	if (!FileSystem.exists(path))
+		return EntryAbsent;
+	if (!FileSystem.isDirectory(path))
+		return EntryFile;
+	final repository = Path.join([path, ".dolt"]);
+	final started = FileSystem.exists(repository) && FileSystem.isDirectory(repository);
+	if (FileSystem.exists(Path.join([path, DOLT_IN_PROGRESS_MARKER]))
+		|| (started && !FileSystem.exists(Path.join([repository, "repo_state.json"]))))
+		return EntryIncomplete;
+	return EntryDirectory;
 }

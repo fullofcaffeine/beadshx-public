@@ -133,7 +133,8 @@ final class Parser {
 		var databasePath = "";
 		var databaseName = "";
 		var global = false;
-		var readonly = false;
+		// Null while --readonly is absent: upstream then takes the readonly setting.
+		var readonly:Null<Bool> = null;
 		var ignoreSchemaSkew = false;
 		var cpuProfile = false;
 		var memProfilePath = "";
@@ -864,6 +865,13 @@ final class Parser {
 				if (!isBooleanFlagValue(value))
 					return UsageFailure(PflagValue.invalidBoolean("--global", value));
 				global = booleanFlagValue(value);
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--readonly=")) {
+				final value = argument.substr(11);
+				if (!isBooleanFlagValue(value))
+					return UsageFailure(PflagValue.invalidBoolean("--readonly", value));
+				readonly = booleanFlagValue(value);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--watch=")

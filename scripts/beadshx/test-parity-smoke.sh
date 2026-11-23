@@ -2735,7 +2735,7 @@ expect_candidate_failure missing-db-server-database-variable-info-unported "" \
 	'Error: info is not available yet when the embedded store has no database named "other" in this build' "" info
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # Upstream keeps a redirecting workspace's dolt_database across the redirect, and so creates `other`
-# here, while the store open in this build would take the target's `test`.
+# here. This build opens `other` too, and refuses because the store lacks it.
 redirect_with_source_database() {
 	mkdir "$1/work/sub"
 	mv -f "$1/work/.beads" "$1/work/sub/.beads"
@@ -2745,8 +2745,148 @@ redirect_with_source_database() {
 }
 candidate_only_setup=redirect_with_source_database
 expect_candidate_failure missing-db-redirect-source-count-unported "" \
-	'Error: count is not available yet when a redirect keeps the database of the redirecting workspace in this build' "" count
+	'Error: count is not available yet when the embedded store has no database named "other" in this build' "" count
 candidate_only_setup=""
+real_database_read_only=1
+# pflag reads --readonly as a bool, before or after the command: every strconv.ParseBool form, and the
+# last value counts. A true value opens the store strictly, so a missing database gives the open error.
+# A false value turns strict mode off also when the readonly setting or BD_READONLY turns it on, so an
+# invalid name gives the plain open's words.
+compare_real_database_metadata readonly-flag-true-missing-db exact '.dolt_database = "other"' --readonly=true count
+compare_real_database_metadata readonly-flag-one-missing-db-list-json exact '.dolt_database = "other"' --readonly=1 list --json
+compare_real_database_metadata readonly-flag-t-missing-db-comments exact '.dolt_database = "other"' --readonly=t comments "$real_database_issue_id"
+compare_real_database_metadata readonly-flag-upper-true-after-command exact '.dolt_database = "other"' types --readonly=TRUE
+compare_real_database_metadata readonly-flag-title-true-missing-db exact '.dolt_database = "other"' --readonly=True count
+compare_real_database_metadata readonly-flag-capital-t-missing-db exact '.dolt_database = "other"' dep tree "$real_database_issue_id" --readonly=T
+compare_real_database readonly-flag-false-count exact --readonly=false count
+compare_real_database readonly-flag-zero-list-json exact list --readonly=0 --json
+compare_real_database_metadata readonly-flag-false-then-true exact '.dolt_database = "other"' --readonly=false --readonly count
+compare_real_database_metadata readonly-flag-true-then-false exact '.dolt_database = "te-st"' --readonly --readonly=false count
+real_database_extra_config='readonly: true'
+compare_real_database_metadata readonly-flag-false-over-setting exact '.dolt_database = "te-st"' --readonly=false count
+compare_real_database_metadata readonly-flag-f-over-setting-comments exact '.dolt_database = "te-st"' --readonly=f comments "$real_database_issue_id"
+compare_real_database_metadata readonly-flag-upper-false-over-setting exact '.dolt_database = "te.st"' --readonly=FALSE types
+compare_real_database_metadata readonly-flag-capital-f-over-setting exact '.dolt_database = "te.st"' --readonly=F list --json
+compare_real_database_metadata readonly-flag-title-false-over-setting exact '.dolt_database = "te.st"' --readonly=False count
+compare_real_database_metadata readonly-flag-true-with-setting exact '.dolt_database = "te.st"' --readonly=true count
+real_database_extra_config=""
+real_database_extra_env=(BD_READONLY=1)
+compare_real_database_metadata readonly-flag-zero-over-variable-show-json exact '.dolt_database = "te-st"' --readonly=0 show "$real_database_issue_id" --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A value that strconv.ParseBool rejects fails before the pre-run, as text also under --json.
+compare_real_database readonly-flag-bad-value exact --readonly=maybe count
+compare_real_database readonly-flag-empty-value exact --readonly= count
+compare_real_database readonly-flag-bad-value-after-command exact count --readonly=yes
+compare_real_database readonly-flag-bad-value-json exact --readonly=maybe list --json
+compare_real_database readonly-flag-bad-value-version exact --readonly=maybe version
+compare_real_database readonly-flag-bad-value-where exact --readonly=maybe where
+compare_real_database readonly-flag-bad-value-help-command exact --readonly=maybe help count
+# A --db path that selects a workspace whose database name is not an identifier refuses it the same way.
+compare_real_database_metadata invalid-db-name-db-flag-store exact '.dolt_database = "te-st"' --db .beads/embeddeddolt count
+compare_real_database_metadata invalid-db-name-db-flag-workspace-readonly-json exact '.dolt_database = "te.st"' --db .beads --readonly list --json
+# A directory or a file named like a missing database makes upstream's create fail without a write; in
+# strict read-only mode the open fails first.
+missing_database_directory() {
+	mkdir "$1/work/.beads/embeddeddolt/other"
+}
+real_database_setup=missing_database_directory
+compare_real_database_metadata missing-db-directory-count exact '.dolt_database = "other"' count
+compare_real_database_metadata missing-db-directory-show-json exact '.dolt_database = "other"' show "$real_database_issue_id" --json
+compare_real_database_metadata missing-db-directory-where exact '.dolt_database = "other"' where
+compare_real_database_metadata missing-db-directory-readonly exact '.dolt_database = "other"' --readonly count
+missing_database_file() {
+	: >"$1/work/.beads/embeddeddolt/other"
+}
+real_database_setup=missing_database_file
+compare_real_database_metadata missing-db-file-count exact '.dolt_database = "other"' count
+compare_real_database_metadata missing-db-file-types-json exact '.dolt_database = "other"' types --json
+compare_real_database_metadata missing-db-file-readonly-comments exact '.dolt_database = "other"' --readonly comments "$real_database_issue_id"
+replace_database_with_directory() {
+	rm -rf "$1/work/.beads/embeddeddolt/test"
+	mkdir "$1/work/.beads/embeddeddolt/test"
+}
+real_database_setup=replace_database_with_directory
+compare_real_database missing-db-replaced-by-directory-list exact list
+replace_database_with_file() {
+	rm -rf "$1/work/.beads/embeddeddolt/test"
+	: >"$1/work/.beads/embeddeddolt/test"
+}
+real_database_setup=replace_database_with_file
+compare_real_database missing-db-replaced-by-file-dep-tree exact dep tree "$real_database_issue_id"
+no_metadata_default_database_file() {
+	remove_metadata "$1"
+	: >"$1/work/.beads/embeddeddolt/beads"
+}
+real_database_setup=no_metadata_default_database_file
+compare_real_database no-metadata-default-file-count exact count
+real_database_setup=""
+# With DOLT_DBNAME_REPLACE set, Dolt names a database after its directory with each run of spaces and
+# hyphens as one `_`. Without it, the directory keeps its own name.
+hyphenated_database_directory() {
+	mv -f "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/te--st"
+}
+spaced_database_directory() {
+	mv -f "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/ te st"
+}
+real_database_setup=hyphenated_database_directory
+real_database_extra_env=(DOLT_DBNAME_REPLACE=1)
+compare_real_database_metadata dbname-replace-hyphen-count exact '.dolt_database = "te_st"' count
+compare_real_database_metadata dbname-replace-hyphen-readonly-list-json exact '.dolt_database = "te_st"' --readonly list --json
+compare_real_database_metadata dbname-replace-hyphen-comments exact '.dolt_database = "TE_ST"' comments "$real_database_issue_id"
+compare_real_database_metadata dbname-replace-hyphen-where exact '.dolt_database = "te_st"' where
+real_database_setup=spaced_database_directory
+compare_real_database_metadata dbname-replace-space-dep-tree exact '.dolt_database = "te_st"' dep tree "$real_database_issue_id"
+compare_real_database_metadata dbname-replace-space-types exact '.dolt_database = "te_st"' types
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=hyphenated_database_directory
+compare_real_database_metadata dbname-no-replace-readonly exact '.dolt_database = "te_st"' --readonly count
+real_database_setup=""
+# Upstream keeps the dolt_database of the workspace that GetRedirectInfo names: the .beads directory of
+# the Git repository root, also when -C or BEADS_DIR selects another workspace; outside a repository,
+# BEADS_DIR, which -C sets, and only without it the first .beads directory above the current directory.
+# A redirect is kept when upstream follows it. Here `other` is a copy of `test` from before the target's
+# copy of the issue was renamed, so each read shows which database it opened.
+redirect_with_existing_source_database() {
+	copy_fixture_tree "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/other"
+	printf "UPDATE issues SET title = 'Target database title' WHERE id = '%s'\n" "$real_database_issue_id" |
+		"$fixture_sql" "$1/work" >/dev/null
+	redirect_with_source_database "$1"
+}
+real_database_setup=redirect_with_existing_source_database
+compare_real_database redirect-source-existing-list-json exact list --json
+compare_real_database redirect-source-existing-readonly-dep-tree exact --readonly dep tree "$real_database_issue_id"
+compare_real_database redirect-source-existing-where exact where
+real_database_directory=sub
+compare_real_database redirect-source-existing-target-directory-list exact list
+real_database_directory=""
+redirect_beside_another_workspace() {
+	redirect_with_existing_source_database "$1"
+	mkdir "$1/elsewhere"
+	copy_fixture_tree "$1/work/sub/.beads" "$1/elsewhere/.beads"
+}
+real_database_setup=redirect_beside_another_workspace
+compare_real_database redirect-source-change-directory-list-json exact -C ../elsewhere list --json
+real_database_extra_env=('BEADS_DIR=<work>/../elsewhere/.beads')
+compare_real_database redirect-source-beads-dir-dep-tree exact dep tree "$real_database_issue_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A --db path skips that check: upstream reads the target's own database.
+compare_real_database redirect-source-db-flag-list exact --db sub/.beads/embeddeddolt list
+# Outside a repository upstream's `list` also warns that beads.role is not set, so these read with dep tree.
+redirect_outside_git_repository() {
+	redirect_beside_another_workspace "$1"
+	mv -f "$1/work/.git" "$1/work-git"
+}
+real_database_setup=redirect_outside_git_repository
+compare_real_database redirect-source-no-git-dep-tree exact dep tree "$real_database_issue_id"
+compare_real_database redirect-source-no-git-change-directory-dep-tree-json exact -C ../elsewhere dep tree "$real_database_issue_id" --json
+real_database_extra_env=('BEADS_DIR=<work>/../elsewhere/.beads')
+compare_real_database redirect-source-no-git-beads-dir-dep-tree exact dep tree "$real_database_issue_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_directory=sub
+compare_real_database redirect-source-no-git-target-directory-dep-tree exact --readonly dep tree "$real_database_issue_id"
+real_database_directory=""
+real_database_setup=""
+real_database_read_only=""
 # Without metadata.json upstream warns and then creates `beads` when the embedded store lacks it, also
 # when BEADS_DOLT_SERVER_DATABASE names the fixture's database, which upstream ignores there. This build
 # prints the same warning and then refuses before it opens anything.

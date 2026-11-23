@@ -25,8 +25,13 @@ typedef Invocation = {
 	final databaseName:String;
 	final global:Bool;
 
-	/** --readonly: upstream's strict read-only mode, which the `readonly` setting also selects when the flag is absent. */
-	final readonly:Bool;
+	/**
+		The --readonly value, which pflag reads as a bool (`--readonly=false`
+		and the other strconv.ParseBool forms too), or null when the flag is
+		absent. Upstream's strict read-only mode is this value, or the
+		`readonly` setting when the flag is absent.
+	**/
+	final readonly:Null<Bool>;
 
 	/** --ignore-schema-skew: upstream's pre-run then sets BD_IGNORE_SCHEMA_SKEW=1 for every store open. */
 	final ignoreSchemaSkew:Bool;

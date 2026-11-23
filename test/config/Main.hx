@@ -46,9 +46,12 @@ import beadshx.config.ConfigValidate.renderValidationText;
 import beadshx.config.ConfigValidate.syncConfigIssues;
 import beadshx.config.ConfigValidate.validationIssues;
 import beadshx.config.ConfigValidate.yamlConfigIssues;
+import beadshx.store.DoltDirectoryName;
+import beadshx.store.EmbeddedDatabaseLookup.MissingDatabaseEntry;
 import beadshx.store.EmbeddedDatabaseLookup.configuredEmbeddedDatabase;
 import beadshx.store.EmbeddedDatabaseLookup.embeddedDatabaseExists;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.store.EmbeddedDatabaseLookup.missingDatabaseEntry;
 import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.JsonValue.GoJsonDecode;
 import beadshx.store.JsonValue.decodeGoStruct;
@@ -322,6 +325,31 @@ class Main {
 		for (name in ["other", "plain", "beads"])
 			equal(embeddedDatabaseExists(beadsDir, name), false);
 		equal(embeddedDatabaseExists('$root/missing', "test"), false);
+		// Dolt's create checks the path named like a missing database: a directory, a file, nothing, or an unfinished create.
+		FileSystem.createDirectory('$beadsDir/embeddeddolt/started/.dolt');
+		FileSystem.createDirectory('$beadsDir/embeddeddolt/marked/.dolt');
+		File.saveContent('$beadsDir/embeddeddolt/marked/.dolt/repo_state.json', "{}");
+		File.saveContent('$beadsDir/embeddeddolt/marked/.dolt_safe_to_ignore', "");
+		equal(embeddedDatabaseExists(beadsDir, "marked"), false);
+		for (name => expected in [
+			"other" => EntryDirectory,
+			"plain" => EntryFile,
+			"beads" => EntryAbsent,
+			"started" => EntryIncomplete,
+			"marked" => EntryIncomplete
+		])
+			equal(missingDatabaseEntry(beadsDir, name), expected);
+		// DOLT_DBNAME_REPLACE makes Dolt name a database after its directory with spaces and hyphens as one `_`.
+		FileSystem.createDirectory('$beadsDir/embeddeddolt/my--db/.dolt');
+		final previousReplace = Sys.getEnv("DOLT_DBNAME_REPLACE");
+		Sys.putEnv("DOLT_DBNAME_REPLACE", "1");
+		equal(DoltDirectoryName.databaseName(" a - b\tc__d "), "a_b_c_d");
+		equal(embeddedDatabaseExists(beadsDir, "MY_DB"), true);
+		equal(embeddedDatabaseExists(beadsDir, "test"), true);
+		Sys.putEnv("DOLT_DBNAME_REPLACE", "");
+		equal(DoltDirectoryName.databaseName(" a-b "), " a-b ");
+		equal(embeddedDatabaseExists(beadsDir, "my_db"), false);
+		Sys.putEnv("DOLT_DBNAME_REPLACE", previousReplace == null ? "" : previousReplace);
 		// No metadata.json, null, {} and an empty name select the default; the last duplicate and a folded key count.
 		equal(configuredEmbeddedDatabase(beadsDir, ""), "beads");
 		// Without metadata.json upstream's pre-run takes the default before it would read BEADS_DOLT_SERVER_DATABASE.

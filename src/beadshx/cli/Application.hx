@@ -102,7 +102,9 @@ import beadshx.config.WorkspaceEnvironment;
 import beadshx.store.EmbeddedDatabaseLookup.DEFAULT_EMBEDDED_DATABASE;
 import beadshx.store.EmbeddedDatabaseLookup.embeddedDatabaseExists;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.store.EmbeddedDatabaseLookup.MissingDatabaseEntry;
 import beadshx.store.EmbeddedDatabaseLookup.missingConfigurationWarning;
+import beadshx.store.EmbeddedDatabaseLookup.missingDatabaseEntry;
 import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
@@ -133,6 +135,8 @@ import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
+import beadshx.workspace.RedirectSource;
+import beadshx.workspace.RedirectSource.RedirectSourceLookup;
 import beadshx.workspace.WorkspaceDiscovery;
 import beadshx.workspace.WorkspaceLocation;
 import beadshx.workspace.WorkspacePort;
@@ -6210,12 +6214,17 @@ final class Application {
 		};
 		if (storeDirectory && strictReadonly(invocation, config))
 			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${DEFAULT_EMBEDDED_DATABASE}');
-		return ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${DEFAULT_EMBEDDED_DATABASE}" in this build');
+		return missingDatabaseRefusal(path, location.path, DEFAULT_EMBEDDED_DATABASE);
 	}
 
-	/** Upstream's strict read-only mode: --readonly, or the `readonly` setting when the flag is absent. */
+	/**
+		Upstream's strict read-only mode: the --readonly value, or the
+		`readonly` setting when the flag is absent (`Changed("readonly")`), so
+		`--readonly=false` turns the setting off.
+	**/
 	static function strictReadonly(invocation:Invocation, config:LayeredConfig):Bool {
-		return invocation.readonly || config.getBool("readonly");
+		final flag = invocation.readonly;
+		return flag == null ? config.getBool("readonly") : flag;
 	}
 
 	/**
@@ -6231,9 +6240,15 @@ final class Application {
 
 		In strict read-only mode (--readonly, or the `readonly` setting when the
 		flag is absent) upstream opens the store without the create and fails
-		with the open error, which this prints as upstream does. Upstream also
-		keeps a redirecting workspace's dolt_database across the redirect; the
-		store open here takes the target's, so a different name is refused.
+		with the open error, which this prints as upstream does. Where the
+		create itself fails, as for a directory or a file named like the
+		database, this prints upstream's error too (missingDatabaseRefusal).
+
+		Without a --db path, upstream keeps the dolt_database of the workspace
+		that GetRedirectInfo names when its redirect is followed: it sets
+		BEADS_DOLT_SERVER_DATABASE, which every later store open reads. This
+		does the same (RedirectSource), so the readers and the native facade
+		open that database.
 
 		Upstream refuses a name that is not an identifier before it reads or
 		creates anything, and so does this, with upstream's words: those of its
@@ -6248,24 +6263,57 @@ final class Application {
 			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
 				return Accepted;
 		}
-		final opened = resolveEmbeddedDatabaseName(location.path, "");
-		var selected = opened;
-		if (environmentValue("BEADS_DOLT_SERVER_DATABASE") == "" && location.redirectedFrom != "") {
-			final source = redirectSourceDatabase(location.redirectedFrom);
-			if (source != "")
-				selected = source;
+		final path = commandPath(invocation.command);
+		var selected = resolveEmbeddedDatabaseName(location.path, "");
+		if (environmentValue("BEADS_DOLT_SERVER_DATABASE") == "" && !databaseFlagSelectsPath(invocation)) {
+			// Upstream's BEADS_DIR at this point: the workspace that -C selects, or the variable.
+			switch RedirectSource.lookup(invocation.directory != "" ? location.path : environmentValue("BEADS_DIR")) {
+				case RedirectedFrom(localDir):
+					final source = redirectSourceDatabase(localDir);
+					if (source != "") {
+						RedirectSource.preserveSourceDatabase(source);
+						selected = source;
+					}
+				case NotRedirected:
+				case RedirectUnknown:
+					return ModeAwareFailure('${path} is not available yet when a redirect involves a detached commit worktree in this build');
+			}
 		}
 		final strict = strictReadonly(invocation, LayeredConfig.forWorkspace(location.path));
 		if (!isEmbeddedDatabaseIdentifier(selected))
 			return PlainFailure('failed to open database: ${InvalidDatabaseName.error(selected, strict ? ReadOnlyOpenName : InitSchemaName)}');
-		final path = commandPath(invocation.command);
-		if (selected.toLowerCase() != opened.toLowerCase())
-			return ModeAwareFailure('${path} is not available yet when a redirect keeps the database of the redirecting workspace in this build');
 		if (embeddedDatabaseExists(location.path, selected))
 			return Accepted;
 		if (strict)
 			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${selected}');
-		return ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${selected}" in this build');
+		return missingDatabaseRefusal(path, location.path, selected);
+	}
+
+	/**
+		Upstream's plain open of the database `name`, which the embedded store
+		lacks, runs `CREATE DATABASE IF NOT EXISTS`. Dolt first checks the path
+		named like the database: for a directory that holds no database it
+		creates nothing, and the `USE` that follows fails; for a file it refuses
+		to create. Both fail without a write, and this prints upstream's error.
+		Otherwise upstream creates the database, which this build refuses.
+	**/
+	static function missingDatabaseRefusal(path:String, beadsDir:String, name:String):DatabaseSelectionValidation {
+		return switch missingDatabaseEntry(beadsDir, name) {
+			case EntryDirectory:
+				PlainFailure('failed to open database: embeddeddolt: init schema: embeddeddolt: switching to database: Error 1049: database not found: ${name}');
+			case EntryFile:
+				PlainFailure('failed to open database: embeddeddolt: init schema: embeddeddolt: creating database: Error 1105: cannot create DB, file exists at ${name}');
+			case EntryAbsent | EntryIncomplete:
+				ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${name}" in this build');
+		};
+	}
+
+	/** Upstream's `dbPath` before its redirect check: a --db flag path; a BEADS_DB or BD_DB path is not one yet. */
+	static function databaseFlagSelectsPath(invocation:Invocation):Bool {
+		return switch invocation.databaseVariable {
+			case VariablePath(_, _, _): false;
+			case NoVariable | UnsupportedPath(_): invocation.databasePath != "";
+		};
 	}
 
 	function validateDatabaseSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
