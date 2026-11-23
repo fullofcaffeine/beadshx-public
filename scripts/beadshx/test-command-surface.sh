@@ -6,6 +6,18 @@ dispatcher="$repository_root/scripts/beadshx/command.sh"
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-command-surface.XXXXXX")"
 trap 'rm -rf -- "$fixture_root"' EXIT
 
+# The build outputs of this checkout, which later gate steps use: the bdhx candidate and the
+# upstream oracle in build/bin, the package, the generated Go and its licenses.
+build_outputs() {
+	local path
+	for path in build/bin build/packages LICENSES generated/go; do
+		if [[ -d "$repository_root/$path" ]]; then
+			(cd "$repository_root" && find "$path" -maxdepth 2 ! -type d -print)
+		fi
+	done | LC_ALL=C sort
+}
+outputs_before="$(build_outputs)"
+
 for command_name in setup bootstrap generate build oracle inventory inventory-check output-contracts error-contracts storage-contracts effect-contracts native-pressure schema-migrations test-focused generated identity caf-intent parity test ci-local format lint package clean; do
 	grep -Fq "bash scripts/beadshx/command.sh $command_name" "$repository_root/package.json"
 done
@@ -40,7 +52,32 @@ jq -e '
 	.exitCode == 7
 ' "$fixture_root/focused.json" >/dev/null
 
-result="$($dispatcher clean)"
+# `clean` and `build` run in a disposable copy of the dispatcher and the scripts that they call, so
+# this check never removes the outputs of this checkout. The copy holds one output of each kind.
+clean_root="$fixture_root/checkout"
+mkdir -p "$clean_root/scripts/beadshx" "$clean_root/engdocs/beadshx/program" \
+	"$clean_root/build/bin" "$clean_root/build/packages" \
+	"$clean_root/generated/go/bdhx" "$clean_root/generated/go/hxrt"
+for script in command.sh clean-generated.sh build-generated.sh; do
+	cp -f "$repository_root/scripts/beadshx/$script" "$clean_root/scripts/beadshx/$script"
+done
+cp -f "$repository_root/.buildflags" "$clean_root/.buildflags"
+cp -f "$repository_root/engdocs/beadshx/program/toolchain-locks.json" \
+	"$clean_root/engdocs/beadshx/program/toolchain-locks.json"
+cp -f "$repository_root/generated/go/.gitignore" "$clean_root/generated/go/.gitignore"
+seeded_outputs=(
+	build/bin/bdhx
+	build/bin/bd-upstream
+	build/packages/beadshx-development-bootstrap.zip
+	generated/go/bdhx/.reflaxe-go-owned.json
+	generated/go/hxrt/hxrt.go
+)
+for output in "${seeded_outputs[@]}"; do
+	touch "$clean_root/$output"
+done
+clean_dispatcher="$clean_root/scripts/beadshx/command.sh"
+
+result="$($clean_dispatcher clean)"
 jq -e '
 	.schemaVersion == 1 and
 	.command == "clean" and
@@ -48,8 +85,18 @@ jq -e '
 	.exitCode == 0 and
 	.log == "build/evidence/commands/clean.log"
 ' <<<"$result" >/dev/null
+for output in "${seeded_outputs[@]}"; do
+	if [[ -e "$clean_root/$output" ]]; then
+		printf 'clean command left a build output: %s\n' "$output" >&2
+		exit 1
+	fi
+done
+if [[ ! -f "$clean_root/generated/go/.gitignore" ]]; then
+	printf 'clean command removed the tracked generated/go/.gitignore\n' >&2
+	exit 1
+fi
 
-result="$($dispatcher build || true)"
+result="$($clean_dispatcher build || true)"
 jq -e '
 	.schemaVersion == 1 and
 	.command == "build" and
@@ -58,6 +105,13 @@ jq -e '
 	.log == "build/evidence/commands/build.log"
 ' <<<"$result" >/dev/null
 grep -Fq 'generated bootstrap source is missing' \
-	"$repository_root/build/evidence/commands/build.log"
+	"$clean_root/build/evidence/commands/build.log"
+
+# A check must never remove an output that a later step needs.
+removed="$(LC_ALL=C comm -23 <(printf '%s\n' "$outputs_before") <(build_outputs))"
+if [[ -n "$removed" ]]; then
+	printf 'command surface check removed build outputs from the checkout:\n%s\n' "$removed" >&2
+	exit 1
+fi
 
 printf 'BeadsHX command surface: PASS\n'
