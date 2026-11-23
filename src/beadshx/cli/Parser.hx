@@ -126,6 +126,29 @@ private typedef FlagUse = {
 	final check:FlagCheck;
 }
 
+/** What one shorthand letter is to pflag. */
+private enum ShorthandKind {
+	BooleanShorthand;
+	ValueShorthand;
+	UnknownShorthand;
+}
+
+/**
+	Why: pflag reads a group of shorthands such as `-rtbug` one letter at a time.
+
+	What: one argument as typed, or one flag or value that the parser takes out
+	of such a group (see `expandShorthands`).
+**/
+private typedef ArgumentToken = {
+	final text:String;
+
+	/** What pflag quotes in a shorthand error: the argument, or the rest of its group from this letter on. */
+	final flagArgument:String;
+
+	/** Whether the token comes out of a group, which cobra's command search skips as a whole. */
+	final grouped:Bool;
+}
+
 /** Upstream validateCommentsArgs for `bd comments` with more than one argument. */
 private final COMMENTS_TAKES_ONE_ID = '"bd comments" takes a single issue id and lists its comments.\n\n'
 	+ 'To list comments:\n  bd comments <issue-id>\n\nTo add a comment:\n  bd comments add <issue-id> <text>\n\nSee: bd comments --help';
@@ -192,7 +215,7 @@ final class Parser {
 		function booleanValue(typed:String, value:String):Null<Bool> {
 			if (isBooleanFlagValue(value))
 				return booleanFlagValue(value);
-			rejectValue(typed, PflagValue.invalidBoolean(typed, value));
+			rejectValue(typed, PflagValue.invalidBoolean(pflagName(typed, positional), value));
 			return null;
 		}
 		// Upstream checks these in its pre-run, after cobra's flag errors; the first one wins.
@@ -336,15 +359,6 @@ final class Parser {
 		var showIds = new Array<String>();
 		final issueFlagIds = new Array<String>();
 		var flagsEnded = false;
-		// The shorthands of the int flags. The pflag pass reads -d as --max-depth in `dep tree`.
-		function integerShorthand(typed:String):Null<IntegerFlag> {
-			return switch typed {
-				case "-n": LimitFlag;
-				case "-p": PriorityFlag;
-				case "-d": DaysFlag;
-				case _: null;
-			};
-		}
 		// Takes a value for the command found, which has the flag: pflag parses an int flag's value.
 		function applyIntegerValue(flag:IntegerFlag, typed:String, raw:String):Null<String> {
 			final name = integerFlagName(flag, typed, positional);
@@ -392,12 +406,53 @@ final class Parser {
 		function readIntegerValue(flag:IntegerFlag, typed:String, raw:String):Void {
 			flagUses.push({typed: typed, argument: flagArgument, check: IntegerArgument(flag, raw)});
 		}
-		for (argument in args) {
+		// A bool shorthand that a group sets with "=", such as -r=false. -q and -v change nothing here.
+		function setShorthandBoolean(letter:String, enabled:Bool):Void {
+			switch letter {
+				case "r":
+					listReverse = enabled;
+				case "w":
+					watchMode = enabled;
+				case "u":
+					readyUnassigned = enabled;
+				case "f":
+					orphansFix = enabled;
+				case "V":
+					versionFlag = enabled;
+				case "a":
+					listAll = enabled;
+				case "h":
+					showHelp = enabled;
+				case _:
+			}
+		}
+		// Cobra's command search knows only the root's flags until it finds the command. It takes the
+		// argument after any other --flag or -x as that flag's value, so that argument cannot name the
+		// command; pflag still reads it as a positional argument of the command found.
+		var searchSkipsNext = false;
+		final skippedBySearch = new Array<String>();
+		// A group such as -rt whose last shorthand takes the next argument as its value. The search does
+		// not skip that argument, so before the command it can still name the command.
+		var groupValuePending = false;
+		// The flags and values of the shorthand group that the loop reads now.
+		final groupTokens = new Array<ArgumentToken>();
+		var nextArgument = 0;
+		while (groupTokens.length > 0 || nextArgument < args.length) {
+			final queued = groupTokens.shift();
+			final next = queued == null ? args[nextArgument++] : queued.text;
+			final token:ArgumentToken = queued == null ? {text: next, flagArgument: next, grouped: false} : queued;
+			final argument = token.text;
+			final skippedHere = searchSkipsNext;
+			searchSkipsNext = false;
 			if (expectedValue != null) {
+				if (groupValuePending && positional.length == 0 && !flagsEnded && !StringTools.startsWith(argument, "-")) {
+					groupValuePending = false;
+					positional.push(argument);
+					continue;
+				}
+				groupValuePending = false;
 				switch expectedValue {
 					case Actor:
-						if (argument == "")
-							failPreRun("--actor requires a non-empty value");
 						actor = argument;
 					case ShortDirectory | LongDirectory:
 						directory = argument;
@@ -485,7 +540,27 @@ final class Parser {
 				expectedValue = null;
 				continue;
 			}
-			flagArgument = argument;
+			flagArgument = token.flagArgument;
+			final queryCommand = positional.length > 0 && positional[0] == "query";
+			if (token.grouped) {
+				final letter = argument.charAt(1);
+				switch shorthandKind(letter, queryCommand) {
+					case UnknownShorthand:
+						// pflag stops at a letter that the command does not have.
+						flagUses.push({typed: "-" + letter, argument: flagArgument, check: FlagFailure(unknownFlag("-" + letter, flagArgument))});
+						continue;
+					case BooleanShorthand if (argument.length > 2):
+						// A bool shorthand with its value after "=", such as -r=false.
+						final typed = argument.substr(0, 2);
+						if (!isRootShorthand(typed))
+							useCommandFlag(typed);
+						final value = booleanValue(typed, argument.substr(3));
+						if (value != null)
+							setShorthandBoolean(letter, value);
+						continue;
+					case BooleanShorthand | ValueShorthand:
+				}
+			}
 			if (argument == "--") {
 				flagsEnded = true;
 				continue;
@@ -494,10 +569,14 @@ final class Parser {
 				positional.push(argument);
 				continue;
 			}
+			if (!token.grouped && isShorthandGroup(argument)) {
+				for (grouped in expandShorthands(argument, queryCommand))
+					groupTokens.push(grouped);
+				continue;
+			}
+			searchSkipsNext = !token.grouped && !skippedHere && positional.length == 0 && searchTakesValue(argument);
 			if (StringTools.startsWith(argument, "--actor=")) {
 				actor = argument.substr(8);
-				if (actor == "")
-					failPreRun("--actor requires a non-empty value");
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--directory=")) {
@@ -558,7 +637,6 @@ final class Parser {
 			}
 			if (StringTools.startsWith(argument, "--details=")
 				|| StringTools.startsWith(argument, "--fix=")
-				|| StringTools.startsWith(argument, "-f=")
 				|| StringTools.startsWith(argument, "--sections=")) {
 				final separator = argument.indexOf("=");
 				final flag = argument.substr(0, separator);
@@ -610,11 +688,6 @@ final class Parser {
 				listSort = argument.substr(7);
 				continue;
 			}
-			if (StringTools.startsWith(argument, "-s=")) {
-				useCommandFlag("-s");
-				shorthandS = argument.substr(3);
-				continue;
-			}
 			if (StringTools.startsWith(argument, "--title=")) {
 				useCommandFlag("--title");
 				listTitle = argument.substr(8);
@@ -628,11 +701,6 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--label=")) {
 				useCommandFlag("--label");
 				addCommaSeparated(listLabels, argument.substr(8));
-				continue;
-			}
-			if (StringTools.startsWith(argument, "-l=")) {
-				useCommandFlag("-l");
-				addCommaSeparated(listLabels, argument.substr(3));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--label-any=")) {
@@ -929,22 +997,15 @@ final class Parser {
 					commentsLocalTime = value;
 				continue;
 			}
-			if (StringTools.startsWith(argument, "--verbose=") || StringTools.startsWith(argument, "-v=")) {
-				final value = argument.substr(argument.indexOf("=") + 1);
-				if (!isBooleanFlagValue(value))
-					rejectValue("--verbose", PflagValue.invalidBoolean("-v, --verbose", value));
+			if (StringTools.startsWith(argument, "--verbose=") || StringTools.startsWith(argument, "--quiet=")) {
+				booleanValue(argument.substr(0, argument.indexOf("=")), argument.substr(argument.indexOf("=") + 1));
 				continue;
 			}
-			if (argument != "-C" && StringTools.startsWith(argument, "-C")) {
-				directory = argument.substr(2);
-				continue;
-			}
-			// pflag also takes a shorthand's value from the rest of its argument, after an optional "=".
-			final shorthand = argument.substr(0, 2);
-			final shorthandFlag = argument.length > 2 ? integerShorthand(shorthand) : null;
-			if (shorthandFlag != null) {
-				useCommandFlag(shorthand);
-				readIntegerValue(shorthandFlag, shorthand, argument.charAt(2) == "=" ? argument.substr(3) : argument.substr(2));
+			if (StringTools.startsWith(argument, "--version=")) {
+				useCommandFlag("--version");
+				final value = booleanValue("--version", argument.substr(10));
+				if (value != null)
+					versionFlag = value;
 				continue;
 			}
 			switch argument {
@@ -1281,7 +1342,8 @@ final class Parser {
 					useCommandFlag(argument);
 					listAll = true;
 				case "--no-activity":
-					// Accepted compatibility flags; recent activity is currently absent.
+					// status's flag; recent activity is currently absent.
+					useCommandFlag(argument);
 				case "--readonly":
 					// Strict read-only mode changes only how upstream opens a store that lacks its database.
 					readonly = true;
@@ -1290,8 +1352,9 @@ final class Parser {
 				case "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v":
 					// This command profile is already read-only, unstyled, and synchronous.
 				case "--version" | "-V":
+					// The root's own flag; the root prints the version when it runs with it.
+					useCommandFlag(argument);
 					versionFlag = true;
-					positional.push("version");
 				case value if (value != "-" && StringTools.startsWith(value, "-")):
 					final long = StringTools.startsWith(value, "--");
 					final typed = long ? value.split("=")[0] : value.substr(0, 2);
@@ -1299,10 +1362,20 @@ final class Parser {
 					// Cobra's command search takes the next argument as the value of a flag that it does not know.
 					if (value.indexOf("=") < 0 && (long || value.length == 2))
 						expectedValue = UnknownFlagValue;
+				case value if (skippedHere):
+					skippedBySearch.push(value);
 				case value:
 					positional.push(value);
 			}
+			// A value shorthand at the end of a group takes the next argument, which the search still reads.
+			if (token.grouped && expectedValue != null && groupTokens.length == 0)
+				groupValuePending = true;
 		}
+		// The arguments that the search skipped are positional arguments of the command found, before the
+		// others. Without a command, the root finds them the same way and has no argument.
+		if (positional.length > 0)
+			for (index in 0...skippedBySearch.length)
+				positional.insert(1 + index, skippedBySearch[index]);
 		// The last flag has no value after it.
 		if (expectedValue != null)
 			flagUses.push({typed: flagArgument, argument: flagArgument, check: FlagFailure(missingArgument(flagArgument))});
@@ -1345,6 +1418,9 @@ final class Parser {
 		}
 		if (preRunFailure != null)
 			return UsageFailure(preRunFailure);
+		// The root runs with a true --version and prints the version, unless it shows its help.
+		if (positional.length == 0 && versionFlag && !showHelp)
+			positional.push("version");
 
 		// Cobra reports the flag errors above before upstream's pre-run loads the selected
 		// workspace's .beads/.env, which comes before any setting or variable is read below.
@@ -2349,6 +2425,103 @@ final class Parser {
 		return StringTools.startsWith(typed, "--") ? 'unknown flag: ${typed}' : 'unknown shorthand flag: \'${typed.charAt(1)}\' in ${argument}';
 	}
 
+	/** A bool flag as pflag names it in a value error: with its shorthand, such as `-r, --reverse`. */
+	static function pflagName(typed:String, path:Array<String>):String {
+		return switch typed {
+			case "--reverse" | "-r": "-r, --reverse";
+			case "--watch" | "-w": "-w, --watch";
+			case "--unassigned" | "-u": "-u, --unassigned";
+			case "--fix" | "-f": "-f, --fix";
+			case "--verbose" | "-v": "-v, --verbose";
+			case "--quiet" | "-q": "-q, --quiet";
+			case "--version" | "-V": "-V, --version";
+			case "--help" | "-h": "-h, --help";
+			// Only query's --all has a shorthand.
+			case "--all" | "-a" if (path.length > 0 && path[0] == "query"): "-a, --all";
+			case _: typed;
+		};
+	}
+
+	/** The root's bool flags, which cobra's command search knows; it takes no value after them. */
+	static function isRootBooleanFlag(flag:String):Bool {
+		return switch flag {
+			case "--json" | "--sandbox" | "--readonly" | "--global" | "--cpu-profile" | "--verbose" | "-v" | "--quiet" | "-q" | "--ignore-schema-skew" |
+				"--no-color" | "--version" | "-V": true;
+			case _: false;
+		};
+	}
+
+	/** The shorthands that only the root reads: every command inherits -q, -v and -C, and has -h. */
+	static function isRootShorthand(typed:String):Bool {
+		return typed == "-q" || typed == "-v" || typed == "-C" || typed == "-h";
+	}
+
+	/**
+		Whether cobra's command search takes the argument after `argument` as
+		the flag's value. Until it finds the command, the search knows only the
+		root's flags, so this holds for any other `--flag` without "=" and any
+		other two-letter `-x`, also when the command has it as a bool flag.
+		The help flag counts too, because cobra adds it after the search.
+	**/
+	static function searchTakesValue(argument:String):Bool {
+		final shaped = StringTools.startsWith(argument, "--") ? argument.indexOf("=") < 0 : argument.length == 2 && StringTools.startsWith(argument, "-");
+		return shaped && !isRootBooleanFlag(argument);
+	}
+
+	/** An argument that pflag reads as a group of shorthands, such as `-tbug`, `-rn1` or `-r=false`. */
+	static function isShorthandGroup(argument:String):Bool {
+		return argument.length > 2 && argument.charAt(0) == "-" && argument.charAt(1) != "-";
+	}
+
+	/** What a shorthand letter is on the ported commands; -a is query's bool --all and the --assignee of the others. */
+	static function shorthandKind(letter:String, queryCommand:Bool):ShorthandKind {
+		return switch letter {
+			case "a": queryCommand ? BooleanShorthand : ValueShorthand;
+			case "h" | "r" | "u" | "f" | "w" | "q" | "v" | "V": BooleanShorthand;
+			case "C" | "s" | "t" | "p" | "n" | "l" | "d": ValueShorthand;
+			case _: UnknownShorthand;
+		};
+	}
+
+	/**
+		Why: pflag reads `-abc` as the shorthands a, b and c. A shorthand that
+		takes a value takes the rest of the group, after an optional "=", or
+		else the next argument.
+
+		What: the group's flags in order, each as `-x` with the rest of the
+		group for pflag's messages. A bool shorthand followed by "=" keeps its
+		value (`-r=false`) and ends the group. A value shorthand is followed by
+		its value when the group holds one. The tokens stop at a letter that no
+		ported command has, where pflag stops with an error.
+	**/
+	static function expandShorthands(argument:String, queryCommand:Bool):Array<ArgumentToken> {
+		final tokens = new Array<ArgumentToken>();
+		var rest = argument.substr(1);
+		while (rest.length > 0) {
+			final flag = "-" + rest.charAt(0);
+			final flagArgument = "-" + rest;
+			// pflag's '-f=value' form needs a value after the "=".
+			final valueAfterEquals = rest.length > 2 && rest.charAt(1) == "=";
+			switch shorthandKind(rest.charAt(0), queryCommand) {
+				case UnknownShorthand:
+					tokens.push({text: flag, flagArgument: flagArgument, grouped: true});
+					return tokens;
+				case BooleanShorthand if (valueAfterEquals):
+					tokens.push({text: flag + rest.substr(1), flagArgument: flagArgument, grouped: true});
+					return tokens;
+				case BooleanShorthand:
+					tokens.push({text: flag, flagArgument: flagArgument, grouped: true});
+					rest = rest.substr(1);
+				case ValueShorthand:
+					tokens.push({text: flag, flagArgument: flagArgument, grouped: true});
+					if (rest.length > 1)
+						tokens.push({text: valueAfterEquals ? rest.substr(2) : rest.substr(1), flagArgument: flagArgument, grouped: true});
+					return tokens;
+			}
+		}
+		return tokens;
+	}
+
 	/** The commands of this profile: cobra reports any other first argument as an unknown command. */
 	static function isCommandName(name:String):Bool {
 		return switch name {
@@ -2389,7 +2562,9 @@ final class Parser {
 			// --local-time belongs to the listing alone, not to its `list` or `add` subcommands.
 			case "--local-time": name != "comments" || subcommand == "list" || subcommand == "add";
 			case "--id": name != "show" && name != "view" && name != "list" && name != "count";
-			case "--no-blocked" | "--assigned": name != "status" && name != "stats";
+			case "--no-blocked" | "--assigned" | "--no-activity": name != "status" && name != "stats";
+			// The root's own --version, which its commands do not inherit.
+			case "--version" | "-V": name != "";
 			case "--schema" | "--whats-new": name != "info";
 			case "--watch" | "-w": name != "show" && name != "view" && name != "list";
 			case "--short" | "--current" | "--thread" | "--refs" | "--children" | "--include-dependents" | "--include-comments" | "--brief-deps":

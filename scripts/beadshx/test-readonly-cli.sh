@@ -359,10 +359,23 @@ run_case actor_missing --actor
 [[ ! -s "$test_root/actor_missing.stdout" ]]
 [[ "$(sed -n 1,2p "$test_root/actor_missing.stderr")" == $'Error: flag needs an argument: --actor\nUsage:' ]]
 
+# Like upstream, an empty --actor is accepted; the root then prints its help.
 run_case actor_empty --actor=
-[[ "$(<"$test_root/actor_empty.exit")" == 1 ]]
-[[ ! -s "$test_root/actor_empty.stdout" ]]
-grep -Fqx 'Error: --actor requires a non-empty value' "$test_root/actor_empty.stderr"
+[[ "$(<"$test_root/actor_empty.exit")" == 0 ]]
+cmp -s "$test_root/root.stdout" "$test_root/actor_empty.stdout"
+[[ ! -s "$test_root/actor_empty.stderr" ]]
+
+# As in upstream, these print the root help: cobra's command search takes the argument after --help
+# as its value, and the root runs without the version when --version is false.
+for root_help_case in help_flag_before_command version_flag_false; do
+	case "$root_help_case" in
+		help_flag_before_command) run_case "$root_help_case" --help list ;;
+		version_flag_false) run_case "$root_help_case" --version=false ;;
+	esac
+	[[ "$(<"$test_root/$root_help_case.exit")" == 0 ]]
+	cmp -s "$test_root/root.stdout" "$test_root/$root_help_case.stdout"
+	[[ ! -s "$test_root/$root_help_case.stderr" ]]
+done
 
 selection_root="$test_root/selected-project"
 global_root="$test_root/global-project"

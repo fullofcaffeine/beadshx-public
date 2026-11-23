@@ -552,6 +552,35 @@ compare_root_usage_error root_unknown_all --all
 compare_root_usage_error root_missing_directory_shorthand -C
 compare_root_usage_error root_missing_db --db
 compare_root_usage_error root_missing_actor --actor
+# --version is the root's own bool flag: with a command it is unknown, and the root reports other flag
+# errors with its usage.
+compare_root_usage_error root_version_unknown_flag --version --bogus
+compare_root_usage_error root_version_unknown_shorthand_attached --version -tbug
+compare_root_usage_error root_version_bad_value --version=bogus
+compare_no_workspace version_flag_with_command --version list
+compare_no_workspace version_flag_after_command list --version
+compare_no_workspace version_shorthand_after_command list -V
+compare_no_workspace version_flag_extra_argument --version extra
+compare_no_workspace version_flag_help_command help --version
+compare_version_mode version_flag_true text --version=true
+compare_version_mode version_shorthand_true text -V=true
+compare_version_mode version_shorthand_group text -qV
+compare_version_mode version_flag_empty_actor text --actor= --version
+# Until cobra finds the command it knows only the root's flags, and takes the argument after any other
+# --flag or -x as that flag's value, also after a bool flag of a command. pflag then reads that
+# argument as a positional argument of the command found.
+compare_root_usage_error root_all_takes_unknown_command --all bogus
+compare_root_usage_error root_all_takes_command --all list
+compare_root_usage_error root_reverse_shorthand_takes_command -r list
+compare_root_usage_error root_version_all_takes_command --version --all list
+compare_root_usage_error root_status_flag_takes_command --no-activity list
+compare_no_workspace all_takes_command_before_unknown --all list extra
+compare_no_workspace all_skipped_argument_is_positional --all bogus list
+compare_no_workspace no_activity_on_list list --no-activity
+# pflag reads -rt as -r and -t; -t takes the next argument, which the search still takes as the command.
+compare_no_workspace shorthand_group_value_takes_command -rt list
+# Like upstream, an empty --actor is accepted.
+compare_no_workspace empty_actor_list --actor= list
 # In shared-server mode upstream's hint also names `bd doctor`. Without a workspace it reads the mode
 # from BEADS_DOLT_SHARED_SERVER (1 or true in any case), BD_DOLT_SHARED_SERVER and the user
 # config.yaml. Neither side writes.
@@ -4120,6 +4149,34 @@ compare_real_database show-human-escaping exact show "$real_database_escaping_id
 compare_real_database show-missing-escaping-json exact show 'test-<&>' --json
 compare_real_database list-escaping-json exact list --title-contains Escaping --json
 compare_real_database ready-escaping-json exact ready --label 'r&d' --json
+# pflag reads a shorthand group one letter at a time. A value shorthand takes the rest of the group,
+# after an optional "=", or else the next argument; an error quotes the group from that letter on.
+compare_real_database list-type-shorthand-attached exact list -tbug
+compare_real_database list-type-shorthand-equals-json exact list -t=bug --json
+compare_real_database list-status-shorthand-attached exact list -sopen
+compare_real_database list-assignee-shorthand-attached exact list -afixture
+compare_real_database list-label-shorthand-attached exact list -lparity
+compare_real_database list-reverse-type-group exact list -rtbug
+compare_real_database list-reverse-limit-group exact list -rn1
+compare_real_database list-reverse-limit-group-missing exact list -rn
+compare_real_database list-reverse-unknown-group exact list -rx
+compare_real_database list-reverse-bad-value exact list -r=x
+compare_real_database list-reverse-long-bad-value exact list --reverse=x
+compare_real_database ready-type-shorthand-attached exact ready -tbug
+compare_real_database ready-sort-shorthand-attached exact ready -spriority
+compare_real_database ready-unassigned-limit-group exact ready -un1
+compare_real_database ready-reverse-group-unknown exact ready -rn1
+compare_real_database count-type-shorthand-attached exact count -tbug
+compare_real_database search-status-shorthand-attached exact search parity -sopen
+compare_real_database stale-status-shorthand-attached exact stale -sopen
+compare_real_database dep-list-type-shorthand-attached exact dep list "$real_database_issue_id" -tblocks
+compare_real_database query-all-reverse-group exact query -ar status=open --sort title
+compare_real_database show-watch-unknown-group exact show "$real_database_issue_id" -wx
+compare_real_database show-watch-bad-value exact show "$real_database_issue_id" -w=x
+compare_real_database type-shorthand-before-command exact -tbug list
+compare_real_database directory-shorthand-equals exact -C=. list --json
+# Like upstream, an empty --actor is accepted; status --assigned then takes BEADS_ACTOR.
+compare_real_database empty-actor-status-assigned exact --actor= status --assigned --json
 compare_real_database show-json-labeled-dependency exact show "$real_database_labeled_relation_id" --json
 compare_real_database show-json-labeled-dependents exact show "$real_database_issue_id" --include-dependents --json
 compare_real_database dep-list-up-labeled-json exact dep list "$real_database_issue_id" --direction up --json

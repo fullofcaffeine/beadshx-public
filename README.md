@@ -173,14 +173,18 @@ upstream's order:
   the database.
 
 The flag parser follows cobra and pflag. It finds the command first, so an
-unknown command comes before any flag error. Then it reads the flags in
-argument order with the flags of that command, and the first problem stops it:
-a flag that the command does not have, a value that a flag rejects, or a flag
-with no value after it. A flag of another command is unknown also when its
-value is bad or missing. Without a command, the error comes from the root
-command, which prints its usage after the error. `bdhx` checks the
-`--dolt-auto-commit` value and refuses an empty `--actor`, which upstream
-accepts, only after all of these.
+unknown command comes before any flag error. Until it finds the command, it
+knows only the flags of the root command. It takes the argument after any
+other `--flag` or `-x`, also after a bool flag such as `--all`, as the value of
+that flag and not as the command. Then it reads the flags in argument order
+with the flags of that command, and the first problem stops it: a flag that
+the command does not have, a value that a flag rejects, or a flag with no
+value after it. A flag of another command is unknown also when its value is
+bad or missing. A group of shorthands such as `-rtbug` counts as
+`-r -t bug`. `--version` (`-V`) is a flag of the root command only. Without
+a command, the error comes from the root command, which prints its usage
+after the error. `bdhx` checks the `--dolt-auto-commit` value only after all
+of these. Like upstream, it accepts an empty `--actor`.
 
 `list` and `ready` print the `BEADS_MAX_ROWS` warning where they read
 `--max-rows`, so a check that fails before that point prints no warning.
