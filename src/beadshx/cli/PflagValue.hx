@@ -54,4 +54,14 @@ final class PflagValue {
 			return Int64Rejected(invalidArgument(flagName, raw, parsed.value2.toString()));
 		return Int64Accepted(Int64.parseString(StrconvPkg.formatInt(parsed.value1, 10)));
 	}
+
+	/**
+		Go's `strconv.Atoi`, which upstream also applies to BEADS_MAX_ROWS: a
+		decimal int with an optional sign, kept exactly as Go's int. Null for
+		any other text and for a value outside Go's int.
+	**/
+	public static function goAtoi(raw:String):Null<Int> {
+		final parsed = StrconvPkg.atoi(raw);
+		return parsed.value2 == null ? parsed.value1 : null;
+	}
 }

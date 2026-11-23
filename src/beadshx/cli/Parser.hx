@@ -88,9 +88,42 @@ private enum ExpectedValue {
 	SearchQuery;
 	DepDirection;
 	EventsSince;
-	EventsLimit;
 	EventsBefore;
 	ConfigShowSource;
+
+	/** The argument after a flag that no command has, which cobra skips when it looks for the command. */
+	UnknownFlagValue;
+}
+
+/** What pflag reports for one flag once cobra has found the command. */
+private enum FlagCheck {
+	/** A flag that only some commands have: pflag reports it as unknown on the others. */
+	CommandFlag;
+
+	/** pflag's error for a value that the flag rejects. A command flag comes after its CommandFlag. */
+	RejectedValue(message:String);
+
+	/** An int flag's value, which pflag parses with the flag of the command found. */
+	IntegerArgument(flag:IntegerFlag, raw:String);
+
+	/** An error on every command: a flag that no command has, or a flag with no value after it. */
+	FlagFailure(message:String);
+}
+
+/**
+	Why: pflag parses the arguments in order once cobra has found the command,
+	and stops at the first problem.
+
+	What: one flag, in argument order, with what pflag checks for it.
+**/
+private typedef FlagUse = {
+	/** The flag as typed, without a value: `--limit` or `-n`. */
+	final typed:String;
+
+	/** The argument that holds the flag, which pflag quotes in a shorthand error. */
+	final argument:String;
+
+	final check:FlagCheck;
 }
 
 /** Upstream validateCommentsArgs for `bd comments` with more than one argument. */
@@ -144,11 +177,33 @@ final class Parser {
 		var infoWhatsNew = false;
 		var statusSkipBlocked = false;
 		var statusAssigned = false;
-		final countOnlyFlags = new Array<String>();
+		// Each flag in argument order, which the pflag pass checks once the command is known.
+		final flagUses = new Array<FlagUse>();
+		// The argument of the flag that the loop reads now, also while it reads the flag's value.
+		var flagArgument = "";
+		// A flag that only some commands have, as typed: `-n` or `--limit`.
+		function useCommandFlag(typed:String):Void {
+			flagUses.push({typed: typed, argument: flagArgument, check: CommandFlag});
+		}
+		function rejectValue(typed:String, message:String):Void {
+			flagUses.push({typed: typed, argument: flagArgument, check: RejectedValue(message)});
+		}
+		// A bool flag's value after "=", or null when pflag rejects it.
+		function booleanValue(typed:String, value:String):Null<Bool> {
+			if (isBooleanFlagValue(value))
+				return booleanFlagValue(value);
+			rejectValue(typed, PflagValue.invalidBoolean(typed, value));
+			return null;
+		}
+		// Upstream checks these in its pre-run, after cobra's flag errors; the first one wins.
+		var preRunFailure:Null<String> = null;
+		function failPreRun(message:String):Void {
+			if (preRunFailure == null)
+				preRunFailure = message;
+		}
 		// The last value of each --by-* flag; upstream's count groups by the flags that end up true.
 		final countGroupFlags = new Map<String, Bool>();
 		function setCountGroupFlag(flag:String, enabled:Bool):Void {
-			countOnlyFlags.push(flag);
 			countGroupFlags.set(flag, enabled);
 		}
 		var listStatus = "";
@@ -217,10 +272,6 @@ final class Parser {
 		final listExcludeTypes = new Array<String>();
 		final listMetadataFields = new Array<IssueListMetadataFilter>();
 		final listTimeFilters = new Array<IssueListTimeFilter>();
-		final listOnlyFlags = new Array<String>();
-		function markListOnly(flag:String):Void {
-			listOnlyFlags.push(flag);
-		}
 		var shorthandS = "";
 		var readyUnassigned = false;
 		var readyIncludeDeferred = false;
@@ -231,37 +282,31 @@ final class Parser {
 		var readyMolecule = "";
 		var readyExplain = false;
 		var searchQueryFlag = "";
-		var searchQueryUsed = false;
 		var queryParseOnly = false;
-		var queryParseOnlyUsed = false;
 		var staleDays = 30;
-		var staleDaysUsed = false;
 		var orphansDetails = false;
-		var orphansDetailsUsed = false;
 		var typesSections = false;
-		var typesSectionsUsed = false;
 		var configSource = "";
-		var configSourceUsed = false;
 		var orphansFix = false;
-		var orphansFixUsed = false;
 		var depDirection = "down";
 		var depDirectionUsed = false;
 		var depTreeMaxDepth = 50;
 		var deferredMaxRowsWarning = "";
-		final depTreeOnlyFlags = new Array<String>();
 		final graphViews = new Map<String, Bool>();
-		final graphOnlyFlags = new Array<String>();
 		var commentsLocalTime = false;
-		final commentsOnlyFlags = new Array<String>();
 		var historyEvents = false;
-		var historyEventsUsed = false;
 		var eventsSince = Int64.ofInt(0);
 		var eventsLimit = Int64.ofInt(0);
 		var eventsFollow = false;
-		// --since and --follow belong to `events tail`, --before to `events prune`.
-		final eventsOnlyFlags = new Array<String>();
-		// pflag reports an unknown flag before it parses the value, so the values wait for the command.
-		final eventsFlagValues = new Array<{flag:String, raw:String}>();
+		// An int64 value of `events tail`, which pflag parses as it reads the flag.
+		function readInt64Value(typed:String, raw:String):Null<Int64> {
+			return switch PflagValue.parseInt64(typed, raw) {
+				case Int64Rejected(message):
+					rejectValue(typed, message);
+					null;
+				case Int64Accepted(value): value;
+			};
+		}
 		// Upstream runs these checks in the command body, after its pre-run; the first one in its order wins.
 		var deferredCheck = DeferredCheck.ChecksPassed;
 		function deferCheck(failure:DeferredCheck):Void {
@@ -291,33 +336,20 @@ final class Parser {
 		var showIds = new Array<String>();
 		final issueFlagIds = new Array<String>();
 		var flagsEnded = false;
-		// Like `-a` for query, `-d` and a negative `--max-rows` depend on the command typed so far.
-		function inDepTree():Bool {
-			return positional.length > 1 && positional[0] == "dep" && positional[1] == "tree";
-		}
-		// `bd events tail` and `export` declare --limit as a plain int flag, without the -n shorthand.
-		function inEvents():Bool {
-			return positional.length > 0 && positional[0] == "events";
-		}
-		// The shorthands of the int flags. -d is --max-depth in `dep tree` and --days elsewhere.
+		// The shorthands of the int flags. The pflag pass reads -d as --max-depth in `dep tree`.
 		function integerShorthand(typed:String):Null<IntegerFlag> {
 			return switch typed {
 				case "-n": LimitFlag;
 				case "-p": PriorityFlag;
-				case "-d": inDepTree() ? MaxDepthFlag : DaysFlag;
+				case "-d": DaysFlag;
 				case _: null;
 			};
 		}
-		// The int values read before the command that has their flag; pflag parses them once cobra has found it.
-		final pendingIntegers = new Array<{flag:IntegerFlag, typed:String, raw:String}>();
-		// Takes a value for the command in `positional`, which pflag parses as it reads the flag.
+		// Takes a value for the command found, which has the flag: pflag parses an int flag's value.
 		function applyIntegerValue(flag:IntegerFlag, typed:String, raw:String):Null<String> {
 			final name = integerFlagName(flag, typed, positional);
 			if (name == null) {
-				// `bd help` has no command flags.
-				if (positional.length > 0 && positional[0] == "help")
-					return unknownFlag(typed);
-				// A string flag of this command, or a flag that it lacks, which a later check reports.
+				// A string flag of this command.
 				switch flag {
 					case PriorityFlag:
 						listPriorityRaw = raw;
@@ -325,8 +357,6 @@ final class Parser {
 						listPriorityMinRaw = raw;
 					case PriorityMaxFlag:
 						listPriorityMaxRaw = raw;
-					case LimitFlag if (typed == "--limit" && inEvents()):
-						eventsFlagValues.push({flag: "--limit", raw: raw});
 					case _:
 				}
 				return null;
@@ -358,20 +388,16 @@ final class Parser {
 			}
 			return null;
 		}
-		// A flag that the command typed so far lacks can belong to a later subcommand, so its value waits.
-		function readIntegerValue(flag:IntegerFlag, typed:String, raw:String):Null<String> {
-			if (integerFlagName(flag, typed, positional) == null) {
-				pendingIntegers.push({flag: flag, typed: typed, raw: raw});
-				return null;
-			}
-			return applyIntegerValue(flag, typed, raw);
+		// An int flag's value, which the pflag pass parses with the flag of the command found.
+		function readIntegerValue(flag:IntegerFlag, typed:String, raw:String):Void {
+			flagUses.push({typed: typed, argument: flagArgument, check: IntegerArgument(flag, raw)});
 		}
 		for (argument in args) {
 			if (expectedValue != null) {
 				switch expectedValue {
 					case Actor:
 						if (argument == "")
-							return UsageFailure("--actor requires a non-empty value");
+							failPreRun("--actor requires a non-empty value");
 						actor = argument;
 					case ShortDirectory | LongDirectory:
 						directory = argument;
@@ -384,7 +410,7 @@ final class Parser {
 						formatFlagValue = argument;
 					case DoltAutoCommit:
 						if (!isDoltAutoCommitValue(argument))
-							return UsageFailure('invalid --dolt-auto-commit="${argument}" (valid: off, on, batch)');
+							failPreRun('invalid --dolt-auto-commit="${argument}" (valid: off, on, batch)');
 					case MemProfile:
 						memProfilePath = argument;
 					case IssueID:
@@ -399,9 +425,7 @@ final class Parser {
 						depTypeRaw = argument;
 						listIssueType = normalizeIssueType(argument);
 					case IntegerValue(flag, typed):
-						final failure = readIntegerValue(flag, typed, argument);
-						if (failure != null)
-							return UsageFailure(failure);
+						readIntegerValue(flag, typed, argument);
 					case ListSort:
 						listSort = argument;
 					case ListTitle:
@@ -449,17 +473,19 @@ final class Parser {
 					case DepDirection:
 						depDirection = argument;
 					case EventsSince:
-						eventsFlagValues.push({flag: "--since", raw: argument});
-					case EventsLimit:
-						eventsFlagValues.push({flag: "--limit", raw: argument});
+						final value = readInt64Value("--since", argument);
+						if (value != null)
+							eventsSince = value;
 					case EventsBefore:
-						eventsFlagValues.push({flag: "--before", raw: argument});
+						readInt64Value("--before", argument);
 					case ConfigShowSource:
 						configSource = argument;
+					case UnknownFlagValue:
 				}
 				expectedValue = null;
 				continue;
 			}
+			flagArgument = argument;
 			if (argument == "--") {
 				flagsEnded = true;
 				continue;
@@ -471,7 +497,7 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--actor=")) {
 				actor = argument.substr(8);
 				if (actor == "")
-					return UsageFailure("--actor requires a non-empty value");
+					failPreRun("--actor requires a non-empty value");
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--directory=")) {
@@ -492,17 +518,17 @@ final class Parser {
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--json=")) {
-				final value = argument.substr(7);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--json", value));
-				jsonFlagSet = true;
-				jsonFlagValue = booleanFlagValue(value);
+				final value = booleanValue("--json", argument.substr(7));
+				if (value != null) {
+					jsonFlagSet = true;
+					jsonFlagValue = value;
+				}
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--dolt-auto-commit=")) {
 				final value = argument.substr(19);
 				if (!isDoltAutoCommitValue(value))
-					return UsageFailure('invalid --dolt-auto-commit="${value}" (valid: off, on, batch)');
+					failPreRun('invalid --dolt-auto-commit="${value}" (valid: off, on, batch)');
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--mem-profile=")) {
@@ -510,24 +536,23 @@ final class Parser {
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--query=")) {
-				searchQueryUsed = true;
+				useCommandFlag("--query");
 				searchQueryFlag = argument.substr(8);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--days=")) {
-				staleDaysUsed = true;
-				final failure = readIntegerValue(DaysFlag, "--days", argument.substr(7));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--days");
+				readIntegerValue(DaysFlag, "--days", argument.substr(7));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--direction=")) {
+				useCommandFlag("--direction");
 				depDirectionUsed = true;
 				depDirection = argument.substr(12);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--source=")) {
-				configSourceUsed = true;
+				useCommandFlag("--source");
 				configSource = argument.substr(9);
 				continue;
 			}
@@ -537,223 +562,199 @@ final class Parser {
 				|| StringTools.startsWith(argument, "--sections=")) {
 				final separator = argument.indexOf("=");
 				final flag = argument.substr(0, separator);
-				final value = argument.substr(separator + 1);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean(flag, value));
-				if (flag == "--details") {
-					orphansDetailsUsed = true;
-					orphansDetails = booleanFlagValue(value);
-				} else if (flag == "--sections") {
-					typesSectionsUsed = true;
-					typesSections = booleanFlagValue(value);
-				} else {
-					orphansFixUsed = true;
-					orphansFix = booleanFlagValue(value);
-				}
+				useCommandFlag(flag);
+				final value = booleanValue(flag, argument.substr(separator + 1));
+				if (value == null)
+					continue;
+				if (flag == "--details")
+					orphansDetails = value;
+				else if (flag == "--sections")
+					typesSections = value;
+				else
+					orphansFix = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--id=")) {
+				useCommandFlag("--id");
 				issueFlagIds.push(argument.substr(5));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--status=")) {
-				markListOnly("--status");
+				useCommandFlag("--status");
 				listStatus = argument.substr(9);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--assignee=")) {
-				markListOnly("--assignee");
+				useCommandFlag("--assignee");
 				listAssignee = argument.substr(11);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--type=")) {
-				markListOnly("--type");
+				useCommandFlag("--type");
 				depTypeRaw = argument.substr(7);
 				listIssueType = normalizeIssueType(depTypeRaw);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--priority=")) {
-				markListOnly("--priority");
-				final failure = readIntegerValue(PriorityFlag, "--priority", argument.substr(11));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--priority");
+				readIntegerValue(PriorityFlag, "--priority", argument.substr(11));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--limit=")) {
-				markListOnly("--limit");
-				final raw = argument.substr(8);
-				if (inEvents()) {
-					eventsFlagValues.push({flag: "--limit", raw: raw});
-					continue;
-				}
-				final failure = readIntegerValue(LimitFlag, "--limit", raw);
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--limit");
+				readIntegerValue(LimitFlag, "--limit", argument.substr(8));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--sort=")) {
-				markListOnly("--sort");
+				useCommandFlag("--sort");
 				listSort = argument.substr(7);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "-s=")) {
-				markListOnly("-s");
+				useCommandFlag("-s");
 				shorthandS = argument.substr(3);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--title=")) {
-				markListOnly("--title");
+				useCommandFlag("--title");
 				listTitle = argument.substr(8);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--spec=")) {
-				markListOnly("--spec");
+				useCommandFlag("--spec");
 				listSpec = argument.substr(7);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--label=")) {
-				markListOnly("--label");
+				useCommandFlag("--label");
 				addCommaSeparated(listLabels, argument.substr(8));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "-l=")) {
-				markListOnly("-l");
+				useCommandFlag("-l");
 				addCommaSeparated(listLabels, argument.substr(3));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--label-any=")) {
-				markListOnly("--label-any");
+				useCommandFlag("--label-any");
 				addCommaSeparated(listLabelsAny, argument.substr(12));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--exclude-label=")) {
-				markListOnly("--exclude-label");
+				useCommandFlag("--exclude-label");
 				addCommaSeparated(listExcludeLabels, argument.substr(16));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--label-pattern=")) {
-				markListOnly("--label-pattern");
+				useCommandFlag("--label-pattern");
 				listLabelPattern = argument.substr(16);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--label-regex=")) {
-				markListOnly("--label-regex");
+				useCommandFlag("--label-regex");
 				listLabelRegex = argument.substr(14);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--title-contains=")) {
-				markListOnly("--title-contains");
+				useCommandFlag("--title-contains");
 				listTitleContains = argument.substr(17);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--desc-contains=")) {
-				markListOnly("--desc-contains");
+				useCommandFlag("--desc-contains");
 				listDescriptionContains = argument.substr(16);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--notes-contains=")) {
-				markListOnly("--notes-contains");
+				useCommandFlag("--notes-contains");
 				listNotesContains = argument.substr(17);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--external-contains=")) {
-				markListOnly("--external-contains");
+				useCommandFlag("--external-contains");
 				listExternalContains = argument.substr(20);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--external-ref=")) {
-				markListOnly("--external-ref");
+				useCommandFlag("--external-ref");
 				listExternalRef = argument.substr(15);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--priority-min=")) {
-				markListOnly("--priority-min");
-				final failure = readIntegerValue(PriorityMinFlag, "--priority-min", argument.substr(15));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--priority-min");
+				readIntegerValue(PriorityMinFlag, "--priority-min", argument.substr(15));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--priority-max=")) {
-				markListOnly("--priority-max");
-				final failure = readIntegerValue(PriorityMaxFlag, "--priority-max", argument.substr(15));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--priority-max");
+				readIntegerValue(PriorityMaxFlag, "--priority-max", argument.substr(15));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--exclude-type=")) {
-				markListOnly("--exclude-type");
+				useCommandFlag("--exclude-type");
 				addCommaSeparated(listExcludeTypes, argument.substr(15));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--parent=")) {
-				markListOnly("--parent");
+				useCommandFlag("--parent");
 				listParent = argument.substr(9);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--mol-type=")) {
-				markListOnly("--mol-type");
+				useCommandFlag("--mol-type");
 				listMoleculeTypeRaw = argument.substr(11);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--mol=")) {
-				markListOnly("--mol");
+				useCommandFlag("--mol");
 				readyMolecule = argument.substr(6);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--wisp-type=")) {
-				markListOnly("--wisp-type");
+				useCommandFlag("--wisp-type");
 				listWispTypeRaw = argument.substr(12);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--metadata-field=")) {
-				markListOnly("--metadata-field");
+				useCommandFlag("--metadata-field");
 				listMetadataFieldsRaw.push(argument.substr(17));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--has-metadata-key=")) {
-				markListOnly("--has-metadata-key");
+				useCommandFlag("--has-metadata-key");
 				listHasMetadataKeyRaw = argument.substr(19);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--offset=")) {
-				markListOnly("--offset");
-				final failure = readIntegerValue(OffsetFlag, "--offset", argument.substr(9));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--offset");
+				readIntegerValue(OffsetFlag, "--offset", argument.substr(9));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--max-rows=")) {
-				markListOnly("--max-rows");
-				final failure = readIntegerValue(MaxRowsFlag, "--max-rows", argument.substr(11));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--max-rows");
+				readIntegerValue(MaxRowsFlag, "--max-rows", argument.substr(11));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--max-depth=")) {
-				depTreeOnlyFlags.push("--max-depth");
-				final failure = readIntegerValue(MaxDepthFlag, "--max-depth", argument.substr(12));
-				if (failure != null)
-					return UsageFailure(failure);
+				useCommandFlag("--max-depth");
+				readIntegerValue(MaxDepthFlag, "--max-depth", argument.substr(12));
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--show-all-paths=")) {
-				depTreeOnlyFlags.push("--show-all-paths");
-				final value = argument.substr(17);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--show-all-paths", value));
+				useCommandFlag("--show-all-paths");
+				booleanValue("--show-all-paths", argument.substr(17));
 				continue;
 			}
 			final graphFlag = argument.indexOf("=") > 0 ? argument.substr(0, argument.indexOf("=")) : "";
 			if (isGraphViewFlag(graphFlag)) {
-				graphOnlyFlags.push(graphFlag);
-				final value = argument.substr(graphFlag.length + 1);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean(graphFlag, value));
-				graphViews.set(graphFlag, booleanFlagValue(value));
+				useCommandFlag(graphFlag);
+				final value = booleanValue(graphFlag, argument.substr(graphFlag.length + 1));
+				if (value != null)
+					graphViews.set(graphFlag, value);
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--deps=")) {
-				markListOnly("--deps");
+				useCommandFlag("--deps");
 				listDepsMode = argument.substr(7);
 				continue;
 			}
@@ -761,25 +762,25 @@ final class Parser {
 			if (equalsIndex > 0) {
 				final flag = argument.substr(0, equalsIndex);
 				if (countGroupFlag(flag) != null) {
-					final value = argument.substr(equalsIndex + 1);
-					if (!isBooleanFlagValue(value))
-						return UsageFailure(PflagValue.invalidBoolean(flag, value));
-					setCountGroupFlag(flag, booleanFlagValue(value));
+					useCommandFlag(flag);
+					final value = booleanValue(flag, argument.substr(equalsIndex + 1));
+					if (value != null)
+						setCountGroupFlag(flag, value);
 					continue;
 				}
 				switch listTimeField(flag) {
 					case null:
 					case field:
-						markListOnly(flag);
+						useCommandFlag(flag);
 						listTimeRaw.set(listTimeFlag(field), argument.substr(equalsIndex + 1));
 						continue;
 				}
 				if (isListBooleanFlag(flag)) {
-					markListOnly(flag);
-					final value = argument.substr(equalsIndex + 1);
-					if (!isBooleanFlagValue(value))
-						return UsageFailure(PflagValue.invalidBoolean(flag, value));
-					final enabled = booleanFlagValue(value);
+					useCommandFlag(flag);
+					final value = booleanValue(flag, argument.substr(equalsIndex + 1));
+					if (value == null)
+						continue;
+					final enabled:Bool = value;
 					switch flag {
 						case "--all":
 							listAll = enabled;
@@ -840,38 +841,33 @@ final class Parser {
 						case "--explain":
 							readyExplain = enabled;
 						case "--parse-only":
-							queryParseOnlyUsed = true;
 							queryParseOnly = enabled;
 					}
 					continue;
 				}
 			}
 			if (StringTools.startsWith(argument, "--cpu-profile=")) {
-				final value = argument.substr(14);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--cpu-profile", value));
-				cpuProfile = booleanFlagValue(value);
+				final value = booleanValue("--cpu-profile", argument.substr(14));
+				if (value != null)
+					cpuProfile = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--ignore-schema-skew=")) {
-				final value = argument.substr(21);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--ignore-schema-skew", value));
-				ignoreSchemaSkew = booleanFlagValue(value);
+				final value = booleanValue("--ignore-schema-skew", argument.substr(21));
+				if (value != null)
+					ignoreSchemaSkew = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--global=")) {
-				final value = argument.substr(9);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--global", value));
-				global = booleanFlagValue(value);
+				final value = booleanValue("--global", argument.substr(9));
+				if (value != null)
+					global = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--readonly=")) {
-				final value = argument.substr(11);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--readonly", value));
-				readonly = booleanFlagValue(value);
+				final value = booleanValue("--readonly", argument.substr(11));
+				if (value != null)
+					readonly = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--watch=")
@@ -881,12 +877,12 @@ final class Parser {
 				|| StringTools.startsWith(argument, "--include-dependents=")
 				|| StringTools.startsWith(argument, "--include-comments=")
 				|| StringTools.startsWith(argument, "--brief-deps=")) {
-				final value = argument.substr(argument.indexOf("=") + 1);
-				if (!isBooleanFlagValue(value)) {
-					final flag = argument.substr(0, argument.indexOf("="));
-					return UsageFailure(PflagValue.invalidBoolean(flag, value));
-				}
-				final enabled = booleanFlagValue(value);
+				final flag = argument.substr(0, argument.indexOf("="));
+				useCommandFlag(flag);
+				final value = booleanValue(flag, argument.substr(argument.indexOf("=") + 1));
+				if (value == null)
+					continue;
+				final enabled:Bool = value;
 				if (StringTools.startsWith(argument, "--watch="))
 					watchMode = enabled;
 				else if (StringTools.startsWith(argument, "--thread="))
@@ -906,35 +902,37 @@ final class Parser {
 			if (StringTools.startsWith(argument, "--since=") || StringTools.startsWith(argument, "--before=")) {
 				final separator = argument.indexOf("=");
 				final flag = argument.substr(0, separator);
-				eventsOnlyFlags.push(flag);
-				eventsFlagValues.push({flag: flag, raw: argument.substr(separator + 1)});
+				useCommandFlag(flag);
+				final value = readInt64Value(flag, argument.substr(separator + 1));
+				if (value != null && flag == "--since")
+					eventsSince = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--follow=")) {
-				eventsOnlyFlags.push("--follow");
-				eventsFlagValues.push({flag: "--follow", raw: argument.substr(9)});
+				useCommandFlag("--follow");
+				final value = booleanValue("--follow", argument.substr(9));
+				if (value != null)
+					eventsFollow = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--events=")) {
-				final value = argument.substr(9);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--events", value));
-				historyEventsUsed = true;
-				historyEvents = booleanFlagValue(value);
+				useCommandFlag("--events");
+				final value = booleanValue("--events", argument.substr(9));
+				if (value != null)
+					historyEvents = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--local-time=")) {
-				final value = argument.substr(13);
-				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("--local-time", value));
-				commentsOnlyFlags.push("--local-time");
-				commentsLocalTime = booleanFlagValue(value);
+				useCommandFlag("--local-time");
+				final value = booleanValue("--local-time", argument.substr(13));
+				if (value != null)
+					commentsLocalTime = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--verbose=") || StringTools.startsWith(argument, "-v=")) {
 				final value = argument.substr(argument.indexOf("=") + 1);
 				if (!isBooleanFlagValue(value))
-					return UsageFailure(PflagValue.invalidBoolean("-v, --verbose", value));
+					rejectValue("--verbose", PflagValue.invalidBoolean("-v, --verbose", value));
 				continue;
 			}
 			if (argument != "-C" && StringTools.startsWith(argument, "-C")) {
@@ -942,19 +940,11 @@ final class Parser {
 				continue;
 			}
 			// pflag also takes a shorthand's value from the rest of its argument, after an optional "=".
-			// Other shorthands, and these where the command lacks them, keep the errors below.
 			final shorthand = argument.substr(0, 2);
 			final shorthandFlag = argument.length > 2 ? integerShorthand(shorthand) : null;
-			if (shorthandFlag != null
-				&& (integerFlagName(shorthandFlag, shorthand, positional) != null
-					|| (shorthand == "-p" && positional.length > 0 && positional[0] == "list"))) {
-				if (shorthand != "-d")
-					markListOnly(shorthand);
-				else if (!inDepTree())
-					staleDaysUsed = true;
-				final failure = readIntegerValue(shorthandFlag, shorthand, argument.charAt(2) == "=" ? argument.substr(3) : argument.substr(2));
-				if (failure != null)
-					return UsageFailure(failure);
+			if (shorthandFlag != null) {
+				useCommandFlag(shorthand);
+				readIntegerValue(shorthandFlag, shorthand, argument.charAt(2) == "=" ? argument.substr(3) : argument.substr(2));
 				continue;
 			}
 			switch argument {
@@ -964,8 +954,10 @@ final class Parser {
 					jsonFlagSet = true;
 					jsonFlagValue = true;
 				case "--schema":
+					useCommandFlag(argument);
 					infoSchema = true;
 				case "--whats-new":
+					useCommandFlag(argument);
 					infoWhatsNew = true;
 				case "--actor":
 					expectedValue = Actor;
@@ -988,297 +980,305 @@ final class Parser {
 				case "--mem-profile":
 					expectedValue = MemProfile;
 				case "--id":
+					useCommandFlag(argument);
 					expectedValue = IssueID;
 				case "--by-status" | "--by-priority" | "--by-type" | "--by-assignee" | "--by-label":
+					useCommandFlag(argument);
 					setCountGroupFlag(argument, true);
 				case "--status":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListStatus;
 				case "-s":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ShortS;
 				case "--assignee" | "-a":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					if (argument == "-a" && positional.length > 0 && positional[0] == "query")
 						listAll = true;
 					else
 						expectedValue = ListAssignee;
 				case "--type" | "-t":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListIssueType;
 				case "--priority" | "-p":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(PriorityFlag, argument);
-				case "--limit" if (inEvents()):
-					markListOnly(argument);
-					expectedValue = EventsLimit;
-				case "-n" if (inEvents()):
-					return UsageFailure("unknown shorthand flag: 'n' in -n");
 				case "--limit" | "-n":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(LimitFlag, argument);
 				case "--sort":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListSort;
 				case "--title":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTitle;
 				case "--spec":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListSpec;
 				case "--label" | "-l":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListLabel;
 				case "--label-any":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListLabelAny;
 				case "--exclude-label":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListExcludeLabel;
 				case "--label-pattern":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListLabelPattern;
 				case "--label-regex":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListLabelRegex;
 				case "--title-contains":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTitleContains;
 				case "--desc-contains":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListDescriptionContains;
 				case "--notes-contains":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListNotesContains;
 				case "--external-contains":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListExternalContains;
 				case "--external-ref":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListExternalRef;
 				case "--priority-min":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(PriorityMinFlag, argument);
 				case "--priority-max":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(PriorityMaxFlag, argument);
 				case "--exclude-type":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListExcludeType;
 				case "--parent":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListParent;
 				case "--mol-type":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListMoleculeType;
 				case "--mol":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ReadyMolecule;
 				case "--wisp-type":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListWispType;
 				case "--metadata-field":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListMetadataField;
 				case "--query":
-					searchQueryUsed = true;
+					useCommandFlag(argument);
 					expectedValue = SearchQuery;
 				case "--parse-only":
-					queryParseOnlyUsed = true;
+					useCommandFlag(argument);
 					queryParseOnly = true;
-				case "-d" if (inDepTree()):
-					expectedValue = IntegerValue(MaxDepthFlag, argument);
 				case "--days" | "-d":
-					staleDaysUsed = true;
+					// The pflag pass reads -d as --max-depth in `dep tree`.
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(DaysFlag, argument);
 				case "--max-depth":
-					depTreeOnlyFlags.push(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(MaxDepthFlag, argument);
 				case "--show-all-paths":
 					// Deprecated upstream no-op: accepted and ignored.
-					depTreeOnlyFlags.push(argument);
+					useCommandFlag(argument);
 				case "--open" | "--dot" | "--html" | "--compact" | "--box":
-					graphOnlyFlags.push(argument);
+					useCommandFlag(argument);
 					graphViews.set(argument, true);
 				case "--has-metadata-key":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListHasMetadataKey;
 				case "--created-after":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeCreatedAfter);
 				case "--created-before":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeCreatedBefore);
 				case "--updated-after":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeUpdatedAfter);
 				case "--updated-before":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeUpdatedBefore);
 				case "--closed-after":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeClosedAfter);
 				case "--closed-before":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeClosedBefore);
 				case "--defer-after":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeDeferAfter);
 				case "--defer-before":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeDeferBefore);
 				case "--due-after":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeDueAfter);
 				case "--due-before":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = ListTime(TimeDueBefore);
 				case "--offset":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(OffsetFlag, argument);
 				case "--max-rows":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					expectedValue = IntegerValue(MaxRowsFlag, argument);
 				case "--reverse" | "-r":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listReverse = true;
 				case "--ready":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listReady = true;
 				case "--no-assignee":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listNoAssignee = true;
 				case "--no-labels":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listNoLabels = true;
 				case "--empty-description":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listEmptyDescription = true;
 				case "--skip-labels":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listSkipLabels = true;
 				case "--brief":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listBrief = true;
 				case "--pinned":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listPinned = true;
 				case "--no-pinned":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listNoPinned = true;
 				case "--include-templates":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listIncludeTemplates = true;
 				case "--include-gates":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listIncludeGates = true;
 				case "--include-infra":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listIncludeInfra = true;
 				case "--no-parent":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listNoParent = true;
 				case "--deferred":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listDeferred = true;
 				case "--overdue":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listOverdue = true;
 				case "--flat":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listFlat = true;
 				case "--long":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listLong = true;
 					showLong = true;
 				case "--tree":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listTree = true;
 				case "--pretty":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listPretty = true;
 					listPrettyChanged = true;
 				case "--plain":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyPlain = true;
 				case "--unassigned" | "-u":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyUnassigned = true;
 				case "--include-deferred":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyIncludeDeferred = true;
 				case "--include-ephemeral":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyIncludeEphemeral = true;
 				case "--claim":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyClaim = true;
 				case "--gated":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyGated = true;
 				case "--explain":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					readyExplain = true;
 				case "--details":
-					orphansDetailsUsed = true;
+					useCommandFlag(argument);
 					orphansDetails = true;
 				case "--sections":
-					typesSectionsUsed = true;
+					useCommandFlag(argument);
 					typesSections = true;
 				case "--fix" | "-f":
-					orphansFixUsed = true;
+					useCommandFlag(argument);
 					orphansFix = true;
 				case "--no-pager":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listNoPager = true;
 				case "--deps":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listDepsMode = "scheduling";
 				case "--direction":
+					useCommandFlag(argument);
 					depDirectionUsed = true;
 					expectedValue = DepDirection;
 				case "--source":
-					configSourceUsed = true;
+					useCommandFlag(argument);
 					expectedValue = ConfigShowSource;
 				case "--no-blocked":
+					useCommandFlag(argument);
 					statusSkipBlocked = true;
 				case "--assigned":
+					useCommandFlag(argument);
 					statusAssigned = true;
 				case "--short":
+					useCommandFlag(argument);
 					showShort = true;
 				case "--current":
+					useCommandFlag(argument);
 					showCurrent = true;
 				case "--watch" | "-w":
+					useCommandFlag(argument);
 					watchMode = true;
 				case "--thread":
+					useCommandFlag(argument);
 					showThread = true;
 				case "--refs":
+					useCommandFlag(argument);
 					showRefs = true;
 				case "--children":
+					useCommandFlag(argument);
 					showChildren = true;
 				case "--include-dependents":
+					useCommandFlag(argument);
 					showIncludeDependents = true;
 				case "--include-comments":
+					useCommandFlag(argument);
 					showIncludeComments = true;
 				case "--local-time":
-					commentsOnlyFlags.push(argument);
+					useCommandFlag(argument);
 					commentsLocalTime = true;
 				case "--events":
-					historyEventsUsed = true;
+					useCommandFlag(argument);
 					historyEvents = true;
 				case "--since":
-					eventsOnlyFlags.push(argument);
+					useCommandFlag(argument);
 					expectedValue = EventsSince;
 				case "--before":
-					eventsOnlyFlags.push(argument);
+					useCommandFlag(argument);
 					expectedValue = EventsBefore;
 				case "--follow":
-					eventsOnlyFlags.push(argument);
-					eventsFlagValues.push({flag: "--follow", raw: "true"});
+					useCommandFlag(argument);
+					eventsFollow = true;
 				case "--brief-deps":
+					useCommandFlag(argument);
 					showBriefDependencies = true;
 				case "--all":
-					markListOnly(argument);
+					useCommandFlag(argument);
 					listAll = true;
 				case "--no-activity":
 					// Accepted compatibility flags; recent activity is currently absent.
@@ -1292,66 +1292,59 @@ final class Parser {
 				case "--version" | "-V":
 					versionFlag = true;
 					positional.push("version");
+				case value if (value != "-" && StringTools.startsWith(value, "-")):
+					final long = StringTools.startsWith(value, "--");
+					final typed = long ? value.split("=")[0] : value.substr(0, 2);
+					flagUses.push({typed: typed, argument: value, check: FlagFailure(unknownFlag(typed, value))});
+					// Cobra's command search takes the next argument as the value of a flag that it does not know.
+					if (value.indexOf("=") < 0 && (long || value.length == 2))
+						expectedValue = UnknownFlagValue;
 				case value:
-					if (StringTools.startsWith(value, "--")) {
-						final flag = value.split("=")[0];
-						return UsageFailure('unknown flag: ${flag}');
-					}
-					if (value != "-" && StringTools.startsWith(value, "-"))
-						return UsageFailure('unknown shorthand flag: \'${value.charAt(1)}\' in ${value}');
 					positional.push(value);
 			}
 		}
-		for (entry in pendingIntegers) {
-			final failure = applyIntegerValue(entry.flag, entry.typed, entry.raw);
-			if (failure != null)
-				return UsageFailure(failure);
+		// The last flag has no value after it.
+		if (expectedValue != null)
+			flagUses.push({typed: flagArgument, argument: flagArgument, check: FlagFailure(missingArgument(flagArgument))});
+
+		// Cobra finds the command before pflag parses a flag, so an unknown command comes first.
+		if (positional.length > 0 && !isCommandName(positional[0]))
+			return UnknownCommand(positional[0]);
+		// pflag then parses the flags with those of the command found, and stops at the first problem.
+		function firstFlagFailure():Null<String> {
+			final command = positional.length > 0 ? positional[0] : "";
+			final depTree = command == "dep" && positional.length > 1 && positional[1] == "tree";
+			for (use in flagUses)
+				switch use.check {
+					case CommandFlag:
+						if (lacksCommandFlag(use.typed, positional))
+							return unknownFlag(use.typed, use.argument);
+					case RejectedValue(message) | FlagFailure(message):
+						return message;
+					// `events tail` and `export` declare --limit as an int64 flag without -n.
+					case IntegerArgument(_, raw) if (command == "events"):
+						switch PflagValue.parseInt64(use.typed, raw) {
+							case Int64Rejected(message):
+								return message;
+							case Int64Accepted(value):
+								eventsLimit = value;
+						}
+					case IntegerArgument(flag, raw):
+						// -d is --max-depth in `dep tree` and --days elsewhere.
+						final failure = applyIntegerValue(use.typed == "-d" && depTree ? MaxDepthFlag : flag, use.typed, raw);
+						if (failure != null)
+							return failure;
+				}
+			return null;
 		}
-		if (expectedValue != null) {
-			return switch expectedValue {
-				case Actor: UsageFailure("--actor requires a value");
-				case ShortDirectory: UsageFailure("flag needs an argument: 'C' in -C");
-				case LongDirectory: UsageFailure("flag needs an argument: --directory");
-				case DatabasePath: UsageFailure("flag needs an argument: --db");
-				case DatabaseName: UsageFailure("flag needs an argument: --database");
-				case OutputFormat: UsageFailure("flag needs an argument: --format");
-				case DoltAutoCommit: UsageFailure("flag needs an argument: --dolt-auto-commit");
-				case MemProfile: UsageFailure("flag needs an argument: --mem-profile");
-				case IssueID: UsageFailure("flag needs an argument: --id");
-				case ShortS: UsageFailure("flag needs an argument: 's' in -s");
-				case ListStatus: UsageFailure("flag needs an argument: --status");
-				case ListAssignee: UsageFailure("flag needs an argument: --assignee");
-				case ListIssueType: UsageFailure("flag needs an argument: --type");
-				case ListSort: UsageFailure("flag needs an argument: --sort");
-				case ListTitle: UsageFailure("flag needs an argument: --title");
-				case ListSpec: UsageFailure("flag needs an argument: --spec");
-				case ListLabel: UsageFailure("flag needs an argument: --label");
-				case ListLabelAny: UsageFailure("flag needs an argument: --label-any");
-				case ListExcludeLabel: UsageFailure("flag needs an argument: --exclude-label");
-				case ListLabelPattern: UsageFailure("flag needs an argument: --label-pattern");
-				case ListLabelRegex: UsageFailure("flag needs an argument: --label-regex");
-				case ListTitleContains: UsageFailure("flag needs an argument: --title-contains");
-				case ListDescriptionContains: UsageFailure("flag needs an argument: --desc-contains");
-				case ListNotesContains: UsageFailure("flag needs an argument: --notes-contains");
-				case ListExternalContains: UsageFailure("flag needs an argument: --external-contains");
-				case ListExternalRef: UsageFailure("flag needs an argument: --external-ref");
-				case ListExcludeType: UsageFailure("flag needs an argument: --exclude-type");
-				case ListParent: UsageFailure("flag needs an argument: --parent");
-				case ListMoleculeType: UsageFailure("flag needs an argument: --mol-type");
-				case ListWispType: UsageFailure("flag needs an argument: --wisp-type");
-				case ListMetadataField: UsageFailure("flag needs an argument: --metadata-field");
-				case ListHasMetadataKey: UsageFailure("flag needs an argument: --has-metadata-key");
-				case ListTime(field): UsageFailure('flag needs an argument: --${listTimeFlag(field)}');
-				case IntegerValue(_, typed): UsageFailure(missingArgument(typed));
-				case ReadyMolecule: UsageFailure("flag needs an argument: --mol");
-				case SearchQuery: UsageFailure("flag needs an argument: --query");
-				case DepDirection: UsageFailure("flag needs an argument: --direction");
-				case EventsSince: UsageFailure("flag needs an argument: --since");
-				case EventsLimit: UsageFailure("flag needs an argument: --limit");
-				case EventsBefore: UsageFailure("flag needs an argument: --before");
-				case ConfigShowSource: UsageFailure("flag needs an argument: --source");
-			};
+		// The root command has no SilenceUsage: it prints its usage after a flag error.
+		switch firstFlagFailure() {
+			case null:
+			case failure:
+				return positional.length == 0 ? GroupUsageFailure(failure, Command.RootHelp) : UsageFailure(failure);
 		}
+		if (preRunFailure != null)
+			return UsageFailure(preRunFailure);
 
 		// Cobra reports the flag errors above before upstream's pre-run loads the selected
 		// workspace's .beads/.env, which comes before any setting or variable is read below.
@@ -1769,6 +1762,19 @@ final class Parser {
 			else
 				listHasMetadataKey = listHasMetadataKeyRaw;
 		}
+		// Upstream resolveMaxRowsEnvOnly reads BEADS_MAX_ROWS with strconv.Atoi. Any other value, or a
+		// negative one, sets no cap; the warning that it prints is returned.
+		function readMaxRowsVariable():String {
+			final raw = environment.value("BEADS_MAX_ROWS");
+			if (raw == "")
+				return "";
+			final parsed = PflagValue.goAtoi(raw);
+			if (parsed == null || parsed < 0)
+				return 'Warning: BEADS_MAX_ROWS=${goQuote(raw)} is not a non-negative integer; ignoring.\n';
+			listMaxRows = IntPresent(parsed);
+			listMaxRowsSource = "BEADS_MAX_ROWS";
+			return "";
+		}
 		// Upstream resolveMaxRows: a --max-rows value wins; otherwise a malformed BEADS_MAX_ROWS warns and sets no cap.
 		function resolveMaxRows():Void {
 			switch listMaxRows {
@@ -1776,76 +1782,12 @@ final class Parser {
 					maxRowsCheck = OutputCheckFailure('--max-rows must be non-negative; got ${value}');
 				case IntPresent(_):
 				case IntAbsent:
-					final rawMaxRows = environment.value("BEADS_MAX_ROWS");
-					if (rawMaxRows != "") {
-						final parsedMaxRows = parseSignedInt(rawMaxRows);
-						if (parsedMaxRows == null || parsedMaxRows < 0) {
-							listWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
-						} else {
-							listMaxRows = IntPresent(parsedMaxRows);
-							listMaxRowsSource = "BEADS_MAX_ROWS";
-						}
-					}
+					final warning = readMaxRowsVariable();
+					if (warning != "")
+						listWarning = warning;
 			}
 		}
-		if (name != "count" && countOnlyFlags.length > 0)
-			return UsageFailure('unknown flag: ${countOnlyFlags[0]}');
-		if (name != "search" && searchQueryUsed)
-			return UsageFailure("unknown flag: --query");
-		if (name != "query" && queryParseOnlyUsed)
-			return UsageFailure("unknown flag: --parse-only");
-		if (name != "stale" && staleDaysUsed)
-			return UsageFailure("unknown flag: --days");
-		if (name != "orphans" && orphansDetailsUsed)
-			return UsageFailure("unknown flag: --details");
-		if (name != "orphans" && orphansFixUsed)
-			return UsageFailure("unknown flag: --fix");
-		if (name != "types" && typesSectionsUsed)
-			return UsageFailure("unknown flag: --sections");
-		if (configSourceUsed && !(name == "config" && positional.length > 1 && positional[1] == "show"))
-			return UsageFailure("unknown flag: --source");
-		if (name != "history" && historyEventsUsed)
-			return UsageFailure("unknown flag: --events");
 		final eventsSubcommand = name == "events" && positional.length > 1 ? positional[1] : "";
-		for (flag in eventsOnlyFlags)
-			if (flag == "--before" ? eventsSubcommand != "prune" : eventsSubcommand != "tail")
-				return UsageFailure('unknown flag: ${flag}');
-		if (name != "dep" && depDirectionUsed)
-			return UsageFailure("unknown flag: --direction");
-		if (!depTree && depTreeOnlyFlags.length > 0)
-			return UsageFailure('unknown flag: ${depTreeOnlyFlags[0]}');
-		if (!graphView && graphOnlyFlags.length > 0)
-			return UsageFailure('unknown flag: ${graphOnlyFlags[0]}');
-		// --local-time belongs to the listing alone, not to its `list` or `add` subcommands.
-		if ((name != "comments" || (positional.length > 1 && (positional[1] == "list" || positional[1] == "add")))
-			&& commentsOnlyFlags.length > 0)
-			return UsageFailure('unknown flag: ${commentsOnlyFlags[0]}');
-		if (name != "list") {
-			var incompatibleListFlag = "";
-			for (flag in listOnlyFlags)
-				if (!(name == "children" && flag == "--pretty")
-					&& !(name == "show" && flag == "--long")
-					&& !(name == "count" && isCountFilterFlag(flag))
-					&& !(name == "ready" && isReadyFilterFlag(flag))
-					&& !(name == "search" && isSearchFilterFlag(flag))
-					&& !(name == "query" && isQueryFilterFlag(flag))
-					&& !(name == "stale" && isStaleFilterFlag(flag))
-					&& !(name == "orphans" && isOrphansFilterFlag(flag))
-					&& !(name == "dep" && !depTree && (flag == "--type" || flag == "-t"))
-					&& !(depTree && isDepTreeFilterFlag(flag))
-					&& !(graphView && (flag == "--all" || flag == "--max-rows"))
-					&& !(name == "blocked" && flag == "--parent")
-					&& !(name == "history" && flag == "--limit")
-					&& !(flag == "--limit" && (eventsSubcommand == "tail" || eventsSubcommand == "export"))) {
-					incompatibleListFlag = flag;
-					break;
-				}
-			if (incompatibleListFlag != "") {
-				if (StringTools.startsWith(incompatibleListFlag, "--"))
-					return UsageFailure('unknown flag: ${incompatibleListFlag}');
-				return UsageFailure('unknown shorthand flag: \'${incompatibleListFlag.charAt(1)}\' in ${incompatibleListFlag}');
-			}
-		}
 		if (depTree && !showHelp && positional.length != 3)
 			return UsageFailure('accepts 1 arg(s), received ${positional.length - 2}');
 		if (graphView && !showHelp && positional.length > 2)
@@ -1854,16 +1796,9 @@ final class Parser {
 			switch listMaxRows {
 				case IntPresent(_):
 				case IntAbsent:
-					final rawMaxRows = environment.value("BEADS_MAX_ROWS");
-					if (rawMaxRows != "") {
-						final parsedMaxRows = parseSignedInt(rawMaxRows);
-						if (parsedMaxRows == null || parsedMaxRows < 0) {
-							deferredMaxRowsWarning = 'Warning: BEADS_MAX_ROWS=${haxe.Json.stringify(rawMaxRows)} is not a non-negative integer; ignoring.\n';
-						} else {
-							listMaxRows = IntPresent(parsedMaxRows);
-							listMaxRowsSource = "BEADS_MAX_ROWS";
-						}
-					}
+					final warning = readMaxRowsVariable();
+					if (warning != "")
+						deferredMaxRowsWarning = warning;
 			}
 		}
 		if (name == "list") {
@@ -2032,18 +1967,6 @@ final class Parser {
 				case IntPresent(_):
 			}
 		}
-		if (name != "status" && name != "stats" && (statusSkipBlocked || statusAssigned))
-			return UsageFailure('status flag used with command "${name}"');
-		if (name != "info" && (infoSchema || infoWhatsNew))
-			return UsageFailure('info flag used with command "${name}"');
-		if (name != "show"
-			&& name != "view"
-			&& (showShort || showCurrent || showThread || showRefs || showChildren || showIncludeDependents || showIncludeComments || showBriefDependencies))
-			return UsageFailure('show flag used with command "${name}"');
-		if (name != "show" && name != "view" && name != "list" && watchMode)
-			return UsageFailure('show flag used with command "${name}"');
-		if (name != "show" && name != "view" && name != "list" && name != "count" && issueFlagIds.length > 0)
-			return UsageFailure("unknown flag: --id");
 		if (name == "show" || name == "view") {
 			showIds = positional.slice(1);
 			for (id in issueFlagIds)
@@ -2213,23 +2136,6 @@ final class Parser {
 			}
 		}
 		if (name == "events") {
-			for (entry in eventsFlagValues) {
-				if (entry.flag == "--follow") {
-					if (!isBooleanFlagValue(entry.raw))
-						return UsageFailure(PflagValue.invalidBoolean("--follow", entry.raw));
-					eventsFollow = booleanFlagValue(entry.raw);
-					continue;
-				}
-				switch PflagValue.parseInt64(entry.flag, entry.raw) {
-					case Int64Rejected(message):
-						return UsageFailure(message);
-					case Int64Accepted(value):
-						if (entry.flag == "--since")
-							eventsSince = value;
-						else if (entry.flag == "--limit")
-							eventsLimit = value;
-				}
-			}
 			switch eventsSubcommand {
 				case "prune":
 					return UsageFailure("events prune is not available yet in this build");
@@ -2352,6 +2258,14 @@ final class Parser {
 		};
 	}
 
+	/** The flags of ready that list does not have. */
+	static function isReadyOnlyFlag(flag:String):Bool {
+		return switch flag {
+			case "--mol" | "--plain" | "--unassigned" | "-u" | "--include-deferred" | "--include-ephemeral" | "--claim" | "--gated" | "--explain": true;
+			case _: false;
+		};
+	}
+
 	static function isReadyFilterFlag(flag:String):Bool {
 		return switch flag {
 			case "--assignee" | "-a" | "--priority" | "-p" | "--sort" | "-s" | "--type" | "-t" | "--label" | "-l" | "--label-any" | "--exclude-label" |
@@ -2427,9 +2341,77 @@ final class Parser {
 		return StringTools.startsWith(typed, "--") ? 'flag needs an argument: ${typed}' : 'flag needs an argument: \'${typed.charAt(1)}\' in ${typed}';
 	}
 
-	/** pflag's error for a flag, as typed, that the command does not have. */
-	static function unknownFlag(typed:String):String {
-		return StringTools.startsWith(typed, "--") ? 'unknown flag: ${typed}' : 'unknown shorthand flag: \'${typed.charAt(1)}\' in ${typed}';
+	/**
+		pflag's error for a flag, as typed, that the command does not have. A
+		shorthand error quotes the whole `argument`, such as `-n5`.
+	**/
+	static function unknownFlag(typed:String, argument:String):String {
+		return StringTools.startsWith(typed, "--") ? 'unknown flag: ${typed}' : 'unknown shorthand flag: \'${typed.charAt(1)}\' in ${argument}';
+	}
+
+	/** The commands of this profile: cobra reports any other first argument as an unknown command. */
+	static function isCommandName(name:String):Bool {
+		return switch name {
+			case "help" | "version" | "where" | "info" | "ping" | "status" | "stats" | "count" | "ready" | "search" | "query" | "stale" | "orphans" |
+				"children" | "dep" | "blocked" | "types" | "statuses" | "graph" | "comments" | "label" | "events" | "config" | "history" | "list" | "show" |
+				"view" | "snapshot": true;
+			case _: false;
+		};
+	}
+
+	/**
+		Whether the command in `path` lacks `typed`, a flag that only some
+		commands have. The root command (an empty path) and `bd help` have none
+		of them. Flags of list that other commands share are the default case.
+	**/
+	static function lacksCommandFlag(typed:String, path:Array<String>):Bool {
+		final name = path.length > 0 ? path[0] : "";
+		final subcommand = path.length > 1 ? path[1] : "";
+		final depTree = name == "dep" && subcommand == "tree";
+		final graphView = name == "graph" && subcommand != "check";
+		if (countGroupFlag(typed) != null)
+			return name != "count";
+		return switch typed {
+			case "--query": name != "search";
+			case "--parse-only": name != "query";
+			case "--days": name != "stale";
+			// -d is --days in `stale` and --max-depth in `dep tree`.
+			case "-d": name != "stale" && !depTree;
+			case "--details" | "--fix" | "-f": name != "orphans";
+			case "--sections": name != "types";
+			case "--source": !(name == "config" && subcommand == "show");
+			case "--events": name != "history";
+			case "--since" | "--follow": !(name == "events" && subcommand == "tail");
+			case "--before": !(name == "events" && subcommand == "prune");
+			case "--direction": name != "dep";
+			case "--max-depth" | "--show-all-paths": !depTree;
+			case "--open" | "--dot" | "--html" | "--compact" | "--box": !graphView;
+			// --local-time belongs to the listing alone, not to its `list` or `add` subcommands.
+			case "--local-time": name != "comments" || subcommand == "list" || subcommand == "add";
+			case "--id": name != "show" && name != "view" && name != "list" && name != "count";
+			case "--no-blocked" | "--assigned": name != "status" && name != "stats";
+			case "--schema" | "--whats-new": name != "info";
+			case "--watch" | "-w": name != "show" && name != "view" && name != "list";
+			case "--short" | "--current" | "--thread" | "--refs" | "--children" | "--include-dependents" | "--include-comments" | "--brief-deps":
+				name != "show" && name != "view";
+			// The other flags are list's, which some commands share, and ready's own flags.
+			case _ if (name == "list"): isReadyOnlyFlag(typed);
+			case _:
+				!(name == "children" && typed == "--pretty")
+				&& !(name == "show" && typed == "--long")
+				&& !(name == "count" && isCountFilterFlag(typed))
+				&& !(name == "ready" && isReadyFilterFlag(typed))
+				&& !(name == "search" && isSearchFilterFlag(typed))
+				&& !(name == "query" && isQueryFilterFlag(typed))
+				&& !(name == "stale" && isStaleFilterFlag(typed))
+				&& !(name == "orphans" && isOrphansFilterFlag(typed))
+				&& !(name == "dep" && !depTree && (typed == "--type" || typed == "-t"))
+				&& !(depTree && isDepTreeFilterFlag(typed))
+				&& !(graphView && (typed == "--all" || typed == "--max-rows"))
+				&& !(name == "blocked" && typed == "--parent")
+				&& !(name == "history" && typed == "--limit")
+				&& !(name == "events" && typed == "--limit" && (subcommand == "tail" || subcommand == "export"));
+		};
 	}
 
 	/**
@@ -2647,23 +2629,6 @@ final class Parser {
 			case ChecksPassed: true;
 			case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _): false;
 		};
-	}
-
-	static function parseSignedInt(value:String):Null<Int> {
-		if (value == "")
-			return null;
-		var index = value.charAt(0) == "-" ? 1 : 0;
-		if (index == value.length)
-			return null;
-		var result = 0;
-		while (index < value.length) {
-			final code = value.charCodeAt(index);
-			if (code < 48 || code > 57)
-				return null;
-			result = result * 10 + code - 48;
-			index++;
-		}
-		return value.charAt(0) == "-" ? -result : result;
 	}
 
 	static function isListSort(value:String):Bool {

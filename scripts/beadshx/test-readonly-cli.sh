@@ -353,10 +353,11 @@ grep -Fqx 'Error: no beads database found' "$test_root/info_whats_new_missing.st
 
 grep -Fq -- '--whats-new' "$test_root/info_help.stdout"
 
+# Without a command, pflag's error comes from the root command, which prints its usage after it.
 run_case actor_missing --actor
 [[ "$(<"$test_root/actor_missing.exit")" == 1 ]]
 [[ ! -s "$test_root/actor_missing.stdout" ]]
-grep -Fqx 'Error: --actor requires a value' "$test_root/actor_missing.stderr"
+[[ "$(sed -n 1,2p "$test_root/actor_missing.stderr")" == $'Error: flag needs an argument: --actor\nUsage:' ]]
 
 run_case actor_empty --actor=
 [[ "$(<"$test_root/actor_empty.exit")" == 1 ]]

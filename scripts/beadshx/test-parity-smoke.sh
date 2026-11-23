@@ -62,6 +62,14 @@ no_workspace_user_config=""
 no_workspace_setup=""
 # The exact stderr that both sides of a version case must print; empty by default.
 version_expected_stderr=""
+# When set, a no-workspace case compares stderr as a root flag error: see compare_root_usage_error.
+no_workspace_root_usage=""
+
+# Keeps the first line of a root flag error and replaces the root usage after it with one marker
+# line. Any other text stays, so a missing usage or a second error line differs.
+normalize_root_usage() {
+	awk 'NR == 1 { print; next } NR == 2 && $0 == "Usage:" { print "<root usage>"; exit } { print }' "$1"
+}
 
 # Writes the case's user config.yaml under each HOME directory given.
 write_no_workspace_user_config() {
@@ -161,9 +169,16 @@ compare_no_workspace() {
 		diff -u "$case_root/oracle.stdout" "$case_root/candidate.stdout" >&2 || true
 		return 1
 	fi
-	if ! cmp -s "$case_root/oracle.stderr" "$case_root/candidate.stderr"; then
+	local oracle_stderr="$case_root/oracle.stderr" candidate_stderr="$case_root/candidate.stderr"
+	if [[ -n "$no_workspace_root_usage" ]]; then
+		oracle_stderr="$case_root/oracle.stderr.normalized"
+		candidate_stderr="$case_root/candidate.stderr.normalized"
+		normalize_root_usage "$case_root/oracle.stderr" >"$oracle_stderr"
+		normalize_root_usage "$case_root/candidate.stderr" >"$candidate_stderr"
+	fi
+	if ! cmp -s "$oracle_stderr" "$candidate_stderr"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
-		diff -u "$case_root/oracle.stderr" "$case_root/candidate.stderr" >&2 || true
+		diff -u "$oracle_stderr" "$candidate_stderr" >&2 || true
 		return 1
 	fi
 	if [[ -n "$no_workspace_setup" ]]; then
@@ -201,6 +216,15 @@ compare_no_workspace_user_config() {
 	no_workspace_user_config="$config"
 	compare_no_workspace "$name" "$@"
 	no_workspace_user_config=""
+}
+
+# A flag error on the root command (no command found) prints cobra's root usage after the error.
+# The root usage lists each build's own commands, so these cases compare the exit code, stdout and
+# the error line exactly, and require the usage right after the error on both sides.
+compare_root_usage_error() {
+	no_workspace_root_usage=1
+	compare_no_workspace "$@"
+	no_workspace_root_usage=""
 }
 
 # `version` prints each binary's own identity, so these no-workspace cases compare only the output
@@ -444,6 +468,90 @@ compare_no_workspace history_limit_out_of_range history test-a --limit 999999999
 compare_no_workspace history_unknown_limit_attached history test-a -n5
 compare_no_workspace show_unknown_limit show test-a --limit x
 compare_no_workspace help_list_unknown_limit help list --limit x
+# Cobra finds the command before pflag parses a flag. pflag then reads the arguments in order with the
+# flags of that command and stops at the first problem: a flag that the command lacks, a value that a
+# flag rejects, or a flag with no value after it. A flag of another command is unknown, also with a
+# bad value or no value, and `bd help` has none of them.
+compare_no_workspace ready_unknown_title_before_invalid_priority ready --title x -p x
+compare_no_workspace unknown_title_before_invalid_priority_before_command --title x -p x ready
+compare_no_workspace ready_unknown_title_before_missing_priority ready --title x -p
+compare_no_workspace ready_unknown_title_before_count_flag ready --title x --by-status
+compare_no_workspace ready_unknown_title_before_bad_boolean ready --title x --pretty=maybe
+compare_no_workspace ready_unknown_title_before_bad_json ready --title x --json=maybe
+compare_no_workspace ready_unknown_title_before_unknown_flag ready --title x -p 1 --bogus
+compare_no_workspace count_unknown_offset_before_invalid_priority count --offset x -p y
+compare_no_workspace stale_unknown_title_before_invalid_days stale --title x -d x
+compare_no_workspace list_unknown_count_flag_before_invalid_limit list --by-status --limit x
+compare_no_workspace ready_unknown_query_before_invalid_limit ready --query x -n x
+compare_no_workspace ready_unknown_days_before_invalid_limit ready --days 1 -n x
+compare_no_workspace ready_unknown_days_shorthand ready -d 5
+compare_no_workspace search_unknown_spec_before_invalid_limit search foo --spec x -n x
+compare_no_workspace ready_unknown_details_bad_value ready --details=maybe
+compare_no_workspace show_unknown_all_bad_value show test-a --all=maybe
+compare_no_workspace ready_unknown_count_flag_bad_value ready --by-status=x
+compare_no_workspace list_unknown_graph_flag_bad_value list --dot=x
+compare_no_workspace ready_unknown_title_missing_value ready --title
+compare_no_workspace show_unknown_limit_missing_value show test-a --limit
+compare_no_workspace ready_unknown_status_flag ready --no-blocked
+compare_no_workspace list_unknown_info_flag list --schema
+compare_no_workspace ready_unknown_show_flag ready --short
+compare_no_workspace ready_unknown_watch_false ready --watch=false
+compare_no_workspace list_unknown_ready_claim list --claim
+compare_no_workspace list_unknown_ready_unassigned_shorthand list -u
+compare_no_workspace list_unknown_ready_molecule list --mol test-a
+compare_no_workspace list_unknown_ready_plain_before_invalid_limit list --plain -n x
+compare_no_workspace help_unknown_title help --title x
+compare_no_workspace help_count_unknown_count_flag help count --by-status
+compare_no_workspace events_tail_invalid_since_before_unknown_flag events tail --since x --bogus
+compare_no_workspace events_unknown_limit_shorthand_before_subcommand events -n 5 tail
+compare_no_workspace dep_tree_days_shorthand_before_command -d 5 dep tree test-a
+# A shorthand that takes a value names the shorthand when no value follows, and takes the next
+# argument even when it looks like a flag.
+compare_no_workspace list_missing_type_shorthand list -t
+compare_no_workspace list_missing_assignee_shorthand list -a
+compare_no_workspace list_missing_label_shorthand list -l
+compare_no_workspace count_missing_type_shorthand count -t
+compare_no_workspace ready_missing_assignee_shorthand ready -a
+compare_no_workspace search_missing_label_shorthand search foo -l
+compare_no_workspace list_type_shorthand_takes_flag_value list -t --json
+# An int shorthand with its value attached also works before the command, which pflag parses with
+# the flags of the command that cobra found later in the arguments.
+compare_no_workspace limit_shorthand_attached_before_command -n5 list
+compare_no_workspace priority_shorthand_attached_before_command -p1 count
+compare_no_workspace days_shorthand_attached_before_command -d5 stale
+compare_no_workspace invalid_days_shorthand_attached_before_command -dx stale
+compare_no_workspace limit_shorthand_attached_before_unknown_command -n5 bogus
+compare_no_workspace limit_shorthand_attached_before_show -n5 show test-a
+# An unknown command comes before every flag error. Cobra's command search takes the argument after
+# a flag that it does not know as that flag's value, unless the flag has "=". Upstream's pre-run
+# checks (this build's empty --actor and --dolt-auto-commit checks) come after both.
+compare_no_workspace readonly_bad_value_unknown_command --readonly=maybe bogus
+compare_no_workspace global_empty_value_unknown_command --global= bogus
+compare_no_workspace json_bad_value_unknown_command --json=maybe bogus
+compare_no_workspace cpu_profile_bad_value_unknown_command --cpu-profile=x bogus
+compare_no_workspace unknown_command_before_bad_readonly bogus --readonly=maybe
+compare_no_workspace unknown_command_before_count_flag bogus --by-status
+compare_no_workspace unknown_command_before_missing_value bogus --title
+compare_no_workspace unknown_attached_flag_unknown_command --bogus=1 bogus2
+compare_no_workspace unknown_flag_value_before_command --bogus x ready
+compare_no_workspace empty_actor_unknown_title --actor= ready --title x
+compare_no_workspace empty_actor_unknown_command --actor= bogus
+compare_no_workspace bad_auto_commit_unknown_title --dolt-auto-commit=x ready --title x
+# Without a command, a flag error comes from the root command, which prints its usage after it.
+compare_root_usage_error root_bad_readonly_help --readonly=maybe --help
+compare_root_usage_error root_empty_global_help --global= --help
+compare_root_usage_error root_bad_readonly --readonly=maybe
+compare_root_usage_error root_bad_schema_skew_help --ignore-schema-skew=x --help
+compare_root_usage_error root_unknown_flag_after_json --json --bogus
+compare_root_usage_error root_unknown_limit_shorthand_attached -n5
+compare_root_usage_error root_unknown_shorthand_takes_command -x list
+compare_root_usage_error root_unknown_flag_takes_value --bogus x
+compare_root_usage_error root_limit_shorthand_takes_command -n list
+compare_root_usage_error root_unknown_title --title x
+compare_root_usage_error root_unknown_all --all
+compare_root_usage_error root_missing_directory_shorthand -C
+compare_root_usage_error root_missing_db --db
+compare_root_usage_error root_missing_actor --actor
 # In shared-server mode upstream's hint also names `bd doctor`. Without a workspace it reads the mode
 # from BEADS_DOLT_SHARED_SERVER (1 or true in any case), BD_DOLT_SHARED_SERVER and the user
 # config.yaml. Neither side writes.
@@ -3390,6 +3498,7 @@ compare_real_database dep-tree-max-rows-negative-json exact dep tree "$real_data
 compare_real_database_env dep-tree-max-rows-env exact BEADS_MAX_ROWS=1 dep tree "$real_database_grandchild_id"
 compare_real_database_env dep-tree-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 dep tree "$real_database_grandchild_id" --max-rows 0
 compare_real_database_env dep-tree-max-rows-env-malformed exact BEADS_MAX_ROWS=banana dep tree test-missing
+compare_real_database_env dep-tree-max-rows-env-out-of-range exact BEADS_MAX_ROWS=99999999999999999999 dep tree test-missing
 # graph check walks the blocking edges from roots in Go map order, so a cycle with two or more
 # members prints in random order. A self-loop is stable, and so is a cycle whose other members
 # have no record: upstream drops them, and drops a cycle with no recorded member at all.
@@ -3810,6 +3919,10 @@ compare_real_database graph-all-max-rows-negative-json exact graph --all --max-r
 compare_real_database_env graph-all-max-rows-env exact BEADS_MAX_ROWS=1 graph --all --dot
 compare_real_database_env graph-all-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 graph --all --max-rows 0 --compact
 compare_real_database_env graph-all-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph --all --open
+# The search for --all asks for one row more than the cap, which stays exact past 2147483647.
+compare_real_database graph-all-max-rows-int32-max exact graph --all --max-rows 2147483647 --dot
+compare_real_database_env graph-all-max-rows-env-int32-max exact BEADS_MAX_ROWS=2147483647 graph --all --compact
+compare_real_database_env graph-all-max-rows-env-plus-sign exact BEADS_MAX_ROWS=+1 graph --all --dot
 compare_real_database graph-all-two-args exact graph --all "$real_database_epic_id" "$real_database_child_id"
 compare_real_database graph-check-all-flag exact graph check --all
 # The views that are not ported yet must fail the same way every time; upstream prints them.
@@ -3950,6 +4063,15 @@ compare_real_database list-max-rows-human exact list --limit 0 --max-rows 1
 compare_real_database_env list-max-rows-env-human exact BEADS_MAX_ROWS=1 list --limit 0
 compare_real_database_env list-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 list --limit 1 --max-rows 0
 compare_real_database_env list-max-rows-env-malformed exact BEADS_MAX_ROWS=banana list --limit 1
+# Upstream reads BEADS_MAX_ROWS with strconv.Atoi: a sign is allowed, a value keeps Go's int range,
+# and the warning quotes the value as Go's %q does.
+compare_real_database_env list-max-rows-env-plus-sign exact BEADS_MAX_ROWS=+1 list --limit 0
+compare_real_database_env list-max-rows-env-negative-zero exact BEADS_MAX_ROWS=-0 list --limit 1
+compare_real_database_env list-max-rows-env-above-int32 exact BEADS_MAX_ROWS=4294967297 list --limit 0
+compare_real_database_env list-max-rows-env-out-of-range exact BEADS_MAX_ROWS=99999999999999999999 list --limit 1
+compare_real_database_env list-max-rows-env-space exact 'BEADS_MAX_ROWS= 1' list --limit 1
+compare_real_database_env list-max-rows-env-control-quoted exact BEADS_MAX_ROWS=$'\x01' list --limit 1
+compare_real_database_env ready-max-rows-env-above-int32 exact BEADS_MAX_ROWS=4294967297 ready
 compare_real_database list-max-rows-negative exact list --max-rows -1
 compare_real_database list-watch-brief exact list --watch --brief
 compare_real_database list-watch-deps exact list --watch --deps

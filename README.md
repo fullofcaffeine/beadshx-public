@@ -172,8 +172,21 @@ upstream's order:
   `--sort` value. With a value that it does not know, it keeps the order of
   the database.
 
+The flag parser follows cobra and pflag. It finds the command first, so an
+unknown command comes before any flag error. Then it reads the flags in
+argument order with the flags of that command, and the first problem stops it:
+a flag that the command does not have, a value that a flag rejects, or a flag
+with no value after it. A flag of another command is unknown also when its
+value is bad or missing. Without a command, the error comes from the root
+command, which prints its usage after the error. `bdhx` checks the
+`--dolt-auto-commit` value and refuses an empty `--actor`, which upstream
+accepts, only after all of these.
+
 `list` and `ready` print the `BEADS_MAX_ROWS` warning where they read
 `--max-rows`, so a check that fails before that point prints no warning.
+`BEADS_MAX_ROWS` takes what Go's `strconv.Atoi` takes: an optional sign and
+decimal digits in Go's int range. The warning quotes the value as Go's `%q`
+does.
 `ready --claim` fails after all of these checks with upstream's
 `--readonly` error. `bdhx` prints this error also without `--readonly`,
 because it does not write.
