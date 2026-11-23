@@ -1063,6 +1063,7 @@ real_database_directory=""
 # and gives each side an empty TMPDIR that must stay empty.
 real_database_read_only=""
 real_database_case_count=0
+real_database_out_of_memory_count=0
 candidate_only_case_count=0
 # Names a function that prepares one candidate-only state root (its argument) before the run.
 candidate_only_setup=""
@@ -1166,6 +1167,17 @@ compare_real_database() {
 				return 1
 			fi
 		done
+	fi
+
+	# An upstream run that cannot finish for lack of memory gives no answer to compare. A very
+	# large row cap makes Dolt reserve memory in proportion to the cap, so on a small CI runner
+	# both sides die with Go's out-of-memory error and only their stack traces differ. Skip the
+	# case only when both sides ran out of memory, and report it; one side alone still fails.
+	if grep -q '^fatal error: runtime: out of memory' "$case_root/oracle.stderr" &&
+		grep -q '^fatal error: runtime: out of memory' "$case_root/candidate.stderr"; then
+		real_database_out_of_memory_count=$((real_database_out_of_memory_count + 1))
+		printf 'parity [%ss]: SKIP database/%s (upstream and candidate both ran out of memory)\n' "$SECONDS" "$name"
+		return 0
 	fi
 
 	if [[ "$oracle_exit" -ne "$candidate_exit" ]]; then
@@ -5404,7 +5416,11 @@ printf 'candidate: %s\n' "$candidate_identity"
 printf 'parity identity smoke: PASS\n'
 printf 'no-workspace differential: PASS (%s command forms)\n' "$no_workspace_case_count"
 printf 'store-failure differentials: PASS (%s cases)\n' "$store_failure_case_count"
-printf 'real-database differentials: PASS (%s cases; ping timings normalized)\n' "$real_database_case_count"
+if [[ "$real_database_out_of_memory_count" -gt 0 ]]; then
+	printf 'real-database differentials: PASS (%s cases, %s skipped because upstream and candidate both ran out of memory; ping timings normalized)\n' "$real_database_case_count" "$real_database_out_of_memory_count"
+else
+	printf 'real-database differentials: PASS (%s cases; ping timings normalized)\n' "$real_database_case_count"
+fi
 printf 'candidate-only checks: PASS (%s cases; views not ported yet fail the same way)\n' "$candidate_only_case_count"
 printf 'watch differentials: PASS (%s cases; poll change, refresh error, and signal lifecycle)\n' "$watch_case_count"
 printf 'JSON terminal notice differential: PASS\n'
