@@ -39,4 +39,7 @@ enum Command {
 	LabelListAll;
 	List;
 	Show;
+
+	/** The hidden BeadsHX snapshot extension (BHX-M08-09); upstream has no such command. */
+	Snapshot;
 }

@@ -60,7 +60,7 @@ build_export_fixture() {
 		"UPDATE issues SET await_type = 'gh:run', await_id = '123', timeout_ns = 3600000000000, waiters = '[\"a@x\", null]' WHERE id = 'snap-g'" \
 		"UPDATE issues SET compaction_level = 1, compacted_at = '2026-01-02 03:04:05', compacted_at_commit = 'abc123', original_size = 2048 WHERE id = 'snap-sw'" \
 		"UPDATE dependencies SET thread_id = 'thread-1' WHERE issue_id = 'snap-sw'" |
-		"$fixture_sql" "$workspace" >/dev/null
+		TZ=UTC "$fixture_sql" "$workspace" >/dev/null
 }
 
 # Prints the issue lines of a `bd export` file, without memory lines, sorted

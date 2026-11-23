@@ -111,6 +111,7 @@ import beadshx.store.SchemaSkew.SchemaSkewBoundary;
 import beadshx.store.SchemaSkew.SchemaSkewRefusal;
 import beadshx.store.SchemaSkew.schemaSkewRefusalError;
 import beadshx.store.SchemaSkew.schemaSkewUserMessage;
+import beadshx.store.TaskSnapshot;
 import beadshx.store.EventsJournal.eventsTruncatedMessage;
 import beadshx.cli.HistoryView.renderHistoryEventsJson;
 import beadshx.cli.HistoryView.renderHistoryEventsText;
@@ -455,7 +456,7 @@ final class Application {
 		return switch command {
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | DepList | DepCycles | DepTree | GraphCheck | Graph |
 				Blocked | Comments | History | EventsTail | EventsExport | LabelList | LabelListAll | List | Show | Types | Statuses | ConfigGet |
-				ConfigList | ConfigShow | ConfigValidate | ConfigDrift: true;
+				ConfigList | ConfigShow | ConfigValidate | ConfigDrift | Snapshot: true;
 			case RootHelp | Version | Where | Label | Events | Config: false;
 		};
 	}
@@ -497,6 +498,7 @@ final class Application {
 			case LabelListAll: "list-all";
 			case List: "list";
 			case Show: "show";
+			case Snapshot: "snapshot";
 			case RootHelp: "bd";
 			case Version: "version";
 			case Where: "where";
@@ -520,7 +522,7 @@ final class Application {
 			case LabelList: "label list";
 			case LabelListAll: "label list-all";
 			case Info | Ping | Status | Count | Ready | Search | Query | Stale | Orphans | Children | Graph | Blocked | Comments | History | Events | Types |
-				Statuses | Config | Label | List | Show | RootHelp | Version | Where:
+				Statuses | Config | Label | List | Show | Snapshot | RootHelp | Version | Where:
 				commandName(command);
 		};
 	}
@@ -622,6 +624,8 @@ final class Application {
 				runList(invocation);
 			case Show:
 				runShow(invocation);
+			case Snapshot:
+				runSnapshot(invocation);
 		};
 	}
 
@@ -2169,6 +2173,40 @@ final class Application {
 				final lines = renderEventsRecords(rows);
 				output.writeStdout(lines.text);
 				lines.error == null ? 0 : runModeAwareFailure(invocation.output, 'reading events journal: ${lines.error}');
+		};
+	}
+
+	/**
+		The hidden BeadsHX snapshot extension (BHX-M08-09, spec v1): every issue
+		of an embedded workspace and the revision it comes from, as
+		`TaskSnapshot` describes. Upstream has no such command.
+
+		It reads embedded workspaces only, and refuses `--global`, shared-server,
+		server-mode and proxied workspaces before it opens anything. The parser
+		keeps this command in human output, so every error goes to stderr. It
+		prints the artifact in one write after the whole read, so stdout holds
+		the whole artifact or nothing.
+	**/
+	function runSnapshot(invocation:Invocation):Int {
+		if (invocation.global)
+			return runModeAwareFailure(OutputMode.Human, TaskSnapshot.ROUTE_UNAVAILABLE);
+		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case InvalidSelection(message): runStoreFailure(message);
+			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case Found(location):
+				switch validateStoreSelection(invocation, location) {
+					case PlainFailure(message): runStoreFailure(message);
+					case ModeAwareFailure(message): runModeAwareFailure(OutputMode.Human, message);
+					case Accepted:
+						if (location.proxiedServer || opensServerStore(location)) runModeAwareFailure(OutputMode.Human,
+							TaskSnapshot.ROUTE_UNAVAILABLE); else if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else
+							switch store.taskSnapshot(location.path, selectedDatabaseName(invocation, location)) {
+							case Failure(message): runStoreFailure(message);
+							case Success(artifact):
+								output.writeStdout(artifact);
+								0;
+						}
+				}
 		};
 	}
 
@@ -6503,6 +6541,7 @@ final class Application {
 			case LabelListAll: labelSubcommandHelp("List all unique labels in the database", "list-all", "list-all");
 			case List: listHelp();
 			case Show: showHelp();
+			case Snapshot: snapshotHelp();
 		};
 	}
 
@@ -7217,6 +7256,32 @@ final class Application {
 			"      --sandbox                   Sandbox mode: disables Dolt auto-push",
 			"  -v, --verbose                   Enable verbose/debug output"
 		].join("\n") + "\n";
+	}
+
+	/** The help of the hidden BeadsHX snapshot extension; the root help does not list the command. */
+	function snapshotHelp():String {
+		return [
+			"Print a read-only snapshot of every issue in the embedded workspace.",
+			"",
+			"This is a BeadsHX extension; upstream bd has no snapshot command. The snapshot",
+			"is JSON Lines (schema beadshx-task-snapshot/1). Line 1 is a header with the Dolt",
+			"revision of the read: _dolt_branch, _dolt_commit, _dolt_state, _project_id,",
+			"_records, _schema, _scope and _sort. Each other line is the line that",
+			"'bd export --all' prints for one issue, sorted by issue ID in byte order.",
+			"Memories and config rows are not included.",
+			"",
+			"The command reads one Dolt read transaction and writes nothing. It prints the",
+			"snapshot on stdout when the whole read is done. Redirect it to a file in a",
+			"git-ignored build directory, never under .beads/. The snapshot holds the issue",
+			"text: do not commit it to a public repository.",
+			"",
+			"Usage:",
+			"  bdhx snapshot [flags]",
+			"",
+			"Flags:",
+			"  -h, --help   help for snapshot",
+			""
+		].join("\n") + "\n" + supportedGlobalFlags();
 	}
 
 	function basicCommandHelp(description:String, name:String, flags:String):String {

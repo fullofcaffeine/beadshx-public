@@ -12,6 +12,12 @@ interface ReadonlyStorePort extends IssueQueryPort {
 	function lastTouchedId(beadsDir:String):String;
 
 	/**
+		The `TaskSnapshot` artifact of an embedded workspace, read in one read
+		transaction. The caller refuses other workspaces before it asks.
+	**/
+	function taskSnapshot(beadsDir:String, databaseName:String):StoreResult<String>;
+
+	/**
 		Upstream checks the schema when its pre-run opens the store, before the
 		command body. Embedded reads here check in the first read of the command;
 		this runs that check for a command that has not read yet. A refusal

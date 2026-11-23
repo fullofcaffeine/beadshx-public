@@ -109,6 +109,12 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return Success(true);
 	}
 
+	/** Only the Haxe embedded session reads a snapshot; a build without it has no route. */
+	public function taskSnapshot(beadsDir:String, databaseName:String):StoreResult<String> {
+		final embedded = EmbeddedStoreAccess.taskSnapshot(beadsDir, databaseName);
+		return embedded == null ? Failure(TaskSnapshot.ROUTE_UNAVAILABLE) : embedded;
+	}
+
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
 		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
 			final embedded = EmbeddedStoreAccess.relatedIssues(beadsDir, databaseName, plan);

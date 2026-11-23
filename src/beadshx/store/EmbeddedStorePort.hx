@@ -33,6 +33,9 @@ interface EmbeddedStorePort {
 	function configValue(beadsDir:String, databaseName:String, key:String):Null<StoreResult<String>>;
 	function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>>;
 
+	/** The whole `TaskSnapshot` artifact, read in one read transaction. */
+	function taskSnapshot(beadsDir:String, databaseName:String):Null<StoreResult<String>>;
+
 	/** Opens and closes one session for its schema check (`ReadonlyStorePort.checkSchema`); without embedded access it does nothing. */
 	function checkSchema(beadsDir:String, databaseName:String):Void;
 }

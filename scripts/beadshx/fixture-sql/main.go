@@ -9,12 +9,19 @@
 // It refuses any workspace without the .beadshx-disposable-fixture marker and
 // any workspace that is not in embedded mode. Never point it at real data.
 //
+// With --query it instead runs one read query in a transaction that it rolls
+// back, and prints each row as tab-separated values (NULL as "NULL"). Tests use
+// it to read values, such as Dolt revision hashes, that bd prints nowhere.
+//
 // Usage: fixture-sql WORKSPACE < STATEMENTS (one SQL statement per line)
+//
+//	fixture-sql --query WORKSPACE < QUERY
 package main
 
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,11 +36,18 @@ import (
 const fixtureMarker = ".beadshx-disposable-fixture"
 
 func main() {
-	if len(os.Args) != 2 {
+	var err error
+	switch {
+	case len(os.Args) == 2:
+		err = run(context.Background(), os.Args[1], os.Stdin)
+	case len(os.Args) == 3 && os.Args[1] == "--query":
+		err = query(context.Background(), os.Args[2], os.Stdin, os.Stdout)
+	default:
 		fmt.Fprintln(os.Stderr, "usage: fixture-sql WORKSPACE < STATEMENTS")
+		fmt.Fprintln(os.Stderr, "       fixture-sql --query WORKSPACE < QUERY")
 		os.Exit(2)
 	}
-	if err := run(context.Background(), os.Args[1], os.Stdin); err != nil {
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "fixture-sql: %v\n", err)
 		os.Exit(1)
 	}
@@ -78,6 +92,63 @@ func readStatements(input io.Reader) ([]string, error) {
 		return nil, errors.New("no statements on stdin")
 	}
 	return statements, nil
+}
+
+// query runs the one statement on input in a read transaction, rolls the
+// transaction back and writes each row as tab-separated values.
+func query(ctx context.Context, workspace string, input io.Reader, output io.Writer) (err error) {
+	database, err := fixtureDatabase(workspace)
+	if err != nil {
+		return err
+	}
+	statements, err := readStatements(input)
+	if err != nil {
+		return err
+	}
+	if len(statements) != 1 {
+		return fmt.Errorf("--query takes one statement, got %d", len(statements))
+	}
+	dataDir := filepath.Join(workspace, ".beads", "embeddeddolt")
+	db, cleanup, err := embeddeddolt.OpenSQL(ctx, dataDir, database, "main")
+	if err != nil {
+		return fmt.Errorf("open fixture database: %w", err)
+	}
+	defer func() { err = errors.Join(err, cleanup()) }()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { err = errors.Join(err, tx.Rollback()) }()
+	rows, err := tx.QueryContext(ctx, statements[0])
+	if err != nil {
+		return fmt.Errorf("%s: %w", statements[0], err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("columns: %w", err)
+	}
+	for rows.Next() {
+		values := make([]sql.NullString, len(columns))
+		destinations := make([]any, len(columns))
+		for index := range values {
+			destinations[index] = &values[index]
+		}
+		if err := rows.Scan(destinations...); err != nil {
+			return fmt.Errorf("scan: %w", err)
+		}
+		cells := make([]string, len(values))
+		for index, value := range values {
+			cells[index] = "NULL"
+			if value.Valid {
+				cells[index] = value.String
+			}
+		}
+		if _, err := fmt.Fprintln(output, strings.Join(cells, "\t")); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 func run(ctx context.Context, workspace string, input io.Reader) (err error) {

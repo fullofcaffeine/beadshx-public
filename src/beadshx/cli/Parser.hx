@@ -2055,7 +2055,8 @@ final class Parser {
 			};
 			return Parsed({
 				command: command,
-				output: outputMode(),
+				// The snapshot is JSON Lines in every mode, and its errors never reach stdout.
+				output: command == Command.Snapshot ? OutputMode.Human : outputMode(),
 				actor: actor,
 				directory: directory,
 				databasePath: databasePath,
@@ -2274,6 +2275,12 @@ final class Parser {
 		}
 		if (name == "show" || name == "view")
 			return parsedCommand(Command.Show);
+		// The hidden BeadsHX snapshot extension takes no argument (cobra.NoArgs).
+		if (name == "snapshot") {
+			if (!showHelp && positional.length > 1)
+				return UsageFailure('unknown command "${positional[1]}" for "bd snapshot"');
+			return parsedCommand(Command.Snapshot);
+		}
 		return helpCommand ? UsageFailure('unknown command "${name}"') : UnknownCommand(name);
 	}
 

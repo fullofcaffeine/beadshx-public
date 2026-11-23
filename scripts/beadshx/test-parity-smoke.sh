@@ -295,6 +295,39 @@ compare_no_workspace version_unknown_attached version --frobnicate=value
 compare_no_workspace version_unknown_short version -xyz
 compare_no_workspace unknown_command frobnicate
 compare_no_workspace unknown_command_help frobnicate --help
+# `snapshot` is a recorded BeadsHX extension (engdocs/beadshx/program/exceptions.md), the one name that
+# is exempt from the unknown-command comparison: upstream reports it as unknown and bdhx runs it. Both
+# print the same root help, which does not list it. scripts/beadshx/test-snapshot.sh tests the artifact.
+check_snapshot_extension() {
+	local case_root="$test_root/snapshot-extension" status=0
+	printf 'parity [%ss]: START extension/snapshot\n' "$SECONDS"
+	mkdir -p "$case_root/home" "$case_root/config" "$case_root/work"
+	local extension_env=(env HOME="$case_root/home" XDG_CONFIG_HOME="$case_root/config" BEADS_TELEMETRY_DISABLED=1
+		BEADS_NO_AUTO_FLUSH=1 BD_DISABLE_METRICS=1 BD_DISABLE_EVENT_FLUSH=1 NO_COLOR=1)
+	(cd "$case_root/work" && "${extension_env[@]}" "$oracle" snapshot) >"$case_root/oracle.stdout" 2>"$case_root/oracle.stderr" ||
+		status=$?
+	if [[ "$status" -ne 1 || -s "$case_root/oracle.stdout" ||
+		"$(cat "$case_root/oracle.stderr")" != $'Error: unknown command "snapshot" for "bd"\nRun \'bd --help\' for usage.' ]]; then
+		printf 'upstream no longer reports snapshot as an unknown command; review the extension\n' >&2
+		return 1
+	fi
+	(cd "$case_root/work" && "${extension_env[@]}" "$candidate" snapshot --help) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
+	if [[ -s "$case_root/candidate.stderr" || "$(head -n 1 "$case_root/candidate.stdout")" != 'Print a read-only snapshot of every issue in the embedded workspace.' ]]; then
+		printf 'bdhx snapshot --help does not describe the extension\n' >&2
+		return 1
+	fi
+	(cd "$case_root/work" && "${extension_env[@]}" "$candidate" --help) >"$case_root/root-help.stdout"
+	if grep -Fq snapshot "$case_root/root-help.stdout"; then
+		printf 'the bdhx root help lists the hidden snapshot command\n' >&2
+		return 1
+	fi
+	if [[ -n "$(find "$case_root/home" "$case_root/config" "$case_root/work" -mindepth 1 -print -quit)" ]]; then
+		printf 'the snapshot extension check wrote files\n' >&2
+		return 1
+	fi
+	printf 'parity [%ss]: PASS extension/snapshot\n' "$SECONDS"
+}
+check_snapshot_extension
 compare_no_workspace list_help list --help
 compare_no_workspace help_list help list
 # list refuses positional arguments (with a hint for a bare flag name) after flag parsing and --help,
