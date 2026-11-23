@@ -1009,7 +1009,7 @@
       },
       {
         "path": "src/beadshx/store/SqlGraphReader.hx",
-        "sha256": "504e8a1bfb8c151c7f70608bb5eb6825c7b3fefefb4cfa2f2236a34f24d29168"
+        "sha256": "6ca050ade9b4ef9b8aba56721c75e4aa9f8f4719c01a642f8f44516881c7cf14"
       },
       {
         "path": "src/beadshx/store/SqlHistoryReader.hx",
@@ -1030,6 +1030,10 @@
       {
         "path": "src/beadshx/store/SqlRelationReader.hx",
         "sha256": "bbcb1ec7ca434192395c7cc61a00364be7159a76f8bdc2ede70e08404eeb9bb8"
+      },
+      {
+        "path": "src/beadshx/store/SqlRowCap.hx",
+        "sha256": "89603b6b6b76b50fb92a3686e6b47bdbefd4cf418d50d5c18cc025d5ed56e4ee"
       },
       {
         "path": "src/beadshx/store/SqlTreeReader.hx",
@@ -1109,7 +1113,7 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "dd69031b335b0d1c02c4e4e2d6cd62f0c66cde137aebff067bddf0c00b781835"
+      "sha256": "9b3b28931ed1cd01f0d7baaf53582207624341aef4545ee8214979306916782c"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -1709,7 +1713,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlgraphreader.go",
-      "sha256": "6bc9309950f8641f054bb74576ddffa0f7813d39c79440c89ef524639d4724ff"
+      "sha256": "f4bc4301505ecb9ed1f59b16d10c596e708960a844cd3faa5cba979afe34c3a8"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlhistoryreader.go",
@@ -1730,6 +1734,10 @@
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlrelationreader.go",
       "sha256": "553366dad4656df1546ee03576829340ec4fd83293c2c3eb4fab96c1679b43ec"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_store_sqlrowcap.go",
+      "sha256": "0079126e4d44b579c830cfafa1ac53f0a12ec8c51319f5471f983f02d607e29f"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqltreereader.go",

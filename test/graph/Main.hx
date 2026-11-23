@@ -19,6 +19,7 @@ import beadshx.relation.AllGraphs.AllGraphIssue;
 import beadshx.relation.AllGraphs.groupAllGraphs;
 import beadshx.relation.GoSort.goPdqsort;
 import beadshx.relation.GoSort.goSortSlice;
+import beadshx.store.SqlRowCap;
 
 /** Generated keys for one Go sort.Slice oracle case, and the labels the oracle prints for them. */
 private typedef SortCase = {
@@ -54,7 +55,21 @@ class Main {
 		htmlContracts();
 		goSortContracts();
 		allGraphContracts();
+		rowCapContracts();
 		Sys.println("graph Haxe contracts: PASS");
+	}
+
+	/**
+		`graph --all` asks for one row more than its cap. A cap of 2147483647 must ask for
+		LIMIT 2147483648, not a 32-bit wrap. The parity smoke cannot run that query, because
+		Dolt reserves memory in proportion to the limit (about 1.8 GB in upstream bd too).
+	**/
+	static function rowCapContracts():Void {
+		equal(SqlRowCap.limitClause(0), "");
+		equal(SqlRowCap.limitClause(-1), "");
+		equal(SqlRowCap.limitClause(1), " LIMIT 2");
+		equal(SqlRowCap.limitClause(2147483646), " LIMIT 2147483647");
+		equal(SqlRowCap.limitClause(2147483647), " LIMIT 2147483648");
 	}
 
 	static function cycleContracts():Void {

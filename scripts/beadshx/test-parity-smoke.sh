@@ -3919,9 +3919,10 @@ compare_real_database graph-all-max-rows-negative-json exact graph --all --max-r
 compare_real_database_env graph-all-max-rows-env exact BEADS_MAX_ROWS=1 graph --all --dot
 compare_real_database_env graph-all-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 graph --all --max-rows 0 --compact
 compare_real_database_env graph-all-max-rows-env-malformed exact BEADS_MAX_ROWS=banana graph --all --open
-# The search for --all asks for one row more than the cap, which stays exact past 2147483647.
-compare_real_database graph-all-max-rows-int32-max exact graph --all --max-rows 2147483647 --dot
-compare_real_database_env graph-all-max-rows-env-int32-max exact BEADS_MAX_ROWS=2147483647 graph --all --compact
+# The search for --all asks for one row more than the cap. A cap of 2147483647 must ask for
+# LIMIT 2147483648; test/graph proves that arithmetic (SqlRowCap). It is not run here: Dolt
+# reserves memory in proportion to the limit, so upstream bd itself needs about 1.8 GB and
+# runs out of memory on CI runners.
 compare_real_database_env graph-all-max-rows-env-plus-sign exact BEADS_MAX_ROWS=+1 graph --all --dot
 compare_real_database graph-all-two-args exact graph --all "$real_database_epic_id" "$real_database_child_id"
 compare_real_database graph-check-all-flag exact graph check --all

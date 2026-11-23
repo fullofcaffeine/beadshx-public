@@ -16,7 +16,6 @@ import beadshx.store.SqlIssueReader.readIssueInTx;
 import beadshx.store.SqlIssueRow.SQL_ISSUE_COLUMNS;
 import beadshx.store.SqlIssueRow.scanSqlIssueFields;
 import beadshx.store.SqlRelationReader.relatedIssueFromSql;
-import haxe.Int64;
 
 /**
 	Upstream would look an `external:` dependency target up in other repositories
@@ -266,9 +265,9 @@ final class SqlGraphReader {
 		missing table reads as empty, which is also what upstream's wisp probe decides.
 	**/
 	static function searchTable(context:Context, transaction:Tx, table:String, labelTable:String, status:String, maxRows:Int):StoreResult<Array<RelatedIssue>> {
-		// The row after the cap shows that the cap was exceeded. haxe.Int64 adds without the 32-bit
-		// wrap of Haxe Int arithmetic, so a cap of 2147483647 or more stays exact.
-		final limit = maxRows > 0 ? ' LIMIT ${Int64.toStr(Int64.parseString(Std.string(maxRows)) + 1)}' : "";
+		// The row after the cap shows that the cap was exceeded; SqlRowCap keeps a cap of
+		// 2147483647 exact (LIMIT 2147483648) without the 32-bit wrap of Haxe Int arithmetic.
+		final limit = SqlRowCap.limitClause(maxRows);
 		final queried = transaction.queryNativeContext(context,
 			'SELECT $SQL_ISSUE_COLUMNS FROM $table LEFT JOIN leases ON leases.issue_id = $table.id WHERE status = ? ORDER BY priority ASC, created_at DESC, id ASC$limit',
 			status);
