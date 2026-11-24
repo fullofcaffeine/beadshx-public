@@ -72,6 +72,9 @@ final class Main {
 		equal(styles.renderBold("b"), "<->b");
 		equal(styles.statusStyle("closed").render("s"), "<->s");
 		equal(styles.statusStyle("open").render("s"), "<->s");
+		// Upstream's FailStyle.Bold(true) and PassStyle.Bold(true) stay bold with colors off.
+		equal(styles.passBold.render("r"), "<-+bold>r");
+		equal(styles.failBold.render("b"), "<-+bold>b");
 		equal(styles.renderStatusId("hooked", "x"), "x");
 	}
 
@@ -126,6 +129,8 @@ final class Main {
 		equal(styles.statusStyle("hooked").render("s"), "<#59c2ff>s");
 		equal(styles.statusStyle("open").render("s"), "<->s");
 		equal(styles.statusStyle("review").render("s"), "<->s");
+		equal(styles.passBold.render("r"), "<#c2d94c+bold>r");
+		equal(styles.failBold.render("b"), "<#f07178+bold>b");
 		equal(styles.renderStatusId("open", "x"), "<default>x");
 		equal(styles.renderStatusId("in_progress", "x"), "<#ffb454>x");
 		equal(styles.renderStatusId("blocked", "x"), "<#f26d78>x");

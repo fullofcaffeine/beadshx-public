@@ -91,8 +91,10 @@ wrapping. The tree view of `list`, `--format` and `--json` do not change.
 
 Like upstream, `list` (every text view, also `children` and `--watch`),
 `ready` (the default, `--pretty` and `--plain` views and their notes), the
-`query` list and `show` (every text view, also `--short`, `--children`,
-`--refs`, `--thread` and `--watch`) print colors. Colors are on when stdout is a terminal, or when
+`query` list, `show` (every text view, also `--short`, `--children`,
+`--refs`, `--thread` and `--watch`), `dep list`, `dep tree` and `dep cycles`
+print colors. Like upstream, `dep tree` prints the `[READY]` and `[BLOCKED]`
+marks in bold also when colors are off. Colors are on when stdout is a terminal, or when
 `CLICOLOR_FORCE` has any value that is not empty, also `0` and also with
 `TERM=dumb`. Colors are off when `NO_COLOR` is not empty, `CLICOLOR=0` or
 `BD_GIT_HOOK=1` is set, `TERM` is `dumb` (without `CLICOLOR_FORCE`), or
@@ -522,10 +524,10 @@ Limits:
 - When a `list --format` Go template fails on a later issue, upstream has
   already printed the lines of the issues before it. `bdhx` prints only the
   error.
-- Only `list`, `children`, `query`, `show` and the default, `--pretty` and
-  `--plain` views of `ready` print colors. The other views, such as
-  `ready --explain`, `blocked`, `dep tree`, `graph`, `stale` and `orphans`,
-  print upstream's text without its colors. On a terminal with colors on,
+- Only `list`, `children`, `query`, `show`, `dep list`, `dep tree`,
+  `dep cycles` and the default, `--pretty` and `--plain` views of `ready`
+  print colors. The other views, such as `ready --explain`, `blocked`,
+  `graph`, `stale` and `orphans`, print upstream's text without its colors. On a terminal with colors on,
   `bdhx` can ask the terminal for its background color twice: once when it
   starts, in the upstream code of the Markdown renderer, and once before the
   first colored view. Upstream asks once.

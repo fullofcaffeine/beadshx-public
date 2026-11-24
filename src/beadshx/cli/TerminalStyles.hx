@@ -97,6 +97,12 @@ final class TerminalStyles {
 	public final bold:TextStyle;
 	public final command:TextStyle;
 
+	/** `PassStyle.Bold(true)`: bold also with colors off, where PassStyle is the empty style. */
+	public final passBold:TextStyle;
+
+	/** `FailStyle.Bold(true)`: bold also with colors off, where FailStyle is the empty style. */
+	public final failBold:TextStyle;
+
 	/** `lipgloss.NewStyle()`: the style that ui.GetStatusStyle returns for open and custom statuses, colors on or off. */
 	public final unstyled:TextStyle;
 
@@ -145,6 +151,9 @@ final class TerminalStyles {
 		category = hex("#399ee6", "#59c2ff", true);
 		bold = colors ? style({foreground: NoForeground, bold: true}) : empty;
 		command = hex("#5c6166", "#bfbdb6");
+		final boldOnly = style({foreground: NoForeground, bold: true});
+		passBold = colors ? hex("#86b300", "#c2d94c", true) : boldOnly;
+		failBold = colors ? hex("#f07171", "#f07178", true) : boldOnly;
 	}
 
 	/**

@@ -4019,6 +4019,31 @@ compare_real_database_colors show-color-refs-blocker exact CLICOLOR_FORCE=1 show
 compare_real_database_colors show-color-thread exact CLICOLOR_FORCE=1 show --thread test-msg-reply
 compare_real_database_colors show-color-pipe exact "" show test-cl test-cl-closed
 compare_real_database_colors show-color-no-color-flag exact CLICOLOR_FORCE=1 show test-cl --no-color
+# dep list prints each related ID in its status style and an accented heading over each anchor's
+# edges; dep tree accents its heading, mutes edge types and repeated nodes, warns at the depth limit
+# and prints the root's [READY] or [BLOCKED] in bold pass or fail, also with colors off; dep cycles
+# marks its result and mutes a member without a record.
+compare_real_database_colors dep-list-color-up exact CLICOLOR_FORCE=1 dep list test-cl --direction up
+compare_real_database_colors dep-list-color-down exact CLICOLOR_FORCE=1 dep list test-cl-waiting
+compare_real_database_colors dep-list-color-batch exact CLICOLOR_FORCE=1 dep list test-cl-waiting test-cl test-cl-outside
+compare_real_database_colors dep-tree-color-blocked exact CLICOLOR_FORCE=1 dep tree test-cl-waiting
+compare_real_database_colors dep-tree-color-up exact CLICOLOR_FORCE=1 dep tree test-cl --direction up
+compare_real_database_colors dep-tree-color-depth exact CLICOLOR_FORCE=1 dep tree test-cl-waiting --max-depth 1
+compare_real_database_colors dep-tree-color-both exact CLICOLOR_FORCE=1 dep tree test-cl-p0 --direction both
+compare_real_database_colors dep-tree-color-empty exact CLICOLOR_FORCE=1 dep tree test-cl-closed --direction up
+compare_real_database_colors dep-cycles-color-none exact CLICOLOR_FORCE=1 dep cycles
+# One cycle between two colour records, and one through a member without a record (one statement a line).
+color_dependency_row="INSERT INTO dependencies (id, issue_id, depends_on_issue_id, type, created_at, created_by) VALUES"
+color_cycle_sql="SET FOREIGN_KEY_CHECKS = 0
+$color_dependency_row ('fixture-colour-cycle', 'test-cl-p0', 'test-cl-waiting', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$color_dependency_row ('fixture-colour-ghost-1', 'test-cl-p1', 'test-ghost', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$color_dependency_row ('fixture-colour-ghost-2', 'test-ghost', 'test-cl-p1', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+real_database_extra_sql="$color_cycle_sql"
+compare_real_database_colors dep-cycles-color exact CLICOLOR_FORCE=1 dep cycles
+compare_real_database_colors dep-cycles-color-pipe exact "" dep cycles
+real_database_extra_sql=""
+compare_real_database_colors dep-list-color-pipe exact "" dep list test-cl-waiting test-cl
+compare_real_database_colors dep-tree-color-pipe exact "" dep tree test-cl --direction up
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json

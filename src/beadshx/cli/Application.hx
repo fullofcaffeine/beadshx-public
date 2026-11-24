@@ -1362,12 +1362,14 @@ final class Application {
 	function renderDepCycles(invocation:Invocation, cycles:Array<DependencyCycle<RelatedIssue>>):Int {
 		if (invocation.output == Json)
 			return writeRenderedJsonStdout(renderDepCyclesJson(cycles));
+		// Upstream's dep cycles view (cmd/bd/dep_cycles.go:56-85).
+		final styles = terminalStyles();
 		if (cycles.length == 0) {
-			output.writeStdout("\n✓ No dependency cycles detected\n\n");
+			output.writeStdout('\n${styles.renderPass("✓")} No dependency cycles detected\n\n');
 			return 0;
 		}
 		final rendered = new StringBuf();
-		rendered.add('\n⚠ Found ${cycles.length} dependency cycles:\n\n');
+		rendered.add('\n${styles.renderFail("⚠")} Found ${cycles.length} dependency cycles:\n\n');
 		for (index in 0...cycles.length) {
 			final cycle = cycles[index];
 			var missing = 0;
@@ -1380,7 +1382,7 @@ final class Application {
 				rendered.add('${index + 1}. Cycle involving:\n');
 			for (member in cycle.members) {
 				final issue = member.issue;
-				rendered.add('   - ${member.id}: ${issue == null ? "(no record in this database)" : issue.title}\n');
+				rendered.add('   - ${member.id}: ${issue == null ? styles.renderMuted("(no record in this database)") : issue.title}\n');
 			}
 			rendered.add("\n");
 		}
@@ -1485,12 +1487,18 @@ final class Application {
 		}
 		if (invocation.output == Json)
 			return writeRenderedJsonStdout(renderDepTreeJson(nodes));
-		output.writeStdout(renderDepTreeHuman(nodes, rootId, direction, request.maxDepth));
+		output.writeStdout(renderDepTreeHuman(nodes, rootId, direction, request.maxDepth, terminalStyles()));
 		return 0;
 	}
 
 	/** Matches upstream runDepTree and renderTree with colors off; the root badge stays bold. */
-	static function renderDepTreeHuman(nodes:Array<TreeNode<RelatedIssue>>, rootId:String, direction:TreeDirection, maxDepth:Int):String {
+	/**
+		Upstream's dep tree view (cmd/bd/dep_tree.go:160-180) and treeRenderer
+		(cmd/bd/dep.go:1205-1300): an accented heading, a muted ID for a node
+		shown above, and a warning mark at the depth limit.
+	**/
+	static function renderDepTreeHuman(nodes:Array<TreeNode<RelatedIssue>>, rootId:String, direction:TreeDirection, maxDepth:Int,
+			styles:TerminalStyles):String {
 		if (nodes.length == 0)
 			return switch direction {
 				case TreeUp: '\n${rootId} has no dependents\n';
@@ -1498,10 +1506,11 @@ final class Application {
 				case TreeDown: '\n${rootId} has no dependencies\n';
 			};
 		final rendered = new StringBuf();
+		final tree = styles.renderAccent("🌲");
 		rendered.add(switch direction {
-			case TreeUp: '\n🌲 Dependent tree for ${rootId}:\n\n';
-			case TreeBoth: '\n🌲 Full dependency graph for ${rootId}:\n\n';
-			case TreeDown: '\n🌲 Dependency tree for ${rootId}:\n\n';
+			case TreeUp: '\n${tree} Dependent tree for ${rootId}:\n\n';
+			case TreeBoth: '\n${tree} Full dependency graph for ${rootId}:\n\n';
+			case TreeDown: '\n${tree} Dependency tree for ${rootId}:\n\n';
 		});
 		final children = new Map<String, Array<TreeNode<RelatedIssue>>>();
 		var root:Null<TreeNode<RelatedIssue>> = null;
@@ -1537,14 +1546,14 @@ final class Application {
 				prefix.add(isLast ? "└── " : "├── ");
 			// A node reached again, such as one on both sides of a `both` walk.
 			if (seen.exists(node.id)) {
-				rendered.add('${prefix.toString()}${node.id} (shown above)\n');
+				rendered.add('${prefix.toString()}${styles.renderMuted(node.id)} (shown above)\n');
 				return;
 			}
 			seen.set(node.id, true);
 			final nodeChildren = children.get(node.id);
-			var line = formatDepTreeNode(node, depth == 0 && rootBlocked);
+			var line = formatDepTreeNode(node, depth == 0 && rootBlocked, styles);
 			if (depth == maxDepth && nodeChildren != null && nodeChildren.length > 0)
-				line += " …";
+				line += styles.renderWarn(" …");
 			rendered.add('${prefix.toString()}${line}\n');
 			if (nodeChildren == null)
 				return;
@@ -1560,15 +1569,25 @@ final class Application {
 		return rendered.toString();
 	}
 
-	/** Upstream formatTreeNode with colors off. `isBlocked` replaces the root's [READY] badge. */
-	static function formatDepTreeNode(node:TreeNode<RelatedIssue>, isBlocked:Bool):String {
-		if (StringTools.startsWith(node.id, "external:"))
-			return '${node.issue.title} (external)';
-		var line = '${node.id}: ${node.issue.title} [P${node.issue.priority}] (${node.status})';
+	/**
+		Upstream formatTreeNode (cmd/bd/dep.go:1305-1355). `isBlocked` replaces
+		the root's [READY] badge. Both badges are bold also with colors off,
+		since upstream adds Bold to its empty pass and fail styles.
+	**/
+	static function formatDepTreeNode(node:TreeNode<RelatedIssue>, isBlocked:Bool, styles:TerminalStyles):String {
+		if (StringTools.startsWith(node.id, "external:")) {
+			final title = switch node.status {
+				case "closed": styles.statusClosed.render(node.issue.title);
+				case "blocked": styles.statusBlocked.render(node.issue.title);
+				case _: node.issue.title;
+			};
+			return '${title} (external)';
+		}
+		var line = '${styles.renderStatusId(node.status, node.id)}: ${node.issue.title} [P${node.issue.priority}] (${node.status})';
 		if (node.depth > 0 && node.edgeFromParent != "")
-			line += ' [${node.edgeFromParent}]';
+			line += " " + styles.renderMuted('[${node.edgeFromParent}]');
 		if (node.status == "open" && node.depth == 0)
-			line += isBlocked ? " \x1b[1m[BLOCKED]\x1b[m" : " \x1b[1m[READY]\x1b[m";
+			line += " " + (isBlocked ? styles.failBold.render("[BLOCKED]") : styles.passBold.render("[READY]"));
 		return line;
 	}
 
@@ -2832,8 +2851,10 @@ final class Application {
 					else
 						output.writeStdout('\n${ids[0]} has no dependencies\n');
 				} else {
+					// Upstream's dep list (cmd/bd/dep.go:939-955) prints each ID in its status style.
+					final styles = terminalStyles();
 					for (dependency in dependencies)
-						output.writeStdout('  ${dependency.id}: ${dependency.title} [P${dependency.priority}] (${dependency.status}) via ${dependency.dependencyType}\n');
+						output.writeStdout('  ${styles.renderStatusId(dependency.status, dependency.id)}: ${dependency.title} [P${dependency.priority}] (${dependency.status}) via ${dependency.dependencyType}\n');
 					output.writeStdout("\n");
 				}
 		}
@@ -2880,7 +2901,8 @@ final class Application {
 						rendered.add('\n${anchor.id} has no dependencies\n');
 						continue;
 					}
-					rendered.add('\nDependencies of ${anchor.id}:\n\n');
+					// Upstream printDepListEdges (cmd/bd/dep.go:756-783).
+					rendered.add('\n${terminalStyles().renderAccent("📋")} Dependencies of ${anchor.id}:\n\n');
 					for (edge in anchor.edges)
 						rendered.add('  ${edge.dependsOnId} via ${edge.dependencyType.toString()}\n');
 				}
