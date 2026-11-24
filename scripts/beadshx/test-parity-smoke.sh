@@ -1823,6 +1823,22 @@ real_database_setup=make_dolt_directory
 compare_real_database config-validate-dolt-directory exact config validate
 compare_real_database config-validate-dolt-directory-json exact config validate --json
 compare_real_database_env config-validate-dolt-directory-auto-start-off exact BEADS_DOLT_AUTO_START=0 config validate
+# A Dolt directory config.yaml that Dolt cannot decode, or whose listener port is 0 or less, names no
+# server port, so the dial still goes to port 0.
+write_unknown_key_dolt_config() {
+	mkdir -p "$1/work/.beads/dolt"
+	printf 'unknown_key: 1\n' >"$1/work/.beads/dolt/config.yaml"
+}
+real_database_setup=write_unknown_key_dolt_config
+compare_real_database config-validate-dolt-config-unknown-key exact config validate
+compare_real_database config-drift-dolt-config-unknown-key exact config drift
+write_zero_port_dolt_config() {
+	mkdir -p "$1/work/.beads/dolt"
+	printf 'listener:\n  port: 0\n' >"$1/work/.beads/dolt/config.yaml"
+}
+real_database_setup=write_zero_port_dolt_config
+compare_real_database config-validate-dolt-config-port-zero exact config validate
+compare_real_database config-drift-dolt-config-port-zero-json exact config drift --json
 real_database_setup=""
 # Without the workspace config.yaml, doctor reads the user one and the sync checks are skipped.
 remove_workspace_config() {
@@ -2025,6 +2041,15 @@ expect_candidate_failure config-validate-endpoint-unported "" \
 	"Error: config validate is not available yet when a Dolt server endpoint is configured in this build" "" config validate
 candidate_only_setup=""
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A Dolt directory config.yaml that Dolt decodes names its listener port, 3306 by default.
+write_portless_dolt_config() {
+	mkdir -p "$1/work/.beads/dolt"
+	printf 'log_level: info\n' >"$1/work/.beads/dolt/config.yaml"
+}
+candidate_only_setup=write_portless_dolt_config
+expect_candidate_failure config-validate-dolt-config-default-port-unported "" \
+	"Error: config validate is not available yet when a Dolt server endpoint is configured in this build" "" config validate
+candidate_only_setup=""
 write_server_port_file() {
 	printf '3307\n' >"$1/work/.beads/dolt-server.port"
 }
@@ -2864,12 +2889,43 @@ write_zero_port_file() {
 }
 real_database_setup=write_zero_port_file
 compare_real_database deprecated-port-port-file-zero exact count
+# Upstream reads the Dolt directory's config.yaml with Dolt's servercfg: it expands ${VAR}
+# placeholders, then decodes the file strictly. A file that decodes stops the walk with its
+# listener port, which is 3306 when the file sets none. A file that does not read or decode, or
+# that sets the port to 0 or less, does not stop the walk, so the metadata.json port still warns.
+dolt_config_yaml=$'log_level: info\n'
 write_dolt_config_yaml() {
 	mkdir -p "$1/work/.beads/dolt"
-	printf 'log_level: info\n' >"$1/work/.beads/dolt/config.yaml"
+	printf '%s' "$dolt_config_yaml" >"$1/work/.beads/dolt/config.yaml"
 }
 real_database_setup=write_dolt_config_yaml
 compare_real_database deprecated-port-dolt-config exact count
+dolt_config_yaml=""
+compare_real_database deprecated-port-dolt-config-empty exact count
+dolt_config_yaml=$'listener:\n  port: 3307\n'
+compare_real_database deprecated-port-dolt-config-port exact count
+dolt_config_yaml=$'listener:\n  port: 0\n'
+compare_real_database deprecated-port-dolt-config-port-zero exact count
+dolt_config_yaml=$'listener:\n  port: -1\n'
+compare_real_database deprecated-port-dolt-config-port-negative exact count
+dolt_config_yaml=$'listener:\n  port: abc\n'
+compare_real_database deprecated-port-dolt-config-port-text exact count
+# Strict decoding refuses a key that Dolt does not know.
+dolt_config_yaml=$'log_level: info\nunknown_key: 1\n'
+compare_real_database deprecated-port-dolt-config-unknown-key exact count
+dolt_config_yaml=$'listener: [\n'
+compare_real_database deprecated-port-dolt-config-bad-syntax exact count
+dolt_config_yaml=$'listener:\n  port: ${BEADSHX_PARITY_DOLT_PORT}\n'
+compare_real_database deprecated-port-dolt-config-unset-placeholder exact count
+real_database_extra_env=(BEADSHX_PARITY_DOLT_PORT=3307)
+compare_real_database deprecated-port-dolt-config-placeholder exact count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A config.yaml directory passes upstream's stat check, but Dolt cannot read it.
+make_dolt_config_directory() {
+	mkdir -p "$1/work/.beads/dolt/config.yaml"
+}
+real_database_setup=make_dolt_config_directory
+compare_real_database deprecated-port-dolt-config-directory exact count
 real_database_setup=""
 real_database_extra_metadata=""
 compare_real_database_metadata deprecated-port-zero exact '.dolt_server_port = 0' count

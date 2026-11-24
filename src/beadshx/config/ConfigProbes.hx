@@ -11,9 +11,11 @@ import beadshx.nativeextern.bytes.BytesPkg;
 import beadshx.nativeextern.exec.Cmd;
 import beadshx.nativeextern.exec.ExecPkg;
 import beadshx.nativeextern.filepath.FilepathPkg;
+import beadshx.nativeextern.filesys.FilesysPkg;
 import beadshx.nativeextern.net.NetPkg;
 import beadshx.nativeextern.os.OsPkg;
 import beadshx.nativeextern.path.PathPkg;
+import beadshx.nativeextern.servercfg.ServercfgPkg;
 import beadshx.nativeextern.strconv.StrconvPkg;
 import beadshx.nativeextern.syscall.SyscallPkg;
 import beadshx.nativeextern.time.TimePkg;
@@ -257,13 +259,11 @@ final class ConfigProbes {
 			return ProbeEndpointConfigured;
 		if (config.sharedServerMode() || config.getString("dolt.host") != "" || config.getString("dolt.port") != "")
 			return ProbeEndpointConfigured;
+		if (doltConfigPort(doltDirectory) > 0)
+			return ProbeEndpointConfigured;
 		final home = OsPkg.userHomeDir();
 		final centralConfig = home.value2 == null ? FilepathPkg.join(home.value1, ".config", "beads", "server.json") : "";
-		for (path in [
-			FilepathPkg.join(beadsDir, "dolt-server.port"),
-			FilepathPkg.join(doltDirectory, "config.yaml"),
-			centralConfig
-		])
+		for (path in [FilepathPkg.join(beadsDir, "dolt-server.port"), centralConfig])
 			if (path != "" && !statMissing(path))
 				return ProbeEndpointConfigured;
 		final configuredDatabase = metadata.exists("dolt_database") ? metadata.get("dolt_database") : "";
@@ -282,6 +282,27 @@ final class ConfigProbes {
 		}
 		final autoStartDisabled = isFalsyBool(environment("BEADS_DOLT_AUTO_START")) || isFalsyBool(config.getString("dolt.auto-start"));
 		return ProbeFailed(unreachableServerMessage(DEFAULT_SERVER_ADDRESS, error.text(), autoStartDisabled));
+	}
+
+	/**
+		Upstream doltserver configYamlPort for the Dolt data directory
+		`doltDirectory`: the listener port of its config.yaml, as Dolt's own
+		servercfg reader decodes it (3306 when the file sets none).
+
+		Why: upstream's server port walk takes this file as a source only when
+		the port is more than 0, so callers compare the result with 0. What: 0
+		when os.Stat of the file fails, or when Dolt cannot read the file,
+		expand a `${VAR}` placeholder in it or decode it strictly. How: the
+		servercfg extern reads through Dolt's local file system, as upstream's
+		call does.
+	**/
+	public static function doltConfigPort(doltDirectory:String):Int {
+		final path = FilepathPkg.join(doltDirectory, "config.yaml");
+		if (!statSucceeds(path))
+			return 0;
+		final read = ServercfgPkg.yamlConfigFromFile(FilesysPkg.localFs, path);
+		final serverConfig = read.value1;
+		return read.value2 != null || serverConfig == null ? 0 : serverConfig.port();
 	}
 
 	/**

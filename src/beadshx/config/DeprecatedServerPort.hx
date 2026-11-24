@@ -13,7 +13,8 @@ import sys.io.File;
 	command that opens a store, also in an embedded workspace, and warns on
 	stderr when the port comes from metadata.json's `dolt_server_port`. What:
 	the sources in upstream's order, outside shared-server mode. How: Go's
-	Atoi through a precise extern, and the file checks upstream makes.
+	Atoi and Dolt's config.yaml reader through precise externs, and the file
+	checks upstream makes.
 **/
 @:goNative
 final class DeprecatedServerPort {
@@ -26,12 +27,12 @@ final class DeprecatedServerPort {
 		Whether upstream takes the server port of the workspace `beadsDir` from
 		the decoded `metadata` fields: BEADS_DOLT_SERVER_PORT is not a value
 		that Go's Atoi reads (0 and negative values count), `.beads/dolt-server.port`
-		holds no positive port, the Dolt directory has no config.yaml, the
-		dolt.port setting is not positive, and dolt_server_port is positive.
+		holds no positive port, the Dolt directory's config.yaml gives no
+		positive listener port, the dolt.port setting is not positive, and
+		dolt_server_port is positive.
 
-		Upstream reads the listener port of a Dolt directory config.yaml, which
-		defaults to 3306. This build counts the file when it exists, so it differs
-		only for a file that Dolt cannot parse or that sets the port to 0 or less.
+		A config.yaml that Dolt decodes gives 3306 when it sets no port. A file
+		that Dolt cannot read or decode gives none, so the walk goes on.
 	**/
 	public static function fromMetadata(beadsDir:String, metadata:Map<String, String>, config:LayeredConfig):Bool {
 		final variable = environmentValue("BEADS_DOLT_SERVER_PORT");
@@ -40,7 +41,7 @@ final class DeprecatedServerPort {
 		final portFile = try File.getContent(FilepathPkg.join(beadsDir, "dolt-server.port")) catch (_:haxe.Exception) null;
 		if (portFile != null && positive(goTrimSpace(portFile)))
 			return false;
-		if (ConfigProbes.statSucceeds(FilepathPkg.join(ConfigProbes.doltDirectory(beadsDir, metadata), "config.yaml")))
+		if (ConfigProbes.doltConfigPort(ConfigProbes.doltDirectory(beadsDir, metadata)) > 0)
 			return false;
 		if (positive(config.getString("dolt.port")))
 			return false;

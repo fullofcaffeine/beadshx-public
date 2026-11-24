@@ -393,10 +393,8 @@ Limits:
   holds its own `redirect` file.
   In an embedded workspace upstream's remote check tries to connect to
   `127.0.0.1:0`; `bdhx` makes the same attempt and prints the same error.
-- When the Dolt directory has a `config.yaml` file, `bdhx` takes it as the
-  source of the server port and prints no `dolt_server_port` warning.
-  Upstream also prints the warning when Dolt cannot parse that file, or when
-  the file sets the port to 0 or less.
+  A `config.yaml` in the Dolt directory that Dolt can read sets the server
+  port, to 3306 when the file names none.
 - When an issue ID does not match exactly and the database stores no
   `issue_prefix`, `bdhx` uses the prefix from `config.yaml` instead. Upstream
   uses `bd` and then guesses the prefix of each matching issue. With neither
