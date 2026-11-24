@@ -2146,18 +2146,22 @@ final class Application {
 		};
 	}
 
-	/** Matches upstream `bd blocked` output with colors off; `%v` prints the blocker list as `[a b]`. */
+	/**
+		Upstream `bd blocked` (cmd/bd/ready.go:320-335): pass and fail marks,
+		the styled priority and ID; `%v` prints the blocker list as `[a b]`.
+	**/
 	function renderBlocked(invocation:Invocation, blocked:Array<BlockedIssue>):Int {
 		if (invocation.output == Json)
 			return writeRenderedJsonStdout(renderBlockedJson(blocked));
+		final styles = terminalStyles();
 		if (blocked.length == 0) {
-			output.writeStdout("\n✨ No blocked issues\n\n");
+			output.writeStdout('\n${styles.renderPass("✨")} No blocked issues\n\n');
 			return 0;
 		}
 		final rendered = new StringBuf();
-		rendered.add('\n🚫 Blocked issues (${blocked.length}):\n\n');
+		rendered.add('\n${styles.renderFail("🚫")} Blocked issues (${blocked.length}):\n\n');
 		for (entry in blocked) {
-			rendered.add('[P${entry.issue.priority}] ${entry.issue.id}: ${entry.issue.title}\n');
+			rendered.add('[${styles.renderPriority(entry.issue.priority)}] ${styles.renderId(entry.issue.id)}: ${entry.issue.title}\n');
 			rendered.add('  Blocked by ${entry.blockedBy.length} open dependencies: [${entry.blockedBy.join(" ")}]\n\n');
 		}
 		output.writeStdout(rendered.toString());
@@ -3089,7 +3093,7 @@ final class Application {
 						if (invocation.output == Json)
 							return writeRenderedJsonStdout(renderGatedReadyJson(molecules));
 						else
-							output.writeStdout(renderGatedReadyHuman(molecules));
+							output.writeStdout(renderGatedReadyHuman(molecules, terminalStyles()));
 						0;
 				}
 		};
@@ -3108,7 +3112,7 @@ final class Application {
 						if (invocation.output == Json)
 							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation));
 						else
-							output.writeStdout(renderReadyExplanationHuman(explanation));
+							output.writeStdout(renderReadyExplanationHuman(explanation, terminalStyles()));
 						0;
 				}
 		};
@@ -3172,7 +3176,7 @@ final class Application {
 						if (invocation.output == Json) {
 							writeRenderedJsonStdout(renderMoleculeReadyJson(root.title, page.items, analysis));
 						} else {
-							output.writeStdout(renderMoleculeReadyHuman(root.title, page.items, analysis));
+							output.writeStdout(renderMoleculeReadyHuman(root.title, page.items, analysis, terminalStyles()));
 							0;
 						}
 				}
@@ -3612,20 +3616,21 @@ final class Application {
 		return lines.join("\n") + "\n";
 	}
 
-	static function renderMoleculeReadyHuman(title:String, items:Array<IssueListItem>, analysis:MoleculeReadyAnalysis):String {
+	/** Upstream runMoleculeReady's text view (cmd/bd/ready.go:621-675). */
+	static function renderMoleculeReadyHuman(title:String, items:Array<IssueListItem>, analysis:MoleculeReadyAnalysis, styles:TerminalStyles):String {
 		final byId = new Map<String, IssueListItem>();
 		for (item in items)
 			byId.set(item.id, item);
 		final rendered = new StringBuf();
-		rendered.add('\n🧪 Ready steps in molecule: ${title}\n');
+		rendered.add('\n${styles.renderAccent("🧪")} Ready steps in molecule: ${title}\n');
 		rendered.add('   ID: ${analysis.moleculeId}\n');
 		rendered.add('   Total: ${analysis.totalSteps} steps, ${analysis.readySteps} ready\n');
 		if (analysis.readySteps == 0) {
-			rendered.add("\n✨ No ready steps (all blocked or completed)\n\n");
+			rendered.add('\n${styles.renderWarn("✨")} No ready steps (all blocked or completed)\n\n');
 			return rendered.toString();
 		}
 		if (analysis.groups.length > 0) {
-			rendered.add("\n⚡ Parallel Groups:\n");
+			rendered.add('\n${styles.renderPass("⚡")} Parallel Groups:\n');
 			for (group in analysis.groups) {
 				var ready = 0;
 				for (id in group.members) {
@@ -3637,7 +3642,7 @@ final class Application {
 					rendered.add('   ${group.name}: ${ready} ready\n');
 			}
 		}
-		rendered.add("\n📋 Ready steps:\n\n");
+		rendered.add('\n${styles.renderPass("📋")} Ready steps:\n\n');
 		var index = 0;
 		for (info in analysis.steps) {
 			if (!info.isReady)
@@ -3646,8 +3651,8 @@ final class Application {
 			if (issue == null)
 				continue;
 			index++;
-			final group = info.parallelGroup == "" ? "" : ' [${info.parallelGroup}]';
-			rendered.add('${index}. [P${issue.priority}] [${issue.issueType}] ${issue.id}: ${issue.title}${group}\n');
+			final group = info.parallelGroup == "" ? "" : ' [${styles.renderAccent(info.parallelGroup)}]';
+			rendered.add('${index}. [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}] ${styles.renderId(issue.id)}: ${issue.title}${group}\n');
 			final readyParallel = new Array<String>();
 			for (id in info.canParallel) {
 				final parallel = findMoleculeInfo(analysis.steps, id);
@@ -3715,15 +3720,16 @@ final class Application {
 		return Success(lines.join("\n") + "\n");
 	}
 
-	static function renderReadyExplanationHuman(explanation:ReadyExplanation):String {
+	/** Upstream's ready --explain view (cmd/bd/ready.go:517-573; proxied, ready_proxied_server.go:357-399). */
+	static function renderReadyExplanationHuman(explanation:ReadyExplanation, styles:TerminalStyles):String {
 		final rendered = new StringBuf();
-		rendered.add("\n📊 Ready Work Explanation\n\n");
+		rendered.add('\n${styles.renderAccent("📊")} Ready Work Explanation\n\n');
 		if (explanation.ready.length == 0) {
-			rendered.add("○ No ready work\n\n");
+			rendered.add('${styles.renderWarn("○")} No ready work\n\n');
 		} else {
-			rendered.add('● Ready (${explanation.ready.length} issues):\n\n');
+			rendered.add('${styles.renderPass("●")} Ready (${explanation.ready.length} issues):\n\n');
 			for (item in explanation.ready) {
-				rendered.add('  ${item.issue.id} [P${item.issue.priority}] ${item.issue.title}\n');
+				rendered.add('  ${styles.renderId(item.issue.id)} [${styles.renderPriority(item.issue.priority)}] ${item.issue.title}\n');
 				rendered.add('    Reason: ${item.reason}\n');
 				if (item.resolvedBlockers != null && item.resolvedBlockers.length > 0)
 					rendered.add('    Resolved blockers: ${item.resolvedBlockers.join(", ")}\n');
@@ -3733,35 +3739,40 @@ final class Application {
 			}
 		}
 		if (explanation.blocked.length > 0) {
-			rendered.add('● Blocked (${explanation.blocked.length} issues):\n\n');
+			rendered.add('${styles.renderFail("●")} Blocked (${explanation.blocked.length} issues):\n\n');
 			for (item in explanation.blocked) {
-				rendered.add('  ${item.issue.id} [P${item.issue.priority}] ${item.issue.title}\n');
+				rendered.add('  ${styles.renderId(item.issue.id)} [${styles.renderPriority(item.issue.priority)}] ${item.issue.title}\n');
 				for (blocker in item.blockedBy)
-					rendered.add('    ← blocked by ${blocker.id}: ${blocker.title} [${blocker.status}]\n');
+					rendered.add('    ← blocked by ${styles.renderId(blocker.id)}: ${blocker.title} [${blocker.status}]\n');
 				rendered.add("\n");
 			}
 		}
 		if (explanation.cycles.length > 0) {
-			rendered.add('⚠ Cycles detected (${explanation.cycles.length}):\n\n');
+			rendered.add('${styles.renderFail("⚠")} Cycles detected (${explanation.cycles.length}):\n\n');
 			for (cycle in explanation.cycles)
 				rendered.add('  ${cycle.join(" → ")} → ${cycle[0]}\n');
 			rendered.add("\n");
 		}
-		rendered.add('─ Summary: ${explanation.ready.length} ready, ${explanation.blocked.length} blocked');
+		rendered.add('${styles.renderMuted("─")} Summary: ${explanation.ready.length} ready, ${explanation.blocked.length} blocked');
 		if (explanation.cycles.length > 0)
 			rendered.add(', ${explanation.cycles.length} cycle(s)');
 		rendered.add("\n\n");
 		return rendered.toString();
 	}
 
-	static function renderGatedReadyHuman(molecules:Array<GatedMolecule>):String {
+	/**
+		Upstream's ready --gated view (cmd/bd/mol_ready_gated.go:98-118). Its
+		marks render an empty text in the warning or accent style, which prints
+		the style's escape sequences around nothing when colors are on.
+	**/
+	static function renderGatedReadyHuman(molecules:Array<GatedMolecule>, styles:TerminalStyles):String {
 		if (molecules.length == 0)
-			return "\n No molecules ready for gate-resume dispatch\n\n";
+			return '\n${styles.renderWarn("")} No molecules ready for gate-resume dispatch\n\n';
 		final rendered = new StringBuf();
-		rendered.add('\n Molecules ready for gate-resume dispatch (${molecules.length}):\n\n');
+		rendered.add('\n${styles.renderAccent("")} Molecules ready for gate-resume dispatch (${molecules.length}):\n\n');
 		for (index in 0...molecules.length) {
 			final molecule = molecules[index];
-			rendered.add('${index + 1}. ${molecule.moleculeId}: ${molecule.moleculeTitle}\n');
+			rendered.add('${index + 1}. ${styles.renderId(molecule.moleculeId)}: ${molecule.moleculeTitle}\n');
 			rendered.add('   Gate closed: ${molecule.closedGate.id} (${molecule.closedGate.longFields.awaitType})\n');
 			rendered.add('   Ready step: ${molecule.readyStep.id} - ${molecule.readyStep.title}\n\n');
 		}

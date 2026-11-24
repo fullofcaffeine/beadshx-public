@@ -4044,6 +4044,21 @@ compare_real_database_colors dep-cycles-color-pipe exact "" dep cycles
 real_database_extra_sql=""
 compare_real_database_colors dep-list-color-pipe exact "" dep list test-cl-waiting test-cl
 compare_real_database_colors dep-tree-color-pipe exact "" dep tree test-cl --direction up
+# The --explain, --mol and --gated views of ready mark their headings and style each priority and
+# ID (blocked follows its own cases below). --gated renders an empty text in the warning or accent style, which still prints
+# the style's escape sequences. Upstream lists a molecule's ready steps in Go map order, so only the
+# seed molecule, with one ready step, is compared.
+compare_real_database_colors ready-color-explain exact CLICOLOR_FORCE=1 ready --explain
+real_database_extra_sql="UPDATE issues SET status = 'closed', closed_at = '2026-08-21 13:00:00' WHERE status IN ('open', 'in_progress')"
+compare_real_database_colors ready-color-explain-none exact CLICOLOR_FORCE=1 ready --explain
+real_database_extra_sql=""
+compare_real_database_colors ready-color-mol exact CLICOLOR_FORCE=1 ready --mol "$real_database_molecule_id"
+compare_real_database_colors ready-color-mol-none exact CLICOLOR_FORCE=1 ready --mol test-cl-closed-epic
+compare_real_database_colors ready-color-gated exact CLICOLOR_FORCE=1 ready --gated
+real_database_extra_sql="UPDATE issues SET status = 'open', closed_at = NULL, updated_at = updated_at WHERE issue_type = 'gate'"
+compare_real_database_colors ready-color-gated-none exact CLICOLOR_FORCE=1 ready --gated
+real_database_extra_sql=""
+compare_real_database_colors ready-color-explain-pipe exact "" ready --explain
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json
@@ -4115,6 +4130,13 @@ UPDATE issues SET is_blocked = 1, updated_at = updated_at WHERE id IN ('$real_da
 compare_real_database_sql blocked-flags-human exact "$blocked_flags_sql" blocked
 compare_real_database_sql blocked-flags-json exact "$blocked_flags_sql" blocked --json
 compare_real_database_sql blocked-flags-parent-json exact "$blocked_flags_sql" blocked --parent "$real_database_molecule_id" --json
+# blocked marks its heading and styles each priority and ID, also with colors on (see the color cases).
+real_database_extra_sql="$distinct_created_sql"
+compare_real_database_colors blocked-color exact CLICOLOR_FORCE=1 blocked
+compare_real_database_colors blocked-color-parent exact CLICOLOR_FORCE=1 blocked --parent test-cl
+compare_real_database_colors blocked-color-none exact CLICOLOR_FORCE=1 blocked --parent test-cl-p0
+compare_real_database_colors blocked-color-pipe exact "" blocked
+real_database_extra_sql=""
 # dep tree walks parent-child chains (grandchild -> child -> epic), a molecule whose second step
 # blocks on the first, and a gated step whose gate is closed. Cycles come from dep_cycle_sql.
 molecule_step_two_id="$(jq -er '.id' "$real_database_seed/molecule-step-two.json")"
