@@ -93,8 +93,8 @@ Like upstream, `list` (every text view, also `children` and `--watch`),
 `ready` (the default, `--pretty` and `--plain` views and their notes), the
 `query` list, `show` (every text view, also `--short`, `--children`,
 `--refs`, `--thread` and `--watch`), `blocked`, the `--explain`, `--mol` and
-`--gated` views of `ready`, `dep list`, `dep tree` and `dep cycles` print
-colors. Like upstream, `dep tree` prints the `[READY]` and `[BLOCKED]`
+`--gated` views of `ready`, `dep list`, `dep tree`, `dep cycles` and `graph`
+(every text view, also `graph check`) print colors. Like upstream, `dep tree` prints the `[READY]` and `[BLOCKED]`
 marks in bold also when colors are off. Colors are on when stdout is a terminal, or when
 `CLICOLOR_FORCE` has any value that is not empty, also `0` and also with
 `TERM=dumb`. Colors are off when `NO_COLOR` is not empty, `CLICOLOR=0` or
@@ -526,7 +526,7 @@ Limits:
   already printed the lines of the issues before it. `bdhx` prints only the
   error.
 - Only `list`, `children`, `query`, `show`, `blocked`, `ready`, `dep list`,
-  `dep tree` and `dep cycles` print colors. The other views, such as `graph`,
+  `dep tree`, `dep cycles` and `graph` print colors. The other views, such as
   `stale` and `orphans`, print upstream's text without its colors. On a terminal with colors on,
   `bdhx` can ask the terminal for its background color twice: once when it
   starts, in the upstream code of the Markdown renderer, and once before the

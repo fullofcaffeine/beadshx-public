@@ -1,7 +1,6 @@
 package beadshx.cli;
 
 import haxe.io.Bytes;
-import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.query.QueryPage;
 import beadshx.relation.GraphLayout;
 import beadshx.store.JsonInteger;
@@ -44,18 +43,20 @@ function computeDagNodeWidth(nodes:Array<DagNode>):Int {
 }
 
 /**
-	Upstream dagNodeLine: line `lineIndex` of one node box, `nodeWidth + 2` characters wide.
+	Upstream dagNodeLine (cmd/bd/graph_visual.go:219-245): line `lineIndex` of one
+	node box, `nodeWidth + 2` characters wide.
 
-	The ID line, and the title of an issue that is not open, go through an empty
-	lipgloss style, which turns a tab into four spaces after the padding.
+	The styled status icon leads the title. The ID line is muted, and the title of
+	an issue that is not open is in its status style; a style turns a tab into four
+	spaces after the padding, also with colors off.
 **/
-function dagNodeLine(node:DagNode, nodeWidth:Int, lineIndex:Int):String {
+function dagNodeLine(node:DagNode, nodeWidth:Int, lineIndex:Int, styles:TerminalStyles):String {
 	return switch lineIndex {
 		case 0: "┌" + repeat("─", nodeWidth) + "┐";
 		case 1:
 			final title = padRight(truncateTitle(node.title, nodeWidth - 4), nodeWidth - 4);
-			'│ ${statusIcon(node.status)} ${node.status == "open" ? title : expandTabs(title)} │';
-		case 2: "│ " + expandTabs(padRight('${node.id} P${node.priority}', nodeWidth - 2)) + " │";
+			'│ ${styles.renderStatusIcon(node.status)} ${node.status == "open" ? title : styles.statusStyle(node.status).render(title)} │';
+		case 2: "│ " + styles.renderMuted(padRight('${node.id} P${node.priority}', nodeWidth - 2)) + " │";
 		case 3: "└" + repeat("─", nodeWidth) + "┘";
 		case _: repeat(" ", nodeWidth + 2);
 	};
@@ -163,13 +164,14 @@ function dagMergeRune(existing:String, incoming:String):String {
 }
 
 /**
-	Upstream renderGraphCompact, the `--compact` and `--open` view, with colors off.
+	Upstream renderGraphCompact (cmd/bd/graph.go:1022-1078), the `--compact` and
+	`--open` view, with its accented heading mark and layer headings.
 
 	Each layer lists its issues as tree lines. Below each parent, through
 	`parent-child` rows, it lists the children again in the order
 	compareCompactChildren gives, and their children below them, to any depth.
 **/
-function renderCompactGraph(rootId:String, nodes:Map<String, DagNode>, layout:GraphLayout, edges:Array<GraphEdge>):String {
+function renderCompactGraph(rootId:String, nodes:Map<String, DagNode>, layout:GraphLayout, edges:Array<GraphEdge>, styles:TerminalStyles):String {
 	final children = new Map<String, Array<String>>();
 	for (edge in edges)
 		if (edge.type == "parent-child") {
@@ -186,11 +188,11 @@ function renderCompactGraph(rootId:String, nodes:Map<String, DagNode>, layout:Gr
 	for (layer in layout.layers)
 		nodeCount += layer.length;
 	final rendered = new StringBuf();
-	rendered.add('\n📊 Dependency graph for ${rootId} (${nodeCount} issues, ${layout.layers.length} layers)\n\n');
+	rendered.add('\n${styles.renderAccent("📊")} Dependency graph for ${rootId} (${nodeCount} issues, ${layout.layers.length} layers)\n\n');
 	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n\n");
 	for (index in 0...layout.layers.length) {
-		rendered.add(index == 0 ? "  LAYER 0 (ready)\n" : '  LAYER ${index}\n');
-		addCompactTree(rendered, nodes, children, layout.layers[index], "");
+		rendered.add("  " + styles.renderAccent(index == 0 ? "LAYER 0 (ready)" : 'LAYER ${index}') + "\n");
+		addCompactTree(rendered, nodes, children, layout.layers[index], "", styles);
 		rendered.add("\n");
 	}
 	return rendered.toString();
@@ -208,28 +210,31 @@ function compareCompactChildren(left:DagNode, right:DagNode):Int {
 }
 
 /**
-	Upstream formatCompactNode with colors off: the icon, ID, priority and title cut
-	to 50 characters. A closed issue's ID, priority and title go through an empty
-	lipgloss style, which turns a tab into four spaces.
+	Upstream formatCompactNode (cmd/bd/graph.go:1128-1150): the styled icon, ID,
+	priority and title cut to 50 characters. A closed issue's ID, priority and title
+	are each in the closed style, which turns a tab into four spaces.
 **/
-function formatCompactNode(node:DagNode):String {
+function formatCompactNode(node:DagNode, styles:TerminalStyles):String {
 	final title = truncateTitle(node.title, 50);
+	final icon = styles.renderStatusIcon(node.status);
 	if (node.status != "closed")
-		return '${statusIcon(node.status)} ${node.id} P${node.priority} ${title}';
-	return '✓ ${expandTabs(node.id)} P${node.priority} ${expandTabs(title)}';
+		return '${icon} ${node.id} ${styles.renderPriority(node.priority)} ${title}';
+	final closed = styles.statusClosed;
+	return '${icon} ${closed.render(node.id)} ${closed.render('P${node.priority}')} ${closed.render(title)}';
 }
 
 /** Upstream renderCompactChildren: one tree line per issue of `ids`, each followed by its children. */
-private function addCompactTree(rendered:StringBuf, nodes:Map<String, DagNode>, children:Map<String, Array<String>>, ids:Array<String>, prefix:String):Void {
+private function addCompactTree(rendered:StringBuf, nodes:Map<String, DagNode>, children:Map<String, Array<String>>, ids:Array<String>, prefix:String,
+		styles:TerminalStyles):Void {
 	for (index in 0...ids.length) {
 		final node = nodes.get(ids[index]);
 		if (node == null)
 			continue;
 		final last = index == ids.length - 1;
-		rendered.add('  ${prefix}${last ? "└── " : "├── "}${formatCompactNode(node)}\n');
+		rendered.add('  ${prefix}${last ? "└── " : "├── "}${formatCompactNode(node, styles)}\n');
 		final childIds = children.get(node.id);
 		if (childIds != null)
-			addCompactTree(rendered, nodes, children, childIds, prefix + (last ? "    " : "│   "));
+			addCompactTree(rendered, nodes, children, childIds, prefix + (last ? "    " : "│   "), styles);
 	}
 }
 
@@ -241,11 +246,6 @@ function truncateTitle(title:String, maxLength:Int):String {
 /** Upstream padRight: cuts to `width` characters or pads with spaces to it. */
 function padRight(value:String, width:Int):String {
 	return value.length >= width ? value.substr(0, width) : value + repeat(" ", width - value.length);
-}
-
-/** What an empty lipgloss v2 style does to text when colors are off. */
-function expandTabs(value:String):String {
-	return StringTools.replace(value, "\t", "    ");
 }
 
 /** `value` repeated `count` times; nothing when `count` is not positive. */

@@ -4059,6 +4059,25 @@ real_database_extra_sql="UPDATE issues SET status = 'open', closed_at = NULL, up
 compare_real_database_colors ready-color-gated-none exact CLICOLOR_FORCE=1 ready --gated
 real_database_extra_sql=""
 compare_real_database_colors ready-color-explain-pipe exact "" ready --explain
+# graph accents its heading marks and layer headings, styles each status icon, mutes each ID line,
+# prints a title that is not open in its status style and the box view's counts in the blocked and
+# muted styles. graph check marks its result. The cycle case uses one cycle through a member without
+# a record, so the cycle order cannot differ.
+compare_real_database_colors graph-color-visual exact CLICOLOR_FORCE=1 graph test-cl
+compare_real_database_colors graph-color-box exact CLICOLOR_FORCE=1 graph test-cl --box
+compare_real_database_colors graph-color-compact exact CLICOLOR_FORCE=1 graph test-cl --compact
+compare_real_database_colors graph-color-open exact CLICOLOR_FORCE=1 graph test-cl --open
+compare_real_database_colors graph-color-blockers-box exact CLICOLOR_FORCE=1 graph test-cl-waiting --box
+compare_real_database_colors graph-color-blockers-visual exact CLICOLOR_FORCE=1 graph test-cl-waiting
+compare_real_database_colors graph-check-color exact CLICOLOR_FORCE=1 graph check
+real_database_extra_sql="SET FOREIGN_KEY_CHECKS = 0
+$color_dependency_row ('fixture-colour-ghost-1', 'test-cl-p1', 'test-ghost', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$color_dependency_row ('fixture-colour-ghost-2', 'test-ghost', 'test-cl-p1', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_real_database_colors graph-check-color-cycles exact CLICOLOR_FORCE=1 graph check
+compare_real_database_colors graph-check-color-pipe exact "" graph check
+real_database_extra_sql=""
+compare_real_database_colors graph-color-pipe exact "" graph test-cl --box
+compare_real_database_colors graph-color-compact-pipe exact "" graph test-cl --compact
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json

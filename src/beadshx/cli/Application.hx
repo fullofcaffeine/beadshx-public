@@ -1680,8 +1680,9 @@ final class Application {
 	}
 
 	/**
-		Matches upstream renderGraphCheck with colors off. A graph with cycles exits 1 with
-		nothing on stderr, as upstream SilentExit does, in both output modes.
+		Upstream renderGraphCheck (cmd/bd/graph.go:325-350), with its pass and fail marks. A
+		graph with cycles exits 1 with nothing on stderr, as upstream SilentExit does, in both
+		output modes.
 	**/
 	function renderGraphCheck(invocation:Invocation, cycles:Array<Array<String>>):Int {
 		final exitCode = cycles.length == 0 ? 0 : 1;
@@ -1689,13 +1690,14 @@ final class Application {
 			writeJsonStdout(renderGraphCheckJson(cycles));
 			return exitCode;
 		}
+		final styles = terminalStyles();
 		final rendered = new StringBuf();
 		if (cycles.length == 0) {
-			rendered.add("\n✓ Graph integrity check passed\n\n");
-			rendered.add("  ✓ No dependency cycles\n");
+			rendered.add('\n${styles.renderPass("✓")} Graph integrity check passed\n\n');
+			rendered.add('  ${styles.renderPass("✓")} No dependency cycles\n');
 		} else {
-			rendered.add("\n✗ Graph integrity issues found\n\n");
-			rendered.add('⚠ Cycles (${cycles.length}):\n\n');
+			rendered.add('\n${styles.renderFail("✗")} Graph integrity issues found\n\n');
+			rendered.add('${styles.renderFail("⚠")} Cycles (${cycles.length}):\n\n');
 			for (cycle in cycles)
 				rendered.add('  ${cycle.join(" → ")} → ${cycle[0]}\n');
 			rendered.add("\n");
@@ -1800,7 +1802,7 @@ final class Application {
 			return writeRenderedJsonStdout(renderGraphJson(graph, layout, output.usesJsonEnvelope()));
 		switch request.view {
 			case "--open" | "--compact":
-				output.writeStdout(renderGraphCompact(graph, layout));
+				output.writeStdout(renderGraphCompact(graph, layout, terminalStyles()));
 				return 0;
 			case "--dot":
 				output.writeStdout(renderGraphDot(graph, layout));
@@ -1809,10 +1811,10 @@ final class Application {
 				output.writeStdout(renderGraphHtml(graph, layout));
 				return 0;
 			case "--box":
-				output.writeStdout(renderGraphBox(graph, layout));
+				output.writeStdout(renderGraphBox(graph, layout, terminalStyles()));
 				return 0;
 			case _:
-				output.writeStdout(renderGraphVisual(graph, layout));
+				output.writeStdout(renderGraphVisual(graph, layout, terminalStyles()));
 				return 0;
 		}
 	}
@@ -1854,7 +1856,7 @@ final class Application {
 					]
 				}
 		];
-		output.writeStdout(renderAllGraphViews(views, request.view));
+		output.writeStdout(renderAllGraphViews(views, request.view, terminalStyles()));
 		return 0;
 	}
 

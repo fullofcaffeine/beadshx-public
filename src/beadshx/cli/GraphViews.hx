@@ -7,13 +7,11 @@ import beadshx.cli.GraphDrawing.buildDagGutterGrid;
 import beadshx.cli.GraphDrawing.collectGutterEdges;
 import beadshx.cli.GraphDrawing.computeDagNodeWidth;
 import beadshx.cli.GraphDrawing.dagNodeLine;
-import beadshx.cli.GraphDrawing.expandTabs;
 import beadshx.cli.GraphDrawing.padRight;
 import beadshx.cli.GraphDrawing.renderCompactGraph;
 import beadshx.cli.GraphDrawing.repeat;
 import beadshx.cli.GraphDrawing.truncateTitle;
 import beadshx.cli.GraphHtmlPage.graphHtmlPage;
-import beadshx.cli.StatusIcon.statusIcon;
 import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.GraphLayout.GraphEdge;
@@ -67,7 +65,7 @@ function renderGraphDot(subgraph:GraphSubgraph, layout:GraphLayout):String {
 }
 
 /**
-	Upstream renderGraph, the `--box` view, with colors off.
+	Upstream renderGraph (cmd/bd/graph.go:932-1020), the `--box` view, with its accented heading mark.
 
 	Every box is as wide as the longest title cut to 30 characters, measured in
 	UTF-8 bytes as upstream's len does, so a multibyte title widens every box; a
@@ -76,7 +74,7 @@ function renderGraphDot(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	ID and every title but an open one through an empty lipgloss style, which
 	turns a tab into four spaces.
 **/
-function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout):String {
+function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout, styles:TerminalStyles):String {
 	final issues = issuesById(subgraph);
 	var nodeCount = 0;
 	var maxTitleLength = 0;
@@ -100,12 +98,12 @@ function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout):String {
 			}
 		}
 	final rendered = new StringBuf();
-	rendered.add('\n📊 Dependency graph for ${subgraph.root.id}:\n\n');
+	rendered.add('\n${styles.renderAccent("📊")} Dependency graph for ${subgraph.root.id}:\n\n');
 	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed\n\n");
 	for (index in 0...layout.layers.length) {
 		rendered.add(index == 0 ? "  Layer 0 (ready)\n" : '  Layer ${index}\n');
 		for (id in layout.layers[index])
-			rendered.add(renderNodeBox(issues.get(id), width, countOf(blocks, id), countOf(needs, id)));
+			rendered.add(renderNodeBox(issues.get(id), width, countOf(blocks, id), countOf(needs, id), styles));
 		if (index < layout.layers.length - 1)
 			rendered.add("      │\n      ▼\n");
 		rendered.add("\n");
@@ -117,7 +115,8 @@ function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout):String {
 }
 
 /**
-	Upstream renderGraphVisual, the default view, with colors off.
+	Upstream renderGraphVisual (cmd/bd/graph_visual.go:35-145), the default view, with its accented
+	heading mark and layer headings.
 
 	Each layer is a column of node boxes, one five-line band per row, and the
 	six-column gutter right of each layer but the last routes the `blocks` rows
@@ -126,7 +125,7 @@ function renderGraphBox(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	spaces, but the layer header line keeps them. The summary counts every `blocks`
 	row.
 **/
-function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout):String {
+function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout, styles:TerminalStyles):String {
 	final nodeHeight = 4;
 	final bandHeight = nodeHeight + 1;
 	final gutterWidth = 6;
@@ -144,11 +143,11 @@ function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout):String {
 			buildDagGutterGrid(edges, gutterWidth, totalLines, bandHeight)
 	];
 	final rendered = new StringBuf();
-	rendered.add('\n📊 Dependency graph for ${subgraph.root.id}:\n\n');
+	rendered.add('\n${styles.renderAccent("📊")} Dependency graph for ${subgraph.root.id}:\n\n');
 	rendered.add("  Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n\n");
 	rendered.add("  ");
 	for (index in 0...layerCount) {
-		rendered.add(padRight(index == 0 ? "LAYER 0 (ready)" : 'LAYER ${index}', nodeWidth + 2));
+		rendered.add(styles.renderAccent(padRight(index == 0 ? "LAYER 0 (ready)" : 'LAYER ${index}', nodeWidth + 2)));
 		if (index < layerCount - 1)
 			rendered.add(repeat(" ", gutterWidth));
 	}
@@ -161,7 +160,7 @@ function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout):String {
 		for (index in 0...layerCount) {
 			final layer = layout.layers[index];
 			final hasNodeLine = subLine < nodeHeight && row < layer.length;
-			line.add(hasNodeLine ? dagNodeLine(issues.get(layer[row]), nodeWidth, subLine) : repeat(" ", nodeWidth + 2));
+			line.add(hasNodeLine ? dagNodeLine(issues.get(layer[row]), nodeWidth, subLine, styles) : repeat(" ", nodeWidth + 2));
 			if (index < layerCount - 1) {
 				final gutter:Array<String> = gutters[index];
 				line.add(gutter[y]);
@@ -181,11 +180,11 @@ function renderGraphVisual(subgraph:GraphSubgraph, layout:GraphLayout):String {
 }
 
 /** Upstream renderGraphCompact for one loaded subgraph; see renderCompactGraph. */
-function renderGraphCompact(subgraph:GraphSubgraph, layout:GraphLayout):String {
+function renderGraphCompact(subgraph:GraphSubgraph, layout:GraphLayout, styles:TerminalStyles):String {
 	final nodes = new Map<String, DagNode>();
 	for (issue in subgraph.issues)
 		nodes.set(issue.id, issue);
-	return renderCompactGraph(subgraph.root.id, nodes, layout, subgraph.edges);
+	return renderCompactGraph(subgraph.root.id, nodes, layout, subgraph.edges, styles);
 }
 
 /**
@@ -208,7 +207,7 @@ function renderGraphHtml(subgraph:GraphSubgraph, layout:GraphLayout):String {
 	renderMergedGraphHtml). Each other view prints the groups in turn, with a rule of 60
 	`─` between two groups, except in `--dot`.
 **/
-function renderAllGraphViews(graphs:Array<GraphSubgraph>, view:String):String {
+function renderAllGraphViews(graphs:Array<GraphSubgraph>, view:String, styles:TerminalStyles):String {
 	if (view == "--html")
 		return renderMergedGraphHtml(graphs);
 	final rendered = new StringBuf();
@@ -216,10 +215,10 @@ function renderAllGraphViews(graphs:Array<GraphSubgraph>, view:String):String {
 		final graph = graphs[index];
 		final layout = computeGraphLayout([for (issue in graph.issues) issue.id], graph.edges);
 		rendered.add(switch view {
-			case "--open" | "--compact": renderGraphCompact(graph, layout);
+			case "--open" | "--compact": renderGraphCompact(graph, layout, styles);
 			case "--dot": renderGraphDot(graph, layout);
-			case "--box": renderGraphBox(graph, layout);
-			case _: renderGraphVisual(graph, layout);
+			case "--box": renderGraphBox(graph, layout, styles);
+			case _: renderGraphVisual(graph, layout, styles);
 		});
 		if (view != "--dot" && index < graphs.length - 1)
 			rendered.add(repeat("─", 60) + "\n");
@@ -262,24 +261,34 @@ private function renderHtmlPage(title:String, issues:Array<RelatedIssue>, edges:
 	return graphHtmlPage(escapeHtml(title), '[${nodes.join(",")}]', '[${links.join(",")}]');
 }
 
-/** Upstream renderNodeBoxWithDeps; the counts line appears only when a count is not zero. */
-private function renderNodeBox(issue:RelatedIssue, width:Int, blocksCount:Int, needsCount:Int):String {
+/**
+	Upstream renderNodeBoxWithDeps (cmd/bd/graph.go:1247-1303): the styled icon, the
+	title in its status style unless open, and the muted ID. The counts line appears
+	only when a count is not zero: blocks in the blocked style and needs muted, padded
+	by the width of the plain text.
+**/
+private function renderNodeBox(issue:RelatedIssue, width:Int, blocksCount:Int, needsCount:Int, styles:TerminalStyles):String {
 	final paddedTitle = padRight(truncateTitle(issue.title, width - 4), width - 4);
-	final title = issue.status == "open" ? paddedTitle : expandTabs(paddedTitle);
+	final title = issue.status == "open" ? paddedTitle : styles.statusStyle(issue.status).render(paddedTitle);
 	final rule = repeat("─", width);
 	final lines = [
 		'  ┌${rule}┐',
-		'  │ ${statusIcon(issue.status)} ${title} │',
-		'  │ ${expandTabs(padRight(issue.id, width - 2))} │'
+		'  │ ${styles.renderStatusIcon(issue.status)} ${title} │',
+		'  │ ${styles.renderMuted(padRight(issue.id, width - 2))} │'
 	];
 	final counts = new Array<String>();
-	if (blocksCount > 0)
+	final styledCounts = new Array<String>();
+	if (blocksCount > 0) {
 		counts.push('blocks:${blocksCount}');
-	if (needsCount > 0)
+		styledCounts.push(styles.statusBlocked.render('blocks:${blocksCount}'));
+	}
+	if (needsCount > 0) {
 		counts.push('needs:${needsCount}');
+		styledCounts.push(styles.muted.render('needs:${needsCount}'));
+	}
 	if (counts.length > 0) {
 		final info = counts.join(" ");
-		lines.push('  │ ${info}${repeat(" ", width - 2 - info.length)} │');
+		lines.push('  │ ${styledCounts.join(" ")}${repeat(" ", width - 2 - info.length)} │');
 	}
 	lines.push('  └${rule}┘');
 	return lines.join("\n") + "\n";

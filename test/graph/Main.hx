@@ -13,6 +13,8 @@ import beadshx.cli.GraphDrawing.compareCompactChildren;
 import beadshx.cli.GraphDrawing.formatCompactNode;
 import beadshx.cli.GraphDrawing.renderCompactGraph;
 import beadshx.cli.GraphHtmlPage.graphHtmlPage;
+import beadshx.cli.TerminalStyles;
+import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.AllGraphs.AllGraphIssue;
@@ -46,6 +48,9 @@ private typedef SortItem = {
 	the cases that every root order prints the same way.
 **/
 class Main {
+	/** Upstream's styles with colors off: every style is empty and turns a tab into four spaces, as lipgloss does. */
+	static final plainStyles = TerminalStyles.plain(_ -> new EmptyLipglossStyle());
+
 	static function main():Void {
 		cycleContracts();
 		layoutContracts();
@@ -222,13 +227,13 @@ class Main {
 		equal(computeDagNodeWidth([dagNode("a-1", "A title much longer than twenty-two runes", "open", 2)]), 27);
 		equal(computeDagNodeWidth([dagNode("a-ünïcödé-id", "x", "open", 2)]), 22);
 		final tabbed = dagNode("a-1", "Tab\there", "closed", 3);
-		equal(dagNodeLine(tabbed, 18, 0), "┌──────────────────┐");
-		equal(dagNodeLine(tabbed, 18, 1), "│ ✓ Tab    here       │");
-		equal(dagNodeLine(dagNode("a-1", "Tab\there", "open", 3), 18, 1), "│ ○ Tab\there       │");
-		equal(dagNodeLine(tabbed, 18, 2), "│ a-1 P3           │");
-		equal(dagNodeLine(tabbed, 18, 3), "└──────────────────┘");
-		equal(dagNodeLine(dagNode("a-1", "A title much longer than the box", "hooked", 0), 18, 1), "│ ◇ A title much … │");
-		equal(dagNodeLine(tabbed, 18, 4), "                    ");
+		equal(dagNodeLine(tabbed, 18, 0, plainStyles), "┌──────────────────┐");
+		equal(dagNodeLine(tabbed, 18, 1, plainStyles), "│ ✓ Tab    here       │");
+		equal(dagNodeLine(dagNode("a-1", "Tab\there", "open", 3), 18, 1, plainStyles), "│ ○ Tab\there       │");
+		equal(dagNodeLine(tabbed, 18, 2, plainStyles), "│ a-1 P3           │");
+		equal(dagNodeLine(tabbed, 18, 3, plainStyles), "└──────────────────┘");
+		equal(dagNodeLine(dagNode("a-1", "A title much longer than the box", "hooked", 0), 18, 1, plainStyles), "│ ◇ A title much … │");
+		equal(dagNodeLine(tabbed, 18, 4, plainStyles), "                    ");
 		// An edge crosses every gutter up to its target, at the target's row past the first. A repeat,
 		// a row into an earlier layer (here into a lifted child's dependent), and other types are left out.
 		final ids = ["a", "b", "c", "d", "e", "f"];
@@ -254,9 +259,10 @@ class Main {
 	/** The compact view follows upstream renderGraphCompact by hand; parity covers the real runs. */
 	static function compactContracts():Void {
 		// Only a closed issue's tab turns into four spaces. A title is cut to 50 characters, counted in runes.
-		equal(formatCompactNode(dagNode("a-1", "Tab\there", "closed", 3)), "✓ a-1 P3 Tab    here");
-		equal(formatCompactNode(dagNode("a-1", "Tab\there", "deferred", 0)), "❄ a-1 P0 Tab\there");
-		equal(formatCompactNode(dagNode("a-1", "Ü" + StringTools.lpad("", "x", 50), "hooked", 2)), "◇ a-1 P2 Ü" + StringTools.lpad("", "x", 48) + "…");
+		equal(formatCompactNode(dagNode("a-1", "Tab\there", "closed", 3), plainStyles), "✓ a-1 P3 Tab    here");
+		equal(formatCompactNode(dagNode("a-1", "Tab\there", "deferred", 0), plainStyles), "❄ a-1 P0 Tab\there");
+		equal(formatCompactNode(dagNode("a-1", "Ü" + StringTools.lpad("", "x", 50), "hooked", 2), plainStyles),
+			"◇ a-1 P2 Ü" + StringTools.lpad("", "x", 48) + "…");
 		// Children sort by priority, then by ID with numeric segments compared as numbers.
 		equal(compareCompactChildren(dagNode("x-9", "", "open", 1), dagNode("x-1", "", "open", 2)) < 0, true);
 		equal(compareCompactChildren(dagNode("x-10", "", "open", 2), dagNode("x-9", "", "open", 2)) > 0, true);
@@ -277,7 +283,7 @@ class Main {
 			edge("t-2.1", "t-2", "parent-child")
 		];
 		final nodes = [for (issue in issues) issue.id => issue];
-		equal(renderCompactGraph("t-root", nodes, computeGraphLayout([for (issue in issues) issue.id], edges), edges), [
+		equal(renderCompactGraph("t-root", nodes, computeGraphLayout([for (issue in issues) issue.id], edges), edges, plainStyles), [
 			"",
 			"📊 Dependency graph for t-root (5 issues, 2 layers)",
 			"",
@@ -581,5 +587,14 @@ class Main {
 	static function equal<T>(actual:T, expected:T):Void {
 		if (actual != expected)
 			throw 'expected ${expected}, got ${actual}';
+	}
+}
+
+/** Stands in for an empty lipgloss v2 style, which prints the text with each tab turned into four spaces. */
+private final class EmptyLipglossStyle implements TextStyle {
+	public function new() {}
+
+	public function render(text:String):String {
+		return StringTools.replace(text, "\t", "    ");
 	}
 }
