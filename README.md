@@ -294,6 +294,22 @@ hyphen. With `--readonly` or the `readonly` setting, the error is
 "my-db"`, without the hint. The error is text in every output mode. `where`
 prints no stored prefix then.
 
+Like upstream, every command that reads the database first takes the
+workspace gates: `.beads.gate.lock` beside the `.beads` directory, and the
+lock beside the data directory, such as `.beads/embeddeddolt.gate.lock` or
+`.beads/dolt.gate.lock`. It tries a shared lock on each lock file once,
+without a wait, in path order. While a maintenance command such as `bd init`,
+`bd migrate` or `bd backup restore` holds one exclusively, the command stops
+with upstream's `Error: a maintenance operation is running on this
+workspace; retry when it completes: ...`, which names the lock and its
+holder, and exit code 1. With `--json` the error is JSON on stdout. When the
+`.beads` directory or the data directory is a symbolic link, for example for
+`--db .beads` where `.beads` is a link, the command prints upstream's
+`warning: workspace gate unavailable, continuing ungated: ... is a symlink;
+...` on stderr, unless `--quiet`, and reads without the locks. `bdhx` opens
+each lock file read-only and holds its lock until it exits. `where`,
+`version` and help pages take no lock.
+
 Like upstream, `--readonly` also takes a value, such as `--readonly=true` or
 `--readonly=0`, in every form that Go's `strconv.ParseBool` accepts.
 `--readonly=false` turns the `readonly` setting and `BD_READONLY` off for
@@ -488,12 +504,15 @@ Limits:
   `ANTHROPIC_CLI` is set or `~/.claude` exists, and the plugin or the
   `bd prime` hooks are not set up. Upstream then records the time of the tip
   in the database, and `bdhx` does not write.
-- `bdhx` takes none of upstream's workspace gate locks. For every command that
-  reads the database, upstream holds `.beads.gate.lock` beside the `.beads`
-  directory and a lock beside the data directory, such as
-  `.beads/embeddeddolt.gate.lock`, and creates a missing lock file. `bdhx`
-  creates none and prints the same output. Upstream also stops while a
-  maintenance command holds these locks; `bdhx` does not.
+- When a workspace gate lock file is missing, upstream creates it, as an
+  empty file with mode 0600, and locks it. `bdhx` does not create it, so it
+  reads without that lock and prints the same output. A maintenance command
+  that starts during that read can take that lock.
+- Upstream opens each workspace gate lock file for writing, and `bdhx` opens
+  it read-only. For a lock file that the user can read but not write,
+  upstream prints `warning: workspace gate acquisition failed, continuing
+  ungated: ...` and reads without the locks. `bdhx` takes the lock and prints
+  no warning.
 - In an embedded workspace without `.beads/embeddeddolt`, a data directory
   that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names makes upstream create
   the embedded database, and a `.beads/dolt` directory makes upstream refuse

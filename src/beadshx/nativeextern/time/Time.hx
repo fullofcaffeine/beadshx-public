@@ -16,6 +16,10 @@ extern class Time {
 
 	@:go.name("Day") public function day():Int;
 	@:go.name("Format") public function format(layout:String):String;
+
+	/** Whether this is Go's zero time, January 1, year 1, 00:00:00 UTC. */
+	@:go.name("IsZero") public function isZero():Bool;
+
 	@:go.name("Location") public function location():Location;
 	@:go.valueReturn
 	@:go.name("Month") public function month():Month;

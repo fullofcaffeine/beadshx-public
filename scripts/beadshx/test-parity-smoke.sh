@@ -1112,6 +1112,8 @@ real_database_out_of_memory_count=0
 candidate_only_case_count=0
 # Names a function that prepares one candidate-only state root (its argument) before the run.
 candidate_only_setup=""
+# The exit code that a candidate-only case expects: 1, for a refusal, unless a case reads normally.
+candidate_only_exit=1
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
 compare_real_database() {
@@ -1501,11 +1503,11 @@ expect_candidate_failure() {
 	fi
 	# A warning that names the workspace names it as <work>.
 	actual_stderr="$(sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" "$case_root/candidate.stderr")"
-	if [[ "$candidate_exit" -ne 1 || "$actual_stdout" != "$expected_stdout" ||
+	if [[ "$candidate_exit" -ne "$candidate_only_exit" || "$actual_stdout" != "$expected_stdout" ||
 		"$actual_stderr" != "$expected_stderr" ]]; then
-		printf '%s: expected exit 1, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
-			"$name" "$expected_stdout" "$expected_stderr" "$candidate_exit" "$actual_stdout" \
-			"$actual_stderr" >&2
+		printf '%s: expected exit %s, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
+			"$name" "$candidate_only_exit" "$expected_stdout" "$expected_stderr" "$candidate_exit" \
+			"$actual_stdout" "$actual_stderr" >&2
 		return 1
 	fi
 	printf 'parity [%ss]: PASS candidate-only/%s\n' "$SECONDS" "$name"
@@ -3295,9 +3297,133 @@ compare_real_database no-database-db-name exact --db other list
 real_database_setup=""
 # A --db value that names a database finds the workspace as without --db, so upstream sets it up twice.
 compare_real_database_config db-name-broken-config exact "$malformed_yaml" --db other count
+
+# Workspace gates. Before it opens the store, upstream's pre-run takes the workspace gate,
+# .beads.gate.lock beside the .beads directory, and the gate beside the data directory, such as
+# .beads/embeddeddolt.gate.lock: a shared flock, tried once without a wait (cmd/bd/main.go:1332,
+# cmd/bd/workspace_gate.go:174). A maintenance command (bd init, bd migrate, bd backup restore)
+# holds them exclusively, and then upstream refuses with the first held gate in path order. bdhx
+# takes the same locks on the files that exist, which it opens read-only. Here a helper process
+# holds a gate on each side, and the cases leave both fixtures unchanged.
+gate_lock_python='
+import fcntl
+import signal
+import sys
+
+action, path, mode = sys.argv[1:4]
+operation = fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH
+with open(path, "rb") as handle:
+    if action == "hold":
+        fcntl.flock(handle, operation)
+        print("locked", flush=True)
+        signal.pause()
+    else:
+        try:
+            fcntl.flock(handle, operation | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("held")
+        else:
+            print("free")
+'
+# Starts a helper that holds a `mode` (exclusive or shared) flock on the file `lock` below the work
+# directory of the state root `root` until release_gate_holders. Its pid file ends in .watch.pid, so
+# the exit trap stops it too.
+hold_gate_lock() {
+	local root="$1" lock="$2" mode="$3"
+	python3 -I -c "$gate_lock_python" hold "$root/work/$lock" "$mode" >"$root.gate-holder.ready" &
+	printf '%s\n' "$!" >"$root.gate-holder.watch.pid"
+	for _ in {1..200}; do
+		if grep -qx locked "$root.gate-holder.ready"; then
+			return 0
+		fi
+		sleep 0.05
+	done
+	printf 'gate helper did not lock %s\n' "$root/work/$lock" >&2
+	return 1
+}
+release_gate_holders() {
+	local pid_file pid
+	while IFS= read -r pid_file; do
+		pid="$(cat "$pid_file")"
+		kill -TERM "$pid" 2>/dev/null || true
+		wait "$pid" 2>/dev/null || true
+		rm -f "$pid_file" "${pid_file%.watch.pid}.ready"
+	done < <(find "$test_root" -name '*.gate-holder.watch.pid' -type f)
+}
+compare_real_database_gate() {
+	compare_real_database "$@"
+	release_gate_holders
+}
+hold_workspace_gate() { hold_gate_lock "$1" .beads.gate.lock exclusive; }
+hold_root_gate() { hold_gate_lock "$1" .beads/embeddeddolt.gate.lock exclusive; }
+share_workspace_gate() { hold_gate_lock "$1" .beads.gate.lock shared; }
+# The holder record that an exclusive holder writes beside the gate file. Go's json.Unmarshal matches
+# the Hostname key without case, and the start time prints in UTC.
+record_gate_holder() {
+	printf '%s\n' '{"pid": 4242, "Hostname": "fixture-host", "reason": "bd backup restore", "started_at": "2026-01-02T03:04:05.123+02:00"}' \
+		>"$1/work/.beads.gate.lock.info"
+	hold_workspace_gate "$1"
+}
+gate_refusal_prefix='a maintenance operation is running on this workspace; retry when it completes: workspacegate: <work>'
+gate_unrecorded='(shared mode) held by another bd process (no holder info recorded): workspace gate busy'
+real_database_read_only=1
+real_database_setup=hold_workspace_gate
+compare_real_database_gate gate-held-count exact count
+compare_real_database_gate gate-held-list-json exact list --json
+compare_real_database_gate gate-held-quiet-show exact -q show "$real_database_issue_id"
+compare_real_database_gate gate-held-config-get exact config get issue_prefix
+compare_real_database_gate gate-held-types-json exact types --json
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database_gate gate-held-envelope-count-json exact count --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Commands that open no store take no gate.
+compare_real_database_gate gate-held-where exact where
+compare_real_database_gate gate-held-version stderr-only version
+real_database_setup=hold_root_gate
+compare_real_database_gate gate-root-held-ready exact ready
+real_database_setup=record_gate_holder
+compare_real_database_gate gate-recorded-holder-count exact count
+# Another reader holds the gate shared, which never blocks a reader.
+real_database_setup=share_workspace_gate
+compare_real_database_gate gate-shared-holder-list exact list
+real_database_setup=""
+compare_real_database gate-free-count-json exact count --json
+# Upstream refuses to gate a directory that is a symbolic link: it warns on stderr, unless --quiet,
+# and reads without the gates. A --db path names the .beads link itself; discovery without --db names
+# the link's target, whose gate it takes.
+link_beads_to_target() {
+	mv -f "$1/work/.beads" "$1/work/beads-target"
+	ln -s beads-target "$1/work/.beads"
+}
+real_database_setup=link_beads_to_target
+compare_real_database gate-link-db-count exact --db .beads count
+compare_real_database gate-link-db-embedded-list-json exact --db .beads/embeddeddolt list --json
+compare_real_database gate-link-db-quiet-count exact -q --db .beads count
+compare_real_database gate-link-db-config-get exact --db .beads config get issue_prefix
+hold_linked_target_gate() {
+	link_beads_to_target "$1"
+	: >"$1/work/beads-target.gate.lock"
+	hold_gate_lock "$1" beads-target.gate.lock exclusive
+}
+real_database_setup=hold_linked_target_gate
+compare_real_database_gate gate-link-target-held-count exact count
+link_embedded_root() {
+	mv -f "$1/work/.beads/embeddeddolt" "$1/work/.beads/embedded-target"
+	ln -s embedded-target "$1/work/.beads/embeddeddolt"
+}
+real_database_setup=link_embedded_root
+compare_real_database gate-root-link-count exact count
+# Upstream opens a gate file for writing, which fails for a directory: it warns and reads ungated.
+make_gate_directory() {
+	rm -f "$1/work/.beads/embeddeddolt.gate.lock"
+	mkdir "$1/work/.beads/embeddeddolt.gate.lock"
+}
+real_database_setup=make_gate_directory
+compare_real_database gate-directory-count exact count
+real_database_setup=""
 real_database_read_only=""
-# Upstream creates .beads/embeddeddolt.gate.lock, an empty lock file, when it is missing. This build
-# takes no gate lock: it prints the same output and writes nothing.
+# Upstream creates a missing gate file, an empty file with mode 0600, and locks it. bdhx writes nothing,
+# so it reads without a lock on that file, and takes the gates whose files exist.
 remove_embedded_gate_lock() {
 	rm -f "$1/work/.beads/embeddeddolt.gate.lock"
 }
@@ -3305,6 +3431,29 @@ real_database_setup=remove_embedded_gate_lock
 compare_real_database missing-gate-lock-count exact count
 compare_real_database missing-gate-lock-readonly-list-json exact --readonly list --json
 real_database_setup=""
+remove_gate_locks() {
+	rm -f "$1/work/.beads.gate.lock" "$1/work/.beads/embeddeddolt.gate.lock"
+}
+candidate_only_setup=remove_gate_locks
+candidate_only_exit=0
+expect_candidate_failure gate-missing-locks-config-get test "" "" config get issue_prefix
+# Upstream cannot open a gate file that it may read but not write, so it warns and reads ungated.
+# bdhx opens the file read-only, takes the lock and prints no warning.
+make_gate_read_only() {
+	chmod 0400 "$1/work/.beads.gate.lock"
+}
+candidate_only_setup=make_gate_read_only
+expect_candidate_failure gate-read-only-lock-config-get test "" "" config get issue_prefix
+candidate_only_exit=1
+remove_workspace_gate_hold_root() {
+	rm -f "$1/work/.beads.gate.lock"
+	hold_root_gate "$1"
+}
+candidate_only_setup=remove_workspace_gate_hold_root
+expect_candidate_failure gate-missing-workspace-lock-root-held "" \
+	"Error: $gate_refusal_prefix/.beads/embeddeddolt.gate.lock $gate_unrecorded" "" count
+release_gate_holders
+candidate_only_setup=""
 # BEADS_DOLT_DATA_DIR names the Dolt directory that `where` reports when the embedded store is missing.
 make_custom_data_directory() {
 	remove_embedded_database "$1"
@@ -5959,6 +6108,16 @@ compare_watch_refresh() {
 			)
 			wait_for_watch_text "$case_root/$side.stderr" 'Error refreshing issues: search returned 2 rows, exceeding --max-rows cap of 1'
 			;;
+		gate-held)
+			# The watch holds both gates shared: an exclusive try would wait, and a shared one does not.
+			for lock in .beads.gate.lock .beads/embeddeddolt.gate.lock; do
+				if [[ "$(python3 -I -c "$gate_lock_python" try "$state_root/work/$lock" exclusive)" != held ||
+					"$(python3 -I -c "$gate_lock_python" try "$state_root/work/$lock" shared)" != free ]]; then
+					printf '%s-watch %s does not hold %s shared\n' "$name" "$side" "$lock" >&2
+					return 1
+				fi
+			done
+			;;
 		*)
 			printf 'unknown watch mutation: %s\n' "$mutation" >&2
 			return 2
@@ -6016,6 +6175,7 @@ compare_watch_refresh() {
 compare_watch_refresh show update show "$real_database_content_id" --watch
 compare_watch_refresh list update list --watch --limit 0
 compare_watch_refresh list-cap row-cap list --watch --label alpha --limit 0 --max-rows 1
+compare_watch_refresh list-gates gate-held list --watch --limit 0
 
 json_deprecation='NOTE: bd --json output format will change in v2.0. Set BD_JSON_ENVELOPE=1 to opt in early. See docs/reference/json-schema.md for migration details.'
 

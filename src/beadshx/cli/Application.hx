@@ -144,6 +144,8 @@ import beadshx.cli.InfoChanges.VersionChange;
 import beadshx.workspace.RedirectSource;
 import beadshx.workspace.RedirectSource.RedirectSourceLookup;
 import beadshx.workspace.WorkspaceDiscovery;
+import beadshx.workspace.WorkspaceGate;
+import beadshx.workspace.WorkspaceGate.WorkspaceGateOutcome;
 import beadshx.workspace.WorkspaceLocation;
 import beadshx.workspace.WorkspacePort;
 import beadshx.store.InfoSnapshot;
@@ -2668,23 +2670,35 @@ final class Application {
 				final selection = findsDatabase(invocation, location) ? validateDatabaseSelection(invocation, location) : Accepted;
 				switch selection {
 					case PlainFailure(message):
-						loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+						final gateRefusal = holdWorkspaceGates(invocation, location, config);
+						if (gateRefusal != null)
+							return runModeAwareFailure(invocation.output, gateRefusal);
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runStoreFailure(message);
 					case ModeAwareFailure(message):
-						loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+						final gateRefusal = holdWorkspaceGates(invocation, location, config);
+						if (gateRefusal != null)
+							return runModeAwareFailure(invocation.output, gateRefusal);
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						final reachesServer = reachesSharedServer(invocation, location);
 						if (!findsDatabase(invocation, location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
 							final config = loadStoreConfig(invocation, location, 1);
+							final gateRefusal = holdWorkspaceGates(invocation, location, config);
+							if (gateRefusal != null)
+								return runModeAwareFailure(invocation.output, gateRefusal);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound(config.sharedServerMode());
 						} else {
 							final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+							final gateRefusal = holdWorkspaceGates(invocation, location, config);
+							if (gateRefusal != null)
+								return runModeAwareFailure(invocation.output, gateRefusal);
 							// Upstream warns about a missing metadata.json before the store open that a refusal stands for.
 							warnMissingMetadata(defaultDirectory);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
@@ -6212,6 +6226,53 @@ final class Application {
 		return findsDatabase(invocation, location) || databasePathSelected(invocation, location);
 	}
 
+	/**
+		Upstream's workspace gates, which its pre-run takes for a command that
+		opens a store once the config of the workspace it binds has loaded
+		(cmd/bd/main.go:1332, see WorkspaceGate). The pre-run reaches them
+		where it reaches the shared server (see reachesSharedServer). Each
+		gate file that exists is locked shared until the process ends; this
+		build creates no missing one. A warning prints on stderr unless
+		--quiet. Returns upstream's refusal while a maintenance operation
+		holds a gate, which comes before every later pre-run warning.
+	**/
+	function holdWorkspaceGates(invocation:Invocation, location:WorkspaceLocation, config:LayeredConfig):Null<String> {
+		if (!reachesSharedServer(invocation, location))
+			return null;
+		return switch WorkspaceGate.takeShared(gateBeadsDir(invocation, location), config) {
+			case GatesHeld:
+				null;
+			case GatesUngated(warning):
+				if (!invocation.quiet)
+					output.writeStderr(warning);
+				null;
+			case GatesBusy(message):
+				message;
+		};
+	}
+
+	/**
+		The `.beads` directory that upstream gates: resolveCommandBeadsDir of
+		the database path that its pre-run binds (cmd/bd/main.go:1316). A
+		--db path is that path as typed, so `--db .beads` names a `.beads`
+		link itself. Upstream's last candidate for it is the directory that
+		FindBeadsDir finds; the workspace that discovery selected for the
+		path stands in for it, which costs no second discovery. A BEADS_DB
+		path selects the workspace with its symbolic links resolved, or, for
+		a missing file, the absolute directory of that file. Otherwise it is
+		the directory of upstream's second setup (see boundSetupDirectory).
+	**/
+	function gateBeadsDir(invocation:Invocation, location:WorkspaceLocation):String {
+		if (databasePathSelected(invocation, location))
+			return switch invocation.databaseVariable {
+				case VariablePath(_, _, _):
+					WorkspaceEnvironment.storeSetupDirectory(invocation.databaseVariable, location.path);
+				case NoVariable | UnsupportedPath(_):
+					WorkspaceEnvironment.commandBeadsDir(invocation.databasePath, location.path);
+			};
+		return boundSetupDirectory(location);
+	}
+
 	/** runDatabaseNotFound without a workspace: upstream then uses a SQL server only in shared-server mode, from the process-start config. */
 	function runDatabaseNotFoundWithoutWorkspace():Int {
 		return runDatabaseNotFound(LayeredConfig.atStartup().sharedServerMode());
@@ -6335,6 +6396,9 @@ final class Application {
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+		final gateRefusal = holdWorkspaceGates(invocation, location, config);
+		if (gateRefusal != null)
+			return ModeAwareFailure(gateRefusal);
 		final defaultDirectory = missingMetadataDirectory(invocation, location);
 		if (config.sharedServerMode() && reachesSharedServer(invocation, location)) {
 			warnMissingMetadata(defaultDirectory);

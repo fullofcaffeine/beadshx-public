@@ -36,6 +36,9 @@ typedef Invocation = {
 	/** --ignore-schema-skew: upstream's pre-run then sets BD_IGNORE_SCHEMA_SKEW=1 for every store open. */
 	final ignoreSchemaSkew:Bool;
 
+	/** --quiet (-q): upstream then drops its workspace gate warnings, not its errors. */
+	final quiet:Bool;
+
 	final cpuProfile:Bool;
 	final memProfilePath:String;
 	final showHelp:Bool;

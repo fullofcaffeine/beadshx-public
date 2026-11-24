@@ -1,6 +1,8 @@
 package beadshx.bootstrap;
 
 import beadshx.store.EmbeddedCgoStore;
+import beadshx.workspace.UnixGateLocks;
+import beadshx.workspace.WindowsGateLocks;
 import beadshx.bootstrap.CommandProcess.commandApplication;
 import beadshx.cli.SystemOutput;
 import beadshx.workspace.GoWorkspace;

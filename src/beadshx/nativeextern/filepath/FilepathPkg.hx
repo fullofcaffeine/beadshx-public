@@ -15,4 +15,12 @@ extern class FilepathPkg {
 
 	@:go.tupleReturn
 	@:go.name("EvalSymlinks") public static function evalSymlinks(path:String):PathResult;
+
+	/** `filepath.Split`: the path up to and including its last separator, and the rest. */
+	@:go.tupleReturn
+	@:go.name("Split") public static function split(path:String):SplitResult;
+
+	/** `filepath.Abs`: the path joined to the working directory that `os.Getwd` reports, then cleaned. */
+	@:go.tupleReturn
+	@:go.name("Abs") public static function abs(path:String):PathResult;
 }

@@ -6,6 +6,10 @@ extern class Errors {
 	@:go.name("AsType")
 	@:go.tupleReturn
 	public static function asType<T>(error:go.NativeError):ErrorMatch<T>;
+
+	/** `errors.Is`: whether `error` or an error it wraps matches `target`. */
+	@:go.name("Is")
+	public static function matches(error:go.NativeError, target:go.NativeError):Bool;
 }
 
 /** The bool distinguishes a matched typed nil from an unmatched error. */

@@ -193,6 +193,7 @@ final class Parser {
 		// Null while --readonly is absent: upstream then takes the readonly setting.
 		var readonly:Null<Bool> = null;
 		var ignoreSchemaSkew = false;
+		var quiet = false;
 		var cpuProfile = false;
 		var memProfilePath = "";
 		var expectedValue:Null<ExpectedValue> = null;
@@ -420,6 +421,8 @@ final class Parser {
 					orphansFix = enabled;
 				case "V":
 					versionFlag = enabled;
+				case "q":
+					quiet = enabled;
 				case "a":
 					listAll = enabled;
 				case "h":
@@ -998,8 +1001,14 @@ final class Parser {
 					commentsLocalTime = value;
 				continue;
 			}
-			if (StringTools.startsWith(argument, "--verbose=") || StringTools.startsWith(argument, "--quiet=")) {
-				booleanValue(argument.substr(0, argument.indexOf("=")), argument.substr(argument.indexOf("=") + 1));
+			if (StringTools.startsWith(argument, "--verbose=")) {
+				booleanValue("--verbose", argument.substr(10));
+				continue;
+			}
+			if (StringTools.startsWith(argument, "--quiet=")) {
+				final value = booleanValue("--quiet", argument.substr(8));
+				if (value != null)
+					quiet = value;
 				continue;
 			}
 			if (StringTools.startsWith(argument, "--version=")) {
@@ -1350,7 +1359,9 @@ final class Parser {
 					readonly = true;
 				case "--ignore-schema-skew":
 					ignoreSchemaSkew = true;
-				case "--sandbox" | "--no-color" | "--quiet" | "-q" | "--verbose" | "-v":
+				case "--quiet" | "-q":
+					quiet = true;
+				case "--sandbox" | "--no-color" | "--verbose" | "-v":
 					// This command profile is already read-only, unstyled, and synchronous.
 				case "--version" | "-V":
 					// The root's own flag; the root prints the version when it runs with it.
@@ -1668,6 +1679,7 @@ final class Parser {
 				global: global,
 				readonly: readonly,
 				ignoreSchemaSkew: ignoreSchemaSkew,
+				quiet: quiet,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,
@@ -2080,6 +2092,7 @@ final class Parser {
 				global: global,
 				readonly: readonly,
 				ignoreSchemaSkew: ignoreSchemaSkew,
+				quiet: quiet,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,
