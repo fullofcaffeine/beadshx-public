@@ -1110,14 +1110,14 @@
     },
     "compilerLock": {
       "path": "upstream/locks/haxe-go.json",
-      "sha256": "83d5e54ec73a9600c63a9321b70b3db82e476b817130fff6cb312ffc9124c5f6"
+      "sha256": "2c2ff18aaea6523df3a5fa64c8b81631bb8f94a14626bacf8bedba9c0b619fc7"
     },
-    "compilerRevision": "3c099227602afad9ec758d1c2413066c2ea80387"
+    "compilerRevision": "61c58166cf2fde66795b6cc530f0a6e91e60bd9d"
   },
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "30b3f50087fa1f4232418f0c8ee52ccd3f81483c1d145de2a65d9c7488017f0a"
+      "sha256": "77ed7de4d930dfd99ac12f4c6f76ea649612c36ab10a8bc033ba282d346eb0b7"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
@@ -1821,11 +1821,11 @@
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_ds_intmap.go",
-      "sha256": "de7ab7d6ca06c65e7d70d4865d1eec4d39397f255b70d90b44c685a716ee1e11"
+      "sha256": "4c9fd4c07f9148f60e9b123fca91188522df092c8e8d3ec10c597ff3ec377dcf"
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_ds_stringmap.go",
-      "sha256": "bca9deb3dca4bcd54cf0fffa2c0a787598f388a20f1f014114cf63c21f0ece4e"
+      "sha256": "bc5e1e99dd40aed2193751818e9dfcb759136746650a6ffa86b15b52fa745364"
     },
     {
       "path": "bdhx/haxego_generated_module_haxe_exception.go",
@@ -2037,7 +2037,7 @@
     },
     {
       "path": "hxrt/string.go",
-      "sha256": "4b75b6daa4f8bfe2b42cf7275cc668b5abab61ce53ee1080263f124f48c55af8"
+      "sha256": "d7faefe363c8d2fe94bc81835f1ec1872e69b2d56b2ca351148ed4a7426cfdeb"
     },
     {
       "path": "hxrt/string_compare.go",

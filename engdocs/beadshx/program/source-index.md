@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `3c099227602afad9ec758d1c2413066c2ea80387`.
+Required BeadsHX compiler revision: `61c58166cf2fde66795b6cc530f0a6e91e60bd9d`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -161,6 +161,19 @@ of a truncated events journal through `haxe.Json`, so beadshx-m08.16 first
 moved them to Go's own `encoding/json` number text, as upstream prints them.
 BeadsHX output changed only in the copied runtime files `hxrt/string.go` and
 `hxrt/json.go`; the other compiler fixes give byte-identical output.
+
+Compiler task haxe_go-rotv makes `Reflect.field` return the `length` field of
+an Array or a String and their methods, as Haxe does. haxe_go-lgn0 compiles an
+index read or write and the Array methods on a `Dynamic` value through the
+runtime, and haxe_go-676g lowers a `toString()` call on a typed String to the
+receiver. haxe_go-bme1 converts a `Dynamic` value into a Float or Bool slot
+without a Go panic, and haxe_go-h078 keeps null when it converts a `Dynamic`
+value into a String slot, through the new runtime helper `DynamicToString` in
+`hxrt/string.go`. BeadsHX output changed only in the `haxe.ds.StringMap` and
+`haxe.ds.IntMap` key bridges, which now call `DynamicToString` instead of a
+type assertion and `Std.string`, so a null key stays null and a key that is not
+a String no longer stops the program; the other compiler fixes give
+byte-identical output.
 
 Reviewed current authority:
 

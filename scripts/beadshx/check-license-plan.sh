@@ -19,7 +19,7 @@ jq -e '
 jq -e '
     .project == "haxe.go" and
     .liveStartingCommit == "990d78bcf7a8641ef589cd230b7d69d59beadb84" and
-    .requiredCommit == "3c099227602afad9ec758d1c2413066c2ea80387" and
+    .requiredCommit == "61c58166cf2fde66795b6cc530f0a6e91e60bd9d" and
     .requiredHaxe == "4.3.7"
 ' upstream/locks/haxe-go.json >/dev/null
 
