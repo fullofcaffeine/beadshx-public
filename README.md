@@ -74,6 +74,25 @@ as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
 `export`, `#` comments, single or double quotes and `$VAR` expansion. If one
 line is not valid, `bdhx` ignores the full file, and prints no warning.
 
+Like upstream, `bdhx` has an agent mode for output that AI agents read.
+`BD_AGENT_MODE=1` or any `CLAUDE_CODE` value that is not empty turns it on,
+also from the `.beads/.env` file. In agent mode, the flat `list` view
+(`--flat`, also with `--long`) prints one `ID: Title` line for each issue. A
+dependency note in parentheses follows when the issue has a parent, a blocker
+or a dependent. The view prints no status icon, priority, type, labels or
+`--skip-labels` footer. When stdout is a terminal, `list` shows 20 issues by
+default instead of 50. `show` prints Markdown text as it is stored, without
+wrapping. The tree view of `list`, `--format` and `--json` do not change.
+
+Like upstream, `show` prints the close reason on one metadata line when it
+has no line break and fits the Markdown wrap width. Upstream takes the
+terminal width for it, but not more than 100 columns, or 80 columns when
+stdout is not a terminal; `bdhx` uses 80 columns for now (see the limits). In
+agent mode, the width has no limit. A close reason that
+does not fit goes into a `CLOSE REASON` section after the metadata lines.
+When stderr is a terminal and the limit hides more issues, `list` and `query`
+print upstream's hint about `--limit` on stderr.
+
 Like upstream, a command that reads the database uses `BEADS_DB` only when no
 `--db`, `-C` or `BEADS_DIR` is set and no workspace is found from the current
 directory. These commands ignore `BD_DB`. For `where`, `BEADS_DB`, or else
@@ -404,6 +423,19 @@ Limits:
   one.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
+- When stderr is a terminal, `bdhx` prints no `--limit` hint after
+  `list --format` output. Upstream prints the hint when the limit hides more
+  issues.
+- `bdhx` does not read the terminal width yet: the close-reason rule of
+  `show` uses 80 columns, where upstream uses the width of a terminal on
+  stdout (at most 100 columns). The typed call needs a Go `uintptr` carrier in
+  haxe.go (haxe_go-5yip).
+- `bdhx` prints no tips. Upstream can print a random tip that recommends the
+  Beads plugin for Claude Code after `show` and `ready`, and after the flat
+  `list` view when agent mode is off. It does this when `CLAUDE_CODE` or
+  `ANTHROPIC_CLI` is set or `~/.claude` exists, and the plugin or the
+  `bd prime` hooks are not set up. Upstream then records the time of the tip
+  in the database, and `bdhx` does not write.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

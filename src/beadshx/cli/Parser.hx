@@ -1,5 +1,6 @@
 package beadshx.cli;
 
+import beadshx.cli.AgentOutput.isAgentMode;
 import beadshx.cli.DepListSelection.selectDepList;
 import beadshx.cli.Invocation.CommentsInvocation;
 import beadshx.cli.Invocation.DepTreeInvocation;
@@ -1432,6 +1433,8 @@ final class Parser {
 				databasePath = path;
 			case NoVariable | UnsupportedPath(_):
 		}
+		// Upstream reads BD_AGENT_MODE and CLAUDE_CODE only after the .env load above.
+		final agentMode = isAgentMode(environment.value);
 
 		// Upstream countGroupFlag: the --by-* flags that end up true, in its order.
 		var countGroup = CountGroup.Ungrouped;
@@ -1532,9 +1535,10 @@ final class Parser {
 				maxRows: listMaxRows,
 				maxRowsSource: listMaxRowsSource,
 				skipCounts: outputMode() == OutputMode.Human,
+				// The --long view prints no dependency note, but agent mode replaces it with one that does.
 				blockingAnnotations: outputMode() == OutputMode.Human
 				&& !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat))
-				&& !listLong};
+				&& (!listLong || agentMode)};
 		}
 
 		function makeCountRequest(idFilter:String):beadshx.store.CountRequest {
@@ -1709,7 +1713,7 @@ final class Parser {
 				listLong: listLong,
 				listNoPager: listNoPager,
 				listDepsMode: listDepsMode,
-				listAgentMode: environment.value("BD_AGENT_MODE") == "1" || environment.value("CLAUDE_CODE") != "",
+				agentMode: agentMode,
 				showShort: showShort,
 				showLong: showLong,
 				showCurrent: showCurrent,
@@ -2121,7 +2125,7 @@ final class Parser {
 				listLong: listLong,
 				listNoPager: listNoPager,
 				listDepsMode: listDepsMode,
-				listAgentMode: environment.value("BD_AGENT_MODE") == "1" || environment.value("CLAUDE_CODE") != "",
+				agentMode: agentMode,
 				showShort: showShort,
 				showLong: showLong,
 				showCurrent: showCurrent,

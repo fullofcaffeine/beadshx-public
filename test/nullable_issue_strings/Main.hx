@@ -78,7 +78,7 @@ class Main {
 			checkField(nested, "external_ref", testCase.externalJson, testCase.name + " related JSON");
 			checkField(nested, "compacted_at_commit", testCase.commitJson, testCase.name + " related JSON");
 			#if (go || go_output)
-			checkLine(humanOf(application.renderIssueHuman(issue, true)), "External:", testCase.externalHuman, testCase.name + " human reference");
+			checkLine(humanOf(application.renderIssueHuman(issue, false, true)), "External:", testCase.externalHuman, testCase.name + " human reference");
 			#end
 			checkLine(Application.renderIssueLongExtras(issue), "  Compacted at commit:", testCase.commitHuman, testCase.name + " human commit");
 		}
@@ -88,7 +88,7 @@ class Main {
 			case Success(value): value;
 			case Failure(message): throw message;
 		};
-		switch application.renderIssueHuman(details(null, 1, outsideNative), true) {
+		switch application.renderIssueHuman(details(null, 1, outsideNative), false, true) {
 			case Failure(message):
 				check(message != "", "out-of-native-range rendering must explain failure");
 			case Success(_):
@@ -267,6 +267,12 @@ private final class NoEffectOutput implements OutputPort {
 
 	public function isStderrTerminal():Bool
 		return false;
+
+	public function stdoutColumns():Int
+		return 0;
+
+	public function displayWidth(value:String):Int
+		return value.length;
 }
 
 private final class UnusedWatch implements WatchPort {

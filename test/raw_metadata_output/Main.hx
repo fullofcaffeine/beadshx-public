@@ -149,6 +149,14 @@ final class CapturedOutput implements OutputPort {
 	public function isStderrTerminal():Bool {
 		return true;
 	}
+
+	public function stdoutColumns():Int {
+		return 0;
+	}
+
+	public function displayWidth(value:String):Int {
+		return value.length;
+	}
 }
 
 /** SQL read acceptance and query selection must precede atomic JSON output validation. */

@@ -19,4 +19,10 @@ interface OutputPort {
 
 	/** Reports whether stderr is attached to a terminal. */
 	function isStderrTerminal():Bool;
+
+	/** The column count of the terminal on stdout, or 0 when stdout is no terminal or its size cannot be read. */
+	function stdoutColumns():Int;
+
+	/** The terminal cells that `value` takes, as upstream's ansi.StringWidth counts them. */
+	function displayWidth(value:String):Int;
 }

@@ -16,6 +16,8 @@ import beadshx.relation.GraphLayout.computeGraphLayout;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.OpenGraph.isOpenGraphStatus;
+import beadshx.cli.AgentOutput.fitsMetadataLine;
+import beadshx.cli.AgentOutput.markdownWrapWidth;
 import beadshx.cli.GraphViews.renderAllGraphViews;
 import beadshx.cli.GraphViews.renderGraphBox;
 import beadshx.cli.GraphViews.renderGraphCompact;
@@ -342,6 +344,17 @@ private typedef RawIssueRecord = {
 private enum HumanShowMode {
 	StandardShow;
 	WatchedShow;
+}
+
+/** Where show prints a closed issue's close reason. */
+private enum HumanCloseReason {
+	NoCloseReason;
+
+	/** One metadata line, without its line feed. */
+	CloseReasonLine(line:String);
+
+	/** A CLOSE REASON section with its leading blank line and final line feed, after the metadata lines. */
+	CloseReasonSection(section:String);
 }
 
 /** What a command that loads layered config checks before upstream's pre-run would open a store. */
@@ -1147,7 +1160,7 @@ final class Application {
 										if (invocation.watchMode)
 											runListWatch(invocation, location, effectiveLimit, query);
 										else
-											renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query));
+											renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query), effectiveLimit);
 									}
 									closeIssueQuery(query, result);
 							}
@@ -3218,9 +3231,18 @@ final class Application {
 			}
 			output.writeStdout(rendered.toString());
 		}
-		if (hasMore && invocation.queryRequest.limit > 0 && output.isStderrTerminal())
-			output.writeStderr('\nShowing ${invocation.queryRequest.limit} issues; more results matched but were hidden by --limit. Use --limit 0 for all, or --limit N to raise the cap.\n');
+		writeTruncationHint(hasMore, invocation.queryRequest.limit);
 		return 0;
+	}
+
+	/**
+		Upstream printTruncationHint of `list` and `query`: on a terminal stderr,
+		says that `limit` hid more issues. Upstream colors it as a warning when
+		colors are on; this build prints no colors.
+	**/
+	function writeTruncationHint(hasMore:Bool, limit:Int):Void {
+		if (hasMore && limit > 0 && output.isStderrTerminal())
+			output.writeStderr('\nShowing ${limit} issues; more results matched but were hidden by --limit. Use --limit 0 for all, or --limit N to raise the cap.\n');
 	}
 
 	function renderSearch(invocation:Invocation, page:IssueListPage):Int {
@@ -4054,22 +4076,45 @@ final class Application {
 		return snapshot.toString();
 	}
 
-	function renderListResult(invocation:Invocation, result:IssueListResult):Int {
+	/**
+		Prints one list page as upstream's list command body does. Every view
+		except the `--parent` tree then prints the truncation hint for
+		`effectiveLimit`; that tree reads each level without a limit. The tree
+		views print the --skip-labels footer after the hint. In agent mode the
+		flat view prints renderListAgent. The native --format read reports no
+		has-more flag, so no hint follows --format output yet.
+	**/
+	function renderListResult(invocation:Invocation, result:IssueListResult, effectiveLimit:Int):Int {
 		return switch result {
 			case ListFailure(message): runStoreFailure(message);
 			case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ListSuccess(page):
+				final skipLabels = invocation.listRequest.skipLabels;
+				final hierarchy = isListHierarchy(invocation);
 				if (invocation.listRequest.format != "") {
 					output.writeStdout(page.formatted);
 				} else
 					switch invocation.output {
 						case Human:
-							if (page.items.length == 0 && isListHierarchy(invocation))
-								output.writeStdout('Issue \'${invocation.listRequest.parentId}\' has no children\n'); else
-								output.writeStdout(invocation.listFlat ? renderListFlat(page, invocation.listLong, invocation.listRequest.skipLabels,
-								invocation.listRequest.brief) : renderListHuman(page, invocation.listRequest.skipLabels, invocation.listDepsMode));
-						case Json: return writeRenderedJsonStdout(renderListJson(page, invocation.listRequest.skipLabels));
+							if (page.items.length == 0 && hierarchy) {
+								output.writeStdout('Issue \'${invocation.listRequest.parentId}\' has no children\n');
+								return 0;
+							}
+							if (!invocation.listFlat) {
+								output.writeStdout(renderListHuman(page, false, invocation.listDepsMode));
+								if (!hierarchy)
+									writeTruncationHint(page.hasMore, effectiveLimit);
+								if (skipLabels)
+									output.writeStdout(appendSkipLabelsFooter("", true));
+								return 0;
+							}
+							output.writeStdout(invocation.agentMode ? renderListAgent(page) : renderListFlat(page, invocation.listLong, skipLabels,
+								invocation.listRequest.brief));
+						case Json:
+							final exit = writeRenderedJsonStdout(renderListJson(page, skipLabels));
+							if (exit != 0) return exit;
 					}
+				writeTruncationHint(page.hasMore, effectiveLimit);
 				0;
 		};
 	}
@@ -4079,7 +4124,7 @@ final class Application {
 			case IntPresent(value): value;
 			case IntAbsent:
 				if (invocation.listRequest.all) 0; else if (location.listLimitConfigured) location.listLimit; else if (!output.isStdoutTerminal()) 0; else
-					if (invocation.listAgentMode) 20; else 50;
+					if (invocation.agentMode) 20; else 50;
 		};
 	}
 
@@ -4367,6 +4412,21 @@ final class Application {
 		return appendSkipLabelsFooter(rendered.toString(), skipLabels);
 	}
 
+	/**
+		Upstream formatAgentIssue for each row of the flat list in agent mode:
+		`ID: Title`, then the dependency note of the flat view when there is one.
+		It prints no status, priority, type, assignee or labels, also for --long,
+		and no --skip-labels footer.
+	**/
+	static function renderListAgent(page:IssueListPage):String {
+		final rendered = new StringBuf();
+		for (issue in page.items) {
+			final dependencyInfo = renderListBlockingInfo(issue);
+			rendered.add(dependencyInfo == "" ? '${issue.id}: ${issue.title}\n' : '${issue.id}: ${issue.title} ${dependencyInfo}\n');
+		}
+		return rendered.toString();
+	}
+
 	static function renderListBlockingInfo(issue:IssueListItem):String {
 		final parts = new Array<String>();
 		if (issue.blockingParent != "")
@@ -4517,7 +4577,7 @@ final class Application {
 		if (current == null)
 			return 0;
 
-		switch renderIssueHuman(current, false, WatchedShow) {
+		switch renderIssueHuman(current, invocation.agentMode, false, WatchedShow) {
 			case Failure(message):
 				return runStoreFailure(message);
 			case Success(rendered):
@@ -4536,7 +4596,7 @@ final class Application {
 				case Success(DetailsFound(issue)):
 					final nextSnapshot = issueWatchSnapshot(issue);
 					if (nextSnapshot != snapshot) {
-						switch renderIssueHuman(issue, false, WatchedShow) {
+						switch renderIssueHuman(issue, invocation.agentMode, false, WatchedShow) {
 							case Failure(message):
 								watch.close();
 								return runStoreFailure(message);
@@ -4942,7 +5002,7 @@ final class Application {
 			}
 		}
 		for (index in 0...found.length) {
-			final rendered = switch renderIssueHuman(found[index], invocation.showLong) {
+			final rendered = switch renderIssueHuman(found[index], invocation.agentMode, invocation.showLong) {
 				case Failure(message): return runStoreFailure(message);
 				case Success(value): value;
 			};
@@ -5175,7 +5235,32 @@ final class Application {
 		return '${icon} ${issue.id} P${issue.priority} ${typeBadge}${issue.title}';
 	}
 
-	function renderIssueHuman(issue:IssueDetails, longMode:Bool, mode:HumanShowMode = StandardShow):StoreResult<String> {
+	/**
+		Upstream formatIssueMetadata's close reason, which it trims like Go's
+		strings.TrimSpace first, so a reason of only spaces prints nothing.
+
+		Why: a reason too long or too structured for one line is body text.
+		What: the line `Close reason: <reason>` when fitsMetadataLine accepts it
+		for the Markdown wrap width, else a CLOSE REASON section that renders the
+		reason as Markdown without its final line feeds. How: the wrap width and
+		the cell count come from the stdout terminal only when the reason exists.
+	**/
+	function renderCloseReason(closeReason:String, agentMode:Bool):HumanCloseReason {
+		final reason = goTrimSpace(closeReason);
+		if (reason == "")
+			return NoCloseReason;
+		final line = 'Close reason: ${reason}';
+		if (fitsMetadataLine(line, markdownWrapWidth(agentMode, output.stdoutColumns()), output.displayWidth(line)))
+			return CloseReasonLine(line);
+		return CloseReasonSection('\nCLOSE REASON\n${trimTrailingNewlines(output.renderMarkdown(reason))}\n');
+	}
+
+	/**
+		Upstream's human show of one issue: header, metadata lines, sections.
+		`agentMode` sets the Markdown wrap width that decides whether the close
+		reason fits on a metadata line (see renderCloseReason).
+	**/
+	function renderIssueHuman(issue:IssueDetails, agentMode:Bool, longMode:Bool, mode:HumanShowMode = StandardShow):StoreResult<String> {
 		final typeBadge = switch issue.issueType {
 			case "epic": " [EPIC]";
 			case "bug": " [BUG]";
@@ -5203,8 +5288,12 @@ final class Application {
 		if (issue.deferUntil != "")
 			dates.push('Deferred: ${issue.deferUntil.substr(0, 10)}');
 		rendered += dates.join(" · ") + "\n";
-		if (issue.status == "closed" && issue.closeReason != "")
-			rendered += 'Close reason: ${StringTools.trim(issue.closeReason)}\n';
+		final closeReason = issue.status == "closed" ? renderCloseReason(issue.closeReason, agentMode) : NoCloseReason;
+		switch closeReason {
+			case CloseReasonLine(line):
+				rendered += line + "\n";
+			case CloseReasonSection(_) | NoCloseReason:
+		}
 		if (issue.externalRef != null && issue.externalRef != "")
 			rendered += 'External: ${issue.externalRef}\n';
 		if (issue.specId != "")
@@ -5217,6 +5306,11 @@ final class Application {
 		};
 		if (savings != "")
 			rendered += savings + "\n";
+		switch closeReason {
+			case CloseReasonSection(section):
+				rendered += section;
+			case CloseReasonLine(_) | NoCloseReason:
+		}
 		if (issue.description != "" || mode == StandardShow) {
 			rendered += "\nDESCRIPTION\n";
 			rendered += issue.description == "" ? "  (none)\n" : output.renderMarkdown(issue.description) + "\n";

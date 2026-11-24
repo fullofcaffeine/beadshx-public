@@ -74,6 +74,14 @@ final class DiscardedOutput implements OutputPort {
 	public function isStderrTerminal():Bool {
 		return false;
 	}
+
+	public function stdoutColumns():Int {
+		return 0;
+	}
+
+	public function displayWidth(value:String):Int {
+		return value.length;
+	}
 }
 
 /**

@@ -86,7 +86,14 @@ typedef Invocation = {
 	final listLong:Bool;
 	final listNoPager:Bool;
 	final listDepsMode:String;
-	final listAgentMode:Bool;
+
+	/**
+		Upstream's agent mode (see `AgentOutput.isAgentMode`), read after the
+		`.beads/.env` load. It changes the flat list, list's default limit on a
+		terminal, and show's Markdown width.
+	**/
+	final agentMode:Bool;
+
 	final showShort:Bool;
 	final showLong:Bool;
 	final showCurrent:Bool;

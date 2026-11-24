@@ -55,4 +55,12 @@ final class SchemaSkewWarningOutput implements OutputPort {
 	public function isStderrTerminal():Bool {
 		return streams.isStderrTerminal();
 	}
+
+	public function stdoutColumns():Int {
+		return streams.stdoutColumns();
+	}
+
+	public function displayWidth(value:String):Int {
+		return streams.displayWidth(value);
+	}
 }

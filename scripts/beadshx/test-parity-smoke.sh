@@ -4310,6 +4310,32 @@ compare_real_database show-human-child exact show "$real_database_child_id"
 compare_real_database show-human-epic exact show "$real_database_epic_id"
 compare_real_database show-long-open exact show "$real_database_issue_id" --long
 compare_real_database show-long-closed exact show "$real_database_closed_id" --long
+# Upstream trims the close reason and prints it on one metadata line when it has no line break and
+# fits the Markdown wrap width: 80 terminal cells when stdout is a pipe. Otherwise a CLOSE REASON
+# section after the metadata lines renders it. In agent mode (BD_AGENT_MODE=1, or any CLAUDE_CODE
+# value) the width has no limit, and the section prints the reason as stored.
+close_reason_record() {
+	jq -cn --arg reason "$1" '{id: "test-reason", title: "Close reason parity", status: "closed",
+		priority: 2, issue_type: "task", created_at: "2026-08-20T10:00:00Z",
+		updated_at: "2026-08-20T11:00:00Z", closed_at: "2026-08-20T11:00:00Z", close_reason: $reason}'
+}
+close_reason_fits="$(close_reason_record "$(printf '%066d' 0 | tr 0 r)")"
+close_reason_long="$(close_reason_record "$(printf '%067d' 0 | tr 0 r)")"
+# 34 double-width characters: 48 runes, but 82 cells with the label.
+close_reason_wide="$(close_reason_record "$(printf '%034d' 0 | sed 's/0/界/g')")"
+close_reason_lines="$(close_reason_record $'Fixed in two steps.\n\n- **storage**: retry the read\n- docs: note the limit')"
+compare_real_database_import show-close-reason-fits exact "$close_reason_fits" show test-reason
+compare_real_database_import show-close-reason-long exact "$close_reason_long" show test-reason
+compare_real_database_import show-close-reason-wide exact "$close_reason_wide" show test-reason
+compare_real_database_import show-close-reason-lines exact "$close_reason_lines" show test-reason --long
+compare_real_database_import show-close-reason-trailing-newline exact \
+	"$(close_reason_record $'  Shipped in v2.\n')" show test-reason
+compare_real_database_import show-close-reason-blank exact "$(close_reason_record $' \t\n')" show test-reason
+real_database_extra_env=(BD_AGENT_MODE=1)
+compare_real_database_import agent-mode-show-close-reason-long exact "$close_reason_long" show test-reason
+compare_real_database_import agent-mode-show-close-reason-wide exact "$close_reason_wide" show test-reason
+compare_real_database_import agent-mode-show-close-reason-lines exact "$close_reason_lines" show test-reason
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database show-long-pinned exact show "$(jq -er '.id' "$real_database_seed/pinned.json")" --long
 compare_real_database show-long-molecule exact show "$(jq -er '.id' "$real_database_seed/molecule.json")" --long
 rare_long_record='{"id":"test-rare","title":"Rare long","description":"tiny","status":"open","priority":2,"issue_type":"event","created_at":"2026-08-20T12:00:00Z","updated_at":"2026-08-21T13:00:00Z","compaction_level":1,"compacted_at":"2026-08-21T14:00:00Z","compacted_at_commit":"abc123","original_size":100,"sender":"agent-a","ephemeral":true,"wisp_type":"heartbeat","pinned":true,"is_template":true,"bonded_from":[{"source_id":"proto-a","bond_type":"parallel","bond_point":"root"}],"await_type":"human","await_id":"approval","timeout":60000000000,"waiters":["alpha","beta"],"source_formula":"release","source_location":"steps[0]","mol_type":"swarm","work_type":"open_competition","event_kind":"agent.started","actor":"agent://a","target":"bead://b","payload":"{\"k\":1}"}'
@@ -5057,6 +5083,97 @@ compare_real_database_dotenv dotenv-max-rows-dep-tree exact $'BEADS_MAX_ROWS=1\n
 compare_real_database_dotenv dotenv-types-custom exact $'BD_TYPES_CUSTOM=alpha,beta\n' types
 compare_real_database_dotenv dotenv-statuses-custom exact $'BD_STATUS_CUSTOM=review:wip\n' statuses --json
 compare_real_database_dotenv dotenv-json-envelope exact $'BD_JSON_ENVELOPE=1\nBD_JSON=1\n' count
+# Upstream's agent mode: BD_AGENT_MODE=1, or any non-empty CLAUDE_CODE, from the environment or
+# from .env. The flat list then prints one "ID: Title" line for each issue, with the dependency
+# note, also for --long. It prints no status icon, priority, type, labels or --skip-labels footer.
+# The tree view, --format, --json and show --children do not change. show prints Markdown as
+# stored. A CLAUDE_CODE run of show can print upstream's random Claude setup tip, so show cases
+# use BD_AGENT_MODE.
+real_database_extra_env=(BD_AGENT_MODE=1)
+compare_real_database agent-mode-list-flat exact list --flat
+compare_real_database agent-mode-list-flat-long exact list --flat --long --all
+compare_real_database agent-mode-list-flat-skip-labels exact list --flat --skip-labels --ready
+compare_real_database agent-mode-list-flat-limit exact list --flat --limit 3
+compare_real_database agent-mode-list-flat-empty exact list --flat --status deferred
+compare_real_database agent-mode-list-tree exact list
+compare_real_database agent-mode-list-format exact list --flat --format digraph
+compare_real_database agent-mode-list-json exact list --flat --json --limit 3
+compare_real_database agent-mode-children exact children "$real_database_epic_id"
+compare_real_database agent-mode-show-markdown exact show "$real_database_content_id"
+real_database_extra_env=(CLAUDE_CODE=1)
+compare_real_database agent-mode-claude-code-list-flat exact list --tree=false --all
+real_database_extra_env=(BD_AGENT_MODE=true)
+compare_real_database agent-mode-only-one-counts exact list --flat
+real_database_extra_env=(BD_AGENT_MODE=0 CLAUDE_CODE=)
+compare_real_database agent-mode-empty-claude-code exact list --flat
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database_dotenv dotenv-agent-mode-list-flat exact $'BD_AGENT_MODE=1\n' list --flat
+compare_real_database_dotenv dotenv-claude-code-list-flat exact $'CLAUDE_CODE=yes\n' list --flat --long
+compare_real_database_dotenv dotenv-agent-mode-show exact $'BD_AGENT_MODE=1\n' show "$real_database_content_id"
+real_database_extra_env=(BD_AGENT_MODE=0)
+compare_real_database_dotenv dotenv-agent-mode-environment-wins exact $'BD_AGENT_MODE=1\n' list --flat
+real_database_extra_env=(CLAUDE_CODE=)
+compare_real_database_dotenv dotenv-claude-code-empty-environment-wins exact $'CLAUDE_CODE=1\n' list --flat
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# On a terminal, agent mode lowers the default limit of list from 50 to 20, and every list view
+# says on stderr when a limit hid issues. These cases run each side on a pseudo-terminal through a
+# runner that prints the transcript: stdout and stderr in the order written, without carriage
+# returns and without the echo of the end of input that `script` sends. The flat list without agent
+# mode would start a pager there, and bdhx prints no hint after --format yet, so neither has a case.
+# The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
+write_terminal_runner() {
+	local runner="$1" binary="$2"
+	{
+		printf '#!/usr/bin/env bash\nbinary=%q\n' "$binary"
+		cat <<'RUNNER'
+case "$(uname -s)" in
+Darwin)
+	transcript="$(script -q /dev/null "$binary" "$@" </dev/null; status=$?; printf x; exit "$status")"
+	;;
+Linux)
+	printf -v invocation '%q ' "$binary" "$@"
+	transcript="$(script -qec "$invocation" /dev/null </dev/null; status=$?; printf x; exit "$status")"
+	;;
+*)
+	printf 'unsupported pseudo-terminal host: %s\n' "$(uname -s)" >&2
+	exit 1
+	;;
+esac
+status=$?
+transcript="${transcript%x}"
+transcript="${transcript//$'^D\b\b'/}"
+printf '%s' "${transcript//$'\r'/}"
+exit "$status"
+RUNNER
+	} >"$runner"
+	chmod +x "$runner"
+}
+write_terminal_runner "$test_root/bin/terminal-oracle" "$oracle"
+write_terminal_runner "$test_root/bin/terminal-candidate" "$candidate"
+pipe_oracle="$oracle"
+pipe_candidate="$candidate"
+import_terminal_issue() {
+	(
+		cd "$1/work"
+		printf '%s\n' '{"id":"test-terminal","title":"Twenty-first parity issue","status":"open","priority":4,"issue_type":"task","created_at":"2026-08-20T10:00:00Z","updated_at":"2026-08-20T10:00:00Z"}' |
+			env HOME="$1/user-home" XDG_CONFIG_HOME="$1/config" "${real_database_env[@]}" \
+				"$pipe_oracle" import - --json >/dev/null
+	)
+}
+oracle="$test_root/bin/terminal-oracle"
+candidate="$test_root/bin/terminal-candidate"
+real_database_setup=import_terminal_issue
+real_database_extra_env=(BD_AGENT_MODE=1)
+compare_real_database agent-mode-terminal-list-flat exact list --flat
+compare_real_database agent-mode-terminal-list-flat-all exact list --flat --all
+compare_real_database agent-mode-terminal-list-tree exact list --skip-labels
+compare_real_database agent-mode-terminal-list-json exact list --json --limit 2
+compare_real_database agent-mode-terminal-list-parent exact list --parent "$real_database_epic_id" --limit 1
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database terminal-list-tree-limit exact list --limit 2
+real_database_setup=""
+oracle="$pipe_oracle"
+candidate="$pipe_candidate"
 # A .env file can choose another workspace through BEADS_DIR. These cases add a second workspace
 # at work/sub, with its own .env.
 dotenv_sub_contents=""
