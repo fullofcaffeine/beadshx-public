@@ -3371,7 +3371,7 @@ final class Application {
 			final styles = terminalStyles();
 			rendered.add('Found ${items.length} issues:\n');
 			for (issue in items)
-				rendered.add(renderCompactIssue(issue, styles.renderStatusIcon(issue.status), "", styles));
+				rendered.add(renderCompactIssue(issue, styles.renderStatusIcon(issue.status), "", "", styles));
 			output.writeStdout(rendered.toString());
 		}
 		writeTruncationHint(hasMore, invocation.queryRequest.limit);
@@ -4612,8 +4612,8 @@ final class Application {
 	/**
 		Upstream formatIssueCompact for each issue (cmd/bd/list_format.go:238-277),
 		or the --long view. An open issue with an open blocker takes the blocked
-		icon. A closed issue's whole line is in the closed style; any other line
-		styles its ID, priority and type.
+		icon, and a pinned issue the pin prefix. A closed issue's whole line is in
+		the closed style; any other line styles its ID, priority and type.
 	**/
 	static function renderListFlat(page:IssueListPage, long:Bool, skipLabels:Bool, brief:Bool, styles:TerminalStyles):String {
 		if (long)
@@ -4623,7 +4623,7 @@ final class Application {
 			final dependencyInfo = renderListBlockingInfo(issue);
 			final suffix = dependencyInfo == "" ? "" : ' ${dependencyInfo}';
 			final renderedStatus = issue.status == "open" && issue.blockedBy.length > 0 ? "blocked" : issue.status;
-			rendered.add(renderCompactIssue(issue, styles.renderStatusIcon(renderedStatus), suffix, styles));
+			rendered.add(renderCompactIssue(issue, styles.renderStatusIcon(renderedStatus), pinIndicator(issue), suffix, styles));
 		}
 		return appendSkipLabelsFooter(rendered.toString(), skipLabels);
 	}
@@ -4631,16 +4631,31 @@ final class Application {
 	/**
 		The compact line that upstream's list (formatIssueCompact) and query
 		(formatQueryIssue, cmd/bd/query.go:257-285) print for one issue, with its
-		`icon` and the dependency note `suffix`, and a line feed.
+		`icon`, the `pin` prefix before the ID (which only list prints), the
+		dependency note `suffix`, and a line feed.
 	**/
-	static function renderCompactIssue(issue:IssueListItem, icon:String, suffix:String, styles:TerminalStyles):String {
+	static function renderCompactIssue(issue:IssueListItem, icon:String, pin:String, suffix:String, styles:TerminalStyles):String {
 		final assignee = issue.assignee == "" ? "" : ' @${issue.assignee}';
 		final labels = issue.labels.length == 0 ? "" : ' [${issue.labels.join(" ")}]';
 		if (issue.status == "closed")
-			return styles.renderClosedLine('${icon} ${issue.id} [P${issue.priority}] [${issue.issueType}]${assignee}${labels} - ${issue.title}${suffix}')
+			return styles.renderClosedLine('${icon} ${pin}${issue.id} [P${issue.priority}] [${issue.issueType}]${assignee}${labels} - ${issue.title}${suffix}')
 				+ "\n";
 		return
-			'${icon} ${styles.renderId(issue.id)} [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}]${assignee}${labels} - ${issue.title}${suffix}\n';
+			'${icon} ${pin}${styles.renderId(issue.id)} [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}]${assignee}${labels} - ${issue.title}${suffix}\n';
+	}
+
+	/**
+		Upstream pinIndicator (cmd/bd/list_format.go:24-29): `📌 ` for an issue
+		with the pinned flag, and nothing otherwise.
+
+		Why: only list's flat and long views print it, before the ID and inside
+		the closed style of a closed issue; the tree view, the agent view and
+		query do not. What: the prefix text, never styled. How: the list row
+		carries the stored flag in its long fields; the pinned status is a
+		different thing and keeps its own status icon.
+	**/
+	static function pinIndicator(issue:IssueListItem):String {
+		return issue.longFields.pinned ? "📌 " : "";
 	}
 
 	/**
@@ -4671,18 +4686,20 @@ final class Application {
 
 	/**
 		Upstream formatIssueLong for each issue (cmd/bd/list_format.go:85-132). A
-		closed issue's first two lines are one text in the closed style, which
-		lipgloss pads to the same width when colors are on; any other issue
-		styles its ID, priority, type and status.
+		pinned issue's first line starts with the pin prefix. A closed issue's
+		first two lines are one text in the closed style, which lipgloss pads to
+		the same width when colors are on; any other issue styles its ID,
+		priority, type and status.
 	**/
 	static function renderListLong(page:IssueListPage, skipLabels:Bool, brief:Bool, styles:TerminalStyles):String {
 		final rendered = new StringBuf();
 		rendered.add('\nFound ${page.items.length} issues:\n\n');
 		for (issue in page.items) {
+			final pin = pinIndicator(issue);
 			if (issue.status == "closed")
-				rendered.add(styles.renderClosedLine('${issue.id} [P${issue.priority}] [${issue.issueType}] ${issue.status}\n  ${issue.title}') + "\n");
+				rendered.add(styles.renderClosedLine('${pin}${issue.id} [P${issue.priority}] [${issue.issueType}] ${issue.status}\n  ${issue.title}') + "\n");
 			else {
-				rendered.add('${styles.renderId(issue.id)} [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}] ${styles.renderStatus(issue.status)}\n');
+				rendered.add('${pin}${styles.renderId(issue.id)} [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}] ${styles.renderStatus(issue.status)}\n');
 				rendered.add('  ${issue.title}\n');
 			}
 			if (issue.assignee != "")

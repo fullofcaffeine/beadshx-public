@@ -3934,15 +3934,16 @@ compare_real_database_import list-tree-closed-all-pretty-human exact "$closed_tr
 # harness's NO_COLOR=1 (upstream treats an empty value as unset) and add the assignments in $3. The
 # records give one --parent tree each built-in status, each priority and the bug and epic types, a
 # closed title with a tab (a lipgloss style turns it into four spaces, colors on or off), a
-# dependency inside the view and one outside it.
+# dependency inside the view and one outside it. An eighth argument `pinned` sets the pinned flag.
 color_list_record() {
-	local id="$1" title="$2" state="$3" priority="$4" type="$5" parent="$6" blocker="$7"
+	local id="$1" title="$2" state="$3" priority="$4" type="$5" parent="$6" blocker="$7" pinned="${8:-}"
 	jq -nc --arg id "$id" --arg title "$title" --arg status "$state" --argjson priority "$priority" \
-		--arg type "$type" --arg parent "$parent" --arg blocker "$blocker" '{
+		--arg type "$type" --arg parent "$parent" --arg blocker "$blocker" --arg pinned "$pinned" '{
 		id: $id, title: $title, status: $status, priority: $priority, issue_type: $type,
 		assignee: "fixture", labels: ["colour"], description: "First line\nSecond line",
 		created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z"}
 		+ (if $status == "closed" then {closed_at: "2026-08-21T13:00:00Z", close_reason: "done"} else {} end)
+		+ (if $pinned == "pinned" then {pinned: true} else {} end)
 		+ {dependencies: ([if $parent == "" then empty else {issue_id: $id, depends_on_id: $parent,
 			type: "parent-child", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"} end]
 			+ [if $blocker == "" then empty else {issue_id: $id, depends_on_id: $blocker,
@@ -3961,12 +3962,17 @@ color_list_records="$(
 	color_list_record test-cl-waiting "Waiting task" open 2 task test-cl test-cl-p0
 	color_list_record test-cl-outside "Outside dependency" open 3 bug test-cl test-abcd11
 )"
+# Records that some color cases import after color_list_records.
+color_list_extra_records=""
 compare_real_database_colors() {
 	local name="$1" comparison="$2" assignments
 	read -r -a assignments <<<"NO_COLOR= $3"
 	shift 3
 	real_database_extra_env=("${assignments[@]}")
 	real_database_extra_import="$color_list_records"
+	if [[ -n "$color_list_extra_records" ]]; then
+		real_database_extra_import+=$'\n'"$color_list_extra_records"
+	fi
 	compare_real_database "$name" "$comparison" "$@"
 	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 	real_database_extra_import=""
@@ -4104,6 +4110,23 @@ real_database_extra_sql=""
 compare_real_database_colors ping-color ping-human CLICOLOR_FORCE=1 ping
 compare_real_database_colors stale-color-pipe exact "" stale --days 1
 compare_real_database_colors status-color-pipe exact "" status
+# Upstream prints "📌 " before the ID of an issue with the pinned flag in the flat and long views of
+# list (pinIndicator, cmd/bd/list_format.go:24-29), inside the closed style for a closed issue. The
+# tree view, the agent view and the status icon of the pinned status print no such prefix.
+pin_list_records="$(
+	color_list_record test-cl-pin "Pinned flag task" open 1 task test-cl "" pinned
+	color_list_record test-cl-pin-closed "Pinned flag closed bug" closed 2 bug test-cl "" pinned
+	color_list_record test-cl-pin-waiting "Pinned waiting task" open 3 task test-cl test-cl-p0 pinned
+)"
+color_list_extra_records="$pin_list_records"
+compare_real_database_colors list-pin-flat exact "" list --parent test-cl --all --flat
+compare_real_database_colors list-pin-flat-color exact CLICOLOR_FORCE=1 list --parent test-cl --all --flat
+compare_real_database_colors list-pin-long exact "" list --parent test-cl --all --long --flat
+compare_real_database_colors list-pin-long-color exact CLICOLOR_FORCE=1 list --parent test-cl --all --long --flat
+compare_real_database_colors list-pin-tree exact "" list --parent test-cl --all
+compare_real_database_colors list-pin-tree-color exact CLICOLOR_FORCE=1 list --parent test-cl --all
+compare_real_database_colors list-pin-agent-flat exact "CLICOLOR_FORCE=1 CLAUDE_CODE=1" list --parent test-cl --all --flat
+color_list_extra_records=""
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json
