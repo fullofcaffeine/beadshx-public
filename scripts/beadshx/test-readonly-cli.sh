@@ -492,6 +492,8 @@ jq -e --arg path "$missing_database_parent" '.path == $path and .schema_version 
 
 database_mode_error='--database (or a --db value naming a database) is only supported in proxied-server mode'
 printf '%s\n' 'issue-prefix: test' >"$selection_root/.beads/config.yaml"
+# Upstream checks --database only once it has found a database; without one it reports that first.
+mkdir "$selection_root/.beads/embeddeddolt"
 run_case database_name -C "$selection_root" --database alternate_db info --json
 [[ "$(<"$test_root/database_name.exit")" == 1 ]]
 [[ ! -s "$test_root/database_name.stderr" ]]

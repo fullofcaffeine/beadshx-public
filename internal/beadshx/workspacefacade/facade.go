@@ -39,15 +39,6 @@ func (v Location) ProxiedServer() bool       { return v.proxiedServer }
 func (v Location) ListLimitConfigured() bool { return v.listLimitSet }
 func (v Location) ListLimit() int            { return v.listLimit }
 
-// Discover returns an empty Path when no Beads workspace is active.
-func Discover() *Location {
-	path := beads.FindBeadsDir()
-	if path == "" {
-		return &Location{}
-	}
-	return discoverAt(path)
-}
-
 func discoverLocation(path string) *Location {
 	// Only the config.yaml prefix: discovery runs before every command and
 	// opens no database. Haxe reads the stored issue_prefix when a command
@@ -112,6 +103,12 @@ func DiscoverFrom(directory, database string) (*Location, error) {
 	}
 
 	beadsDir := resolveDatabaseBeadsDir(database, selectedBeadsDir)
+	// Else upstream resolveCommandBeadsDir: the first .beads beside the path's directory or an ancestor.
+	for dir := filepath.Dir(database); beadsDir == "" && dir != "" && dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
+		if information, err := os.Stat(filepath.Join(dir, ".beads")); err == nil && information.IsDir() {
+			beadsDir = filepath.Join(dir, ".beads")
+		}
+	}
 	if beadsDir == "" {
 		beadsDir = filepath.Dir(database)
 	}
@@ -143,7 +140,10 @@ func resolveDirectory(directory string) (string, error) {
 
 func discoverSelected(beadsDir string) *Location {
 	if beadsDir == "" {
-		return Discover()
+		beadsDir = beads.FindBeadsDir()
+	}
+	if beadsDir == "" {
+		return &Location{}
 	}
 	return discoverAt(beadsDir)
 }

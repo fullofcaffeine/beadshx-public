@@ -787,10 +787,12 @@ final class Application {
 		How often upstream sets up the workspace that a command which opens a
 		store takes: when it finds the `.beads` directory and again when it
 		binds the database. It sets up only once when a --db or BEADS_DB path
-		selects the database, and when it finds no database and stops.
+		selects the database, and when it finds no database and stops. A --db
+		value that names a database finds the `.beads` directory as without
+		--db.
 	**/
 	static function storeInitializations(invocation:Invocation, location:WorkspaceLocation):Int {
-		return hasSelectedDatabase(location) && invocation.databasePath == "" ? 2 : 1;
+		return findsDatabase(invocation, location) && !databasePathSelected(invocation, location) ? 2 : 1;
 	}
 
 	/**
@@ -989,7 +991,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
+						if (!findsDatabase(invocation, location)) {
 							runWorkspaceDatabaseNotFound(location);
 						} else if (invocation.infoWhatsNew) {
 							if (invocation.global) {
@@ -1058,7 +1060,8 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch store.ping(location.path, invocation.global) {
+						if (!findsDatabase(invocation,
+							location)) runWorkspaceDatabaseNotFound(location); else switch store.ping(location.path, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(snapshot):
 								renderPing(invocation.output, snapshot);
@@ -1080,8 +1083,9 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch store.status(location.path,
-							invocation.statusSkipBlocked, assignee, invocation.global) {
+						if (!findsDatabase(invocation,
+							location)) runWorkspaceDatabaseNotFound(location); else switch store.status(location.path, invocation.statusSkipBlocked, assignee,
+							invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(snapshot):
 								renderStatus(invocation.output, snapshot);
@@ -1102,7 +1106,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query): closeIssueQuery(query, runShowQuery(invocation, location, query));
 						}
@@ -1136,7 +1140,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
+						if (!findsDatabase(invocation, location)) {
 							runWorkspaceDatabaseNotFound(location);
 						} else {
 							final effectiveLimit = resolveListLimit(invocation, location);
@@ -1178,7 +1182,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runDepListQuery(invocation, location, query);
@@ -1250,7 +1254,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.dependencyCycles(location.path, location.databaseName, invocation.global) {
@@ -1338,7 +1342,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runDepTreeQuery(invocation, location, query);
@@ -1552,7 +1556,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.graphCycles(location.path, location.databaseName, invocation.global) {
@@ -1624,7 +1628,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runGraphQuery(invocation, location, query);
@@ -1944,7 +1948,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query): closeIssueQuery(query, action(query, location));
 						}
@@ -2018,7 +2022,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = switch query.blockedIssues(location.path, location.databaseName, invocation.listRequest.parentId,
@@ -2081,7 +2085,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runCommentsQuery(invocation, location, query);
@@ -2223,8 +2227,9 @@ final class Application {
 					case ModeAwareFailure(message): runModeAwareFailure(OutputMode.Human, message);
 					case Accepted:
 						if (location.proxiedServer || opensServerStore(location)) runModeAwareFailure(OutputMode.Human,
-							TaskSnapshot.ROUTE_UNAVAILABLE); else if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else
-							switch store.taskSnapshot(location.path, selectedDatabaseName(invocation, location)) {
+							TaskSnapshot.ROUTE_UNAVAILABLE); else if (!findsDatabase(invocation,
+							location)) runWorkspaceDatabaseNotFound(location); else switch store.taskSnapshot(location.path,
+							selectedDatabaseName(invocation, location)) {
 							case Failure(message): runStoreFailure(message);
 							case Success(artifact):
 								output.writeStdout(artifact);
@@ -2594,7 +2599,9 @@ final class Application {
 			case Found(location):
 				// Upstream warns about a missing metadata.json after its config warnings and before its database selection checks.
 				final defaultDirectory = missingMetadataDirectory(invocation, location);
-				switch validateDatabaseSelection(invocation, location) {
+				// Without a database upstream stops before those checks.
+				final selection = findsDatabase(invocation, location) ? validateDatabaseSelection(invocation, location) : Accepted;
+				switch selection {
 					case PlainFailure(message):
 						loadSelectedConfig(location.path, storeInitializations(invocation, location));
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
@@ -2605,7 +2612,7 @@ final class Application {
 						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						final reachesServer = reachesSharedServer(invocation, location);
-						if (!hasSelectedDatabase(location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
+						if (!findsDatabase(invocation, location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
 							final config = loadSelectedConfig(location.path, 1);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
 							if (refusal != null)
@@ -2613,10 +2620,13 @@ final class Application {
 							storeFree ? action(config, location, null) : runDatabaseNotFound(config.sharedServerMode());
 						} else {
 							final config = loadSelectedConfig(location.path, storeInitializations(invocation, location));
+							// Upstream warns about a missing metadata.json before the store open that a refusal stands for.
+							warnMissingMetadata(defaultDirectory);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
-							warnStoreConfiguration(location, defaultDirectory, invocation.global);
+							if (defaultDirectory == null)
+								warnStoreConfiguration(location, null, invocation.global);
 							switch validateOpenedDatabase(invocation, location, defaultDirectory) {
 								case PlainFailure(message): return runStoreFailure(message);
 								case ModeAwareFailure(message): return runModeAwareFailure(invocation.output, message);
@@ -2646,7 +2656,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = invocation.command == LabelListAll ? runLabelListAll(invocation, location,
@@ -2808,7 +2818,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								// Upstream parseCountRequest checks its flags first in the command body.
@@ -2834,7 +2844,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runReadyBody(invocation, location, query);
@@ -3080,7 +3090,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								final result = runSearchBody(invocation, location, query);
@@ -3133,7 +3143,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query): closeIssueQuery(query, runQueryBody(invocation, location, query));
 						}
@@ -3286,7 +3296,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
 							case Success(query):
 								// Upstream checks --days and --status in the command body, after its pre-run opened the store.
@@ -3344,7 +3354,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!hasSelectedDatabase(location)) {
+						if (!findsDatabase(invocation, location)) {
 							runWorkspaceDatabaseNotFound(location);
 						} else switch openIssueQuery(invocation, location) {
 							case Failure(message): runStoreFailure(message);
@@ -5917,8 +5927,41 @@ final class Application {
 		};
 	}
 
-	static function hasSelectedDatabase(location:WorkspaceLocation):Bool {
-		return !location.databaseMissing || location.databaseName != "";
+	/**
+		Whether upstream's pre-run finds a database for the command, or else
+		stops with "no beads database found" before its warnings and its
+		--global and --database checks.
+
+		Why: upstream's root pre-run (cmd/bd/main.go) looks for the database
+		only when no --db or BEADS_DB path names it, and then a workspace
+		without a database writes nothing. A --db value that names a database
+		is no path: upstream clears it and looks as without --db.
+
+		What: a database path finds what the workspace facade found. Otherwise
+		there is none for an embedded workspace whose metadata.json names a
+		missing store (`databaseMissing`), and none for a workspace without
+		metadata.json or a legacy config.json where FindDatabasePath found no
+		embeddeddolt or dolt directory, unless a remote host in
+		BEADS_DOLT_SERVER_HOST or the dolt.host setting makes it a server
+		workspace (configfile HostImpliesServerMode over the default config).
+
+		How: it reads metadata.json and the layered config only for a
+		workspace without a database path.
+	**/
+	static function findsDatabase(invocation:Invocation, location:WorkspaceLocation):Bool {
+		if (location.databaseMissing)
+			return false;
+		if (databasePathSelected(invocation, location) || location.databasePath != "" || location.proxiedServer)
+			return true;
+		return switch readMetadataFields(location.path) {
+			case MetadataAbsent: LayeredConfig.forWorkspace(location.path).hostImpliesServerMode();
+			case MetadataFields(_) | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: true;
+		};
+	}
+
+	/** Whether a --db or BEADS_DB path, not a --db value that names a database, selects the database (upstream's `dbPath`). */
+	static function databasePathSelected(invocation:Invocation, location:WorkspaceLocation):Bool {
+		return invocation.databasePath != "" && location.databaseName == "";
 	}
 
 	static function selectedDatabaseName(invocation:Invocation, location:WorkspaceLocation):String {
@@ -6092,10 +6135,11 @@ final class Application {
 		Whether upstream's pre-run, in shared-server mode, goes on to the store
 		open that reaches the shared server: the workspace has a database that
 		upstream finds, or a --db or BEADS_DB path names the database. Otherwise
-		upstream finds no database and writes nothing.
+		upstream finds no database and writes nothing, also for a --db value
+		that names a database.
 	**/
 	static function reachesSharedServer(invocation:Invocation, location:WorkspaceLocation):Bool {
-		return hasSelectedDatabase(location) || invocation.databasePath != "";
+		return findsDatabase(invocation, location) || databasePathSelected(invocation, location);
 	}
 
 	/** runDatabaseNotFound without a workspace: upstream then uses a SQL server only in shared-server mode, from the process-start config. */
@@ -6213,13 +6257,21 @@ final class Application {
 		reinitialize warning for a config file that does not parse, and the
 		first also the shared-server notice. Its warning for a workspace without
 		metadata.json, or for a deprecated dolt_server_port, comes next, before
-		the database selection checks.
+		the database selection checks. The warning for a missing metadata.json
+		also comes before upstream reaches the shared server, so it comes
+		before that refusal too. When upstream finds no database it stops
+		before all of these warnings and checks, so this accepts the selection
+		and the command reports the missing database (see findsDatabase).
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		final config = loadSelectedConfig(location.path, storeInitializations(invocation, location));
-		if (config.sharedServerMode() && reachesSharedServer(invocation, location))
-			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
 		final defaultDirectory = missingMetadataDirectory(invocation, location);
+		if (config.sharedServerMode() && reachesSharedServer(invocation, location)) {
+			warnMissingMetadata(defaultDirectory);
+			return ModeAwareFailure(sharedServerRefusal(commandPath(invocation.command)));
+		}
+		if (!findsDatabase(invocation, location))
+			return Accepted;
 		warnStoreConfiguration(location, defaultDirectory, invocation.global);
 		return switch validateDatabaseSelection(invocation, location) {
 			case Accepted: validateOpenedDatabase(invocation, location, defaultDirectory);
@@ -6240,7 +6292,7 @@ final class Application {
 		BEADS_DB never gets here: it selects only a workspace with metadata.json.
 	**/
 	function missingMetadataDirectory(invocation:Invocation, location:WorkspaceLocation):Null<String> {
-		final pathSelected = invocation.databasePath != "" && location.databaseName == "";
+		final pathSelected = databasePathSelected(invocation, location);
 		if (location.proxiedServer || (!pathSelected && location.databasePath == ""))
 			return null;
 		switch readMetadataFields(location.path) {
@@ -6268,7 +6320,7 @@ final class Application {
 	**/
 	function warnStoreConfiguration(location:WorkspaceLocation, defaultDirectory:Null<String>, global:Bool):Void {
 		if (defaultDirectory != null) {
-			output.writeStderr(missingConfigurationWarning(defaultDirectory));
+			warnMissingMetadata(defaultDirectory);
 			return;
 		}
 		if (location.databaseMissing)
@@ -6289,6 +6341,12 @@ final class Application {
 			return;
 		if (DeprecatedServerPort.fromMetadata(location.path, metadata, config))
 			output.writeStderr(DeprecatedServerPort.WARNING);
+	}
+
+	/** Upstream's warning for a workspace without metadata.json, when `defaultDirectory` (see missingMetadataDirectory) names it. */
+	function warnMissingMetadata(defaultDirectory:Null<String>):Void {
+		if (defaultDirectory != null)
+			output.writeStderr(missingConfigurationWarning(defaultDirectory));
 	}
 
 	static function metadataField(fields:Map<String, String>, tag:String):String {
@@ -6315,7 +6373,11 @@ final class Application {
 		upstream's: a --db path for which upstream takes another directory, and
 		BEADS_DOLT_SERVER_DATABASE naming another database or server mode from
 		BEADS_DOLT_SERVER_MODE or the dolt.mode setting. Upstream ignores those
-		without metadata.json, but the native read-only facade reads them.
+		without metadata.json, but the native read-only facade reads them: it
+		takes server mode from configfile IsDoltServerMode over the default
+		config, which matches dolt.mode to `server` with strings.EqualFold.
+		Dolt looks the database name up in lower case (strings.ToLower), so
+		`toLowerCase` is the comparison for BEADS_DOLT_SERVER_DATABASE.
 	**/
 	function validateDefaultDatabase(invocation:Invocation, location:WorkspaceLocation, defaultDirectory:String):DatabaseSelectionValidation {
 		if (invocation.global)
@@ -6328,7 +6390,7 @@ final class Application {
 		if (variable != "" && variable.toLowerCase() != DEFAULT_EMBEDDED_DATABASE)
 			return ModeAwareFailure('${path} is not available yet when BEADS_DOLT_SERVER_DATABASE names a database other than "${DEFAULT_EMBEDDED_DATABASE}"'
 				+ " and the workspace has no .beads/metadata.json in this build");
-		if (environmentValue("BEADS_DOLT_SERVER_MODE") == "1" || config.getString("dolt.mode").toLowerCase() == "server")
+		if (config.doltServerMode("", ""))
 			return ModeAwareFailure('${path} is not available yet when server mode is configured and the workspace has no .beads/metadata.json in this build');
 		if (embeddedDatabaseExists(location.path, DEFAULT_EMBEDDED_DATABASE))
 			return Accepted;

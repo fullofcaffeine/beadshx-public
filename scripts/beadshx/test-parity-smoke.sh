@@ -3209,16 +3209,138 @@ candidate_only_setup=no_metadata_server_mode_setting
 expect_candidate_failure no-metadata-default-server-mode-setting-unported "" \
 	"$no_metadata_warning"$'\n''Error: status is not available yet when server mode is configured and the workspace has no .beads/metadata.json in this build' "" \
 	status
-# For a --db path upstream takes the first .beads directory beside the path's directory or one of its
-# ancestors, where this build's discovery takes the path's directory itself.
+# For a --db path that no workspace claims, upstream takes the first .beads directory beside the path's
+# directory or one of its ancestors (resolveCommandBeadsDir), and so does this build. Upstream then
+# creates `beads` in that directory's embedded store, which this build refuses.
 no_metadata_nested_directories() {
 	no_metadata_default_database "$1"
 	mkdir -p "$1/work/sub/.beads" "$1/work/sub/data"
 }
 candidate_only_setup=no_metadata_nested_directories
 expect_candidate_failure no-metadata-db-flag-ancestor-unported "" \
-	'warning: no beads configuration found in sub/.beads; using default database name "beads"'$'\n''Error: count is not available yet when --db names this path in a workspace without .beads/metadata.json in this build' "" \
+	'warning: no beads configuration found in sub/.beads; using default database name "beads"'$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" \
 	--db sub/data/x count
+candidate_only_setup=""
+# `where` names that directory and writes nothing. Upstream also warns about a .beads directory that
+# group or others can read, which this build does not, so the directory here is private.
+nested_private_directories() {
+	mkdir -p "$1/work/sub/.beads" "$1/work/sub/data"
+	chmod 700 "$1/work/sub/.beads"
+}
+nested_private_directories_without_metadata() {
+	no_metadata_default_database "$1"
+	nested_private_directories "$1"
+}
+real_database_read_only=1
+real_database_setup=nested_private_directories_without_metadata
+compare_real_database db-flag-ancestor-where exact where --db sub/data/x
+compare_real_database db-flag-ancestor-where-json exact where --db sub/data/x --json
+real_database_setup=nested_private_directories
+compare_real_database db-flag-ancestor-metadata-where exact where --db sub/data/x
+real_database_read_only=""
+# With a `beads` database in that directory's embedded store, upstream warns and reads it, and so does
+# this build.
+nested_database_without_metadata() {
+	nested_private_directories_without_metadata "$1"
+	mkdir "$1/work/sub/.beads/embeddeddolt"
+	copy_fixture_tree "$1/work/.beads/embeddeddolt/beads" "$1/work/sub/.beads/embeddeddolt/beads"
+}
+real_database_setup=nested_database_without_metadata
+compare_real_database db-flag-ancestor-database-count exact --db sub/data/x count
+compare_real_database db-flag-ancestor-database-list-json exact --db sub/data/x list --json
+real_database_setup=""
+# Without metadata.json and without a database directory, upstream finds no database. It prints only
+# `no beads database found`, before its --global and --database checks, and writes nothing.
+real_database_read_only=1
+real_database_setup=remove_database_and_metadata
+compare_real_database no-database-no-metadata-count exact count
+compare_real_database no-database-no-metadata-list-json exact list --json
+compare_real_database no-database-no-metadata-readonly-ready exact --readonly ready
+compare_real_database no-database-no-metadata-show exact show "$real_database_issue_id"
+compare_real_database no-database-no-metadata-info-json exact info --json
+compare_real_database no-database-no-metadata-types exact types
+compare_real_database no-database-no-metadata-config-get exact config get issue_prefix
+compare_real_database no-database-no-metadata-global exact count --global
+compare_real_database no-database-no-metadata-database-flag exact count --database other
+compare_real_database no-database-no-metadata-db-name-json exact --db other count --json
+compare_real_database no-database-no-metadata-where exact where
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database no-database-no-metadata-shared-server-list exact list
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A config.yaml that does not parse: upstream sets the workspace up once, then finds no database.
+compare_real_database_config no-database-no-metadata-broken-config exact "$malformed_yaml" count
+compare_real_database_config no-database-no-metadata-broken-config-list-json exact "$malformed_yaml" list --json
+# With metadata.json and no embedded store, the --database checks also come after the missing database.
+real_database_setup=remove_embedded_database
+compare_real_database no-database-database-flag-json exact count --database other --json
+compare_real_database no-database-db-name exact --db other list
+real_database_setup=""
+# A --db value that names a database finds the workspace as without --db, so upstream sets it up twice.
+compare_real_database_config db-name-broken-config exact "$malformed_yaml" --db other count
+real_database_read_only=""
+# Upstream creates .beads/embeddeddolt.gate.lock, an empty lock file, when it is missing. This build
+# takes no gate lock: it prints the same output and writes nothing.
+remove_embedded_gate_lock() {
+	rm -f "$1/work/.beads/embeddeddolt.gate.lock"
+}
+real_database_setup=remove_embedded_gate_lock
+compare_real_database missing-gate-lock-count exact count
+compare_real_database missing-gate-lock-readonly-list-json exact --readonly list --json
+real_database_setup=""
+# BEADS_DOLT_DATA_DIR names the Dolt directory that `where` reports when the embedded store is missing.
+make_custom_data_directory() {
+	remove_embedded_database "$1"
+	mkdir "$1/work/.beads/data"
+}
+real_database_read_only=1
+real_database_setup=make_custom_data_directory
+real_database_extra_env=(BEADS_DOLT_DATA_DIR=data)
+compare_real_database data-dir-variable-where exact where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=""
+real_database_read_only=""
+# In shared-server mode upstream prints its warning for the missing metadata.json, then reaches the
+# shared server, which writes. This build prints the same warning before it refuses.
+candidate_only_setup=no_metadata_default_database
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+expect_candidate_failure no-metadata-shared-server-count-unported "" \
+	"$no_metadata_warning"$'\n''Error: count is not available yet in shared-server mode in this build' "" count
+expect_candidate_failure no-metadata-shared-server-list-json-unported \
+	'{"error":"list is not available yet in shared-server mode in this build","schema_version":1}' "$no_metadata_warning" "" \
+	list --json
+expect_candidate_failure no-metadata-shared-server-types-unported "" \
+	"$no_metadata_warning"$'\n''Error: types is not available yet in shared-server mode in this build' "" types
+expect_candidate_failure no-metadata-shared-server-config-validate-unported "" \
+	"$no_metadata_warning"$'\n''Error: config validate is not available yet in shared-server mode in this build' "" \
+	config validate
+expect_candidate_failure no-metadata-shared-server-db-flag-unported "" \
+	'warning: no beads configuration found in .beads; using default database name "beads"'$'\n''Error: count is not available yet in shared-server mode in this build' "" \
+	--db .beads/embeddeddolt count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
+# Upstream compares the dolt.mode setting with `server`, and metadata.json's dolt_mode with
+# `proxied-server` when it infers server mode from a host, with strings.EqualFold: ſ (U+017F) matches s.
+real_database_read_only=1
+real_database_extra_metadata='del(.dolt_mode)'
+real_database_extra_config=$'dolt:\n  mode: ſerver'
+compare_real_database folded-server-mode-setting-where exact where
+compare_real_database folded-server-mode-setting-where-json exact where --json
+real_database_extra_config=""
+real_database_extra_metadata='.dolt_mode = "proxied-ſerver"'
+real_database_extra_env=(BEADS_DOLT_SERVER_HOST=db.example.invalid)
+compare_real_database folded-proxied-mode-host-where exact where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_metadata=""
+real_database_read_only=""
+# Without metadata.json upstream ignores that setting, but the native store open would take server mode.
+no_metadata_folded_server_mode_setting() {
+	no_metadata_default_database "$1"
+	printf 'dolt.mode: ſerver\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=no_metadata_folded_server_mode_setting
+expect_candidate_failure no-metadata-default-folded-server-mode-setting-unported "" \
+	"$no_metadata_warning"$'\n''Error: count is not available yet when server mode is configured and the workspace has no .beads/metadata.json in this build' "" \
+	count
 candidate_only_setup=""
 # Upstream's show records the issue in .beads/last-touched, and a redirect adds a gate lock beside its
 # target, so these compare without the read-only check. A redirect keeps the redirecting workspace's

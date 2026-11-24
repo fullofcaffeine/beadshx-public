@@ -125,9 +125,10 @@ final class LayeredConfig {
 		turns the inference off; then dolt_server_host decides when it is set;
 		then a set dolt.mode setting turns it off; then the dolt.host setting
 		decides. A host implies server mode when it is not this machine.
+		Upstream matches dolt_mode to `proxied-server` with strings.EqualFold.
 	**/
 	public function hostImpliesServerMode(doltMode = "", metadataHost = ""):Bool {
-		if (doltMode.toLowerCase() == "proxied-server")
+		if (StringsPkg.equalFold(doltMode, "proxied-server"))
 			return false;
 		final variable = environmentValue("BEADS_DOLT_SERVER_HOST");
 		if (variable != "")
@@ -148,6 +149,8 @@ final class LayeredConfig {
 		metadata.json): BEADS_DOLT_SERVER_MODE=1, BEADS_DOLT_SHARED_SERVER (1 or
 		true), a host that implies server mode, then dolt_mode, then the
 		dolt.mode setting. Shared-server mode from a config file does not count.
+		Upstream lower-cases dolt_mode (strings.ToLower) but matches the
+		dolt.mode setting with strings.EqualFold, so `ſerver` counts only there.
 	**/
 	public function doltServerMode(doltMode:String, metadataHost:String):Bool {
 		if (environmentValue("BEADS_DOLT_SERVER_MODE") == "1")
@@ -159,7 +162,7 @@ final class LayeredConfig {
 			return true;
 		if (doltMode != "")
 			return doltMode.toLowerCase() == "server";
-		return registry.getString("dolt.mode").toLowerCase() == "server";
+		return StringsPkg.equalFold(registry.getString("dolt.mode"), "server");
 	}
 
 	public function getString(key:String):String {

@@ -159,6 +159,29 @@ func TestDiscoverFromPreservesMissingPathSelectionForWhere(t *testing.T) {
 	}
 }
 
+// Upstream resolveCommandBeadsDir takes the first .beads directory beside the
+// path's directory or an ancestor when no workspace claims the path.
+func TestDiscoverFromDatabasePathTakesAncestorBeadsDirectory(t *testing.T) {
+	root := t.TempDir()
+	beadsDir := filepath.Join(root, "sub", ".beads")
+	for _, directory := range []string{beadsDir, filepath.Join(root, "sub", "data")} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatalf("MkdirAll %s: %v", directory, err)
+		}
+	}
+
+	location, err := DiscoverFrom("", filepath.Join(root, "sub", "data", "x"))
+	if err != nil {
+		t.Fatalf("DiscoverFrom nested database path: %v", err)
+	}
+	if location.Path() != beadsDir {
+		t.Fatalf("Path() = %q, want %q", location.Path(), beadsDir)
+	}
+	if location.DatabasePath() != "" {
+		t.Fatalf("DatabasePath() = %q, want none for an empty workspace", location.DatabasePath())
+	}
+}
+
 func TestDiscoverFromUsesSharedServerDatabasePathWithoutOpeningEmbedded(t *testing.T) {
 	project := createProject(t)
 	beadsDir := filepath.Join(project, ".beads")

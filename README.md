@@ -115,7 +115,10 @@ flag prints no warning. Unknown keys, `null` values and repeated keys (the
 last one counts) are accepted, as in upstream. The name of the embedded
 database comes from `BEADS_DOLT_SERVER_DATABASE`, or else from
 `dolt_database`, or else it is `beads`. As in Dolt, the letter case of the
-name does not matter.
+name does not matter. Like upstream, `bdhx` matches the `dolt.mode` setting to
+`server`, and a `dolt_mode` of `proxied-server` when it decides whether a
+server host implies server mode, with Go's `strings.EqualFold`. So `ſerver`
+(with U+017F) selects server mode in the setting, but not in `dolt_mode`.
 
 When the selected workspace has no `.beads/metadata.json` and no legacy
 `.beads/config.json`, every command that reads the database uses the embedded
@@ -124,7 +127,18 @@ upstream's `warning: no beads configuration found in <dir>; using default
 database name "beads"` on stderr, also with `--json`. With `--db`, `<dir>` is
 the directory that upstream derives from the path as given. Upstream ignores
 `BEADS_DOLT_SERVER_DATABASE` in this case. `where`, `version` and help pages
-print no warning.
+print no warning. When such a workspace also has no `.beads/embeddeddolt` or
+`.beads/dolt` directory, no remote Dolt host is set, and no `--db` or
+`BEADS_DB` path names the database, upstream finds no database. Then `bdhx`
+prints only upstream's `Error: no beads database found` and its hint, as
+upstream does. This error comes before the `--global` and `--database`
+checks, also when `.beads/metadata.json` exists but the embedded store does
+not. A `--db` value that names a database counts as no path.
+
+For a `--db` path that no workspace claims, `bdhx` takes the first `.beads`
+directory beside the path's directory or above it, as upstream does, or else
+the path's directory. `where --db sub/data/x` prints `sub/.beads` when that
+directory exists.
 
 Like upstream, a command that reads the database prints upstream's three-line
 `Warning: dolt_server_port in metadata.json is deprecated ...` on stderr, also
@@ -144,7 +158,8 @@ config files does not parse: `.beads/config.yaml`, `.beads/config.local.yaml`
 or the user `config.yaml`. That is once for `version`, the root help and
 `bd help <command>`, and twice for `where`. It is twice for every command that
 reads the database, or once when a `--db` or `BEADS_DB` path selects the
-database or upstream finds no database. A `--help` flag prints no warning.
+database or upstream finds no database. A `--db` value that names a database
+is not a path, so it gives two warnings. A `--help` flag prints no warning.
 The first setup then prints the shared-server notice. A
 `.beads/metadata.json` load error stops the first setup after its warning.
 Upstream then runs the command with the settings that loaded, and so does
@@ -374,10 +389,12 @@ Limits:
   creates that database. With `--readonly` or the `readonly` setting,
   `bdhx` prints the same open error as upstream. `bdhx` also reports that the
   command is not available yet when `BEADS_DOLT_SERVER_DATABASE` names another
-  database, when `BEADS_DOLT_SERVER_MODE=1` or the `dolt.mode` setting selects
-  server mode, and when upstream takes a `.beads` directory above the
-  directory of a `--db` path. Upstream opens `beads` in these cases (for
-  `--db`, in that other directory), but the native store open would not.
+  database, and when `BEADS_DOLT_SERVER_MODE=1` or the `dolt.mode` setting
+  selects server mode. Upstream opens `beads` in these cases, but the native
+  store open would not. Like upstream, `bdhx` matches the `dolt.mode` setting
+  to `server` with Go's `strings.EqualFold`, so `ſerver` (with U+017F) also
+  counts. In shared-server mode, `bdhx` prints the warning before the refusal
+  below, as upstream prints it before it reaches the shared server.
 - Every command above that reads the database reports that it is not
   available yet in shared-server mode and when the `db` setting names a
   database. Only `version`, `where` and help pages still run. In these cases
@@ -436,6 +453,20 @@ Limits:
   `ANTHROPIC_CLI` is set or `~/.claude` exists, and the plugin or the
   `bd prime` hooks are not set up. Upstream then records the time of the tip
   in the database, and `bdhx` does not write.
+- `bdhx` takes none of upstream's workspace gate locks. For every command that
+  reads the database, upstream holds `.beads.gate.lock` beside the `.beads`
+  directory and a lock beside the data directory, such as
+  `.beads/embeddeddolt.gate.lock`, and creates a missing lock file. `bdhx`
+  creates none and prints the same output. Upstream also stops while a
+  maintenance command holds these locks; `bdhx` does not.
+- In an embedded workspace without `.beads/embeddeddolt`, a data directory
+  that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names makes upstream create
+  the embedded database, and a `.beads/dolt` directory makes upstream refuse
+  the workspace as a legacy Dolt workspace. `bdhx` prints the native open
+  error in both cases. Like upstream, `where` prints that data directory.
+- `bdhx` prints no warning for a `.beads` directory that group or others can
+  read. Upstream prints `Warning: <dir> has permissions 0755 (recommended:
+  0700). Run: chmod 700 <dir>` each time it sets up that directory.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 
