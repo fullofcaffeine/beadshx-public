@@ -68,6 +68,11 @@ final class Main {
 		equal(styles.renderClosedLine("l"), "<->l");
 		equal(styles.bold.render("b"), "<->b");
 		equal(styles.command.render("c"), "<->c");
+		equal(styles.renderFail("f"), "<->f");
+		equal(styles.renderBold("b"), "<->b");
+		equal(styles.statusStyle("closed").render("s"), "<->s");
+		equal(styles.statusStyle("open").render("s"), "<->s");
+		equal(styles.renderStatusId("hooked", "x"), "x");
 	}
 
 	static function darkContracts():Void {
@@ -110,6 +115,23 @@ final class Main {
 		equal(styles.category.render("c"), "<#59c2ff+bold>c");
 		equal(styles.bold.render("b"), "<-+bold>b");
 		equal(styles.command.render("c"), "<#bfbdb6>c");
+		equal(styles.renderFail("f"), "<#f07178>f");
+		equal(styles.renderBold("b"), "<-+bold>b");
+		// ui.GetStatusStyle: deferred is muted, and open, custom and unknown statuses take the empty style.
+		equal(styles.statusStyle("in_progress").render("s"), "<#ffb454>s");
+		equal(styles.statusStyle("blocked").render("s"), "<#f26d78>s");
+		equal(styles.statusStyle("closed").render("s"), "<#8090a0>s");
+		equal(styles.statusStyle("deferred").render("s"), "<#6c7680>s");
+		equal(styles.statusStyle("pinned").render("s"), "<#d2a6ff>s");
+		equal(styles.statusStyle("hooked").render("s"), "<#59c2ff>s");
+		equal(styles.statusStyle("open").render("s"), "<->s");
+		equal(styles.statusStyle("review").render("s"), "<->s");
+		equal(styles.renderStatusId("open", "x"), "<default>x");
+		equal(styles.renderStatusId("in_progress", "x"), "<#ffb454>x");
+		equal(styles.renderStatusId("blocked", "x"), "<#f26d78>x");
+		equal(styles.renderStatusId("closed", "x"), "<#8090a0>x");
+		equal(styles.renderStatusId("deferred", "x"), "x");
+		equal(styles.renderStatusId("pinned", "x"), "x");
 	}
 
 	static function lightContracts():Void {

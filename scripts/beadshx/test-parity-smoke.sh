@@ -4002,6 +4002,23 @@ compare_real_database_colors list-color-json exact CLICOLOR_FORCE=1 list --paren
 real_database_setup=write_color_dotenv
 compare_real_database_colors list-color-dotenv-force exact "" list --parent test-cl --all
 real_database_setup=""
+# show styles its header, metadata notes, bold headings and dependency lines: a closed dependency is
+# muted without its badge, and another one has its ID in its status's style. The --short, --children,
+# --refs and --thread views, the separator between issues and the long sections are styled too. The
+# Markdown text is the renderer's own. The last two cases keep colors off.
+compare_real_database_colors show-color-epic exact CLICOLOR_FORCE=1 show test-cl
+compare_real_database_colors show-color-many exact CLICOLOR_FORCE=1 show test-cl-p0 test-cl-closed test-cl-waiting test-cl-deferred test-cl-hooked test-cl-pinned test-cl-p1 test-cl-blocked
+compare_real_database_colors show-color-closed-epic exact CLICOLOR_FORCE=1 show test-cl-closed-epic --long
+compare_real_database_colors show-color-seed exact CLICOLOR_FORCE=1 show "$real_database_issue_id" --long
+compare_real_database_colors show-color-short exact CLICOLOR_FORCE=1 show --short test-cl test-cl-p0 test-cl-closed test-cl-closed-epic test-cl-deferred test-cl-pinned test-cl-hooked
+compare_real_database_colors show-color-children exact CLICOLOR_FORCE=1 show --children test-cl
+compare_real_database_colors show-color-children-short exact CLICOLOR_FORCE=1 show --children --short test-cl
+compare_real_database_colors show-color-children-none exact CLICOLOR_FORCE=1 show --children test-cl-p0
+compare_real_database_colors show-color-refs exact CLICOLOR_FORCE=1 show --refs test-cl
+compare_real_database_colors show-color-refs-blocker exact CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
+compare_real_database_colors show-color-thread exact CLICOLOR_FORCE=1 show --thread test-msg-reply
+compare_real_database_colors show-color-pipe exact "" show test-cl test-cl-closed
+compare_real_database_colors show-color-no-color-flag exact CLICOLOR_FORCE=1 show test-cl --no-color
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json

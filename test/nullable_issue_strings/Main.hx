@@ -5,6 +5,7 @@ import beadshx.cli.JsonSettingPort.WorkspaceSelection;
 import beadshx.config.DatabaseVariableSelection;
 import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.cli.OutputPort;
+import beadshx.cli.TerminalStyles;
 import beadshx.cli.TerminalStyles.StyleSpec;
 import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.cli.Parser;
@@ -83,7 +84,8 @@ class Main {
 			checkLine(humanOf(application.renderIssueHuman(issue, false, true, () -> "")), "External:", testCase.externalHuman,
 				testCase.name + " human reference");
 			#end
-			checkLine(Application.renderIssueLongExtras(issue), "  Compacted at commit:", testCase.commitHuman, testCase.name + " human commit");
+			checkLine(Application.renderIssueLongExtras(issue, TerminalStyles.plain(_ -> new UnstyledText())), "  Compacted at commit:", testCase.commitHuman,
+				testCase.name + " human commit");
 		}
 		#if (go || go_output)
 		// A synthetically invalid domain value must fail before any output side effect.
@@ -110,7 +112,8 @@ class Main {
 		}
 
 		final withoutCompaction = details("", 0);
-		check(Application.renderIssueLongExtras(withoutCompaction).indexOf("COMPACTION") < 0, "zero compaction level must hide the entire section");
+		check(Application.renderIssueLongExtras(withoutCompaction, TerminalStyles.plain(_ -> new UnstyledText())).indexOf("COMPACTION") < 0,
+			"zero compaction level must hide the entire section");
 		#if (go || go_output)
 		SqlPresence.check(failures);
 		NativePresence.check(failures);

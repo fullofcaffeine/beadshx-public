@@ -97,6 +97,9 @@ final class TerminalStyles {
 	public final bold:TextStyle;
 	public final command:TextStyle;
 
+	/** `lipgloss.NewStyle()`: the style that ui.GetStatusStyle returns for open and custom statuses, colors on or off. */
+	public final unstyled:TextStyle;
+
 	/** Colors off: every style is `lipgloss.NewStyle()` (styles.go:180-227, and DisableColors at 28-79). */
 	public static function plain(style:StyleSpec->TextStyle):TerminalStyles {
 		return new TerminalStyles(false, true, style);
@@ -109,6 +112,7 @@ final class TerminalStyles {
 
 	function new(colors:Bool, isDark:Bool, style:StyleSpec->TextStyle) {
 		final empty = style({foreground: NoForeground, bold: false});
+		unstyled = empty;
 		// lipgloss.LightDark(isDark)(light, dark), as a set foreground.
 		function hex(light:String, dark:String, bold:Bool = false):TextStyle {
 			return colors ? style({foreground: HexForeground(isDark ? dark : light), bold: bold}) : empty;
@@ -170,6 +174,11 @@ final class TerminalStyles {
 		return warn.render(text);
 	}
 
+	/** ui.RenderFail (styles.go:438-440). */
+	public function renderFail(text:String):String {
+		return fail.render(text);
+	}
+
 	/** ui.RenderMuted (styles.go:443-445). */
 	public function renderMuted(text:String):String {
 		return muted.render(text);
@@ -220,6 +229,43 @@ final class TerminalStyles {
 			case "chore": typeChore.render(issueType);
 			case _: issueType;
 		};
+	}
+
+	/**
+		ui.GetStatusStyle (styles.go:395-412): the style of `status`. Unlike
+		`renderStatus`, deferred takes the muted style, and open and every
+		other status take the empty `unstyled` style, which pads no lines.
+	**/
+	public function statusStyle(status:String):TextStyle {
+		return switch status {
+			case "in_progress": statusInProgress;
+			case "blocked": statusBlocked;
+			case "closed": statusClosed;
+			case "deferred": muted;
+			case "pinned": statusPinned;
+			case "hooked": statusHooked;
+			case _: unstyled;
+		};
+	}
+
+	/**
+		The ID of an issue in its status style, as upstream's dep list, dep tree
+		and refs views pick it: open, in_progress, blocked and closed take
+		their status style, and any other status prints `text` as it is.
+	**/
+	public function renderStatusId(status:String, text:String):String {
+		return switch status {
+			case "open": statusOpen.render(text);
+			case "in_progress": statusInProgress.render(text);
+			case "blocked": statusBlocked.render(text);
+			case "closed": statusClosed.render(text);
+			case _: text;
+		};
+	}
+
+	/** ui.RenderBold (styles.go:602-604). */
+	public function renderBold(text:String):String {
+		return bold.render(text);
 	}
 
 	/** ui.RenderClosedLine (styles.go:597-599): the whole line in the closed style. */

@@ -4391,16 +4391,25 @@ final class Application {
 		the badge, and then the title with the space before it.
 	**/
 	static function renderPrettyIssue(issue:IssueListItem, styles:TerminalStyles):String {
-		final icon = styles.renderStatusIcon(issue.status);
-		if (issue.status == "closed")
-			return '${icon} ${styles.renderMuted(issue.id)} ${styles.renderMuted('P${issue.priority}')} ${styles.renderMuted(issue.issueType)}'
-				+ styles.renderMuted(" " + issue.title);
-		final typeBadge = switch issue.issueType {
+		return renderShortIssue(issue.id, issue.title, issue.status, issue.priority, issue.issueType, styles);
+	}
+
+	/**
+		The one-line issue of upstream formatPrettyIssue and formatShortIssue
+		(cmd/bd/show_format.go:19-43), which print the same text.
+	**/
+	static function renderShortIssue(id:String, title:String, status:String, priority:beadshx.store.JsonInteger, issueType:String,
+			styles:TerminalStyles):String {
+		final icon = styles.renderStatusIcon(status);
+		if (status == "closed")
+			return '${icon} ${styles.renderMuted(id)} ${styles.renderMuted('P${priority}')} ${styles.renderMuted(issueType)}'
+				+ styles.renderMuted(" " + title);
+		final typeBadge = switch issueType {
 			case "epic": styles.typeEpic.render("[epic]") + " ";
 			case "bug": styles.typeBug.render("[bug]") + " ";
 			case _: "";
 		};
-		return '${icon} ${issue.id} ${styles.renderPriority(issue.priority)} ${typeBadge}${issue.title}';
+		return '${icon} ${id} ${styles.renderPriority(priority)} ${typeBadge}${title}';
 	}
 
 	static function compareListItems(left:IssueListItem, right:IssueListItem):Int {
@@ -4906,7 +4915,7 @@ final class Application {
 		entries.sort((left, right) -> left.issue.createdAt < right.issue.createdAt ? -1 : left.issue.createdAt == right.issue.createdAt ? 0 : 1);
 		switch invocation.output {
 			case Human:
-				output.writeStdout(renderThreadHuman(root.title, entries));
+				output.writeStdout(renderThreadHuman(root.title, entries, terminalStyles()));
 			case Json:
 				return writeRenderedJsonStdout(renderThreadJson(entries));
 		}
@@ -4920,11 +4929,12 @@ final class Application {
 		return "";
 	}
 
-	static function renderThreadHuman(title:String, entries:Array<ThreadEntry>):String {
+	/** Upstream's thread view (cmd/bd/show_thread.go:94-131): accented IDs, muted times and Subject labels. */
+	static function renderThreadHuman(title:String, entries:Array<ThreadEntry>, styles:TerminalStyles):String {
 		final parents = new Map<String, String>();
 		for (entry in entries)
 			parents.set(entry.issue.id, entry.parentId);
-		var rendered = '\n📬 Thread: ${title}\n' + StringTools.rpad("", "─", 66) + "\n";
+		var rendered = '\n${styles.renderAccent("📬")} Thread: ${title}\n' + StringTools.rpad("", "─", 66) + "\n";
 		for (entry in entries) {
 			var depth = 0;
 			var parent = entry.parentId;
@@ -4936,11 +4946,11 @@ final class Application {
 			final indent = StringTools.lpad("", " ", depth * 2);
 			final issue = entry.issue;
 			final icon = issue.status == "closed" ? "✓" : "📧";
-			rendered += '${indent}${icon} ${issue.id} ${formatHumanTime(issue.createdAt)}\n';
+			rendered += '${indent}${icon} ${styles.renderAccent(issue.id)} ${styles.renderMuted(formatHumanTime(issue.createdAt))}\n';
 			rendered += '${indent}  From: ${issue.longFields.sender}  To: ${issue.assignee}\n';
 			if (entry.parentId != "")
 				rendered += '${indent}  Re: ${entry.parentId}\n';
-			rendered += '${indent}  Subject: ${issue.title}\n';
+			rendered += '${indent}  ${styles.renderMuted("Subject")}: ${issue.title}\n';
 			if (issue.description != "")
 				for (line in issue.description.split("\n"))
 					rendered += '${indent}  ${line}\n';
@@ -4989,14 +4999,19 @@ final class Application {
 				return writeRenderedJsonStdout(renderShowDependencyMapJson(groups, output.usesJsonEnvelope(), true));
 			case Human:
 				for (group in groups)
-					output.writeStdout(renderShowRefsGroup(group));
+					output.writeStdout(renderShowRefsGroup(group, terminalStyles()));
 		}
 		return 0;
 	}
 
-	static function renderShowRefsGroup(group:ShowDependencyGroup):String {
+	/**
+		Upstream's refs view of one issue and displayRefGroup
+		(cmd/bd/show_refs.go:56-103): a closed reference is muted, and an open,
+		in-progress or blocked one has its ID in that status's style.
+	**/
+	static function renderShowRefsGroup(group:ShowDependencyGroup, styles:TerminalStyles):String {
 		if (group.items.length == 0)
-			return '\n${group.issueId}: No references found\n';
+			return '\n${styles.renderAccent(group.issueId)}: No references found\n';
 		final sections = new Array<HumanDependencyGroup>();
 		for (reference in group.items) {
 			final relation = humanDependencyRelation(reference.dependencyType);
@@ -5013,11 +5028,16 @@ final class Application {
 			selected.dependencies.push(reference);
 		}
 		sections.sort(compareHumanDependencyGroups);
-		var rendered = '\n📎 References to ${group.issueId}:\n';
+		var rendered = '\n${styles.renderAccent("📎")} References to ${group.issueId}:\n';
 		for (section in sections) {
 			rendered += '\n  ${referenceEmoji(section.relation.canonical)} ${section.relation.incomingHeading} (${section.dependencies.length}):\n';
-			for (reference in section.dependencies)
-				rendered += '    ${reference.id}: ${reference.title} [P${reference.priority} - ${reference.status}]\n';
+			for (reference in section.dependencies) {
+				if (reference.status == "closed") {
+					rendered += '    ${styles.renderMuted(reference.id)}: ${styles.renderMuted(reference.title)} ${styles.renderMuted('[P${reference.priority} - ${reference.status}]')}\n';
+					continue;
+				}
+				rendered += '    ${styles.renderStatusId(reference.status, reference.id)}: ${reference.title} [P${reference.priority} - ${reference.status}]\n';
+			}
 		}
 		return rendered + "\n";
 	}
@@ -5085,38 +5105,20 @@ final class Application {
 			case Json:
 				return writeRenderedJsonStdout(renderShowDependencyMapJson(groups, output.usesJsonEnvelope(), false));
 			case Human:
+				// Upstream showIssueChildren (cmd/bd/show_children.go:69-84).
+				final styles = terminalStyles();
 				for (group in groups) {
 					if (group.items.length == 0) {
-						output.writeStdout('${group.issueId}: No children found\n');
+						output.writeStdout('${styles.renderAccent(group.issueId)}: No children found\n');
 					} else {
-						output.writeStdout('↳ Children of ${group.issueId} (${group.items.length}):\n');
+						output.writeStdout('${styles.renderAccent("↳")} Children of ${group.issueId} (${group.items.length}):\n');
 						for (child in group.items)
-							output.writeStdout(invocation.showShort ? '  ${renderShowChildShort(child)}\n' : '${renderShowChildHuman(child)}\n');
+							output.writeStdout(invocation.showShort ? '  ${renderShortIssue(child.id, child.title, child.status, child.priority, child.issueType, styles)}\n' : '${renderDependencyLine("↳", child, styles)}\n');
 						output.writeStdout("\n");
 					}
 				}
 		}
 		return 0;
-	}
-
-	static function renderShowChildHuman(child:IssueDependency):String {
-		final typeBadge = child.status == "closed" ? "" : switch child.issueType {
-			case "epic": "(EPIC) ";
-			case "bug": "(BUG) ";
-			case _: "";
-		};
-		return '  ↳ ${statusIcon(child.status)} ${child.id}: ${typeBadge}${child.title} P${child.priority}';
-	}
-
-	static function renderShowChildShort(child:IssueDependency):String {
-		if (child.status == "closed")
-			return '✓ ${child.id} P${child.priority} ${child.issueType} ${child.title}';
-		final typeBadge = switch child.issueType {
-			case "epic": "[epic] ";
-			case "bug": "[bug] ";
-			case _: "";
-		};
-		return '${statusIcon(child.status)} ${child.id} P${child.priority} ${typeBadge}${child.title}';
 	}
 
 	static function renderShowDependencyMapJson(groups:Array<ShowDependencyGroup>, envelope:Bool, emptyAsNull:Bool):StoreResult<String> {
@@ -5209,7 +5211,7 @@ final class Application {
 				case Success(value): value;
 			};
 			if (index > 0)
-				output.writeStdout("\n" + StringTools.rpad("", "─", 60) + "\n\n");
+				output.writeStdout("\n" + terminalStyles().renderMuted(StringTools.rpad("", "─", 60)) + "\n\n");
 			output.writeStdout(rendered);
 		}
 		return found.length == 0 ? 1 : 0;
@@ -5247,13 +5249,13 @@ final class Application {
 		return switch invocation.output {
 			case Human:
 				for (summary in found)
-					output.writeStdout(renderIssueShort(summary) + "\n");
+					output.writeStdout(renderIssueShort(summary, terminalStyles()) + "\n");
 				0;
 			case Json:
 				// Upstream checks --short before its JSON branch. Preserve the
 				// resulting mixed output: compact rows, then the normal JSON error.
 				for (summary in found)
-					output.writeStdout(renderIssueShort(summary) + "\n");
+					output.writeStdout(renderIssueShort(summary, terminalStyles()) + "\n");
 				runModeAwareFailure(invocation.output, "no issues found matching the provided IDs");
 		};
 	}
@@ -5416,25 +5418,9 @@ final class Application {
 		return invocation.global ? "" : store.lastTouchedId(location.path);
 	}
 
-	static function renderIssueShort(issue:IssueSummary):String {
-		return switch issue.status {
-			case Open: renderOpenIssueShort("○", issue);
-			case InProgress: renderOpenIssueShort("◐", issue);
-			case Blocked: renderOpenIssueShort("●", issue);
-			case Closed: '✓ ${issue.id} P${issue.priority} ${issueTypeWireValue(issue.issueType)} ${issue.title}';
-			case Deferred: renderOpenIssueShort("❄", issue);
-			case Pinned: renderOpenIssueShort("📌", issue);
-			case OtherStatus(_): renderOpenIssueShort("◇", issue);
-		};
-	}
-
-	static function renderOpenIssueShort(icon:String, issue:IssueSummary):String {
-		final typeBadge = switch issue.issueType {
-			case Epic: "[epic] ";
-			case Bug: "[bug] ";
-			case OtherType(_): "";
-		};
-		return '${icon} ${issue.id} P${issue.priority} ${typeBadge}${issue.title}';
+	/** Upstream formatShortIssue (cmd/bd/show_format.go:19-43) of one summary. */
+	static function renderIssueShort(issue:IssueSummary, styles:TerminalStyles):String {
+		return renderShortIssue(issue.id, issue.title, issueStatusWireValue(issue.status), issue.priority, issueTypeWireValue(issue.issueType), styles);
 	}
 
 	/**
@@ -5454,7 +5440,7 @@ final class Application {
 		final line = 'Close reason: ${reason}';
 		if (fitsMetadataLine(line, markdownWrapWidth(agentMode, output.stdoutColumns()), output.displayWidth(line)))
 			return CloseReasonLine(line);
-		return CloseReasonSection('\nCLOSE REASON\n${trimTrailingNewlines(output.renderMarkdown(reason))}\n');
+		return CloseReasonSection('\n${terminalStyles().renderBold("CLOSE REASON")}\n${trimTrailingNewlines(output.renderMarkdown(reason))}\n');
 	}
 
 	/**
@@ -5466,9 +5452,11 @@ final class Application {
 	**/
 	function renderIssueHuman(issue:IssueDetails, agentMode:Bool, longMode:Bool, localNode:() -> String,
 			mode:HumanShowMode = StandardShow):StoreResult<String> {
+		final styles = terminalStyles();
+		// Upstream formatIssueHeader (cmd/bd/show_format.go:48-80) styles each part of the header.
 		final typeBadge = switch issue.issueType {
-			case "epic": " [EPIC]";
-			case "bug": " [BUG]";
+			case "epic": " " + styles.typeEpic.render("[EPIC]");
+			case "bug": " " + styles.typeBug.render("[BUG]");
 			case _: "";
 		};
 		final compactionMarker = switch issue.longFields.compactionLevel.wireValue() {
@@ -5476,13 +5464,20 @@ final class Application {
 			case "2": " 📦";
 			case _: "";
 		};
-		var rendered = '${statusIcon(issue.status)} ${issue.id}${typeBadge} · ${issue.title}${compactionMarker}   [P${issue.priority} · ${issue.status.toUpperCase()}]\n';
+		var rendered = '${styles.renderStatusIcon(issue.status)} ${styles.renderAccent(issue.id)}${typeBadge} · ${issue.title}${compactionMarker}   '
+			+ '[${styles.renderPriority(issue.priority)} · ${styles.statusStyle(issue.status).render(issue.status.toUpperCase())}]\n';
+		// Upstream formatIssueMetadata (show_format.go:85-198) colors an epic or bug type and mutes its notes.
 		final metadata = new Array<String>();
 		if (issue.createdBy != "")
 			metadata.push('Owner: ${issue.createdBy}');
 		if (issue.assignee != "")
 			metadata.push('Assignee: ${issue.assignee}');
-		metadata.push('Type: ${issue.issueType}');
+		final typeText = switch issue.issueType {
+			case "epic": styles.typeEpic.render("epic");
+			case "bug": styles.typeBug.render("bug");
+			case _: issue.issueType;
+		};
+		metadata.push('Type: ${typeText}');
 		rendered += metadata.join(" · ") + "\n";
 		final dates = ['Created: ${issue.createdAt.substr(0, 10)}'];
 		if (issue.startedAt != "")
@@ -5499,7 +5494,7 @@ final class Application {
 		final closeReason = issue.status == "closed" ? renderCloseReason(issue.closeReason, agentMode) : NoCloseReason;
 		switch closeReason {
 			case CloseReasonLine(line):
-				rendered += line + "\n";
+				rendered += styles.renderMuted(line) + "\n";
 			case CloseReasonSection(_) | NoCloseReason:
 		}
 		if (issue.externalRef != null && issue.externalRef != "")
@@ -5507,7 +5502,7 @@ final class Application {
 		if (issue.specId != "")
 			rendered += 'Spec: ${issue.specId}\n';
 		if (issue.longFields.ephemeral && issue.wispType != "")
-			rendered += 'Wisp type: ${issue.wispType}\n';
+			rendered += 'Wisp type: ${styles.renderMuted(issue.wispType)}\n';
 		final savings = switch compactionSavingsLine(issue) {
 			case Failure(message): return Failure(message);
 			case Success(value): value;
@@ -5519,39 +5514,41 @@ final class Application {
 				rendered += section;
 			case CloseReasonLine(_) | NoCloseReason:
 		}
+		// Upstream's show (cmd/bd/show.go:174-237) and watch view (show_display.go:106-145) print each heading in bold.
 		if (issue.description != "" || mode == StandardShow) {
-			rendered += "\nDESCRIPTION\n";
-			rendered += issue.description == "" ? "  (none)\n" : output.renderMarkdown(issue.description) + "\n";
+			rendered += '\n${styles.renderBold("DESCRIPTION")}\n';
+			rendered += issue.description == "" ? '  ${styles.renderMuted("(none)")}\n' : output.renderMarkdown(issue.description) + "\n";
 		}
 		if (issue.design != "")
-			rendered += "\nDESIGN\n" + output.renderMarkdown(issue.design) + "\n";
+			rendered += '\n${styles.renderBold("DESIGN")}\n' + output.renderMarkdown(issue.design) + "\n";
 		if (issue.notes != "")
-			rendered += "\nNOTES\n" + output.renderMarkdown(issue.notes) + "\n";
+			rendered += '\n${styles.renderBold("NOTES")}\n' + output.renderMarkdown(issue.notes) + "\n";
 		if (issue.acceptanceCriteria != "")
-			rendered += "\nACCEPTANCE CRITERIA\n" + output.renderMarkdown(issue.acceptanceCriteria) + "\n";
+			rendered += '\n${styles.renderBold("ACCEPTANCE CRITERIA")}\n' + output.renderMarkdown(issue.acceptanceCriteria) + "\n";
 		if (issue.labels.length > 0)
-			rendered += "\nLABELS: " + issue.labels.join(", ") + "\n";
+			rendered += '\n${styles.renderBold("LABELS:")} ' + issue.labels.join(", ") + "\n";
 		if (mode == StandardShow) {
 			final metadataLines = issue.metadata.renderHumanLines();
 			if (metadataLines.length > 0)
-				rendered += "\nMETADATA\n" + metadataLines.join("\n") + "\n";
+				rendered += '\n${styles.renderBold("METADATA")}\n' + metadataLines.join("\n") + "\n";
 		}
-		rendered += renderHumanDependencySections(issue);
+		rendered += renderHumanDependencySections(issue, styles);
 		if (issue.comments.length > 0) {
-			rendered += "\nCOMMENTS\n";
+			rendered += '\n${styles.renderBold("COMMENTS")}\n';
 			for (comment in issue.comments) {
-				rendered += '  ${formatHumanTime(comment.createdAt)} ${comment.author}\n';
+				rendered += '  ${styles.renderMuted(formatHumanTime(comment.createdAt))} ${comment.author}\n';
 				final body = trimTrailingNewlines(output.renderMarkdown(comment.text));
 				for (line in body.split("\n"))
 					rendered += '    ${line}\n';
 			}
 		}
 		if (longMode)
-			rendered += renderIssueLongExtras(issue);
+			rendered += renderIssueLongExtras(issue, styles);
 		return Success(rendered + "\n");
 	}
 
-	static function renderIssueLongExtras(issue:IssueDetails):String {
+	/** Upstream formatIssueLongExtras (cmd/bd/show_format.go:357-477): each section under its bold heading. */
+	static function renderIssueLongExtras(issue:IssueDetails, styles:TerminalStyles):String {
 		final rare = issue.longFields;
 		final details = new Array<String>();
 		if (issue.closedAt != "")
@@ -5579,7 +5576,7 @@ final class Application {
 			details.push('  Work type: ${rare.workType}');
 		final sections = new Array<String>();
 		if (details.length > 0)
-			sections.push("EXTENDED DETAILS\n" + details.join("\n"));
+			sections.push(styles.renderBold("EXTENDED DETAILS") + "\n" + details.join("\n"));
 		if (rare.compactionLevel.compare(0) > 0) {
 			final compaction = ['  Level: ${rare.compactionLevel}'];
 			if (rare.compactedAt != "")
@@ -5588,7 +5585,7 @@ final class Application {
 				compaction.push('  Compacted at commit: ${rare.compactedAtCommit}');
 			if (rare.originalSize.compare(0) > 0)
 				compaction.push('  Original size: ${rare.originalSize} bytes');
-			sections.push("COMPACTION\n" + compaction.join("\n"));
+			sections.push(styles.renderBold("COMPACTION") + "\n" + compaction.join("\n"));
 		}
 		final gate = new Array<String>();
 		if (rare.awaitType != "")
@@ -5600,19 +5597,19 @@ final class Application {
 		if (rare.waiters.length > 0)
 			gate.push('  Waiters: ${rare.waiters.join(", ")}');
 		if (gate.length > 0)
-			sections.push("GATE\n" + gate.join("\n"));
+			sections.push(styles.renderBold("GATE") + "\n" + gate.join("\n"));
 		final source = new Array<String>();
 		if (rare.sourceFormula != "")
 			source.push('  Formula: ${rare.sourceFormula}');
 		if (rare.sourceLocation != "")
 			source.push('  Location: ${rare.sourceLocation}');
 		if (source.length > 0)
-			sections.push("SOURCE TRACING\n" + source.join("\n"));
+			sections.push(styles.renderBold("SOURCE TRACING") + "\n" + source.join("\n"));
 		if (rare.bondedFrom.length > 0) {
 			final references = new Array<String>();
 			for (reference in rare.bondedFrom)
 				references.push('  ${reference.sourceId} (${reference.bondType})');
-			sections.push("BONDED FROM\n" + references.join("\n"));
+			sections.push(styles.renderBold("BONDED FROM") + "\n" + references.join("\n"));
 		}
 		final event = new Array<String>();
 		if (rare.eventKind != "")
@@ -5624,7 +5621,7 @@ final class Application {
 		if (rare.payload != "")
 			event.push('  Payload: ${rare.payload}');
 		if (event.length > 0)
-			sections.push("EVENT\n" + event.join("\n"));
+			sections.push(styles.renderBold("EVENT") + "\n" + event.join("\n"));
 		return sections.length == 0 ? "" : "\n" + sections.join("\n\n") + "\n";
 	}
 
@@ -5639,21 +5636,23 @@ final class Application {
 		});
 	}
 
-	static function renderHumanDependencySections(issue:IssueDetails):String {
+	/** Upstream printDepSection and printRelatedSection (cmd/bd/show_format.go:251-275): bold headings, one line per edge. */
+	static function renderHumanDependencySections(issue:IssueDetails, styles:TerminalStyles):String {
 		final related = new Map<String, IssueDependency>();
-		var rendered = renderHumanDependencyDirection(issue.dependencies, true, related, false);
-		rendered += renderHumanDependencyDirection(issue.dependents, false, related, issue.issueType == "epic");
+		var rendered = renderHumanDependencyDirection(issue.dependencies, true, related, false, styles);
+		rendered += renderHumanDependencyDirection(issue.dependents, false, related, issue.issueType == "epic", styles);
 		final relatedIds = [for (id in related.keys()) id];
 		relatedIds.sort(compareIssueIds);
 		if (relatedIds.length > 0) {
-			rendered += "\nRELATED\n";
+			rendered += '\n${styles.renderBold("RELATED")}\n';
 			for (id in relatedIds)
-				rendered += renderHumanDependencyLine("↔", related.get(id));
+				rendered += renderDependencyLine("↔", related.get(id), styles) + "\n";
 		}
 		return rendered;
 	}
 
-	static function renderHumanDependencyDirection(dependencies:Array<IssueDependency>, outgoing:Bool, related:Map<String, IssueDependency>, epic:Bool):String {
+	static function renderHumanDependencyDirection(dependencies:Array<IssueDependency>, outgoing:Bool, related:Map<String, IssueDependency>, epic:Bool,
+			styles:TerminalStyles):String {
 		final groups = new Array<HumanDependencyGroup>();
 		for (dependency in dependencies) {
 			final relation = humanDependencyRelation(dependency.dependencyType);
@@ -5679,32 +5678,44 @@ final class Application {
 		for (group in groups) {
 			final heading = outgoing ? group.relation.outgoingHeading : group.relation.incomingHeading;
 			final glyph = outgoing ? group.relation.outgoingGlyph : group.relation.incomingGlyph;
-			rendered += '\n${heading}\n';
+			rendered += '\n${styles.renderBold(heading)}\n';
 			for (dependency in group.dependencies)
-				rendered += renderHumanDependencyLine(glyph, dependency);
+				rendered += renderDependencyLine(glyph, dependency, styles) + "\n";
 			if (!outgoing && epic && group.relation.canonical == "parent-child")
-				rendered += renderEpicChildProgress(group.dependencies);
+				rendered += renderEpicChildProgress(group.dependencies, styles);
 		}
 		return rendered;
 	}
 
-	static function renderHumanDependencyLine(glyph:String, dependency:IssueDependency):String {
+	/**
+		Upstream formatDependencyLine (cmd/bd/show_format.go:224-249), without a
+		line feed: the plain status icon, then a closed issue's ID, title and
+		priority each muted, or another issue's ID in its status style, an
+		(EPIC) or (BUG) badge, the title and the styled priority.
+	**/
+	static function renderDependencyLine(glyph:String, dependency:IssueDependency, styles:TerminalStyles):String {
+		final icon = statusIcon(dependency.status);
+		if (dependency.status == "closed")
+			return
+				'  ${glyph} ${icon} ${styles.renderMuted(dependency.id)}: ${styles.renderMuted(dependency.title)} ${styles.renderMuted('P${dependency.priority}')}';
 		final notableType = switch dependency.issueType {
-			case "epic": "(EPIC) ";
-			case "bug": "(BUG) ";
+			case "epic": styles.typeEpic.render("(EPIC)") + " ";
+			case "bug": styles.typeBug.render("(BUG)") + " ";
 			case _: "";
 		};
-		return '  ${glyph} ${statusIcon(dependency.status)} ${dependency.id}: ${notableType}${dependency.title} P${dependency.priority}\n';
+		return
+			'  ${glyph} ${icon} ${styles.statusStyle(dependency.status).render(dependency.id)}: ${notableType}${dependency.title} ${styles.renderPriority(dependency.priority)}';
 	}
 
-	static function renderEpicChildProgress(children:Array<IssueDependency>):String {
+	/** Upstream printEpicChildProgress (cmd/bd/show_format.go:277-296), with a pass or muted mark. */
+	static function renderEpicChildProgress(children:Array<IssueDependency>, styles:TerminalStyles):String {
 		var closed = 0;
 		for (child in children)
 			if (child.status == "closed")
 				closed++;
 		final percentage = Std.int(closed * 100 / children.length);
 		return
-			closed == children.length ? '  ✓ ${closed}/${children.length} complete (${percentage}%) — eligible for close\n' : '  ◐ ${closed}/${children.length} complete (${percentage}%)\n';
+			closed == children.length ? '  ${styles.renderPass("✓")} ${closed}/${children.length} complete (${percentage}%) — eligible for close\n' : '  ${styles.renderMuted("◐")} ${closed}/${children.length} complete (${percentage}%)\n';
 	}
 
 	static function compareHumanDependencyGroups(left:HumanDependencyGroup, right:HumanDependencyGroup):Int {
@@ -6133,6 +6144,19 @@ final class Application {
 			case Epic: "epic";
 			case Bug: "bug";
 			case OtherType(value): value;
+		};
+	}
+
+	/** The stored text of a summary's status. */
+	static function issueStatusWireValue(status:IssueStatus):String {
+		return switch status {
+			case Open: "open";
+			case InProgress: "in_progress";
+			case Blocked: "blocked";
+			case Closed: "closed";
+			case Deferred: "deferred";
+			case Pinned: "pinned";
+			case OtherStatus(value): value;
 		};
 	}
 
