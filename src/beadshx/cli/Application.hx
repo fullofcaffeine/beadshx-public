@@ -3842,9 +3842,14 @@ final class Application {
 		return Success(lines.join("\n"));
 	}
 
+	/**
+		Upstream `ready --explain --json` (cmd/bd/ready.go:450-514). Its
+		types.BuildReadyExplanation makes the ready and blocked lists
+		(internal/types/types.go:1727 and 1767), so an empty one prints `[]`.
+	**/
 	static function renderReadyExplanationJson(explanation:ReadyExplanation):StoreResult<String> {
 		final lines = ["{"];
-		lines.push('  "blocked": [');
+		lines.push(explanation.blocked.length == 0 ? '  "blocked": [],' : '  "blocked": [');
 		for (index in 0...explanation.blocked.length) {
 			final item = explanation.blocked[index];
 			final fields = switch renderRawIssueFields(item.issue, true, "      ") {
@@ -3874,7 +3879,8 @@ final class Application {
 			}
 			lines.push(index == explanation.blocked.length - 1 ? "    }" : "    },");
 		}
-		lines.push(explanation.cycles.length == 0 ? "  ]," : "  ],");
+		if (explanation.blocked.length > 0)
+			lines.push("  ],");
 		if (explanation.cycles.length > 0) {
 			lines.push('  "cycles": [');
 			for (cycleIndex in 0...explanation.cycles.length) {
@@ -3888,7 +3894,7 @@ final class Application {
 			}
 			lines.push("  ],");
 		}
-		lines.push('  "ready": [');
+		lines.push(explanation.ready.length == 0 ? '  "ready": [],' : '  "ready": [');
 		for (index in 0...explanation.ready.length) {
 			final item = explanation.ready[index];
 			final fields = switch renderRawIssueFields(item.issue, true, "      ") {
@@ -3921,7 +3927,8 @@ final class Application {
 			}
 			lines.push(index == explanation.ready.length - 1 ? "    }" : "    },");
 		}
-		lines.push("  ],");
+		if (explanation.ready.length > 0)
+			lines.push("  ],");
 		lines.push('  "schema_version": 1,');
 		lines.push('  "summary": {');
 		lines.push('    "cycle_count": ${explanation.cycles.length},');
@@ -4073,10 +4080,20 @@ final class Application {
 		return rendered;
 	}
 
+	/**
+		Upstream executeCount (cmd/bd/count.go:175-225). Without a --by-* flag it
+		prints the count; with one, the total and the sorted buckets, also when
+		no bucket is left: `Total: 0` and an empty line, or an empty `groups`
+		list in JSON.
+	**/
 	function renderCount(invocation:Invocation, result:CountResult):Int {
+		final grouped = switch invocation.countGroup {
+			case Ungrouped: false;
+			case ByStatus | ByPriority | ByType | ByAssignee | ByLabel: true;
+		};
 		switch invocation.output {
 			case Human:
-				if (result.groups.length == 0) {
+				if (!grouped) {
 					output.writeStdout(result.total.wireValue() + "\n");
 				} else {
 					var rendered = 'Total: ${result.total.wireValue()}\n\n';
@@ -4085,8 +4102,10 @@ final class Application {
 					output.writeStdout(rendered);
 				}
 			case Json:
-				if (result.groups.length == 0) {
+				if (!grouped) {
 					writeJsonStdout('{\n  "count": ${result.total.wireValue()},\n  "schema_version": 1\n}\n');
+				} else if (result.groups.length == 0) {
+					writeJsonStdout('{\n  "groups": [],\n  "schema_version": 1,\n  "total": ${result.total.wireValue()}\n}\n');
 				} else {
 					final lines = ["{", '  "groups": ['];
 					for (index in 0...result.groups.length) {
@@ -5856,7 +5875,14 @@ final class Application {
 		return Success(lines.join("\n") + "\n");
 	}
 
+	/**
+		Upstream renderStale's JSON (cmd/bd/stale.go:59-64): the stale issues as
+		types.Issue records. It replaces a nil result with an empty slice, so no
+		stale issue prints `[]` on one line.
+	**/
 	static function renderRawIssuesJson(issues:Array<StaleIssue>):StoreResult<String> {
+		if (issues.length == 0)
+			return Success("[]\n");
 		final lines = ["["];
 		for (index in 0...issues.length) {
 			final fields = switch renderRawIssueFields(issues[index]) {

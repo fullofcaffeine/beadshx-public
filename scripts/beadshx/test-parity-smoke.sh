@@ -3608,6 +3608,10 @@ compare_real_database count-json exact count --json
 compare_real_database count-status-json exact count --status open --json
 compare_real_database count-by-status-json exact count --by-status --json
 compare_real_database count-by-label-human exact count --by-label
+# A grouped count with no bucket keeps the grouped shape: upstream prints "Total: 0" and an empty
+# line, or a total and an empty groups list (executeCount, cmd/bd/count.go:175-225).
+compare_real_database count-by-status-none-json exact count --by-status --assignee nobody --json
+compare_real_database count-by-label-none-human exact count --by-label --assignee nobody
 # The command body checks the --by-* flags, then the date filters in a fixed order, and only the last
 # value of each flag counts. Cobra's own errors come first.
 compare_real_database count-by-conflict exact count --by-status --by-type
@@ -3636,6 +3640,16 @@ compare_real_database ready-molecule-human exact ready --mol "$real_database_mol
 compare_real_database ready-molecule-json molecule-ready-json ready --mol "$real_database_molecule_id" --json
 compare_real_database ready-explain-human exact ready --explain
 compare_real_database ready-explain-json exact ready --explain --json
+# BuildReadyExplanation makes both lists, so upstream prints an empty one as []
+# (internal/types/types.go:1727 and 1767). Without blocking edges and stored is_blocked flags nothing
+# is blocked; with every issue closed nothing is ready either.
+no_blocking_edges_sql="DELETE FROM dependencies WHERE type IN ('blocks', 'conditional-blocks', 'waits-for')
+UPDATE issues SET is_blocked = 0, updated_at = updated_at"
+all_closed_sql="UPDATE issues SET status = 'closed', closed_at = '2026-08-21 13:00:00', updated_at = updated_at WHERE status <> 'closed'
+UPDATE wisps SET status = 'closed', closed_at = '2026-08-21 13:00:00', updated_at = updated_at WHERE status <> 'closed'"
+compare_real_database_sql ready-explain-none-blocked-json exact "$no_blocking_edges_sql" ready --explain --json
+compare_real_database_sql ready-explain-none-json exact "$all_closed_sql" ready --explain --json
+compare_real_database_sql ready-explain-none-human exact "$all_closed_sql" ready --explain
 compare_real_database ready-gated-human exact ready --gated
 compare_real_database ready-gated-json exact ready --gated --json
 # With the gate open again, no molecule is ready for gate-resume dispatch.
@@ -3730,6 +3744,10 @@ compare_real_database search-no-match exact search absent-search-token
 compare_real_database stale-default exact stale
 compare_real_database stale-human exact stale --days 1
 compare_real_database stale-json exact stale --days 1 --json
+# Upstream prints an empty stale result as [] (renderStale, cmd/bd/stale.go:59-64): no fixture
+# issue is 100000 days old.
+compare_real_database stale-none-json exact stale --days 100000 --json
+compare_real_database stale-none-human exact stale --days 100000
 compare_real_database stale-status-open exact stale --days 1 --status open
 compare_real_database stale-status-deferred exact stale --days 1 --status deferred
 compare_real_database stale-limit exact stale --days 1 --limit 1
