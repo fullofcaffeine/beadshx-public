@@ -328,10 +328,12 @@ linters:
   exclusions:
     rules:
       # Generated Haxe storage adapters are the BeadsHX equivalent of the
-      # inherited internal/storage boundary. Keep the exception to the two
-      # files whose typed externs directly consume the Dolt driver API: the
-      # shared embedded session and its connector result carrier.
-      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|store_embeddedsession)\.go$'
+      # inherited internal/storage boundary. Keep the exception to the files
+      # whose typed externs directly consume a Dolt API: the shared embedded
+      # session and its connector result carrier (the Dolt driver), and the
+      # Dolt config.yaml port reader and its result carrier (Dolt's servercfg
+      # and filesys, as upstream doltserver configYamlPort reads them).
+      - path: '^generated/go/bdhx/haxego_generated_module_beadshx_(nativeextern_doltdriver_newconnectorresult|nativeextern_servercfg_yamlconfigresult|store_doltconfigport|store_embeddedsession)\.go$'
         linters:
           - depguard
       # Haxe Std.random intentionally implements a non-cryptographic random

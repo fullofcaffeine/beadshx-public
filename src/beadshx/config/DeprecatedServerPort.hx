@@ -4,6 +4,7 @@ import beadshx.config.LayeredConfig.environmentValue;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.nativeextern.strconv.StrconvPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
+import beadshx.store.DoltConfigPort;
 import sys.io.File;
 
 /**
@@ -41,7 +42,7 @@ final class DeprecatedServerPort {
 		final portFile = try File.getContent(FilepathPkg.join(beadsDir, "dolt-server.port")) catch (_:haxe.Exception) null;
 		if (portFile != null && positive(goTrimSpace(portFile)))
 			return false;
-		if (ConfigProbes.doltConfigPort(ConfigProbes.doltDirectory(beadsDir, metadata)) > 0)
+		if (DoltConfigPort.read(ConfigProbes.doltDirectory(beadsDir, metadata)) > 0)
 			return false;
 		if (positive(config.getString("dolt.port")))
 			return false;
