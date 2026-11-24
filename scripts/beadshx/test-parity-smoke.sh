@@ -5403,10 +5403,12 @@ store_refusal_notice=""
 dotenv_contents=$'BD_DOLT_SHARED_SERVER=true\nBD_JSON=1\n'
 expect_candidate_failure dotenv-bd-shared-server-json-unported \
 	'{"error":"config show is not available yet in shared-server mode in this build","schema_version":1}' "$shared_server_notice" "" config show
+# A db setting selects the directory derived from its path, so upstream leaves this workspace's .env
+# file unread, and BD_JSON there does not turn JSON on.
 candidate_only_setup=write_dotenv_with_database_path
 dotenv_contents=$'BD_JSON=1\n'
-expect_candidate_failure dotenv-db-setting-json-unported \
-	'{"error":"ready is not available yet when the db setting names a database in this build","schema_version":1}' "" "" ready
+expect_candidate_failure dotenv-db-setting-other-directory-unported "" \
+	"Error: ready is not available yet when the db setting names a database in this build" "" ready
 candidate_only_setup=""
 dotenv_contents=""
 # Without a workspace, no .env file is read: not one in the current directory, and not one in a
@@ -5543,6 +5545,108 @@ candidate_only_setup=move_workspace_without_database
 expect_beads_db_refusal beads-db-workspace-without-database-unported BEADS_DB=db/.beads "" \
 	"Error: count is not available yet when BEADS_DB names this path in this build" count
 candidate_only_setup=""
+# Before it opens or creates a database for such a path, upstream sets up the directory that
+# resolveCommandBeadsDir derives from FindDatabasePath's path: here the workspace, for a path inside
+# it, a trailing slash, or a workspace without a database. In shared-server mode it prints the notice
+# for that directory, and this build prints it before its refusal. A directory without metadata.json
+# prints none.
+move_shared_server_workspace_to_db() {
+	move_workspace_to_db "$1"
+	printf 'dolt:\n  shared-server: true\n' >>"$1/work/db/.beads/config.yaml"
+}
+candidate_only_setup=move_shared_server_workspace_to_db
+expect_beads_db_refusal beads-db-deeper-path-shared-server-notice-unported BEADS_DB=db/.beads/missing/beads.db "" \
+	"$shared_server_notice"$'\n'"Error: count is not available yet when BEADS_DB names this path in this build" count
+expect_beads_db_refusal beads-db-trailing-slash-shared-server-notice-json-unported BEADS_DB=db/.beads/ \
+	'{"error":"list is not available yet when BEADS_DB names this path in this build","schema_version":1}' \
+	"$shared_server_notice" list --json
+move_shared_server_workspace_without_database() {
+	move_shared_server_workspace_to_db "$1"
+	rm -rf "$1/work/db/.beads/embeddeddolt"
+}
+candidate_only_setup=move_shared_server_workspace_without_database
+expect_beads_db_refusal beads-db-workspace-without-database-shared-server-notice-unported BEADS_DB=db/.beads "" \
+	"$shared_server_notice"$'\n'"Error: show is not available yet when BEADS_DB names this path in this build" \
+	show "$real_database_issue_id"
+candidate_only_setup=move_workspace_to_db
+expect_beads_db_refusal beads-db-missing-path-shared-server-env-unported \
+	'BEADS_DB=missing/beads.db BEADS_DOLT_SHARED_SERVER=1' "" \
+	"Error: ready is not available yet when BEADS_DB names this path in this build" ready
+candidate_only_setup=""
+# A metadata.json there that does not load stops upstream in that setup, with the load warning and
+# error, before it writes anything.
+move_workspace_with_broken_metadata() {
+	move_workspace_to_db "$1"
+	printf '{bad' >"$1/work/db/.beads/metadata.json"
+}
+real_database_read_only=1
+real_database_setup=move_workspace_with_broken_metadata
+compare_beads_db beads-db-deeper-path-broken-metadata-count exact BEADS_DB=db/.beads/missing/beads.db count
+compare_beads_db beads-db-trailing-slash-broken-metadata-list-json exact BEADS_DB=db/.beads/ list --json
+# Upstream loads the .env file of the directory that it sets up. For `where`, `version` and help pages
+# that is the directory derived from a BEADS_DB, BD_DB or db setting path, even when a workspace is
+# found from the current directory: the .env file of that workspace stays unread.
+add_other_workspace_with_dotenv() {
+	add_other_workspace "$1"
+	printf 'BEADS_DOLT_SHARED_SERVER=1\n' >"$1/work/other/.beads/.env"
+}
+real_database_setup=add_other_workspace_with_dotenv
+compare_beads_db beads-db-other-dotenv-version stderr-only BEADS_DB=other/.beads version
+compare_beads_db beads-db-other-dotenv-help-command exact BD_DB=other/.beads/embeddeddolt help count
+add_other_workspace_with_setting_and_dotenv() {
+	add_other_workspace_with_dotenv "$1"
+	printf 'db: other/.beads/beads.db\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=add_other_workspace_with_setting_and_dotenv
+compare_beads_db db-setting-other-dotenv-help-command exact BEADSHX_PARITY_EXTRA=1 help list
+add_other_workspace_with_caller_dotenv() {
+	add_other_workspace "$1"
+	printf 'BEADS_DOLT_SHARED_SERVER=1\nBD_JSON=1\n' >"$1/work/.beads/.env"
+}
+real_database_setup=add_other_workspace_with_caller_dotenv
+compare_beads_db beads-db-caller-dotenv-version stderr-only BEADS_DB=other/.beads version
+compare_beads_db beads-db-caller-dotenv-where exact BEADS_DB=other/.beads where
+real_database_setup=""
+real_database_read_only=""
+# Before a refusal this build loads the same .env file, which can turn shared-server mode and JSON on:
+# for a store command the directory that the BEADS_DB path or the db setting selects.
+move_workspace_with_dotenv_selectors() {
+	move_workspace_to_db "$1"
+	printf 'BEADS_DOLT_SHARED_SERVER=1\nBD_JSON=1\n' >"$1/work/db/.beads/.env"
+}
+candidate_only_setup=move_workspace_with_dotenv_selectors
+expect_beads_db_refusal beads-db-deeper-path-dotenv-json-unported BEADS_DB=db/.beads/missing/beads.db \
+	'{"error":"count is not available yet when BEADS_DB names this path in this build","schema_version":1}' \
+	"$shared_server_notice" count
+expect_beads_db_refusal beads-db-where-deeper-path-dotenv-json-unported BEADS_DB=db/.beads/missing/beads.db \
+	'{"error":"where is not available yet when BEADS_DB names this path in this build","schema_version":1}' \
+	"$shared_server_notice" where
+candidate_only_setup=add_other_workspace_with_setting_and_dotenv
+store_refusal_notice="$shared_server_notice"
+expect_store_refusal count-db-setting-other-dotenv-notice-unported "$database_reason" count count
+store_refusal_notice=""
+candidate_only_setup=""
+# On macOS upstream's CanonicalizePath also takes each name's case from the file system. A path typed
+# in another case then names the directory as stored where upstream derives it from the canonical
+# path: in the config warning of the setup, and in the database path that `info` prints for BEADS_DB.
+# These cases need a case-insensitive file system.
+if [[ -d "$real_database_seed/WORK" ]]; then
+	move_workspace_with_broken_config() {
+		move_workspace_to_db "$1"
+		printf '[a, b\n' >>"$1/work/db/.beads/config.yaml"
+		# A user config.yaml loads first, so the error names the workspace config.yaml that follows.
+		mkdir -p "$1/user-home/.config/bd"
+		printf 'json: false\n' >"$1/user-home/.config/bd/config.yaml"
+	}
+	real_database_read_only=1
+	real_database_setup=move_workspace_with_broken_config
+	compare_beads_db beads-db-case-version stderr-only BEADS_DB=DB/.BEADS/embeddeddolt version
+	compare_beads_db beads-db-case-absolute-help-command exact BEADS_DB='<work>/DB/.BEADS/embeddeddolt' help count
+	real_database_setup=move_workspace_to_db
+	compare_beads_db beads-db-case-info-json exact BEADS_DB=DB/.BEADS info --json
+	real_database_setup=""
+	real_database_read_only=""
+fi
 
 # Each setup of the selected directory (upstream prepareSelectedCommandContext) runs
 # config.CheckBeadsDirPermissions. When group or others have any permission bit on the directory, even

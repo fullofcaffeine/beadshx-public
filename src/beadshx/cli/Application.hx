@@ -567,10 +567,11 @@ final class Application {
 			return runModeAwareFailure(invocation.output, databaseSettingRefusal(commandPath(invocation.command)));
 		}
 		switch invocation.databaseVariable {
-			// `version` and the help pages show nothing of the workspace they would select.
-			case UnsupportedPath(name) if (usesStore(invocation.command) || invocation.command == Where):
-				return runModeAwareFailure(invocation.output,
-					'${commandPath(invocation.command)} is not available yet when ${name} names this path in this build');
+			case UnsupportedPath(name) if (usesStore(invocation.command)):
+				return refuseDatabaseVariablePath(invocation, name);
+			// `where` set up its directory in checkWorkspaceMetadata; `version` and the help pages show nothing of it.
+			case UnsupportedPath(name) if (invocation.command == Where):
+				return runModeAwareFailure(invocation.output, databaseVariableRefusal(invocation.command, name));
 			case NoVariable | VariablePath(_, _, _) | UnsupportedPath(_):
 		}
 		return switch invocation.command {
@@ -864,44 +865,45 @@ final class Application {
 	}
 
 	/**
-		Upstream selectedNoDBBeadsDir: the `.beads` directory that `where`,
-		`version` and help pages set up, or "" for none. A database path (see
-		noStoreDatabasePath) selects the directory that resolveCommandBeadsDir
-		derives from it, which can differ from the workspace this build reads;
-		otherwise -C, BEADS_DIR or the current directory finds it. Commands
-		that open a store set up the same directory for a `db` setting.
+		Upstream selectedNoDBBeadsDir (see WorkspaceEnvironment.noStoreBeadsDir):
+		the `.beads` directory that `where`, `version` and help pages set up, or
+		"" for none. Commands that open a store set up the same directory for a
+		`db` setting.
 	**/
 	function noStoreBeadsDir(invocation:Invocation):String {
-		final found = switch workspace.discover(invocation.directory, "") {
-			case Found(location): location.path;
-			case NotFound | InvalidSelection(_): "";
-		};
-		final path = noStoreDatabasePath(invocation);
-		return path == "" ? found : WorkspaceEnvironment.commandBeadsDir(path, found);
+		return WorkspaceEnvironment.noStoreBeadsDir(workspace, {directory: invocation.directory, databasePath: invocation.databasePath});
 	}
 
 	/**
-		The database path from which upstream's selectedNoDBBeadsDir takes the
-		directory: --db, unless its value names a database (a valid identifier
-		that is not a file), then BEADS_DB, then BD_DB, then the `db` setting,
-		which upstream reads only when none of --db, -C, BEADS_DB, BD_DB and
-		BEADS_DIR is set. "" when none of them gives a path.
+		Upstream's pre-run for a command that opens the store when no workspace
+		is found and BEADS_DB names a path that this build does not follow.
+
+		Why: before it opens or creates a database for the path (main.go
+		FindDatabasePath at :1250), upstream sets up the directory that
+		resolveCommandBeadsDir derives from it (:1316-1317), which prints its
+		config warning and shared-server notice, and its legacy-workspace guard
+		(:1319) stops a metadata.json there that does not load, before anything
+		is written. What: that setup (see loadSelectedConfig) for
+		WorkspaceEnvironment.variableBeadsDir; then, for such a metadata.json,
+		upstream's load warning and error; else this build's refusal. How: it
+		only reads.
 	**/
-	static function noStoreDatabasePath(invocation:Invocation):String {
-		final flag = invocation.databasePath;
-		if (flag != "" && !(isDatabaseIdentifier(flag) && ConfigProbes.statMissing(flag)))
-			return flag;
-		for (name in ["BEADS_DB", "BD_DB"]) {
-			final value = environmentValue(name);
-			if (value != "")
-				return value;
+	function refuseDatabaseVariablePath(invocation:Invocation, name:String):Int {
+		final beadsDir = WorkspaceEnvironment.variableBeadsDir(environmentValue(name));
+		loadSelectedConfig(beadsDir, [beadsDir]);
+		switch readMetadataFields(beadsDir) {
+			case MetadataFieldsUndecodable(error):
+				output.writeStderr(metadataLoadWarning(beadsDir, error));
+				output.writeStderr(metadataLoadFailure(error));
+				return 1;
+			case MetadataAbsent | MetadataFields(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
 		}
-		return databaseSettingSelects(invocation) ? LayeredConfig.atStartup().getString("db") : "";
+		return runModeAwareFailure(invocation.output, databaseVariableRefusal(invocation.command, name));
 	}
 
-	/** Upstream dbidentifier.ValidateIdentifier: at most 64 letters, digits and underscores, not starting with a digit. */
-	static function isDatabaseIdentifier(name:String):Bool {
-		return name.length <= 64 && isEmbeddedDatabaseIdentifier(name);
+	/** This build's refusal of a `command` for which the variable `name` names a path that it does not follow. */
+	static function databaseVariableRefusal(command:Command, name:String):String {
+		return '${commandPath(command)} is not available yet when ${name} names this path in this build';
 	}
 
 	static function metadataLoadRole(invocation:Invocation):MetadataLoadRole {
@@ -1077,9 +1079,9 @@ final class Application {
 							switch store.info(location.path, invocation.infoSchema, invocation.global) {
 								case Failure(message): runStoreFailure(message);
 								case Success(snapshot):
-									// Upstream prints the database path it took: for BEADS_DB naming a missing file, that file.
+									// Upstream prints the database path it took: for BEADS_DB, the one FindDatabasePath takes.
 									final databasePath = switch invocation.databaseVariable {
-										case VariablePath(_, _, missingFile) if (missingFile != null): missingFile;
+										case VariablePath(_, _, variablePath) if (variablePath != null): variablePath;
 										case NoVariable | VariablePath(_, _, _) | UnsupportedPath(_): snapshot.databasePath;
 									};
 									switch invocation.output {
@@ -2594,15 +2596,10 @@ final class Application {
 		or BEADS_DIR selects the workspace. It then opens, or creates, an
 		embedded database at that path for every command that opens a store,
 		even when no workspace is found, so runInvocation refuses those commands
-		before discovery. The config loads only when no selector is set.
+		before discovery (see WorkspaceEnvironment.databaseSettingSelects).
 	**/
 	static function databaseSettingSelects(invocation:Invocation):Bool {
-		return invocation.databasePath == ""
-			&& goTrimSpace(invocation.directory) == ""
-			&& environmentValue("BEADS_DB") == ""
-			&& environmentValue("BD_DB") == ""
-			&& environmentValue("BEADS_DIR") == ""
-			&& LayeredConfig.atStartup().getString("db") != "";
+		return WorkspaceEnvironment.databaseSettingSelects({directory: invocation.directory, databasePath: invocation.databasePath});
 	}
 
 	/**

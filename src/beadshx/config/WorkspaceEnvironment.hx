@@ -7,9 +7,12 @@ import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.config.LayeredConfig.environmentValue;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.nativeextern.os.OsPkg;
+import beadshx.nativeextern.strings.StringsPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
+import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
 import beadshx.workspace.WorkspaceDiscovery;
 import beadshx.workspace.WorkspacePort;
+import sys.FileSystem;
 
 /**
 	Upstream's `.beads/.env` loading in the root pre-run, and the BEADS_DB and
@@ -24,12 +27,13 @@ import beadshx.workspace.WorkspacePort;
 	or BD_DB chooses the workspace, the .env file of the workspace found from
 	the current directory may set those three selectors (upstream
 	loadSelectionEnvironment). Then BEADS_DB or BD_DB may choose the workspace
-	(see selectDatabaseVariable). Last, every variable of the selected
-	workspace's .env file that the environment does not have is set (upstream
-	loadBeadsEnvFile under prepareSelectedCommandContext). Upstream sets
-	BEADS_DIR to the selected directory before that last step, so the file
-	cannot set BEADS_DIR there and `$BEADS_DIR` expands to that directory.
-	Nothing is printed: a missing, unreadable or rejected file adds nothing.
+	(see selectDatabaseVariable). Last, every variable of the .env file of the
+	directory that upstream sets up first (see setupDirectory) that the
+	environment does not have is set (upstream loadBeadsEnvFile under
+	prepareSelectedCommandContext). Upstream sets BEADS_DIR to that directory
+	before that last step, so the file cannot set BEADS_DIR there and
+	`$BEADS_DIR` expands to that directory. Nothing is printed: a missing,
+	unreadable or rejected file adds nothing.
 **/
 @:goNative
 final class WorkspaceEnvironment {
@@ -41,15 +45,15 @@ final class WorkspaceEnvironment {
 		returns what BEADS_DB or BD_DB selects for that command.
 	**/
 	public static function load(workspace:WorkspacePort, selection:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
-		var selected:Null<WorkspaceDiscovery> = null;
+		var found:Null<WorkspaceDiscovery> = null;
 		// -C sets BEADS_DIR before upstream's first step, which then does nothing.
 		if (goTrimSpace(selection.directory) == ""
 			&& environmentValue("BEADS_DIR") == ""
 			&& environmentValue("BEADS_DB") == ""
 			&& environmentValue("BD_DB") == "") {
-			final found = workspace.discover("", "");
+			final discovered = workspace.discover("", "");
 			var changed = false;
-			switch found {
+			switch discovered {
 				case Found(location):
 					final variables = DotEnv.read(FilepathPkg.join(location.path, ".env"), name -> Sys.getEnv(name));
 					if (variables != null)
@@ -64,23 +68,15 @@ final class WorkspaceEnvironment {
 						}
 				case NotFound | InvalidSelection(_):
 			}
-			// Without a new selector or --db, the selection is the workspace just found.
-			if (!changed && selection.databasePath == "")
-				selected = found;
+			// Without a new selector, the workspace just found is the one that FindBeadsDir finds.
+			if (!changed)
+				found = discovered;
 		}
 		final variable = selectDatabaseVariable(workspace, selection, use);
-		switch variable {
-			case VariablePath(_, path, _):
-				selected = workspace.discover(selection.directory, path);
-			case NoVariable | UnsupportedPath(_):
-				if (selected == null)
-					selected = workspace.discover(selection.directory, selection.databasePath);
-		}
-		switch selected {
-			case Found(location):
-				loadFile(location.path);
-			case NotFound | InvalidSelection(_):
-		}
+		final foundBeadsDir = discoveredPath(found != null ? found : workspace.discover(selection.directory, ""));
+		final beadsDir = setupDirectory(selection, use, foundBeadsDir);
+		if (beadsDir != "")
+			loadFile(beadsDir);
 		return variable;
 	}
 
@@ -105,16 +101,126 @@ final class WorkspaceEnvironment {
 				Sys.putEnv(name, variables.get(name));
 	}
 
+	/** The `.beads` directory of a discovery, or "" when it found none. */
+	static function discoveredPath(discovery:WorkspaceDiscovery):String {
+		return switch discovery {
+			case Found(location): location.path;
+			case NotFound | InvalidSelection(_): "";
+		};
+	}
+
+	/**
+		The `.beads` directory that upstream's pre-run sets up first for a
+		command with this `use`, which loads that directory's `.env` file, or ""
+		for none. `foundBeadsDir` is the directory that upstream's FindBeadsDir
+		finds from -C, BEADS_DIR or the current directory ("" for none).
+
+		Why: upstream binds the command to that directory before it reads any
+		setting, and the directory can differ from the workspace that this
+		build reads. What: for `where`, `version` and help pages, upstream's
+		selectedNoDBBeadsDir (main.go:1156, see noStoreDirectory). For a
+		command that opens the store, the directory that
+		resolveCommandBeadsDir derives from a --db path, else from the `db`
+		setting (main.go:1004, :1316); else the found directory (:1214-1219);
+		and without one, the directory that BEADS_DB selects (:1250, :1316, see
+		variableBeadsDir), unless -C or BEADS_DIR is set. How: it only reads.
+		Upstream sets up a second time when it binds the database that it found
+		in that directory (:1316), which names the same file.
+	**/
+	static function setupDirectory(selection:WorkspaceSelection, use:DatabaseVariableUse, foundBeadsDir:String):String {
+		switch use {
+			case BeforeWorkspace:
+				return noStoreDirectory(selection, foundBeadsDir);
+			case WithoutWorkspace:
+		}
+		final flag = selection.databasePath;
+		if (flag != "" && !namesDatabase(flag))
+			return commandBeadsDir(flag, foundBeadsDir);
+		if (databaseSettingSelects(selection))
+			return commandBeadsDir(LayeredConfig.atStartup().getString("db"), foundBeadsDir);
+		if (foundBeadsDir != "")
+			return foundBeadsDir;
+		final variable = environmentValue("BEADS_DB");
+		if (variable == "" || goTrimSpace(selection.directory) != "" || environmentValue("BEADS_DIR") != "")
+			return "";
+		return variableBeadsDir(variable);
+	}
+
+	/**
+		Upstream selectedNoDBBeadsDir: the `.beads` directory that `where`,
+		`version` and help pages set up, or "" for none.
+
+		Why: a database path selects the directory that resolveCommandBeadsDir
+		derives from it, which can differ from the workspace that this build
+		reads. Commands that open a store set up the same directory for a `db`
+		setting. What: that directory for the path that noStoreDatabasePath
+		takes, or else the directory that -C, BEADS_DIR or the current
+		directory finds. How: it only reads.
+	**/
+	public static function noStoreBeadsDir(workspace:WorkspacePort, selection:WorkspaceSelection):String {
+		return noStoreDirectory(selection, discoveredPath(workspace.discover(selection.directory, "")));
+	}
+
+	/** noStoreBeadsDir with `foundBeadsDir`, the directory that -C, BEADS_DIR or the current directory finds ("" for none). */
+	static function noStoreDirectory(selection:WorkspaceSelection, foundBeadsDir:String):String {
+		final path = noStoreDatabasePath(selection);
+		return path == "" ? foundBeadsDir : commandBeadsDir(path, foundBeadsDir);
+	}
+
+	/**
+		The database path from which upstream's selectedNoDBBeadsDir takes the
+		directory: --db, unless its value names a database (see namesDatabase),
+		then BEADS_DB, then BD_DB, then the `db` setting (see
+		databaseSettingSelects). "" when none of them gives a path.
+	**/
+	static function noStoreDatabasePath(selection:WorkspaceSelection):String {
+		final flag = selection.databasePath;
+		if (flag != "" && !namesDatabase(flag))
+			return flag;
+		for (name in ["BEADS_DB", "BD_DB"]) {
+			final value = environmentValue(name);
+			if (value != "")
+				return value;
+		}
+		return databaseSettingSelects(selection) ? LayeredConfig.atStartup().getString("db") : "";
+	}
+
+	/**
+		Whether upstream's pre-run takes a --db `value` as a database name
+		instead of a path: an identifier as dbidentifier.ValidateIdentifier
+		accepts it (at most 64 letters, digits and underscores, not starting
+		with a digit) that names no file.
+	**/
+	static function namesDatabase(value:String):Bool {
+		return value.length <= 64 && isEmbeddedDatabaseIdentifier(value) && ConfigProbes.statMissing(value);
+	}
+
+	/**
+		Upstream's pre-run takes the `db` setting from the process-start config
+		as the database path only when no --db flag, -C directory, BEADS_DB,
+		BD_DB or BEADS_DIR selects the workspace. The config loads only when no
+		selector is set.
+	**/
+	public static function databaseSettingSelects(selection:WorkspaceSelection):Bool {
+		return selection.databasePath == ""
+			&& goTrimSpace(selection.directory) == ""
+			&& environmentValue("BEADS_DB") == ""
+			&& environmentValue("BD_DB") == ""
+			&& environmentValue("BEADS_DIR") == ""
+			&& LayeredConfig.atStartup().getString("db") != "";
+	}
+
 	/**
 		Whether BEADS_DB or BD_DB chooses the workspace of a command with the -C
 		and --db values of `typed`.
 
 		Why: without --db, upstream's commands that open the store read BEADS_DB
 		when no -C or BEADS_DIR is set and no workspace is found from the current
-		directory, and `where` reads BEADS_DB, else BD_DB, before all of those.
-		What: the variable and its path when one of them selects as described in
-		DatabaseVariableUse. How: selectPath decides whether this build's --db
-		discovery selects that path exactly as upstream does.
+		directory, and `where`, `version` and help pages read BEADS_DB, else
+		BD_DB, before all of those. What: the variable and its path when one of
+		them selects as described in DatabaseVariableUse. How: selectPath decides
+		whether this build's --db discovery selects that path exactly as
+		upstream does.
 	**/
 	static function selectDatabaseVariable(workspace:WorkspacePort, typed:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
 		if (typed.databasePath != "")
@@ -125,18 +231,27 @@ final class WorkspaceEnvironment {
 		};
 	}
 
-	/** BEADS_DB for a command that opens the store, once nothing else selects a workspace. */
+	/**
+		BEADS_DB for a command that opens the store, once nothing else selects a
+		workspace. Upstream's database path is then the one that its
+		FindDatabasePath takes from the variable (see variableDatabasePath).
+	**/
 	static function selectWithoutWorkspace(workspace:WorkspacePort, typed:WorkspaceSelection):DatabaseVariableSelection {
 		final path = environmentValue("BEADS_DB");
 		if (path == "" || goTrimSpace(typed.directory) != "" || environmentValue("BEADS_DIR") != "")
 			return NoVariable;
 		return switch workspace.discover("", "") {
-			case NotFound: selectPath(workspace, "", "BEADS_DB", path);
+			case NotFound:
+				switch selectPath(workspace, "", "BEADS_DB", path) {
+					case VariablePath(name, selected, _): VariablePath(name, selected, variableDatabasePath(selected));
+					case NoVariable: NoVariable;
+					case UnsupportedPath(name): UnsupportedPath(name);
+				}
 			case Found(_) | InvalidSelection(_): NoVariable;
 		};
 	}
 
-	/** BEADS_DB, else BD_DB, for `where`, before -C, BEADS_DIR and the current directory. */
+	/** BEADS_DB, else BD_DB, for `where`, `version` and help pages, before -C, BEADS_DIR and the current directory. */
 	static function selectBeforeWorkspace(workspace:WorkspacePort, typed:WorkspaceSelection):DatabaseVariableSelection {
 		// Upstream checks -C before the command runs; its error comes first.
 		if (goTrimSpace(typed.directory) != "")
@@ -171,12 +286,12 @@ final class WorkspaceEnvironment {
 		discovery must then return the directory that upstream selects. The
 		workspace directory must not be inside a directory named `.beads`, and
 		the database path must be directly inside one, because upstream takes
-		such a parent before it compares any candidate.
+		such a parent before it compares any candidate. The VariablePath has no
+		database path; selectWithoutWorkspace adds the one that upstream takes.
 	**/
 	static function selectPath(workspace:WorkspacePort, directory:String, name:String, path:String):DatabaseVariableSelection {
 		final parent = FilepathPkg.dir(path);
 		final inBeadsDirectory = FilepathPkg.base(parent) == ".beads";
-		var missingFile:Null<String> = null;
 		final selectedPath = switch ConfigProbes.statPath(path) {
 			case StatDirectory if (ConfigProbes.statSucceeds(FilepathPkg.join(path, "metadata.json"))):
 				inBeadsDirectory ? null : path;
@@ -189,7 +304,6 @@ final class WorkspaceEnvironment {
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "dolt"))):
 				parent;
 			case StatMissing if (inBeadsDirectory):
-				missingFile = absolutePath(path);
 				parent;
 			case StatDirectory | StatMissing | StatNotDirectory | StatFailed(_):
 				null;
@@ -204,10 +318,96 @@ final class WorkspaceEnvironment {
 					&& location.databaseName == ""
 					&& !location.proxiedServer
 					&& FilepathPkg.base(location.databasePath) == "embeddeddolt"):
-				VariablePath(name, path, missingFile);
+				VariablePath(name, path, null);
 			case Found(_) | NotFound | InvalidSelection(_):
 				UnsupportedPath(name);
 		};
+	}
+
+	/**
+		The `.beads` directory that upstream's pre-run sets up for a command that
+		opens the store when BEADS_DB names `path` and nothing else selects a
+		workspace: resolveCommandBeadsDir of the database path that
+		FindDatabasePath takes (see variableDatabasePath). No workspace is found
+		then, so none is a candidate.
+	**/
+	public static function variableBeadsDir(path:String):String {
+		return commandBeadsDir(variableDatabasePath(path), "");
+	}
+
+	/**
+		Upstream FindDatabasePath for a BEADS_DB `path` when BEADS_DIR is unset:
+		the canonical path (see canonicalPath), or, when that is a directory,
+		the database that findDatabaseInBeadsDir finds there (see
+		directoryDatabase). It is absolute, and `bd info` prints it.
+	**/
+	static function variableDatabasePath(path:String):String {
+		final canonical = canonicalPath(path);
+		if (isDirectory(canonical)) {
+			final database = directoryDatabase(canonical);
+			if (database != "")
+				return database;
+		}
+		return canonical;
+	}
+
+	/**
+		Upstream findDatabaseInBeadsDir: the database path that the metadata.json
+		of `directory` selects, or "" for none.
+
+		Why: FindDatabasePath takes it for a BEADS_DB directory. What: "" when
+		metadata.json does not load or names a backend other than Dolt. In a
+		Dolt server mode, the configured Dolt directory (configfile
+		DatabasePath), which need not exist; else the `embeddeddolt` directory,
+		then the configured Dolt directory, when they are directories. Without
+		metadata.json, `embeddeddolt` and then `dolt`. How: upstream reads
+		metadata.json with configfile.Load, which rewrites a legacy config.json
+		as metadata.json; this reads it without the rewrite and, as
+		claimingBeadsDir does, takes no fields from a legacy file. Server mode
+		comes from the process-start config, which upstream's configfile reads
+		at that point.
+	**/
+	static function directoryDatabase(directory:String):String {
+		final embedded = FilepathPkg.join(directory, "embeddeddolt");
+		var configured = true;
+		var fields:Null<Map<String, String>> = null;
+		switch readMetadataFields(directory) {
+			case MetadataFields(decoded):
+				fields = decoded;
+			case MetadataFieldsLegacyOnly:
+			case MetadataAbsent:
+				configured = false;
+			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported:
+				return "";
+		}
+		if (configured) {
+			final backend = metadataField(fields, "backend");
+			if (backend != "" && backend != "dolt")
+				return "";
+			final dolt = ConfigProbes.doltDirectory(directory, fields);
+			if (LayeredConfig.atStartup().doltServerMode(metadataField(fields, "dolt_mode"), metadataField(fields, "dolt_server_host")))
+				return dolt;
+			if (isDirectory(embedded))
+				return embedded;
+			if (isDirectory(dolt))
+				return dolt;
+		}
+		if (isDirectory(embedded))
+			return embedded;
+		final dolt = FilepathPkg.join(directory, "dolt");
+		return isDirectory(dolt) ? dolt : "";
+	}
+
+	/** One decoded metadata.json field, or "" when it is absent or there are no fields. */
+	static function metadataField(fields:Null<Map<String, String>>, tag:String):String {
+		if (fields == null)
+			return "";
+		final value = fields.get(tag);
+		return value == null ? "" : value;
+	}
+
+	static function isDirectory(path:String):Bool {
+		return ConfigProbes.statPath(path).match(StatDirectory);
 	}
 
 	/** Go's filepath.Abs, which upstream's CanonicalizePath returns for a path that does not exist. */
@@ -221,13 +421,13 @@ final class WorkspaceEnvironment {
 		FindBeadsDir finds ("" for none).
 
 		Why: `where`, `version` and help pages, and commands that open a store
-		for a `db` setting, set up this directory, which can differ from the
-		workspace that this build's discovery returns for the same path. What:
-		the directory of a workspace whose metadata.json claims the path (see
-		claimingBeadsDir), or else databasePathBeadsDir. How: it only reads.
-		Upstream's configfile.Load would rewrite a legacy config.json that it
-		checks; such a directory counts as claiming the path here, without the
-		rewrite.
+		for a `db` setting or a BEADS_DB path, set up this directory, which can
+		differ from the workspace that this build's discovery returns for the
+		same path. What: the directory of a workspace whose metadata.json claims
+		the path (see claimingBeadsDir), or else databasePathBeadsDir. How: it
+		only reads. Upstream's configfile.Load would rewrite a legacy
+		config.json that it checks; such a directory counts as claiming the
+		path here, without the rewrite.
 	**/
 	public static function commandBeadsDir(path:String, foundBeadsDir:String):String {
 		if (path == "")
@@ -335,24 +535,76 @@ final class WorkspaceEnvironment {
 	}
 
 	/**
-		Upstream utils.CanonicalizePath without its final step: the absolute
-		path with symbolic links resolved, or the absolute path when that fails.
-		On macOS and Windows upstream also takes each name's case from the file
-		system, which comparablePath makes irrelevant here.
+		Upstream utils.CanonicalizePath: the absolute path with symbolic links
+		resolved, or only the absolute path when that fails.
+
+		Why: upstream compares and returns these paths, and on macOS it then
+		takes each name's case from the file system, so a path typed in another
+		case names the directory as stored, which upstream prints. What: on
+		macOS the resolved path with the names that its directories list (see
+		storedCasePath) when they are all found, else the resolved path.
+		Windows keeps the resolved path, as upstream does. How: it only reads.
 	**/
 	static function canonicalPath(path:String):String {
 		final absolute = absolutePath(path);
 		final resolved = FilepathPkg.evalSymlinks(absolute);
-		return resolved.value2 == null ? resolved.value1 : absolute;
+		if (resolved.value2 != null)
+			return absolute;
+		if (Sys.systemName() == "Mac") {
+			final stored = storedCasePath(resolved.value1);
+			if (stored != "")
+				return stored;
+		}
+		return resolved.value1;
 	}
 
-	/** Upstream utils.NormalizePathForComparison: canonicalPath, in lower case on macOS and Windows; "" for "". */
+	/**
+		Upstream resolveCanonicalCaseWalk: the absolute `path` with each name
+		replaced by the first entry of its directory, in os.ReadDir's sorted
+		order, that equals it under strings.EqualFold; "" when a directory
+		cannot be read or has no such entry.
+
+		Upstream first asks the kernel for the path (fcntl F_GETPATH) and walks
+		only when that fails. Both give the stored names of a directory or file
+		whose ancestors can be listed. They can differ for an ancestor that
+		cannot be listed, a hard link, or a name stored in another Unicode
+		normalization.
+	**/
+	static function storedCasePath(path:String):String {
+		var stored = "/";
+		for (name in FilepathPkg.clean(path).split("/")) {
+			if (name == "")
+				continue;
+			final entries = try FileSystem.readDirectory(stored) catch (_:haxe.Exception) null;
+			if (entries == null)
+				return "";
+			var match = "";
+			for (entry in entries)
+				if (StringsPkg.equalFold(entry, name)) {
+					match = entry;
+					break;
+				}
+			if (match == "")
+				return "";
+			stored = FilepathPkg.join(stored, match);
+		}
+		return stored;
+	}
+
+	/**
+		Upstream utils.NormalizePathForComparison: the absolute path with its
+		symbolic links resolved when they resolve, in lower case on macOS and
+		Windows; "" for "". Unlike canonicalPath, it takes no case from the file
+		system.
+	**/
 	static function comparablePath(path:String):String {
 		if (path == "")
 			return "";
-		final canonical = canonicalPath(path);
+		final absolute = absolutePath(path);
+		final resolved = FilepathPkg.evalSymlinks(absolute);
+		final normalized = resolved.value2 == null ? resolved.value1 : absolute;
 		final system = Sys.systemName();
-		return system == "Mac" || system == "Windows" ? canonical.toLowerCase() : canonical;
+		return system == "Mac" || system == "Windows" ? normalized.toLowerCase() : normalized;
 	}
 
 	/** Upstream utils.PathsEqual. */

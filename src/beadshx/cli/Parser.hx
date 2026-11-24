@@ -1425,7 +1425,9 @@ final class Parser {
 
 		// Cobra reports the flag errors above before upstream's pre-run loads the selected
 		// workspace's .beads/.env, which comes before any setting or variable is read below.
-		final variableUse = positional.length > 0 && positional[0] == "where" ? BeforeWorkspace : WithoutWorkspace;
+		// `where`, `version`, `help` and the root skip upstream's store setup.
+		final skipsStore = positional.length == 0 || positional[0] == "where" || positional[0] == "version" || positional[0] == "help";
+		final variableUse = skipsStore ? BeforeWorkspace : WithoutWorkspace;
 		final databaseVariable = environment.selectWorkspace({directory: directory, databasePath: databasePath}, variableUse);
 		// A path from BEADS_DB or BD_DB selects the workspace from here on, as if --db had named it.
 		switch databaseVariable {

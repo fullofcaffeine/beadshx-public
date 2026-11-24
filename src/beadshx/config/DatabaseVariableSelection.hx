@@ -3,16 +3,17 @@ package beadshx.config;
 /** When upstream's pre-run lets BEADS_DB and BD_DB choose the workspace of one command. */
 enum DatabaseVariableUse {
 	/**
-		A command that opens the store, and every other command except `where`.
-		Upstream's FindDatabasePath reads BEADS_DB only when no --db, -C or
-		BEADS_DIR is set and no workspace is found from the current directory.
-		It never reads BD_DB.
+		A command that opens the store, and the label, events and config groups,
+		whose help cobra shows without the pre-run. Upstream's FindDatabasePath
+		reads BEADS_DB only when no --db, -C or BEADS_DIR is set and no workspace
+		is found from the current directory. It never reads BD_DB.
 	**/
 	WithoutWorkspace;
 
 	/**
-		`where`: upstream's selectedNoDBBeadsDir takes BEADS_DB, else BD_DB,
-		before -C, BEADS_DIR and the current directory. Only --db comes first.
+		`where`, `version` and help pages: upstream's selectedNoDBBeadsDir takes
+		BEADS_DB, else BD_DB, before -C, BEADS_DIR and the current directory.
+		Only --db comes first.
 	**/
 	BeforeWorkspace;
 }
@@ -24,12 +25,13 @@ enum DatabaseVariableSelection {
 
 	/**
 		The variable `name` chooses the workspace, as a --db flag with its value
-		`path` would. `missingFile` is the absolute path when `path` names a
-		missing file in the workspace directory, such as a legacy `beads.db`:
-		upstream then keeps that path as its database path, which `bd info`
-		prints. It is null when upstream uses the database directory.
+		`path` would. `databasePath` is the database path that upstream's
+		FindDatabasePath takes from the variable for a command that opens the
+		store, which `bd info` prints: the canonical path, or the database
+		directory inside it. It is null for `where`, `version` and help pages,
+		which take no database path from the variable.
 	**/
-	VariablePath(name:String, path:String, missingFile:Null<String>);
+	VariablePath(name:String, path:String, databasePath:Null<String>);
 
 	/**
 		The variable `name` names a path that this build does not select as

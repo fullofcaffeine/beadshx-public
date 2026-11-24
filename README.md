@@ -68,8 +68,13 @@ and `BD_LIST_LIMIT`, and to `BEADS_*` variables, such as `BEADS_MAX_ROWS` and
 `BEADS_DOLT_SHARED_SERVER`. When no `-C`, `BEADS_DIR`, `BEADS_DB` or `BD_DB`
 selects the workspace, `BEADS_DIR`, `BEADS_DB` and `BD_DB` in the `.env` file
 of the workspace found from the current directory can select another
-workspace first. Then `bdhx` loads the `.env` file of the selected workspace;
-for a redirect, this is the file of the target. The file has the same format
+workspace first. Then `bdhx` loads the `.env` file of the directory that
+upstream sets up first. For `where`, `version` and help pages, a `--db`,
+`BEADS_DB`, `BD_DB` or `db` setting path selects it, also when a workspace is
+found from the current directory. For a command that reads the database, a
+`--db` path or the `db` setting selects it, or else the workspace found, or
+else a `BEADS_DB` path. For a redirect, this is the file of the target. The
+file has the same format
 as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
 `export`, `#` comments, single or double quotes and `$VAR` expansion. If one
 line is not valid, `bdhx` ignores the full file, and prints no warning.
@@ -95,13 +100,18 @@ print upstream's hint about `--limit` on stderr.
 
 Like upstream, a command that reads the database uses `BEADS_DB` only when no
 `--db`, `-C` or `BEADS_DIR` is set and no workspace is found from the current
-directory. These commands ignore `BD_DB`. For `where`, `BEADS_DB`, or else
-`BD_DB`, comes before `-C`, `BEADS_DIR` and the current directory; only `--db`
-comes first. The path, absolute or relative to the current directory, can name
-the workspace directory (such as `.beads`), its `embeddeddolt` directory, or a
-missing file in a `.beads` directory, such as a legacy `beads.db`. `bdhx` then
-reads that workspace with its `config.yaml` and `.env` file. For such a missing
-file, `info` prints that file as the database path, as upstream does.
+directory. These commands ignore `BD_DB`. For `where`, `version` and help
+pages, `BEADS_DB`, or else `BD_DB`, comes before `-C`, `BEADS_DIR` and the
+current directory; only `--db` comes first. The path, absolute or relative to
+the current directory, can name the workspace directory (such as `.beads`),
+its `embeddeddolt` directory, or a missing file in a `.beads` directory, such
+as a legacy `beads.db`. `bdhx` then reads that workspace with its
+`config.yaml` and `.env` file. `info` prints the database path that upstream
+takes from `BEADS_DB`: the absolute path with symbolic links resolved, or the
+database directory inside it. For a missing file, that is the file. On macOS,
+upstream and `bdhx` take the letter case of each name from the file system
+there, and also when they derive the directory that a path selects, so a path
+typed in another case prints as stored.
 
 Like upstream, `bdhx` reads the selected workspace's `.beads/metadata.json`
 (or, when it does not exist, a legacy `.beads/config.json`) before any
@@ -369,6 +379,14 @@ Limits:
   database, a server-mode, proxied or redirected workspace, a path deeper in a
   `.beads` directory and a path with a trailing slash. For most of these paths
   upstream creates an embedded database. `version` and help pages still run.
+  Before the refusal, `bdhx` sets up the directory that upstream derives from
+  the path: like upstream, it loads the `.env` file there and prints the
+  config warning and the shared-server notice. For a command that reads the
+  database, when `.beads/metadata.json` there does not load, `bdhx` prints
+  upstream's `warning: load ...` line and `Error: loading config: ...`
+  instead of the refusal. On macOS, a path typed in another letter case, such
+  as `DB/.BEADS/embeddeddolt`, is refused too, although upstream reads the
+  workspace.
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
@@ -430,8 +448,7 @@ Limits:
   `embedded`, upstream prints a three-line notice on stderr in shared-server
   mode, and so does `bdhx`, also before these refusals. Like upstream, it reads
   the metadata of the workspace that a `BEADS_DB`, `BD_DB` or `db` setting path
-  selects. `bdhx` does not print the notice before it refuses a `BEADS_DB` path
-  that it cannot follow for a command that reads the database.
+  selects.
   Like upstream, `where` in shared-server mode reads the issue prefix from the
   embedded database, unless `BEADS_DOLT_SHARED_SERVER` or `dolt_mode` makes the
   workspace a server workspace.
