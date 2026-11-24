@@ -1,6 +1,10 @@
 package beadshx.cli;
 
+import beadshx.cli.TerminalStyles.StyleSpec;
+import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.nativeextern.ansi.AnsiPkg;
+import beadshx.nativeextern.lipgloss.LipglossPkg;
+import beadshx.nativeextern.os.OsPkg;
 
 /** Owns the narrow process-stream effect for the native executable. */
 @:goNative
@@ -51,6 +55,14 @@ final class SystemOutput implements OutputPort {
 
 	public function displayWidth(value:String):Int {
 		return AnsiPkg.stringWidth(value);
+	}
+
+	public function hasDarkBackground():Bool {
+		return LipglossPkg.hasDarkBackground(OsPkg.stdin, OsPkg.stdout);
+	}
+
+	public function textStyle(spec:StyleSpec):TextStyle {
+		return new LipglossTextStyle(spec);
 	}
 }
 

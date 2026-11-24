@@ -39,6 +39,12 @@ typedef Invocation = {
 	/** --quiet (-q): upstream then drops its workspace gate warnings, not its errors. */
 	final quiet:Bool;
 
+	/**
+		The --no-color value, which pflag reads as a bool: upstream's pre-run
+		then turns colors off (DisableColors) whatever the environment says.
+	**/
+	final noColor:Bool;
+
 	final cpuProfile:Bool;
 	final memProfilePath:String;
 	final showHelp:Bool;

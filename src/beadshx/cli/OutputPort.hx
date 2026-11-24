@@ -1,5 +1,8 @@
 package beadshx.cli;
 
+import beadshx.cli.TerminalStyles.StyleSpec;
+import beadshx.cli.TerminalStyles.TextStyle;
+
 /** Process output boundary used by handlers and deterministic tests. */
 interface OutputPort {
 	function writeStdout(value:String):Void;
@@ -25,4 +28,14 @@ interface OutputPort {
 
 	/** The terminal cells that `value` takes, as upstream's ansi.StringWidth counts them. */
 	function displayWidth(value:String):Int;
+
+	/**
+		Whether the terminal has a dark background, as upstream's
+		`lipgloss.HasDarkBackground(os.Stdin, os.Stdout)` answers when colors are
+		on: true when stdin or stdout is no terminal or the terminal does not say.
+	**/
+	function hasDarkBackground():Bool;
+
+	/** Builds the native style that upstream's internal/ui builds for `spec`. */
+	function textStyle(spec:StyleSpec):TextStyle;
 }

@@ -1,0 +1,168 @@
+import beadshx.cli.TerminalStyles;
+import beadshx.cli.TerminalStyles.StyleSpec;
+import beadshx.cli.TerminalStyles.TextStyle;
+import beadshx.cli.TerminalStyles.shouldUseColor;
+
+/**
+	Pins upstream's color decision (internal/ui/terminal.go:32-64), the style
+	of each upstream ui style for each background (styles.go:139-261) and the
+	render helpers (styles.go:286-599), by hand. A marker style stands in for
+	lipgloss: it prints the spec it was built from. Parity covers the real
+	escape sequences, and the pipe cases; a terminal on stdout cannot reach it.
+**/
+final class Main {
+	static var failures = 0;
+
+	static function main():Void {
+		decisionContracts();
+		plainContracts();
+		darkContracts();
+		lightContracts();
+		if (failures > 0) {
+			Sys.println('terminal styles Haxe contracts: ${failures} failure(s)');
+			Sys.exit(1);
+		}
+		Sys.println("terminal styles Haxe contracts: PASS");
+	}
+
+	static function decisionContracts():Void {
+		// No variable: a terminal on stdout decides.
+		equal(shouldUseColor(environment([]), true), true);
+		equal(shouldUseColor(environment([]), false), false);
+		// Any non-empty CLICOLOR_FORCE forces colors, also 0; an empty one does not.
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1"]), false), true);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "0"]), false), true);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => ""]), false), false);
+		// NO_COLOR, CLICOLOR=0 and BD_GIT_HOOK=1 win over CLICOLOR_FORCE.
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "NO_COLOR" => "1"]), true), false);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "NO_COLOR" => "0"]), true), false);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "NO_COLOR" => ""]), true), true);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "CLICOLOR" => "0"]), true), false);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "CLICOLOR" => "00"]), true), true);
+		equal(shouldUseColor(environment(["CLICOLOR" => "1"]), false), false);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "BD_GIT_HOOK" => "1"]), true), false);
+		equal(shouldUseColor(environment(["CLICOLOR_FORCE" => "1", "BD_GIT_HOOK" => "true"]), true), true);
+		// TERM=dumb, in any case, turns off a terminal's colors, but not forced ones.
+		equal(shouldUseColor(environment(["TERM" => "dumb"]), true), false);
+		equal(shouldUseColor(environment(["TERM" => "DUMB"]), true), false);
+		equal(shouldUseColor(environment(["TERM" => "dumb "]), true), true);
+		equal(shouldUseColor(environment(["TERM" => "dumb", "CLICOLOR_FORCE" => "1"]), false), true);
+		equal(shouldUseColor(environment(["TERM" => "xterm"]), true), true);
+		equal(shouldUseColor(environment(["TERM" => "xterm"]), false), false);
+	}
+
+	static function plainContracts():Void {
+		final styles = TerminalStyles.plain(marker);
+		// Every style is the empty one; the open and custom icons and an unknown type are never styled.
+		equal(styles.renderStatusIcon("open"), "○");
+		equal(styles.renderStatusIcon("closed"), "<->✓");
+		equal(styles.renderStatusIcon("deferred"), "<->❄");
+		equal(styles.renderStatusIcon("review"), "◇");
+		equal(styles.renderPriority(0), "<->P0");
+		equal(styles.renderPriority(4), "<->P4");
+		equal(styles.renderType("bug"), "<->bug");
+		equal(styles.renderType("decision"), "decision");
+		equal(styles.renderStatus("open"), "<->open");
+		equal(styles.renderId("x-1"), "<->x-1");
+		equal(styles.renderMuted("m"), "<->m");
+		equal(styles.renderClosedLine("l"), "<->l");
+		equal(styles.bold.render("b"), "<->b");
+		equal(styles.command.render("c"), "<->c");
+	}
+
+	static function darkContracts():Void {
+		final styles = TerminalStyles.colored(true, marker);
+		equal(styles.renderStatusIcon("open"), "○");
+		equal(styles.renderStatusIcon("in_progress"), "<#ffb454>◐");
+		equal(styles.renderStatusIcon("blocked"), "<#f26d78>●");
+		equal(styles.renderStatusIcon("closed"), "<#8090a0>✓");
+		equal(styles.renderStatusIcon("deferred"), "<#6c7680>❄");
+		equal(styles.renderStatusIcon("pinned"), "<#d2a6ff>📌");
+		// hooked has a status style but no icon of its own.
+		equal(styles.renderStatusIcon("hooked"), "◇");
+		equal(styles.renderPriority(0), "<#f07178+bold>P0");
+		equal(styles.renderPriority(1), "<#ff8f40>P1");
+		equal(styles.renderPriority(2), "<#e6b450>P2");
+		equal(styles.renderPriority(3), "<default>P3");
+		equal(styles.renderPriority(4), "<default>P4");
+		equal(styles.renderPriority(5), "P5");
+		equal(styles.renderPriority(-1), "P-1");
+		equal(styles.renderType("bug"), "<#f26d78>bug");
+		equal(styles.renderType("epic"), "<#d2a6ff>epic");
+		equal(styles.renderType("feature"), "<default>feature");
+		equal(styles.renderType("task"), "<default>task");
+		equal(styles.renderType("chore"), "<default>chore");
+		equal(styles.renderType("gate"), "gate");
+		equal(styles.renderStatus("in_progress"), "<#ffb454>in_progress");
+		equal(styles.renderStatus("blocked"), "<#f26d78>blocked");
+		equal(styles.renderStatus("pinned"), "<#d2a6ff>pinned");
+		equal(styles.renderStatus("hooked"), "<#59c2ff>hooked");
+		equal(styles.renderStatus("closed"), "<#8090a0>closed");
+		equal(styles.renderStatus("open"), "<default>open");
+		equal(styles.renderStatus("deferred"), "<default>deferred");
+		equal(styles.renderId("x-1"), "<default>x-1");
+		equal(styles.renderPass("p"), "<#c2d94c>p");
+		equal(styles.renderWarn("w"), "<#ffb454>w");
+		equal(styles.fail.render("f"), "<#f07178>f");
+		equal(styles.renderMuted("m"), "<#6c7680>m");
+		equal(styles.renderAccent("a"), "<#59c2ff>a");
+		equal(styles.renderClosedLine("l"), "<#8090a0>l");
+		equal(styles.category.render("c"), "<#59c2ff+bold>c");
+		equal(styles.bold.render("b"), "<-+bold>b");
+		equal(styles.command.render("c"), "<#bfbdb6>c");
+	}
+
+	static function lightContracts():Void {
+		final styles = TerminalStyles.colored(false, marker);
+		equal(styles.renderStatusIcon("in_progress"), "<#f2ae49>◐");
+		equal(styles.renderStatusIcon("blocked"), "<#f07171>●");
+		equal(styles.renderStatusIcon("closed"), "<#9099a1>✓");
+		equal(styles.renderStatusIcon("deferred"), "<#828c99>❄");
+		equal(styles.renderPriority(0), "<#f07171+bold>P0");
+		equal(styles.renderPriority(1), "<#ff8f40>P1");
+		equal(styles.renderType("bug"), "<#f07171>bug");
+		equal(styles.renderStatus("hooked"), "<#59c2ff>hooked");
+		equal(styles.renderPass("p"), "<#86b300>p");
+		equal(styles.renderWarn("w"), "<#f2ae49>w");
+		equal(styles.fail.render("f"), "<#f07171>f");
+		equal(styles.renderAccent("a"), "<#399ee6>a");
+		equal(styles.category.render("c"), "<#399ee6+bold>c");
+		equal(styles.command.render("c"), "<#5c6166>c");
+	}
+
+	/** Builds a style that prints its spec before the text: `-` for no foreground, `default` for NoColor{}. */
+	static function marker(spec:StyleSpec):TextStyle {
+		final foreground = switch spec.foreground {
+			case NoForeground: "-";
+			case DefaultForeground: "default";
+			case HexForeground(hex): hex;
+		};
+		return new MarkerStyle('<${foreground}${spec.bold ? "+bold" : ""}>');
+	}
+
+	static function environment(values:Map<String, String>):String->String {
+		return name -> {
+			final value = values.get(name);
+			return value == null ? "" : value;
+		};
+	}
+
+	static function equal<T>(actual:T, expected:T):Void {
+		if (actual != expected) {
+			failures++;
+			Sys.println('expected ${expected}, got ${actual}');
+		}
+	}
+}
+
+private final class MarkerStyle implements TextStyle {
+	final prefix:String;
+
+	public function new(prefix:String) {
+		this.prefix = prefix;
+	}
+
+	public function render(text:String):String {
+		return prefix + text;
+	}
+}

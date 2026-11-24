@@ -7,6 +7,8 @@ import beadshx.cli.JsonSettingPort.WorkspaceSelection;
 import beadshx.config.DatabaseVariableSelection;
 import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.cli.OutputPort;
+import beadshx.cli.TerminalStyles.StyleSpec;
+import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.cli.WatchPort;
 import beadshx.identity.SystemActor;
 import beadshx.git.GoGitHistory;
@@ -156,6 +158,23 @@ final class CapturedOutput implements OutputPort {
 
 	public function displayWidth(value:String):Int {
 		return value.length;
+	}
+
+	public function hasDarkBackground():Bool {
+		return true;
+	}
+
+	public function textStyle(spec:StyleSpec):TextStyle {
+		return new UnstyledText();
+	}
+}
+
+/** A style that leaves the text as it is. */
+final class UnstyledText implements TextStyle {
+	public function new() {}
+
+	public function render(text:String):String {
+		return text;
 	}
 }
 

@@ -3831,6 +3831,82 @@ compare_real_database_import list-tree-closed-deps-human exact "$closed_tree_rec
 compare_real_database_import list-tree-closed-flat-human exact "$closed_tree_records" list --parent test-tc --all --flat --include-gates
 compare_real_database_import list-tree-closed-long-flat-human exact "$closed_tree_records" list --parent test-tc --all --long --flat
 compare_real_database_import list-tree-closed-all-pretty-human exact "$closed_tree_records" list --all --pretty
+# Upstream's internal/ui decides once, when the process starts, whether to color (ShouldUseColor):
+# BD_GIT_HOOK=1, a non-empty NO_COLOR or CLICOLOR=0 turn colors off; then any non-empty CLICOLOR_FORCE
+# turns them on, also 0 and also with TERM=dumb; then TERM=dumb turns them off; otherwise stdout must
+# be a terminal. --no-color turns them off again in the pre-run. A color is always 24-bit, whatever
+# TERM says, from the dark palette when stdin or stdout is no terminal. These cases empty the
+# harness's NO_COLOR=1 (upstream treats an empty value as unset) and add the assignments in $3. The
+# records give one --parent tree each built-in status, each priority and the bug and epic types, a
+# closed title with a tab (a lipgloss style turns it into four spaces, colors on or off), a
+# dependency inside the view and one outside it.
+color_list_record() {
+	local id="$1" title="$2" state="$3" priority="$4" type="$5" parent="$6" blocker="$7"
+	jq -nc --arg id "$id" --arg title "$title" --arg status "$state" --argjson priority "$priority" \
+		--arg type "$type" --arg parent "$parent" --arg blocker "$blocker" '{
+		id: $id, title: $title, status: $status, priority: $priority, issue_type: $type,
+		assignee: "fixture", labels: ["colour"], description: "First line\nSecond line",
+		created_at: "2026-08-20T12:00:00Z", updated_at: "2026-08-21T13:00:00Z"}
+		+ (if $status == "closed" then {closed_at: "2026-08-21T13:00:00Z", close_reason: "done"} else {} end)
+		+ {dependencies: ([if $parent == "" then empty else {issue_id: $id, depends_on_id: $parent,
+			type: "parent-child", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"} end]
+			+ [if $blocker == "" then empty else {issue_id: $id, depends_on_id: $blocker,
+			type: "blocks", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"} end])}'
+}
+color_list_records="$(
+	color_list_record test-cl "Colour parent" open 2 epic "" ""
+	color_list_record test-cl-p0 "Critical bug" open 0 bug test-cl ""
+	color_list_record test-cl-p1 "Active task" in_progress 1 task test-cl ""
+	color_list_record test-cl-blocked "Blocked feature" blocked 3 feature test-cl ""
+	color_list_record test-cl-deferred "Deferred chore" deferred 4 chore test-cl ""
+	color_list_record test-cl-pinned "Pinned task" pinned 2 task test-cl ""
+	color_list_record test-cl-hooked "Hooked task" hooked 2 task test-cl ""
+	color_list_record test-cl-closed $'Closed\ttabbed task' closed 1 task test-cl ""
+	color_list_record test-cl-closed-epic "Closed epic" closed 0 epic test-cl ""
+	color_list_record test-cl-waiting "Waiting task" open 2 task test-cl test-cl-p0
+	color_list_record test-cl-outside "Outside dependency" open 3 bug test-cl test-abcd11
+)"
+compare_real_database_colors() {
+	local name="$1" comparison="$2" assignments
+	read -r -a assignments <<<"NO_COLOR= $3"
+	shift 3
+	real_database_extra_env=("${assignments[@]}")
+	real_database_extra_import="$color_list_records"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+	real_database_extra_import=""
+}
+write_color_dotenv() {
+	printf 'CLICOLOR_FORCE=1\n' >"$1/work/.beads/.env"
+}
+compare_real_database_colors list-color-tree-all exact CLICOLOR_FORCE=1 list --all
+compare_real_database_colors list-color-parent-deps exact CLICOLOR_FORCE=1 list --parent test-cl --all --deps=all
+compare_real_database_colors list-color-flat exact CLICOLOR_FORCE=1 list --parent test-cl --all --flat
+compare_real_database_colors list-color-long exact CLICOLOR_FORCE=1 list --parent test-cl --all --long --flat
+compare_real_database_colors children-color exact CLICOLOR_FORCE=1 children test-cl
+compare_real_database_colors list-color-force-zero exact CLICOLOR_FORCE=0 list --parent test-cl --all
+compare_real_database_colors list-color-term-dumb exact "CLICOLOR_FORCE=1 TERM=dumb" list --parent test-cl --all
+compare_real_database_colors list-color-term-xterm exact "CLICOLOR_FORCE=1 TERM=xterm" list --parent test-cl --all --flat
+compare_real_database_colors list-color-no-color-flag-false exact CLICOLOR_FORCE=1 list --parent test-cl --all --no-color=false
+compare_real_database_colors list-color-no-color-flag-bad exact CLICOLOR_FORCE=1 list --parent test-cl --all --no-color=maybe
+# ready's pretty and plain views, its empty and truncated notes, and query's compact view share the styles.
+compare_real_database_colors ready-color exact CLICOLOR_FORCE=1 ready
+compare_real_database_colors ready-color-plain exact CLICOLOR_FORCE=1 ready --plain
+compare_real_database_colors ready-color-limit exact CLICOLOR_FORCE=1 ready --limit 1
+compare_real_database_colors ready-color-empty exact CLICOLOR_FORCE=1 ready --assignee nobody
+compare_real_database_colors query-color exact CLICOLOR_FORCE=1 query --all assignee=fixture
+# Colors stay off: stdout is no terminal, NO_COLOR, CLICOLOR=0 or BD_GIT_HOOK=1 wins over CLICOLOR_FORCE,
+# --no-color, agent mode and JSON print no style, and .beads/.env loads after the decision.
+compare_real_database_colors list-color-pipe exact "" list --parent test-cl --all
+compare_real_database_colors list-color-no-color exact "CLICOLOR_FORCE=1 NO_COLOR=1" list --parent test-cl --all
+compare_real_database_colors list-color-clicolor-zero exact "CLICOLOR_FORCE=1 CLICOLOR=0" list --parent test-cl --all --flat
+compare_real_database_colors list-color-git-hook exact "CLICOLOR_FORCE=1 BD_GIT_HOOK=1" list --parent test-cl --all
+compare_real_database_colors list-color-no-color-flag exact CLICOLOR_FORCE=1 list --parent test-cl --all --long --flat --no-color
+compare_real_database_colors list-color-agent-flat exact "CLICOLOR_FORCE=1 CLAUDE_CODE=1" list --parent test-cl --all --flat
+compare_real_database_colors list-color-json exact CLICOLOR_FORCE=1 list --parent test-cl --all --json
+real_database_setup=write_color_dotenv
+compare_real_database_colors list-color-dotenv-force exact "" list --parent test-cl --all
+real_database_setup=""
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json

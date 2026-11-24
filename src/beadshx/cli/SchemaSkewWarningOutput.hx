@@ -1,5 +1,7 @@
 package beadshx.cli;
 
+import beadshx.cli.TerminalStyles.StyleSpec;
+import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.store.SchemaSkew.SchemaSkewWarning;
 
 /**
@@ -62,5 +64,13 @@ final class SchemaSkewWarningOutput implements OutputPort {
 
 	public function displayWidth(value:String):Int {
 		return streams.displayWidth(value);
+	}
+
+	public function hasDarkBackground():Bool {
+		return streams.hasDarkBackground();
+	}
+
+	public function textStyle(spec:StyleSpec):TextStyle {
+		return streams.textStyle(spec);
 	}
 }

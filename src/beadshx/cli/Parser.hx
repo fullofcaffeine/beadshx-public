@@ -194,6 +194,7 @@ final class Parser {
 		var readonly:Null<Bool> = null;
 		var ignoreSchemaSkew = false;
 		var quiet = false;
+		var noColor = false;
 		var cpuProfile = false;
 		var memProfilePath = "";
 		var expectedValue:Null<ExpectedValue> = null;
@@ -942,6 +943,12 @@ final class Parser {
 					readonly = value;
 				continue;
 			}
+			if (StringTools.startsWith(argument, "--no-color=")) {
+				final value = booleanValue("--no-color", argument.substr(11));
+				if (value != null)
+					noColor = value;
+				continue;
+			}
 			if (StringTools.startsWith(argument, "--watch=")
 				|| StringTools.startsWith(argument, "--thread=")
 				|| StringTools.startsWith(argument, "--refs=")
@@ -1361,8 +1368,10 @@ final class Parser {
 					ignoreSchemaSkew = true;
 				case "--quiet" | "-q":
 					quiet = true;
-				case "--sandbox" | "--no-color" | "--verbose" | "-v":
-					// This command profile is already read-only, unstyled, and synchronous.
+				case "--no-color":
+					noColor = true;
+				case "--sandbox" | "--verbose" | "-v":
+					// This command profile is already read-only and synchronous.
 				case "--version" | "-V":
 					// The root's own flag; the root prints the version when it runs with it.
 					useCommandFlag(argument);
@@ -1680,6 +1689,7 @@ final class Parser {
 				readonly: readonly,
 				ignoreSchemaSkew: ignoreSchemaSkew,
 				quiet: quiet,
+				noColor: noColor,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,
@@ -2093,6 +2103,7 @@ final class Parser {
 				readonly: readonly,
 				ignoreSchemaSkew: ignoreSchemaSkew,
 				quiet: quiet,
+				noColor: noColor,
 				cpuProfile: cpuProfile,
 				memProfilePath: memProfilePath,
 				showHelp: showHelp,

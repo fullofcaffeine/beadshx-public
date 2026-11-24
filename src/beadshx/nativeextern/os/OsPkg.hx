@@ -1,10 +1,16 @@
 package beadshx.nativeextern.os;
 
-/** Exact standard-library user directories, file information, host name and process lookup, with their platform rules and errors. */
+/** Exact standard-library streams, user directories, file information, host name and process lookup, with their platform rules and errors. */
 @:go.import("os")
 @:go.package("os")
 @:goNative
 extern class OsPkg {
+	/** `os.Stdin`: the process's standard input. */
+	@:go.name("Stdin") public static var stdin(default, never):File;
+
+	/** `os.Stdout`: the process's standard output. */
+	@:go.name("Stdout") public static var stdout(default, never):File;
+
 	@:go.tupleReturn
 	@:go.name("UserHomeDir") public static function userHomeDir():PathResult;
 

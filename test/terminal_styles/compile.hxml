@@ -1,0 +1,4 @@
+-cp src
+-cp test/terminal_styles
+-main Main
+--interp

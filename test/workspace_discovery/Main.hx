@@ -1,5 +1,7 @@
 import beadshx.bootstrap.CommandProcess.commandApplication;
 import beadshx.cli.OutputPort;
+import beadshx.cli.TerminalStyles.StyleSpec;
+import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.workspace.WorkspaceDiscovery;
 import beadshx.workspace.WorkspacePort;
 import sys.FileSystem;
@@ -81,6 +83,23 @@ final class DiscardedOutput implements OutputPort {
 
 	public function displayWidth(value:String):Int {
 		return value.length;
+	}
+
+	public function hasDarkBackground():Bool {
+		return true;
+	}
+
+	public function textStyle(spec:StyleSpec):TextStyle {
+		return new UnstyledText();
+	}
+}
+
+/** A style that leaves the text as it is. */
+final class UnstyledText implements TextStyle {
+	public function new() {}
+
+	public function render(text:String):String {
+		return text;
 	}
 }
 

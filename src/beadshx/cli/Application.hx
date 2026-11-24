@@ -28,6 +28,7 @@ import beadshx.cli.GraphViews.renderGraphDot;
 import beadshx.cli.GraphViews.renderGraphHtml;
 import beadshx.cli.GraphViews.renderGraphVisual;
 import beadshx.cli.StatusIcon.statusIcon;
+import beadshx.cli.TerminalStyles.shouldUseColor;
 import beadshx.cli.CatalogViews.renderStatusesJson;
 import beadshx.cli.CatalogViews.renderStatusesText;
 import beadshx.cli.CatalogViews.renderTypeSectionsJson;
@@ -415,6 +416,17 @@ final class Application {
 	var jsonDeprecationEmitted = false;
 	var sharedServerNoticeEmitted = false;
 
+	/**
+		Whether upstream's internal/ui colors this process's output. `run`
+		decides it from the environment before anything else, as upstream's
+		package init does, so `.beads/.env` cannot change it; --no-color then
+		turns it off.
+	**/
+	var colors = false;
+
+	/** The styles for `colors`, built when a view first renders with them; see `terminalStyles`. */
+	var builtStyles:Null<TerminalStyles> = null;
+
 	/** The last stored issue_prefix read, so one command opens its database for the prefix at most once. */
 	var storedPrefixRead:Null<StoredPrefixRead> = null;
 
@@ -445,6 +457,7 @@ final class Application {
 		what loaded. That load reads the process's own directory, never -C.
 	**/
 	public function run(args:Array<String>):Int {
+		colors = shouldUseColor(environmentValue, output.isStdoutTerminal());
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
 			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
@@ -553,6 +566,9 @@ final class Application {
 	}
 
 	function runInvocation(invocation:Invocation):Int {
+		// Upstream's pre-run turns colors off for --no-color first (applyNoColorFlag).
+		if (invocation.noColor)
+			colors = false;
 		// Upstream's pre-run sets the escape hatch for every store open, before it opens any.
 		if (invocation.ignoreSchemaSkew)
 			SchemaSkewBoundary.ignoreForProcess();
@@ -3312,12 +3328,10 @@ final class Application {
 			output.writeStdout(rendered.toString());
 		} else {
 			final rendered = new StringBuf();
+			final styles = terminalStyles();
 			rendered.add('Found ${items.length} issues:\n');
-			for (issue in items) {
-				final assignee = issue.assignee == "" ? "" : ' @${issue.assignee}';
-				final labels = issue.labels.length == 0 ? "" : ' [${issue.labels.join(" ")}]';
-				rendered.add('${statusIcon(issue.status)} ${issue.id} [P${issue.priority}] [${issue.issueType}]${assignee}${labels} - ${issue.title}\n');
-			}
+			for (issue in items)
+				rendered.add(renderCompactIssue(issue, styles.renderStatusIcon(issue.status), "", styles));
 			output.writeStdout(rendered.toString());
 		}
 		writeTruncationHint(hasMore, invocation.queryRequest.limit);
@@ -3325,13 +3339,31 @@ final class Application {
 	}
 
 	/**
-		Upstream printTruncationHint of `list` and `query`: on a terminal stderr,
-		says that `limit` hid more issues. Upstream colors it as a warning when
-		colors are on; this build prints no colors.
+		Upstream printTruncationHint of `list` and `query` (cmd/bd/list_output.go:17-23):
+		on a terminal stderr, says in the warning style that `limit` hid more issues.
 	**/
 	function writeTruncationHint(hasMore:Bool, limit:Int):Void {
 		if (hasMore && limit > 0 && output.isStderrTerminal())
-			output.writeStderr('\nShowing ${limit} issues; more results matched but were hidden by --limit. Use --limit 0 for all, or --limit N to raise the cap.\n');
+			output.writeStderr(terminalStyles()
+				.renderWarn('\nShowing ${limit} issues; more results matched but were hidden by --limit. Use --limit 0 for all, or --limit N to raise the cap.\n'));
+	}
+
+	/**
+		Upstream internal/ui's styles for this process: colored, from the palette
+		for the terminal's background, when `colors` is on, and empty otherwise.
+
+		Why: upstream asks the terminal for its background once, at start, and
+		only when colors are on. What: the styles, built once. How: the first
+		call asks `output` for the background when colors are on, so a command
+		that renders no styled view never asks the terminal.
+	**/
+	function terminalStyles():TerminalStyles {
+		final existing = builtStyles;
+		if (existing != null)
+			return existing;
+		final built = colors ? TerminalStyles.colored(output.hasDarkBackground(), output.textStyle) : TerminalStyles.plain(output.textStyle);
+		builtStyles = built;
+		return built;
 	}
 
 	function renderSearch(invocation:Invocation, page:IssueListPage):Int {
@@ -3894,22 +3926,26 @@ final class Application {
 			return 0;
 		}
 
+		// Upstream's ready body (cmd/bd/ready.go:239-279) and its proxied twin style these as below.
+		final styles = terminalStyles();
 		if (result.page.items.length == 0) {
-			output.writeStdout(result.hasOpenIssues ? "\n✨ No ready work found (all issues have blocking dependencies)\n\n" : "\n✨ No open issues\n\n");
+			output.writeStdout(result.hasOpenIssues ? '\n${styles.renderWarn("✨")} No ready work found (all issues have blocking dependencies)\n\n' : '\n${styles.renderPass("✨")} No open issues\n\n');
 			return 0;
 		}
 		if (invocation.readyPlain || !invocation.readyPretty) {
-			output.writeStdout(renderReadyPlain(result.page));
+			output.writeStdout(renderReadyPlain(result.page, styles));
 		} else {
-			output.writeStdout(renderReadyPretty(result.page, query, location, invocation.global));
+			output.writeStdout(renderReadyPretty(result.page, query, location, invocation.global, styles));
 		}
 		if (result.truncated) {
 			if (proxied) {
-				output.writeStdout('Showing ${result.page.items.length} ready issues; more matched but were hidden by --limit. Use --limit 0 for all, or --limit N to raise the cap.\n\n');
+				output.writeStdout(styles.renderMuted('Showing ${result.page.items.length} ready issues; more matched but were hidden by --limit. Use --limit 0 for all, or --limit N to raise the cap.')
+					+ "\n\n");
 			} else
 				switch result.total {
 					case TotalKnown(total):
-						output.writeStdout('Showing ${result.page.items.length} of ${total.wireValue()} ready issues. Use -n to show more.\n\n');
+						output.writeStdout(styles.renderMuted('Showing ${result.page.items.length} of ${total.wireValue()} ready issues. Use -n to show more.')
+							+ "\n\n");
 					case TotalUnknown:
 				}
 		}
@@ -3937,11 +3973,11 @@ final class Application {
 		return lines.join("\n") + "\n";
 	}
 
-	static function renderReadyPlain(page:IssueListPage):String {
-		var rendered = '\n📋 Ready work (${page.items.length} issues with no active blockers):\n\n';
+	static function renderReadyPlain(page:IssueListPage, styles:TerminalStyles):String {
+		var rendered = '\n${styles.renderAccent("📋")} Ready work (${page.items.length} issues with no active blockers):\n\n';
 		for (index in 0...page.items.length) {
 			final issue = page.items[index];
-			rendered += '${index + 1}. [P${issue.priority}] [${issue.issueType}] ${issue.id}: ${issue.title}\n';
+			rendered += '${index + 1}. [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}] ${styles.renderId(issue.id)}: ${issue.title}\n';
 			switch issue.estimatedMinutes {
 				case IntegerPresent(value):
 					rendered += '   Estimate: ${value} min\n';
@@ -3953,7 +3989,12 @@ final class Application {
 		return rendered + "\n";
 	}
 
-	function renderReadyPretty(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool):String {
+	/**
+		Upstream displayReadyList (cmd/bd/ready.go:416-433): each issue as
+		formatPrettyIssueWithContext prints it, with its parent epic's title in
+		the muted style, then the footer.
+	**/
+	function renderReadyPretty(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool, styles:TerminalStyles):String {
 		final parentTitles = new Map<String, String>();
 		for (issue in page.items) {
 			if (issue.parent == "" || parentTitles.exists(issue.parent))
@@ -3968,10 +4009,10 @@ final class Application {
 		}
 		var rendered = "";
 		for (issue in page.items) {
-			var line = StringTools.trim(renderListLine(issue));
+			var line = renderPrettyIssue(issue, styles);
 			final parentTitle = issue.parent == "" ? null : parentTitles.get(issue.parent);
 			if (parentTitle != null && parentTitle != "")
-				line += ' ← ${parentTitle}';
+				line += " " + styles.renderMuted('← ${parentTitle}');
 			rendered += line + "\n";
 		}
 		rendered += "\n" + StringTools.rpad("", "-", 80) + "\n";
@@ -4115,7 +4156,7 @@ final class Application {
 		if (current == null)
 			return 1;
 
-		output.writeStdout(renderWatchedList(current));
+		output.writeStdout(renderWatchedList(current, terminalStyles()));
 		var snapshot = issueListWatchSnapshot(current);
 		output.writeStderr("\nWatching for changes... (Press Ctrl+C to exit)\n");
 		watch.start();
@@ -4133,7 +4174,7 @@ final class Application {
 					final nextSnapshot = issueListWatchSnapshot(page);
 					if (nextSnapshot != snapshot) {
 						snapshot = nextSnapshot;
-						output.writeStdout(renderWatchedList(page));
+						output.writeStdout(renderWatchedList(page, terminalStyles()));
 						output.writeStderr("\nWatching for changes... (Press Ctrl+C to exit)\n");
 					}
 			}
@@ -4147,11 +4188,11 @@ final class Application {
 		return source == "" ? 'search returned ${found} rows, exceeding cap of ${cap}' : 'search returned ${found} rows, exceeding ${source} cap of ${cap}';
 	}
 
-	static function renderWatchedList(page:IssueListPage):String {
+	static function renderWatchedList(page:IssueListPage, styles:TerminalStyles):String {
 		final now = Date.now();
 		final time = '${twoDigits(now.getHours())}:${twoDigits(now.getMinutes())}:${twoDigits(now.getSeconds())}';
 		return "\x1b[2J\x1b[H" + StringTools.rpad("", "=", 80) + "\n" + 'Beads - Open & In Progress (${time})\n' + StringTools.rpad("", "=", 80) + "\n\n"
-			+ renderListHuman(page, false, "");
+			+ renderListHuman(page, false, "", styles);
 	}
 
 	static function twoDigits(value:Int):String {
@@ -4195,7 +4236,7 @@ final class Application {
 								return 0;
 							}
 							if (!invocation.listFlat) {
-								output.writeStdout(renderListHuman(page, false, invocation.listDepsMode));
+								output.writeStdout(renderListHuman(page, false, invocation.listDepsMode, terminalStyles()));
 								if (!hierarchy)
 									writeTruncationHint(page.hasMore, effectiveLimit);
 								if (skipLabels)
@@ -4203,7 +4244,7 @@ final class Application {
 								return 0;
 							}
 							output.writeStdout(invocation.agentMode ? renderListAgent(page) : renderListFlat(page, invocation.listLong, skipLabels,
-								invocation.listRequest.brief));
+								invocation.listRequest.brief, terminalStyles()));
 						case Json:
 							final exit = writeRenderedJsonStdout(renderListJson(page, skipLabels));
 							if (exit != 0) return exit;
@@ -4230,7 +4271,12 @@ final class Application {
 		return 2;
 	}
 
-	static function renderListHuman(page:IssueListPage, skipLabels:Bool, depsMode:String):String {
+	/**
+		Upstream displayPrettyListWithDepsMode (cmd/bd/list_tree.go:161-220): the
+		tree view, each line from `renderListLine`, with the dependency rows of
+		--deps in the muted style.
+	**/
+	static function renderListHuman(page:IssueListPage, skipLabels:Bool, depsMode:String, styles:TerminalStyles):String {
 		if (page.items.length == 0)
 			return appendSkipLabelsFooter("No issues found.\n", skipLabels);
 		final byId = new Map<String, IssueListItem>();
@@ -4275,10 +4321,10 @@ final class Application {
 		}
 		final rendered = new StringBuf();
 		for (root in roots) {
-			rendered.add(renderListLine(root));
+			rendered.add(renderListLine(root, styles));
 			if (depsMode != "")
-				rendered.add(renderListDependencyAnnotations(root, "", depsMode, byId));
-			renderListChildren(rendered, root.id, "", childGroups, depsMode, byId);
+				rendered.add(renderListDependencyAnnotations(root, "", depsMode, byId, styles));
+			renderListChildren(rendered, root.id, "", childGroups, depsMode, byId, styles);
 		}
 		var open = 0;
 		var inProgress = 0;
@@ -4301,7 +4347,7 @@ final class Application {
 	}
 
 	static function renderListChildren(rendered:StringBuf, parent:String, prefix:String, childGroups:Array<ListChildGroup>, depsMode:String,
-			byId:Map<String, IssueListItem>):Void {
+			byId:Map<String, IssueListItem>, styles:TerminalStyles):Void {
 		var group:Null<ListChildGroup> = null;
 		for (candidate in childGroups) {
 			if (candidate.parent == parent) {
@@ -4314,25 +4360,35 @@ final class Application {
 		for (index in 0...group.children.length) {
 			final child = group.children[index];
 			final last = index == group.children.length - 1;
-			rendered.add(prefix + (last ? "└── " : "├── ") + renderListLine(child));
+			rendered.add(prefix + (last ? "└── " : "├── ") + renderListLine(child, styles));
 			final extension = prefix + (last ? "    " : "│   ");
 			if (depsMode != "")
-				rendered.add(renderListDependencyAnnotations(child, extension, depsMode, byId));
-			renderListChildren(rendered, child.id, extension, childGroups, depsMode, byId);
+				rendered.add(renderListDependencyAnnotations(child, extension, depsMode, byId, styles));
+			renderListChildren(rendered, child.id, extension, childGroups, depsMode, byId, styles);
 		}
 	}
 
-	static function renderListLine(issue:IssueListItem):String {
-		// Upstream mutes the whole line of a closed issue and prints its plain type, for every type,
-		// in place of the [epic] or [bug] badge.
+	static function renderListLine(issue:IssueListItem, styles:TerminalStyles):String {
+		return renderPrettyIssue(issue, styles) + "\n";
+	}
+
+	/**
+		Upstream formatPrettyIssue (cmd/bd/list_format.go:45-71): the styled status
+		icon, ID, priority, an [epic] or [bug] badge and the title. A closed issue
+		mutes its ID, its priority, and its plain type, for every type, in place of
+		the badge, and then the title with the space before it.
+	**/
+	static function renderPrettyIssue(issue:IssueListItem, styles:TerminalStyles):String {
+		final icon = styles.renderStatusIcon(issue.status);
 		if (issue.status == "closed")
-			return '${statusIcon(issue.status)} ${issue.id} P${issue.priority} ${issue.issueType} ${issue.title}\n';
+			return '${icon} ${styles.renderMuted(issue.id)} ${styles.renderMuted('P${issue.priority}')} ${styles.renderMuted(issue.issueType)}'
+				+ styles.renderMuted(" " + issue.title);
 		final typeBadge = switch issue.issueType {
-			case "epic": "[epic] ";
-			case "bug": "[bug] ";
+			case "epic": styles.typeEpic.render("[epic]") + " ";
+			case "bug": styles.typeBug.render("[bug]") + " ";
 			case _: "";
 		};
-		return '${statusIcon(issue.status)} ${issue.id} P${issue.priority} ${typeBadge}${issue.title}\n';
+		return '${icon} ${issue.id} ${styles.renderPriority(issue.priority)} ${typeBadge}${issue.title}';
 	}
 
 	static function compareListItems(left:IssueListItem, right:IssueListItem):Int {
@@ -4419,7 +4475,8 @@ final class Application {
 		return ordered;
 	}
 
-	static function renderListDependencyAnnotations(item:IssueListItem, prefix:String, depsMode:String, byId:Map<String, IssueListItem>):String {
+	static function renderListDependencyAnnotations(item:IssueListItem, prefix:String, depsMode:String, byId:Map<String, IssueListItem>,
+			styles:TerminalStyles):String {
 		final inView = new Array<ListDependencyRow>();
 		final outside = new Array<String>();
 		final seen = new Map<String, Bool>();
@@ -4440,12 +4497,13 @@ final class Application {
 		inView.sort((left, right) -> left.label != right.label ? (left.label < right.label ? -1 : 1) : compareIssueIds(left.target, right.target));
 		outside.sort(compareIssueIds);
 		final rendered = new StringBuf();
+		// Upstream mutes the glyph and padded label of each row (cmd/bd/list_tree_deps.go:184), and the whole summary.
 		for (row in inView)
-			rendered.add(prefix + "╌╌▷ " + StringTools.rpad('[${row.label}]', " ", 20) + ' ${row.target} ${row.title}\n');
+			rendered.add(prefix + styles.renderMuted("╌╌▷ " + StringTools.rpad('[${row.label}]', " ", 20)) + ' ${row.target} ${row.title}\n');
 		if (outside.length > 0) {
 			final named = outside.length > 4 ? outside.slice(0, 4) : outside;
 			final suffix = outside.length > 4 ? ', +${outside.length - 4} more' : "";
-			rendered.add(prefix + '╌╌▷ ↗ ${outside.length} outside this view: ${named.join(", ")}${suffix}\n');
+			rendered.add(prefix + styles.renderMuted('╌╌▷ ↗ ${outside.length} outside this view: ${named.join(", ")}${suffix}') + "\n");
 		}
 		return rendered.toString();
 	}
@@ -4491,19 +4549,38 @@ final class Application {
 		return skipLabels ? rendered + "\nnote: --skip-labels in effect — labels suppressed in output.\n" : rendered;
 	}
 
-	static function renderListFlat(page:IssueListPage, long:Bool, skipLabels:Bool, brief:Bool):String {
+	/**
+		Upstream formatIssueCompact for each issue (cmd/bd/list_format.go:238-277),
+		or the --long view. An open issue with an open blocker takes the blocked
+		icon. A closed issue's whole line is in the closed style; any other line
+		styles its ID, priority and type.
+	**/
+	static function renderListFlat(page:IssueListPage, long:Bool, skipLabels:Bool, brief:Bool, styles:TerminalStyles):String {
 		if (long)
-			return renderListLong(page, skipLabels, brief);
+			return renderListLong(page, skipLabels, brief, styles);
 		final rendered = new StringBuf();
 		for (issue in page.items) {
-			final assignee = issue.assignee == "" ? "" : ' @${issue.assignee}';
-			final labels = issue.labels.length == 0 ? "" : ' [${issue.labels.join(" ")}]';
 			final dependencyInfo = renderListBlockingInfo(issue);
 			final suffix = dependencyInfo == "" ? "" : ' ${dependencyInfo}';
 			final renderedStatus = issue.status == "open" && issue.blockedBy.length > 0 ? "blocked" : issue.status;
-			rendered.add('${statusIcon(renderedStatus)} ${issue.id} [P${issue.priority}] [${issue.issueType}]${assignee}${labels} - ${issue.title}${suffix}\n');
+			rendered.add(renderCompactIssue(issue, styles.renderStatusIcon(renderedStatus), suffix, styles));
 		}
 		return appendSkipLabelsFooter(rendered.toString(), skipLabels);
+	}
+
+	/**
+		The compact line that upstream's list (formatIssueCompact) and query
+		(formatQueryIssue, cmd/bd/query.go:257-285) print for one issue, with its
+		`icon` and the dependency note `suffix`, and a line feed.
+	**/
+	static function renderCompactIssue(issue:IssueListItem, icon:String, suffix:String, styles:TerminalStyles):String {
+		final assignee = issue.assignee == "" ? "" : ' @${issue.assignee}';
+		final labels = issue.labels.length == 0 ? "" : ' [${issue.labels.join(" ")}]';
+		if (issue.status == "closed")
+			return styles.renderClosedLine('${icon} ${issue.id} [P${issue.priority}] [${issue.issueType}]${assignee}${labels} - ${issue.title}${suffix}')
+				+ "\n";
+		return
+			'${icon} ${styles.renderId(issue.id)} [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}]${assignee}${labels} - ${issue.title}${suffix}\n';
 	}
 
 	/**
@@ -4532,12 +4609,22 @@ final class Application {
 		return parts.length == 0 ? "" : '(' + parts.join(", ") + ')';
 	}
 
-	static function renderListLong(page:IssueListPage, skipLabels:Bool, brief:Bool):String {
+	/**
+		Upstream formatIssueLong for each issue (cmd/bd/list_format.go:85-132). A
+		closed issue's first two lines are one text in the closed style, which
+		lipgloss pads to the same width when colors are on; any other issue
+		styles its ID, priority, type and status.
+	**/
+	static function renderListLong(page:IssueListPage, skipLabels:Bool, brief:Bool, styles:TerminalStyles):String {
 		final rendered = new StringBuf();
 		rendered.add('\nFound ${page.items.length} issues:\n\n');
 		for (issue in page.items) {
-			rendered.add('${issue.id} [P${issue.priority}] [${issue.issueType}] ${issue.status}\n');
-			rendered.add('  ${issue.title}\n');
+			if (issue.status == "closed")
+				rendered.add(styles.renderClosedLine('${issue.id} [P${issue.priority}] [${issue.issueType}] ${issue.status}\n  ${issue.title}') + "\n");
+			else {
+				rendered.add('${styles.renderId(issue.id)} [${styles.renderPriority(issue.priority)}] [${styles.renderType(issue.issueType)}] ${styles.renderStatus(issue.status)}\n');
+				rendered.add('  ${issue.title}\n');
+			}
 			if (issue.assignee != "")
 				rendered.add('  Assignee: ${issue.assignee}\n');
 			if (brief) {
