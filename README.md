@@ -245,12 +245,26 @@ upstream's order:
   `--sort` value. With a value that it does not know, it keeps the order of
   the database.
 
+Like upstream, `query` orders an expression that the database can answer
+alone, such as `status=open`, in the order of the database first. Without
+`--sort`, or with a `--sort` value that it does not know, that order is by
+priority, then the newest issue first, then the ID. `--reverse` reverses only
+the priority. With a `--sort` key, issues that have the same value stay in ID
+order. `--limit` keeps the first issues in the order of the database, before
+the `--sort` order applies. Other expressions, such as
+`status=open OR status=blocked`, keep the priority order, and `--reverse`
+without `--sort` does not change it.
+
 The flag parser follows cobra and pflag. It finds the command first, so an
 unknown command comes before any flag error. Until it finds the command, it
 knows only the flags of the root command. It takes the argument after any
 other `--flag` or `-x`, also after a bool flag such as `--all`, as the value of
-that flag and not as the command. Then it reads the flags in argument order
-with the flags of that command, and the first problem stops it: a flag that
+that flag and not as the command. That argument can be a flag too: in
+`--all --title x list`, the search takes `--title` as the value of `--all`,
+so `x` names the command. The search stops at `--`. Without a command before
+`--`, the root command prints its help. Then the parser reads the flags in
+argument order with the flags of that command, without the argument that
+names it, and the first problem stops it: a flag that
 the command does not have, a value that a flag rejects, or a flag with no
 value after it. A flag of another command is unknown also when its value is
 bad or missing. A group of shorthands such as `-rtbug` counts as
@@ -545,6 +559,12 @@ Limits:
   the link's target in both places.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
+- For an unknown command, `bdhx` prints no `Did you mean this?` list. Upstream
+  lists every command whose name starts with the unknown name, or is at most
+  two edits away from it. Most of those commands, such as `gc`, `kv`, `lint`
+  and `sql`, are not ported yet, so `bdhx` cannot print the same list until
+  they are. The parity tests use unknown names that upstream has no
+  suggestion for.
 
 Run the parity suite with `make beadshx-parity`; it lives in
 [scripts/beadshx/test-parity-smoke.sh](scripts/beadshx/test-parity-smoke.sh).

@@ -42,6 +42,7 @@ class Main {
 		predicateContracts();
 		filterContracts();
 		pageContracts();
+		exactOrderContracts();
 		widePriorityContracts();
 		metadataContracts();
 		Sys.println("query Haxe contracts: PASS");
@@ -134,6 +135,63 @@ class Main {
 		equal([for (entry in offsetPage.rows) entry.item.id].join(","), "bd-10");
 		final stable = QueryPage.finish(rows, page(0, 0, "priority", false), false);
 		equal([for (entry in stable.rows) entry.item.id].join(","), "bd-10,bd-2,bd-2.1");
+	}
+
+	/**
+		An exact query's page is upstream's storage order first (sqlbuild.Less over
+		the rows that SQL bounded), then the display sort of that page.
+	**/
+	static function exactOrderContracts():Void {
+		final rows = [
+			orderRow("t-b", "open", 1, "300"),
+			orderRow("t-a", "open", 2, "100"),
+			orderRow("t-c", "open", 1, "200"),
+			orderRow("t-d", "in_progress", 2, "400"),
+			orderRow("t-e", "open", 0, "100")
+		];
+		// The default order: priority, then the newest first, then the id.
+		equal(ids(QueryPage.orderedPage(rows, page(0, 0, "", false))), "t-e,t-b,t-c,t-d,t-a");
+		// --reverse without --sort reverses only the priority.
+		equal(ids(QueryPage.orderedPage(rows, page(0, 0, "", true))), "t-d,t-a,t-b,t-c,t-e");
+		// A --sort that upstream does not know orders as the default does, also reversed.
+		equal(ids(QueryPage.orderedPage(rows, page(0, 0, "bogus", true))), "t-d,t-a,t-b,t-c,t-e");
+		// Rows that tie on the sort key stay in id order, not in the default order.
+		equal(ids(QueryPage.orderedPage(rows, page(0, 0, "status", false))), "t-d,t-a,t-b,t-c,t-e");
+		equal(ids(QueryPage.orderedPage(rows, page(0, 0, "status", true))), "t-a,t-b,t-c,t-e,t-d");
+		equal(ids(QueryPage.orderedPage(rows, page(0, 0, "created", true))), "t-a,t-e,t-c,t-b,t-d");
+		final limited = QueryPage.orderedPage(rows, page(2, 0, "", true));
+		equal(ids(limited), "t-d,t-a");
+		isTrue(limited.hasMore, "reversed default page reports more rows");
+
+		// The limit keeps the first rows in byte order of the id; the display sort then compares numbers.
+		final numbered = [
+			orderRow("x-9", "open", 1, "100"),
+			orderRow("x-10", "open", 1, "100"),
+			orderRow("x-11", "open", 1, "100")
+		];
+		final idPage = QueryPage.orderedPage(numbered, page(1, 0, "id", false));
+		equal(ids(idPage), "x-10");
+		isTrue(idPage.hasMore, "id page reports more rows");
+		equal(ids(QueryPage.orderedPage(numbered, page(0, 0, "id", false))), "x-9,x-10,x-11");
+		equal(ids(QueryPage.orderedPage(numbered, page(1, 0, "id", true))), "x-11");
+	}
+
+	static function ids(result:beadshx.query.QueryPage.QueryPageResult):String {
+		return [for (entry in result.rows) entry.item.id].join(",");
+	}
+
+	static function orderRow(id:String, status:String, priority:Int, createdSeconds:String):IssueQueryRow {
+		final base = row(id, id, status, priority, [], "{}");
+		return {
+			item: base.item,
+			pinned: base.pinned,
+			ephemeral: base.ephemeral,
+			template: base.template,
+			created: instant(createdSeconds, 0, 2026, 8, 24),
+			updated: base.updated,
+			started: base.started,
+			closed: base.closed
+		};
 	}
 
 	static function metadataContracts():Void {

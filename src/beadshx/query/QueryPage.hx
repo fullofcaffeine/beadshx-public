@@ -43,6 +43,68 @@ final class QueryPage {
 		return {rows: ordered.slice(start, end), hasMore: hasMore};
 	}
 
+	/**
+		The page of an exact query, as upstream's store querier builds it.
+
+		Why: upstream pushes the display order and the row bound into SQL for an
+		expression that its filter answers alone (internal/workapi/query.go:98-117),
+		so which rows reach the page, and their order before the display sort, is
+		the database order. With an empty or unknown `--sort` that is priority
+		order, which `--reverse` reverses (internal/storage/sqlbuild/sort.go:72-95).
+		What: the matches in storage order (`storageCompare`), bounded to the
+		offset, the limit and one more row that tells whether there are more
+		(storequerier/querier.go:47-67), then `finish`. How: a limit of 0 reads
+		every match.
+	**/
+	public static function orderedPage(rows:Array<IssueQueryRow>, page:QueryPagePolicy):QueryPageResult {
+		final stored = rows.copy();
+		stored.sort((left, right) -> storageCompare(left, right, page.sortBy, page.reverse));
+		final bound = page.limit > 0 ? page.offset + page.limit + 1 : stored.length;
+		return finish(stored.length > bound ? stored.slice(0, bound) : stored, page, false);
+	}
+
+	/**
+		Upstream sqlbuild.Less (internal/storage/sqlbuild/sort.go:121-146), the
+		order in which the database and the issues-and-wisps merge return rows:
+		the sort key in its default direction, which `reverse` flips, then for the
+		priority order the newest first, then the id in byte order. The `id` key
+		is the id in byte order alone, which `reverse` flips too.
+	**/
+	static function storageCompare(left:IssueQueryRow, right:IssueQueryRow, sortBy:String, reverse:Bool):Int {
+		if (sortBy == "id") {
+			final order = compareStrings(left.item.id, right.item.id);
+			return reverse ? -order : order;
+		}
+		final key = switch sortBy {
+			case "priority" | "created" | "updated" | "closed" | "status" | "type" | "assignee" | "title": sortBy;
+			case _: "";
+		};
+		final descending = (key == "created" || key == "updated" || key == "closed") != reverse;
+		final order = storageKeyCompare(left, right, key);
+		if (order != 0)
+			return descending ? -order : order;
+		if (key == "" || key == "priority") {
+			final created = compareInstants(left.created, right.created);
+			if (created != 0)
+				return -created;
+		}
+		return compareStrings(left.item.id, right.item.id);
+	}
+
+	/** Upstream sortKeyCompare (internal/storage/sqlbuild/sort.go:150-175): ascending, with a missing time first. */
+	static function storageKeyCompare(left:IssueQueryRow, right:IssueQueryRow, key:String):Int {
+		return switch key {
+			case "created": compareInstants(left.created, right.created);
+			case "updated": compareInstants(left.updated, right.updated);
+			case "closed": -compareClosed(left.closed, right.closed);
+			case "status": compareStrings(left.item.status, right.item.status);
+			case "type": compareStrings(left.item.issueType, right.item.issueType);
+			case "assignee": compareStrings(left.item.assignee, right.item.assignee);
+			case "title": compareStrings(left.item.title.toLowerCase(), right.item.title.toLowerCase());
+			case _: left.item.priority.compare(right.item.priority);
+		};
+	}
+
 	static function stableOrder(rows:Array<IssueQueryRow>, sortBy:String, reverse:Bool):Array<IssueQueryRow> {
 		if (sortBy == "")
 			return rows.copy();

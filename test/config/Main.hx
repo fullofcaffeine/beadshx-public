@@ -24,7 +24,9 @@ import beadshx.config.ConfigKeys.isKvPlaneKey;
 import beadshx.config.ConfigKeys.isUserGlobalKey;
 import beadshx.config.ConfigKeys.isYamlOnlyKey;
 import beadshx.config.ConfigDrift.DriftItem;
+import beadshx.config.ConfigDrift.GIT_HOOK_NAMES;
 import beadshx.config.ConfigDrift.hasDrift;
+import beadshx.config.ConfigDrift.hookWarnings;
 import beadshx.config.ConfigDrift.hookStatus;
 import beadshx.config.ConfigDrift.hookVersion;
 import beadshx.config.ConfigDrift.hooksDriftItems;
@@ -568,6 +570,16 @@ class Main {
 			"hooks.missing/drift/Git hooks not installed: pre-commit/installed/missing|" +
 			"hooks.outdated/drift/Git hooks outdated: post-merge (have , want 1.2.1), pre-push (have 0.1, want 1.2.1)/v1.2.1/outdated");
 		equal(renderItems(hooksDriftItems([hookStatus("pre-commit", "", "1.2.1")], "1.2.1")), "hooks/ok/Git hooks installed and current//");
+		// `bd info` counts the same statuses: missing hooks first, then outdated ones, each with the install hint.
+		equal(hookWarnings(statuses),
+			"⚠️  Git hooks not installed (1 missing)\n   Run: bd hooks install\n" + "⚠️  Git hooks are outdated (2 hooks)\n   Run: bd hooks install");
+		equal(hookWarnings([for (name in GIT_HOOK_NAMES) hookStatus(name, null, "1.2.1")]),
+			"⚠️  Git hooks not installed (5 missing)\n   Run: bd hooks install");
+		equal(hookWarnings([hookStatus("pre-push", "# bd-hooks-version: 0.1\n", "1.2.1")]), "⚠️  Git hooks are outdated (1 hooks)\n   Run: bd hooks install");
+		equal(hookWarnings([
+			hookStatus("pre-commit", "# bd-shim v1\n", "1.2.1"),
+			hookStatus("pre-push", "echo\n", "1.2.1")
+		]), "");
 		equal(isFalsyBool(" OFF "), true);
 		equal(isFalsyBool("F"), true);
 		equal(isFalsyBool("no"), false);

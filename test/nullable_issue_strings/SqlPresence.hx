@@ -80,7 +80,7 @@ class SqlPresence {
 			if (fields.compactedAtCommit != testCase.commit)
 				failures.push(testCase.name + " SQL compacted_at_commit presence/value");
 			final record:IssueRecord = fields;
-			final shared = Main.fieldsOf(Application.renderIssueRecordFields(record, "    "));
+			final shared = Main.fieldsOf(Application.renderIssueRecordFields(record, longFields(fields), "    "));
 			Main.checkField(shared, "external_ref", testCase.externalJson, testCase.name + " SQL shared JSON");
 			final related = relatedIssue(record, [], longFields(fields), "blocks");
 			final raw = Main.fieldsOf(Application.renderRawIssueFields(related));

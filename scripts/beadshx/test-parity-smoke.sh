@@ -68,6 +68,8 @@ no_workspace_setup=""
 version_expected_stderr=""
 # When set, a no-workspace case compares stderr as a root flag error: see compare_root_usage_error.
 no_workspace_root_usage=""
+# When set, each side of a no-workspace case must print its own root help: see compare_root_help.
+no_workspace_root_help=""
 
 # Keeps the first line of a root flag error and replaces the root usage after it with one marker
 # line. Any other text stays, so a missing usage or a second error line differs.
@@ -168,7 +170,33 @@ compare_no_workspace() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
-	if ! cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"; then
+	if [[ -n "$no_workspace_root_help" ]]; then
+		# The root help names each binary and lists its own commands, so each side's stdout must be
+		# what that side prints for --help in the same environment.
+		local side side_binary
+		for side in oracle candidate; do
+			side_binary="$oracle"
+			[[ "$side" == candidate ]] && side_binary="$candidate"
+			(
+				cd "$case_root/$side/work"
+				env HOME="$case_root/$side/home" \
+					XDG_CONFIG_HOME="$case_root/$side/config" \
+					BEADS_TELEMETRY_DISABLED=1 \
+					BEADS_NO_AUTO_FLUSH=1 \
+					BD_DISABLE_METRICS=1 \
+					BD_DISABLE_EVENT_FLUSH=1 \
+					BD_JSON_ENVELOPE="${BEADSHX_TEST_JSON_ENVELOPE:-0}" \
+					NO_COLOR=1 \
+					"${no_workspace_extra_env[@]}" \
+					"$side_binary" --help
+			) >"$case_root/$side.help" 2>/dev/null
+			if ! cmp -s "$case_root/$side.stdout" "$case_root/$side.help"; then
+				printf '%s %s stdout is not its root help\n' "$name" "$side" >&2
+				diff -u "$case_root/$side.help" "$case_root/$side.stdout" >&2 || true
+				return 1
+			fi
+		done
+	elif ! cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"; then
 		printf '%s stdout differs from upstream\n' "$name" >&2
 		diff -u "$case_root/oracle.stdout" "$case_root/candidate.stdout" >&2 || true
 		return 1
@@ -229,6 +257,14 @@ compare_root_usage_error() {
 	no_workspace_root_usage=1
 	compare_no_workspace "$@"
 	no_workspace_root_usage=""
+}
+
+# Without a command the root prints its help. Such a case compares the exit code and stderr, and
+# requires each side to print exactly its own --help output.
+compare_root_help() {
+	no_workspace_root_help=1
+	compare_no_workspace "$@"
+	no_workspace_root_help=""
 }
 
 # `version` prints each binary's own identity, so these no-workspace cases compare only the output
@@ -583,6 +619,20 @@ compare_no_workspace all_skipped_argument_is_positional --all bogus list
 compare_no_workspace no_activity_on_list list --no-activity
 # pflag reads -rt as -r and -t; -t takes the next argument, which the search still takes as the command.
 compare_no_workspace shorthand_group_value_takes_command -rt list
+# The search also takes a flag after such a flag as that flag's value, so the value of the second
+# flag can name the command. pflag still reads both flags with the command found, without it.
+compare_no_workspace flag_value_takes_flag_unknown_command --all --title frobnicate list
+compare_no_workspace flag_value_takes_shorthand_unknown_command --all -t frobnicate list
+compare_no_workspace flag_value_takes_flag_missing_value --all --title list
+# The search stops at --. Without a command before it, the root runs, prints its help and ignores the
+# arguments after it; pflag reads no flag after it either.
+compare_root_help dashes_before_command -- list
+compare_root_help dashes_before_command_json -- list --json
+compare_root_help json_dashes_before_command --json -- list
+compare_root_help dashes_before_unknown_command -- frobnicate
+compare_root_help dashes_before_unknown_flag -- --bogus
+compare_root_usage_error unknown_flag_dashes_before_command --title x -- list
+compare_version_mode version_dashes_before_command text --version -- list
 # Like upstream, an empty --actor is accepted.
 compare_no_workspace empty_actor_list --actor= list
 # In shared-server mode upstream's hint also names `bd doctor`. Without a workspace it reads the mode
@@ -1939,6 +1989,31 @@ remove_git_checkout() {
 }
 real_database_setup=remove_git_checkout
 compare_real_database config-drift-not-git exact config drift
+real_database_setup=""
+# Human `bd info` ends with upstream's warning about the bd hooks that CheckGitHooks finds missing
+# or outdated, in the same hooks directory; outside a git repository all five are missing. --json
+# prints no warning.
+compare_real_database info-hooks-missing exact info
+compare_real_database info-schema-hooks-missing exact info --schema
+real_database_setup=write_drift_hooks
+drift_hook_content=$'#!/bin/sh\n# bd-shim v1\nexec bd hooks run'
+compare_real_database info-hooks-shim exact info
+drift_hook_content=$'#!/bin/sh\n# bd-hooks-version: 0.9.0'
+compare_real_database info-hooks-legacy exact info
+compare_real_database info-hooks-legacy-json exact info --json
+drift_hook_content=$'#!/bin/sh\n# bd-hooks-version: 1.2.1'
+compare_real_database info-hooks-current exact info
+drift_hook_content=$'#!/bin/sh\n# bd (beads)\nbd sync'
+compare_real_database info-hooks-inline exact info
+drift_hook_content=$'#!/bin/sh\necho hi'
+compare_real_database info-hooks-foreign exact info
+real_database_setup=write_mixed_hooks
+compare_real_database info-schema-hooks-mixed exact info --schema
+real_database_setup=use_relative_hooks_path
+compare_real_database info-hooks-path exact info
+real_database_setup=remove_git_checkout
+compare_real_database info-not-git exact info
+compare_real_database info-not-git-json exact info --json
 real_database_setup=""
 # The server check reads .beads/dolt-server.pid and asks whether that process exists with signal 0.
 # This shell's own pid is alive for the whole run.
@@ -3573,6 +3648,12 @@ compare_real_database search-json exact search parity --json
 compare_real_database search-missing exact search
 compare_real_database search-missing-json exact search --json
 compare_real_database search-query-flag exact search --query parity
+# The search takes --title as the value of --all and finds list; pflag gives list the title ready.
+compare_real_database search-flag-value-names-command exact --all --title list ready
+compare_real_database search-flag-value-names-command-json exact --all --title list --json
+# The search takes -- as the value of --all; for list, pflag reads it as the end of the flags.
+compare_real_database search-dashes-as-flag-value exact --all -- list
+compare_real_database search-dashes-as-title exact --title -- list
 compare_real_database query-help exact query --help
 compare_real_database query-parse-simple exact query status=open --parse-only
 compare_real_database query-parse-and exact query 'status=open AND priority>1' --parse-only
@@ -3609,6 +3690,20 @@ compare_real_database query-offset-direct exact query status=open --offset 1 --j
 compare_real_database query-negative-offset exact query status=open --offset -1
 compare_real_database query-negative-offset-json exact query status=open --offset -1 --json
 compare_real_database query-negative-offset-no-expression exact query --offset -1
+# An expression that the filter answers alone is ordered and bounded in SQL: by priority without
+# --sort or with a --sort that upstream does not know, which --reverse reverses, then by the newest
+# and the id. Rows that tie on a --sort key stay in id order, and the limit keeps the first rows in
+# that order before the display sort. A predicate expression keeps the default order.
+compare_real_database query-reverse-default exact query 'priority>=0' --reverse
+compare_real_database query-reverse-default-json exact query status=open --reverse --json
+compare_real_database query-reverse-default-limit exact query 'priority>=0' --all --reverse --limit 4
+compare_real_database query-reverse-unknown-sort exact query 'priority>=0' --sort bogus --reverse
+compare_real_database query-sort-status-ties exact query 'priority>=0' --all --sort status
+compare_real_database query-sort-type-reverse-limit exact query 'priority>=0' --sort type --reverse --limit 4
+compare_real_database query-sort-assignee exact query 'priority>=0' --sort assignee
+compare_real_database query-sort-id-reverse-limit exact query "id=${real_database_molecule_id}*" --sort id --reverse --limit 1
+compare_real_database query-sort-id-limit-json exact query "id=${real_database_molecule_id}*" --sort id --limit 3 --json
+compare_real_database query-predicate-reverse exact query 'status=open OR status=in_progress' --reverse
 compare_real_database search-id-prefix exact search test-abcd
 compare_real_database search-status exact search parity --status open
 compare_real_database search-label exact search parity --label smoke
@@ -4742,6 +4837,52 @@ compare_real_database show-refs-empty-json exact show "$real_database_bug_id" --
 compare_real_database show-refs-multiple show-grouped-multi show "$real_database_epic_id" "$real_database_bug_id" --refs
 compare_real_database show-refs-disabled exact show "$real_database_bug_id" --refs=false
 compare_real_database_env show-refs-json-envelope exact BD_JSON_ENVELOPE=1 show "$real_database_epic_id" --refs --json
+# An upstream claim sets the status, the assignee and the start time, and writes a row to the
+# Dolt-ignored leases table (internal/storage/issueops/lease.go:169-188), which every full issue read
+# joins. These cases claim the child issue that way with fixture SQL. The lease times are taken once,
+# so both sides read the same ones, and far from the edges of show's relative-time buckets; a
+# heartbeat in the future is "just now". Every issue record in the JSON views carries the lease
+# fields, and show prints the Lease line for an in-progress issue. That line names the granting
+# replica when node_id names another one.
+lease_claim_sql() {
+	printf '%s\n' \
+		"UPDATE issues SET status = 'in_progress', assignee = 'fixture', started_at = '2026-11-01 10:00:00', updated_at = '2026-11-01 10:00:00' WHERE id = '$1'" \
+		"INSERT INTO leases (issue_id, holder, granted_at, lease_expires_at, heartbeat_at, granted_node) VALUES ('$1', 'fixture', '2026-11-01 10:00:00', '$2', '$3', '$4')"
+}
+# The UTC time this many seconds from now, in SQL DATETIME form.
+lease_time() {
+	jq -nr --argjson offset "$1" 'now + $offset | floor | strftime("%Y-%m-%d %H:%M:%S")'
+}
+lease_hours_sql="$(lease_claim_sql "$real_database_child_id" "$(lease_time 12600)" "$(lease_time -5400)" '')"
+lease_days_sql="$(lease_claim_sql "$real_database_child_id" "$(lease_time 302400)" "$(lease_time -216000)" node-b)"
+lease_expired_sql="$(lease_claim_sql "$real_database_child_id" '2026-01-01 00:00:00' '2026-01-01 00:00:00' '')"
+lease_own_node_sql="$(lease_claim_sql "$real_database_child_id" "$(lease_time 108000)" "$(lease_time 3600)" node-a)"
+lease_labeled_sql="$lease_days_sql"$'\n'"INSERT INTO labels (issue_id, label) VALUES ('$real_database_child_id', 'claimed')"
+compare_real_database_sql lease-show-hours exact "$lease_hours_sql" show "$real_database_child_id"
+compare_real_database_sql lease-show-long-days exact "$lease_days_sql" show "$real_database_child_id" --long
+compare_real_database_sql lease-show-expired exact "$lease_expired_sql" show "$real_database_child_id"
+compare_real_database_sql lease-show-json exact "$lease_days_sql" show "$real_database_child_id" --json
+compare_real_database_sql lease-show-dependency-json exact "$lease_days_sql" show "$real_database_grandchild_id" --json
+compare_real_database_sql lease-show-dependent-json exact "$lease_days_sql" show "$real_database_epic_id" --json
+compare_real_database_sql lease-show-children-json exact "$lease_labeled_sql" show "$real_database_epic_id" --children --json
+compare_real_database_sql lease-show-refs-json exact "$lease_labeled_sql" show "$real_database_epic_id" --refs --json
+compare_real_database_sql lease-children-json exact "$lease_days_sql" children "$real_database_epic_id" --json
+compare_real_database_sql lease-list-json exact "$lease_days_sql" list --status in_progress --json
+compare_real_database_sql lease-list-all-json exact "$lease_hours_sql" list --all --json
+compare_real_database_sql lease-query-json exact "$lease_days_sql" query status=in_progress --json
+compare_real_database_sql lease-query-predicate-json exact "$lease_days_sql" query 'status=in_progress OR priority=0' --json
+compare_real_database_sql lease-search-json exact "$lease_days_sql" search parity --status in_progress --json
+real_database_extra_env=(BD_NODE_ID=node-a)
+compare_real_database_sql lease-show-other-replica exact "$lease_days_sql" show "$real_database_child_id"
+compare_real_database_sql lease-show-own-replica exact "$lease_own_node_sql" show "$real_database_child_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_extra_config='node_id: " node-a "'
+compare_real_database_sql lease-show-config-replica exact "$lease_days_sql" show "$real_database_child_id"
+real_database_extra_config=""
+# A lease row on an issue that is not in progress shows in the JSON fields, but not as a Lease line.
+lease_open_sql="INSERT INTO labels (issue_id, label) VALUES ('$real_database_bug_id', 'leased')"$'\n'"INSERT INTO leases (issue_id, holder, granted_at, lease_expires_at, heartbeat_at, granted_node) VALUES ('$real_database_bug_id', 'fixture', '2026-11-01 10:00:00', '$(lease_time 108000)', '2026-11-01 10:00:00', '')"
+compare_real_database_sql lease-open-show exact "$lease_open_sql" show "$real_database_bug_id"
+compare_real_database_sql lease-open-show-json exact "$lease_open_sql" show "$real_database_bug_id" --json
 compare_real_database show-json-comments exact show "$real_database_issue_id" --json --include-comments
 compare_real_database show-json-comments-attached exact show "$real_database_issue_id" --json --include-comments=true
 compare_real_database show-json-comments-disabled exact show "$real_database_issue_id" --json --include-comments=false

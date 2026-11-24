@@ -21,6 +21,7 @@ import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.OpenGraph.isOpenGraphStatus;
 import beadshx.cli.AgentOutput.fitsMetadataLine;
 import beadshx.cli.AgentOutput.markdownWrapWidth;
+import beadshx.cli.LeaseLine.leaseLine;
 import beadshx.cli.GraphViews.renderAllGraphViews;
 import beadshx.cli.GraphViews.renderGraphBox;
 import beadshx.cli.GraphViews.renderGraphCompact;
@@ -52,6 +53,7 @@ import beadshx.config.ConfigDrift.HookStatus;
 import beadshx.config.ConfigDrift.GIT_HOOK_NAMES;
 import beadshx.config.ConfigDrift.hasDrift;
 import beadshx.config.ConfigDrift.hookStatus;
+import beadshx.config.ConfigDrift.hookWarnings;
 import beadshx.config.ConfigDrift.hooksDriftItems;
 import beadshx.config.ConfigDrift.plainItem;
 import beadshx.config.ConfigDrift.remoteOpenFailureItem;
@@ -156,6 +158,7 @@ import beadshx.store.IssueDependency;
 import beadshx.store.IssueDetails;
 import beadshx.store.IssueDetailsLookup;
 import beadshx.store.IssueDetailsRequest;
+import beadshx.store.IssueLease;
 import beadshx.store.IssueLookup;
 import beadshx.store.IssueQueryPort;
 import beadshx.store.CountResult;
@@ -2552,11 +2555,20 @@ final class Application {
 		final directory = ConfigProbes.gitHooksDirectory();
 		if (directory == null)
 			return [plainItem("hooks", DriftSkipped, "Not a git repository")];
+		return hooksDriftItems(gitHookStatuses(directory), InfoChanges.currentVersion);
+	}
+
+	/**
+		Upstream CheckGitHooks (cmd/bd/hooks.go:510-548): each bd hook in the
+		hooks directory. Without a directory, outside a git repository, every
+		hook counts as not installed.
+	**/
+	static function gitHookStatuses(directory:Null<String>):Array<HookStatus> {
 		final version = InfoChanges.currentVersion;
-		final statuses = new Array<HookStatus>();
-		for (name in GIT_HOOK_NAMES)
-			statuses.push(hookStatus(name, ConfigProbes.readHook(directory, name), version));
-		return hooksDriftItems(statuses, version);
+		return [
+			for (name in GIT_HOOK_NAMES)
+				hookStatus(name, directory == null ? null : ConfigProbes.readHook(directory, name), version)
+		];
 	}
 
 	/**
@@ -4656,7 +4668,7 @@ final class Application {
 		final lines = ["["];
 		for (index in 0...page.items.length) {
 			final item = page.items[index];
-			final fields = switch renderIssueRecordFields(item, "    ", sortFields) {
+			final fields = switch renderIssueRecordFields(item, item.longFields, "    ", sortFields) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -4758,7 +4770,8 @@ final class Application {
 		if (current == null)
 			return 0;
 
-		switch renderIssueHuman(current, invocation.agentMode, false, WatchedShow) {
+		final localNode = () -> localNodeId(location);
+		switch renderIssueHuman(current, invocation.agentMode, false, localNode, WatchedShow) {
 			case Failure(message):
 				return runStoreFailure(message);
 			case Success(rendered):
@@ -4777,7 +4790,7 @@ final class Application {
 				case Success(DetailsFound(issue)):
 					final nextSnapshot = issueWatchSnapshot(issue);
 					if (nextSnapshot != snapshot) {
-						switch renderIssueHuman(issue, invocation.agentMode, false, WatchedShow) {
+						switch renderIssueHuman(issue, invocation.agentMode, false, localNode, WatchedShow) {
 							case Failure(message):
 								watch.close();
 								return runStoreFailure(message);
@@ -4792,6 +4805,11 @@ final class Application {
 		watch.close();
 		output.writeStderr("\nStopped watching.\n");
 		return 0;
+	}
+
+	/** Upstream config.NodeID (internal/config/config.go:1062-1064): the trimmed `node_id` setting, also from BEADS_NODE_ID or BD_NODE_ID. */
+	static function localNodeId(location:WorkspaceLocation):String {
+		return goTrimSpace(LayeredConfig.forWorkspace(location.path).getString("node_id"));
 	}
 
 	function loadWatchedIssue(location:WorkspaceLocation, id:String, global:Bool, includeComments:Bool, query:IssueQueryPort):StoreResult<IssueDetailsLookup> {
@@ -5130,10 +5148,12 @@ final class Application {
 			lines.push('  ${Json.stringify(key)}: [');
 			for (childIndex in 0...children.length) {
 				final child = children[childIndex];
-				final fields = switch renderIssueRecordFields(child, "      ", !envelope) {
+				final fields = switch renderIssueRecordFields(child, child.lease, "      ", !envelope) {
 					case Failure(message): return Failure(message);
 					case Success(value): value;
 				};
+				if (child.labels.length > 0)
+					fields.push(renderRawStringArray("labels", child.labels, "      "));
 				fields.push('"dependency_type": ${Json.stringify(child.dependencyType)}');
 				if (!envelope)
 					fields.sort(compareJsonFields);
@@ -5182,8 +5202,9 @@ final class Application {
 					}
 			}
 		}
+		final localNode = () -> localNodeId(location);
 		for (index in 0...found.length) {
-			final rendered = switch renderIssueHuman(found[index], invocation.agentMode, invocation.showLong) {
+			final rendered = switch renderIssueHuman(found[index], invocation.agentMode, invocation.showLong, localNode) {
 				case Failure(message): return runStoreFailure(message);
 				case Success(value): value;
 			};
@@ -5439,9 +5460,12 @@ final class Application {
 	/**
 		Upstream's human show of one issue: header, metadata lines, sections.
 		`agentMode` sets the Markdown wrap width that decides whether the close
-		reason fits on a metadata line (see renderCloseReason).
+		reason fits on a metadata line (see renderCloseReason). `localNode` reads
+		this node's `node_id`, which the lease line compares with the node that
+		granted the lease.
 	**/
-	function renderIssueHuman(issue:IssueDetails, agentMode:Bool, longMode:Bool, mode:HumanShowMode = StandardShow):StoreResult<String> {
+	function renderIssueHuman(issue:IssueDetails, agentMode:Bool, longMode:Bool, localNode:() -> String,
+			mode:HumanShowMode = StandardShow):StoreResult<String> {
 		final typeBadge = switch issue.issueType {
 			case "epic": " [EPIC]";
 			case "bug": " [BUG]";
@@ -5469,6 +5493,9 @@ final class Application {
 		if (issue.deferUntil != "")
 			dates.push('Deferred: ${issue.deferUntil.substr(0, 10)}');
 		rendered += dates.join(" · ") + "\n";
+		final lease = leaseLine(issue.status, issue.longFields, localNode, LeaseClock.secondsFromNow);
+		if (lease != null)
+			rendered += lease + "\n";
 		final closeReason = issue.status == "closed" ? renderCloseReason(issue.closeReason, agentMode) : NoCloseReason;
 		switch closeReason {
 			case CloseReasonLine(line):
@@ -5932,7 +5959,7 @@ final class Application {
 		final lines = ["["];
 		for (index in 0...issues.length) {
 			final issue = issues[index];
-			final fields = switch renderIssueRecordFields(issue, "    ") {
+			final fields = switch renderIssueRecordFields(issue, issue.longFields, "    ") {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -5988,7 +6015,12 @@ final class Application {
 		return Success(lines.join("\n") + "\n");
 	}
 
-	static function renderIssueRecordFields(issue:IssueRecord, fieldIndent:String, sortMetadata:Bool = false):StoreResult<Array<String>> {
+	/**
+		The fields of an issue record in upstream's types.Issue order, with Go's
+		`omitempty` rules. `lease` is the claim lease that upstream reads with
+		every full issue row (internal/types/types.go:55-72).
+	**/
+	static function renderIssueRecordFields(issue:IssueRecord, lease:IssueLease, fieldIndent:String, sortMetadata:Bool = false):StoreResult<Array<String>> {
 		final fields = new Array<String>();
 		fields.push('"id": ${Json.stringify(issue.id)}');
 		fields.push('"title": ${Json.stringify(issue.title)}');
@@ -6028,6 +6060,12 @@ final class Application {
 			fields.push('"close_reason": ${Json.stringify(issue.closeReason)}');
 		if (issue.closedBySession != "")
 			fields.push('"closed_by_session": ${Json.stringify(issue.closedBySession)}');
+		if (lease.leaseExpiresAt != "")
+			fields.push('"lease_expires_at": ${Json.stringify(lease.leaseExpiresAt)}');
+		if (lease.heartbeatAt != "")
+			fields.push('"heartbeat_at": ${Json.stringify(lease.heartbeatAt)}');
+		if (lease.leaseGrantedNode != "")
+			fields.push('"lease_granted_node": ${Json.stringify(lease.leaseGrantedNode)}');
 		if (issue.dueAt != "")
 			fields.push('"due_at": ${Json.stringify(issue.dueAt)}');
 		if (issue.deferUntil != "")
@@ -6054,7 +6092,7 @@ final class Application {
 		final lines = ['${Json.stringify(fieldName)}: ['];
 		for (index in 0...relations.length) {
 			final dependency = relations[index];
-			final fields = switch renderIssueRecordFields(dependency, "        ") {
+			final fields = switch renderIssueRecordFields(dependency, dependency.lease, "        ") {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -6761,6 +6799,10 @@ final class Application {
 			if (snapshot.sampleIssueIds.length > 0)
 				rendered += '  Sample Issues: [${snapshot.sampleIssueIds.join(" ")}]\n';
 		}
+		// Upstream renderInfo (cmd/bd/info.go:175-178) then warns about missing or outdated git hooks.
+		final warning = hookWarnings(gitHookStatuses(ConfigProbes.gitHooksDirectory()));
+		if (warning != "")
+			rendered += '\n${warning}\n';
 		return rendered + "\n";
 	}
 

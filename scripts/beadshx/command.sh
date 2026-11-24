@@ -60,6 +60,7 @@ run_command() {
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/list_format/compile.hxml) &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/workspace_gate/compile.hxml) &&
 			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/terminal_styles/compile.hxml) &&
+			(cd "$repository_root" && "$repository_root/node_modules/.bin/haxe" test/lease_line/compile.hxml) &&
 			"$repository_root/scripts/beadshx/test-storage-transaction-tracer.sh" &&
 			"$repository_root/scripts/beadshx/test-embedded-session.sh" &&
 			"$repository_root/scripts/beadshx/test-export-read.sh" &&

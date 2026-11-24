@@ -386,12 +386,12 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return switch request.fetch {
 			case CompleteCandidates: QueryRows({rows: matches, sourceHasMore: false, complete: true});
 			case OrderedPage(limit, offset, sortBy, reverse):
-				final page = QueryPage.finish(matches, {
+				final page = QueryPage.orderedPage(matches, {
 					limit: limit,
 					offset: offset,
 					sortBy: sortBy,
 					reverse: reverse
-				}, false);
+				});
 				QueryRows({rows: page.rows, sourceHasMore: page.hasMore, complete: true});
 		};
 	}
@@ -1308,6 +1308,11 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			wispType: native.wispType(),
 			moleculeType: native.moleculeType(),
 			labels: labels,
+			lease: {
+				leaseExpiresAt: native.leaseExpiresAt(),
+				heartbeatAt: native.heartbeatAt(),
+				leaseGrantedNode: native.leaseGrantedNode()
+			},
 			dependencyType: native.dependencyType()
 		};
 	}

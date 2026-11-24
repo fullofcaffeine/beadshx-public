@@ -153,6 +153,11 @@ class Main {
 			wispType: "",
 			moleculeType: "",
 			labels: [],
+			lease: {
+				leaseExpiresAt: "",
+				heartbeatAt: "",
+				leaseGrantedNode: ""
+			},
 			dependencyType: kind
 		};
 	}

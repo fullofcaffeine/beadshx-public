@@ -23,7 +23,7 @@ class Main {
 			final metadata = StoredMetadata.fromSql(testCase.raw);
 			for (fields in [
 				fieldsOf(Application.renderRawIssueFields(issue(metadata))),
-				fieldsOf(Application.renderIssueRecordFields(issue(metadata), "    "))
+				fieldsOf(Application.renderIssueRecordFields(issue(metadata), issue(metadata).longFields, "    "))
 			])
 				if (fields.indexOf('"metadata": ' + testCase.expected) < 0) {
 					Sys.println('metadata mismatch for ${testCase.raw}: ${fields.join("\n")}');
@@ -34,7 +34,7 @@ class Main {
 			final absent = issue(StoredMetadata.fromSql(raw));
 			for (fields in [
 				fieldsOf(Application.renderRawIssueFields(absent)),
-				fieldsOf(Application.renderIssueRecordFields(absent, "    "))
+				fieldsOf(Application.renderIssueRecordFields(absent, absent.longFields, "    "))
 			])
 				if (fields.join("\n").indexOf('"metadata": ') >= 0)
 					throw "absent metadata must remain omitted";

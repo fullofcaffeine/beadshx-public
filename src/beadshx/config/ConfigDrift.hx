@@ -128,6 +128,28 @@ function hooksDriftItems(statuses:Array<HookStatus>, currentVersion:String):Arra
 	return items;
 }
 
+/**
+	Upstream FormatHookWarnings (cmd/bd/hooks.go:613-643), which `bd info`
+	prints: the count of hooks that are not installed and the count of
+	outdated ones, each followed by the install hint, or "" when every hook is
+	installed and current.
+**/
+function hookWarnings(statuses:Array<HookStatus>):String {
+	var missing = 0;
+	var outdated = 0;
+	for (status in statuses)
+		if (!status.installed)
+			missing++;
+		else if (status.outdated)
+			outdated++;
+	final warnings = new Array<String>();
+	if (missing > 0)
+		warnings.push('⚠️  Git hooks not installed (${missing} missing)\n   Run: bd hooks install');
+	if (outdated > 0)
+		warnings.push('⚠️  Git hooks are outdated (${outdated} hooks)\n   Run: bd hooks install');
+	return warnings.join("\n");
+}
+
 /** A drift item without expected and actual values. */
 function plainItem(check:String, status:DriftStatus, message:String):DriftItem {
 	return {

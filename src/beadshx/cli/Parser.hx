@@ -431,31 +431,26 @@ final class Parser {
 				case _:
 			}
 		}
-		// Cobra's command search knows only the root's flags until it finds the command. It takes the
-		// argument after any other --flag or -x as that flag's value, so that argument cannot name the
-		// command; pflag still reads it as a positional argument of the command found.
-		var searchSkipsNext = false;
-		final skippedBySearch = new Array<String>();
-		// A group such as -rt whose last shorthand takes the next argument as its value. The search does
-		// not skip that argument, so before the command it can still name the command.
-		var groupValuePending = false;
+		// Cobra finds the command before pflag reads a flag, and pflag then reads every other argument
+		// with the flags of that command. The command is the first positional argument; without one,
+		// the root runs, and it takes no positional argument.
+		final commandIndex = searchCommandIndex(args);
+		if (commandIndex >= 0)
+			positional.push(args[commandIndex]);
 		// The flags and values of the shorthand group that the loop reads now.
 		final groupTokens = new Array<ArgumentToken>();
 		var nextArgument = 0;
 		while (groupTokens.length > 0 || nextArgument < args.length) {
 			final queued = groupTokens.shift();
+			// argsMinusFirstX removes the command from the arguments that pflag reads.
+			if (queued == null && nextArgument == commandIndex) {
+				nextArgument++;
+				continue;
+			}
 			final next = queued == null ? args[nextArgument++] : queued.text;
 			final token:ArgumentToken = queued == null ? {text: next, flagArgument: next, grouped: false} : queued;
 			final argument = token.text;
-			final skippedHere = searchSkipsNext;
-			searchSkipsNext = false;
 			if (expectedValue != null) {
-				if (groupValuePending && positional.length == 0 && !flagsEnded && !StringTools.startsWith(argument, "-")) {
-					groupValuePending = false;
-					positional.push(argument);
-					continue;
-				}
-				groupValuePending = false;
 				switch expectedValue {
 					case Actor:
 						actor = argument;
@@ -571,7 +566,8 @@ final class Parser {
 				continue;
 			}
 			if (flagsEnded) {
-				positional.push(argument);
+				if (commandIndex >= 0)
+					positional.push(argument);
 				continue;
 			}
 			if (!token.grouped && isShorthandGroup(argument)) {
@@ -579,7 +575,6 @@ final class Parser {
 					groupTokens.push(grouped);
 				continue;
 			}
-			searchSkipsNext = !token.grouped && !skippedHere && positional.length == 0 && searchTakesValue(argument);
 			if (StringTools.startsWith(argument, "--actor=")) {
 				actor = argument.substr(8);
 				continue;
@@ -1383,20 +1378,12 @@ final class Parser {
 					// Cobra's command search takes the next argument as the value of a flag that it does not know.
 					if (value.indexOf("=") < 0 && (long || value.length == 2))
 						expectedValue = UnknownFlagValue;
-				case value if (skippedHere):
-					skippedBySearch.push(value);
+				// Without a command the root runs, and its Run ignores its positional arguments.
+				case _ if (commandIndex < 0):
 				case value:
 					positional.push(value);
 			}
-			// A value shorthand at the end of a group takes the next argument, which the search still reads.
-			if (token.grouped && expectedValue != null && groupTokens.length == 0)
-				groupValuePending = true;
 		}
-		// The arguments that the search skipped are positional arguments of the command found, before the
-		// others. Without a command, the root finds them the same way and has no argument.
-		if (positional.length > 0)
-			for (index in 0...skippedBySearch.length)
-				positional.insert(1 + index, skippedBySearch[index]);
 		// The last flag has no value after it.
 		if (expectedValue != null)
 			flagUses.push({typed: flagArgument, argument: flagArgument, check: FlagFailure(missingArgument(flagArgument))});
@@ -2496,8 +2483,40 @@ final class Parser {
 		The help flag counts too, because cobra adds it after the search.
 	**/
 	static function searchTakesValue(argument:String):Bool {
-		final shaped = StringTools.startsWith(argument, "--") ? argument.indexOf("=") < 0 : argument.length == 2 && StringTools.startsWith(argument, "-");
+		final shaped = (StringTools.startsWith(argument, "--") || (argument.length == 2 && StringTools.startsWith(argument, "-")))
+			&& argument.indexOf("=") < 0;
 		return shaped && !isRootBooleanFlag(argument);
+	}
+
+	/**
+		Cobra's command search: stripFlags (command.go:674-713 in cobra v1.10.2)
+		over the root's flags, which gives the first argument that can name the
+		command. Why: cobra finds the command before pflag reads any flag, and
+		the search treats flags its own way. What: the index of that argument
+		in `args`, or -1 when the search finds none, so the root runs. How: it
+		stops at `--`; it takes the argument after a flag that `searchTakesValue`
+		accepts as that flag's value, also when that argument is a flag itself,
+		and stops when at most that one argument is left; it skips any other
+		argument that starts with `-`. argsMinusFirstX (command.go:718-750)
+		then removes this same argument and no other.
+	**/
+	static function searchCommandIndex(args:Array<String>):Int {
+		var index = 0;
+		while (index < args.length) {
+			final argument = args[index];
+			index++;
+			if (argument == "--")
+				return -1;
+			if (searchTakesValue(argument)) {
+				if (args.length - index <= 1)
+					return -1;
+				index++;
+				continue;
+			}
+			if (argument != "" && !StringTools.startsWith(argument, "-"))
+				return index - 1;
+		}
+		return -1;
 	}
 
 	/** An argument that pflag reads as a group of shorthands, such as `-tbug`, `-rn1` or `-r=false`. */

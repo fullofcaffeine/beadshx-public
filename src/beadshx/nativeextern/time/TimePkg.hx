@@ -22,4 +22,10 @@ extern class TimePkg {
 	@:go.tupleValueResults("0")
 	@:go.name("ParseDuration")
 	public static function parseDuration(value:String):ParseDurationResult;
+
+	/** The duration from now until `value`, negative once it passed. */
+	@:go.valueArgs("0")
+	@:go.valueReturn
+	@:go.name("Until")
+	public static function until(value:Time):Duration;
 }
