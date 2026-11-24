@@ -17,7 +17,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "23377c61d26cc28faf0bbbe2e1b561139e4231c2f2b93e30d3d9e4b021d2aadf"
+        "sha256": "fbe5375082d180b4cac468fa8434e5114a9f0f3520238a775cf794e279880639"
       },
       {
         "path": "src/beadshx/cli/CatalogViews.hx",
@@ -73,7 +73,7 @@
       },
       {
         "path": "src/beadshx/cli/Invocation.hx",
-        "sha256": "d9b1d40f2fc2fbc234eeb36d15c0be48c494b595b230af9f02748a5d5dee0cd7"
+        "sha256": "a1d6e90f1f1242c8d0455b881b7a8a5b31adc069725c399051bd7e806d4ffd88"
       },
       {
         "path": "src/beadshx/cli/JsonSettingPort.hx",
@@ -82,6 +82,10 @@
       {
         "path": "src/beadshx/cli/LabelsView.hx",
         "sha256": "c09664de614e3f129416468c3c0d731b3ea253e4824609b4d653521b6d9e719b"
+      },
+      {
+        "path": "src/beadshx/cli/LipglossTextStyle.hx",
+        "sha256": "53f45fc1111e68155d458f17f3a28b264a4a327ebebf615cf6506c51b622b59a"
       },
       {
         "path": "src/beadshx/cli/ListFormatView.hx",
@@ -93,7 +97,7 @@
       },
       {
         "path": "src/beadshx/cli/OutputPort.hx",
-        "sha256": "f1267a350bdc01be08cec443c66611b6c4f1195c781dad63e4f45998a72d9952"
+        "sha256": "1acdee6dbf91611a506b57a2fc4750cdc6ac9a04a360fc77c302f559c526a583"
       },
       {
         "path": "src/beadshx/cli/ParseResult.hx",
@@ -101,7 +105,7 @@
       },
       {
         "path": "src/beadshx/cli/Parser.hx",
-        "sha256": "822416a244e93020c2db6112ae65bdea59a4faa22e2a38ad150782b41cd06a5b"
+        "sha256": "af08f14c7898dfcaa6f8e1ebfbe819b11db7372c8a4c85b25a806f3cb6a47c1f"
       },
       {
         "path": "src/beadshx/cli/PflagValue.hx",
@@ -109,7 +113,7 @@
       },
       {
         "path": "src/beadshx/cli/SchemaSkewWarningOutput.hx",
-        "sha256": "3235adc6e135af9b1fe3fa3902ea537e1e51c682219cf376f5d3ce2cff2ab8fc"
+        "sha256": "3f33f7135151f2a76c7fa45652436c6aa7e435bf1134ed9aa3d8e2b8aba33528"
       },
       {
         "path": "src/beadshx/cli/StatusIcon.hx",
@@ -121,11 +125,15 @@
       },
       {
         "path": "src/beadshx/cli/SystemOutput.hx",
-        "sha256": "55fbe7406c538fd03fc1e3c083b4e7ae6fc81382d7e2d78a5433ce87d724452f"
+        "sha256": "a5dfb089da5f662118deff1c147a536fba099b0accd253608407a80ef568e9dd"
       },
       {
         "path": "src/beadshx/cli/SystemWatch.hx",
         "sha256": "06024fa372c7c5f96fbb859850d6fabbe0f5df295e0660a70e5173998d8929dd"
+      },
+      {
+        "path": "src/beadshx/cli/TerminalStyles.hx",
+        "sha256": "9ce1466bfaa2af55751b584ada641ee84ff4b9731ae702bc51c2311c13c7bcd1"
       },
       {
         "path": "src/beadshx/cli/WatchPort.hx",
@@ -218,6 +226,10 @@
       {
         "path": "src/beadshx/nativeextern/bytes/BytesPkg.hx",
         "sha256": "389108895376a94f2d5452adc2797ed2afda4c8c43165f58563998f16a622c91"
+      },
+      {
+        "path": "src/beadshx/nativeextern/color/Color.hx",
+        "sha256": "9693eac9ad8ab520ac0eaf01521264ff9718cca0df310e537b02d2b8213bdfb5"
       },
       {
         "path": "src/beadshx/nativeextern/context/Context.hx",
@@ -388,6 +400,14 @@
         "sha256": "2a4310f715fedd36fe4aea39d47ba5e160c985cf88371b8d45c09bff9d9ffa87"
       },
       {
+        "path": "src/beadshx/nativeextern/lipgloss/LipglossPkg.hx",
+        "sha256": "25a66d5e68e0856ab898169beceac7587bae3af9a7de52b593dd1632810e6d88"
+      },
+      {
+        "path": "src/beadshx/nativeextern/lipgloss/Style.hx",
+        "sha256": "a65c886c4fb560315bbf418efd497756fb9be4e6149bee97922200307d0b6d73"
+      },
+      {
         "path": "src/beadshx/nativeextern/math/MathPkg.hx",
         "sha256": "6c6334a7e52e947c692a55fdcdadbf1bb2c6c143db300b0f3ab297b643f53803"
       },
@@ -420,6 +440,10 @@
         "sha256": "02366fe9b42e9d71b3c00bfde13e3f0959de096e0827e21408aa4e8c746617f9"
       },
       {
+        "path": "src/beadshx/nativeextern/os/File.hx",
+        "sha256": "dd260ea947510fa00ecc9e2620409a02d343a0fe1eb91c4fe1e7f2c8433be690"
+      },
+      {
         "path": "src/beadshx/nativeextern/os/FileInfo.hx",
         "sha256": "13df30b843697b2fb2b5a8dabe82cab3a669e1f0c01a226dd3837646552caf71"
       },
@@ -429,7 +453,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/os/OsPkg.hx",
-        "sha256": "9916383fddd32a8265008e84afe84ede131d057fd48f89f91bc116219320b8b9"
+        "sha256": "da0d3a517da1a7015ae6284f35880719c09e162b4c80412812318899076bba95"
       },
       {
         "path": "src/beadshx/nativeextern/os/PathResult.hx",
@@ -1210,18 +1234,18 @@
     },
     "compilerLock": {
       "path": "upstream/locks/haxe-go.json",
-      "sha256": "2c2ff18aaea6523df3a5fa64c8b81631bb8f94a14626bacf8bedba9c0b619fc7"
+      "sha256": "6844a1fdb2d2a111113db83ed6065b1ebd420f386d48ba36c7f85e99d264be90"
     },
-    "compilerRevision": "61c58166cf2fde66795b6cc530f0a6e91e60bd9d"
+    "compilerRevision": "11f6980b2c9fc1c01fb698b9e5d2b0c98a21aea7"
   },
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "2ccfae96f299503390d02b5dbc0774f5916deee601e4609a68037429b74d742b"
+      "sha256": "2094f8e07fa2281a0f3b1d6d2a04e83b6c2feaf990b69fae65097940594afb52"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "f00ddd9523bdb47983f91ea5e38a2f5624413b491eec9cab57c98e1814ef2273"
+      "sha256": "6c934f3d4a6270bfef35d47a2821d1efbac155c93458e78f6b722196609f0d52"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_bootstrap_commandprocess.go",
@@ -1233,7 +1257,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "5cc550848503d51465c7c81cdcbec57610a919537bd8efd501e83f07d4c1ef74"
+      "sha256": "d0636fcf338deff9673f8c1383c067bfa56a5a7bba131e8f00290feff540dcc0"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_catalogviews.go",
@@ -1296,16 +1320,20 @@
       "sha256": "15c9bdf53bc86a44da2598acd89752cf12d12ab66198774bc59ceb91a72944b0"
     },
     {
+      "path": "bdhx/haxego_generated_module_beadshx_cli_lipglosstextstyle.go",
+      "sha256": "ebd8df3193490351c8f5120851ac6282d3112062e53c9410fa7c1c1d32ccfb01"
+    },
+    {
       "path": "bdhx/haxego_generated_module_beadshx_cli_listformatview.go",
       "sha256": "0215c7251d5dd3ac27a7f764bc410f7a0e43cfc818629d1d2c79275f308ad742"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_outputport.go",
-      "sha256": "1d4fd22744a30f23b1621925ca042805b63c824b20abd0b7f5cbc65729c76fb6"
+      "sha256": "ddb05383e4b9dae9890ec9e3d65d5a13bd5694d5c3242ee411b28600f27ae2c1"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parser.go",
-      "sha256": "77524bc05234f279a09e7dfd009fb5c1d9e0bccf723013196a2ec5d890aa4be5"
+      "sha256": "4878280652cf95c590c38b4dd9bb7bfd269ba0e6954c2a9fb494dd50cce0b448"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parseresult.go",
@@ -1317,7 +1345,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_schemaskewwarningoutput.go",
-      "sha256": "462a4138c12523a781c523ee320680650102d36653c3972850f926055bd43f29"
+      "sha256": "be9e9cfcb389163c1dcbdf2f0e008c0090f0c40183e1d65ce34bae3dc4bdac9f"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_statusicon.go",
@@ -1329,11 +1357,15 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_systemoutput.go",
-      "sha256": "724940649d1d71eeb136cf556f51d8bfe969cf6eccec4e1023f8461029260ec8"
+      "sha256": "713947cb95f51bbff6f3fdcc0c5b1673aefbd950c534a65411d566163f7fbb59"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_systemwatch.go",
       "sha256": "7d169fda0dc444e4ab81a62eec02c35b91926767f5bdab7b4f606cda4a9d247e"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_cli_terminalstyles.go",
+      "sha256": "e20435f657989bf863dd7ef9fa442180dd668c162097b511d4319c8ddcee6ee1"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_watchport.go",
@@ -2065,7 +2097,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_std.go",
-      "sha256": "6ed354a58c631c461462787919f092ea26dc8dadc58760369bc73804527bcbce"
+      "sha256": "1d7d31ed51649ee0cade6a9233929d244058255ed542b49d48a99276fe797c3c"
     },
     {
       "path": "bdhx/haxego_generated_module_stringbuf.go",
@@ -2117,15 +2149,15 @@
     },
     {
       "path": "bdhx/haxego_generated_recovery_3.go",
-      "sha256": "98eb929348fa822c0ae45afa0c413b88bc7c47b6606a89aa7106886fdaf150ad"
+      "sha256": "2abb3447139058af8a1ba7d2ce8324d520059f6b87f59488ef79bbee19437c6b"
     },
     {
       "path": "bdhx/haxego_generated_recovery_4.go",
-      "sha256": "51b2edd7a754b5d235422ca6999496214babd26a93883fdcdc05826704abe0da"
+      "sha256": "9a3abd224f5dd10f11ff158a5ca2b14bad31b2abcfb78b7585e91c51b489e77b"
     },
     {
       "path": "bdhx/haxego_generated_recovery_5.go",
-      "sha256": "619d937d617fa00360128f31afe8dccc539471d891c203a505d99090749af194"
+      "sha256": "c0ce80e3f74aa8f07510ee7eea7fef5158d664b15af1215db3e9a4300070a6e3"
     },
     {
       "path": "hxrt/anonymous.go",

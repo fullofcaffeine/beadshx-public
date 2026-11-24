@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `61c58166cf2fde66795b6cc530f0a6e91e60bd9d`.
+Required BeadsHX compiler revision: `11f6980b2c9fc1c01fb698b9e5d2b0c98a21aea7`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -174,6 +174,14 @@ value into a String slot, through the new runtime helper `DynamicToString` in
 type assertion and `Std.string`, so a null key stays null and a key that is not
 a String no longer stops the program; the other compiler fixes give
 byte-identical output.
+
+Compiler task haxe_go-buow reads fields of elements taken from a `Dynamic`
+index through `Reflect.field` and the erased call path. haxe_go-3zjw and
+haxe_go-4wm3 make the compiler faster: it builds each type-usage and surface
+sort key once and reads each declaration once in the type-usage ledger, which
+together cut the BeadsHX bootstrap compile by about a quarter. haxe_go-5yip adds
+the exact `go.NativeUintptr` carrier for Go `uintptr` values at extern
+boundaries. BeadsHX Go output is byte-identical to the previous lock.
 
 Reviewed current authority:
 
