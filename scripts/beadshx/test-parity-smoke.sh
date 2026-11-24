@@ -3116,10 +3116,12 @@ real_database_setup=""
 # the Git repository root, also when -C or BEADS_DIR selects another workspace; outside a repository,
 # BEADS_DIR, which -C sets, and only without it the first .beads directory above the current directory.
 # A redirect is kept when upstream follows it. Here `other` is a copy of `test` from before the target's
-# copy of the issue was renamed, so each read shows which database it opened.
+# copy of the issue was renamed, so each read shows which database it opened. Each side runs the rename
+# at its own time, so the rename keeps the seed's updated_at, which the JSON reads print.
 redirect_with_existing_source_database() {
 	copy_fixture_tree "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/other"
-	printf "UPDATE issues SET title = 'Target database title' WHERE id = '%s'\n" "$real_database_issue_id" |
+	printf "UPDATE issues SET title = 'Target database title', updated_at = updated_at WHERE id = '%s'\n" \
+		"$real_database_issue_id" |
 		"$fixture_sql" "$1/work" >/dev/null
 	redirect_with_source_database "$1"
 }
@@ -3393,7 +3395,7 @@ compare_real_database ready-explain-json exact ready --explain --json
 compare_real_database ready-gated-human exact ready --gated
 compare_real_database ready-gated-json exact ready --gated --json
 # With the gate open again, no molecule is ready for gate-resume dispatch.
-reopen_gate_sql="UPDATE issues SET status = 'open', closed_at = NULL WHERE issue_type = 'gate'"
+reopen_gate_sql="UPDATE issues SET status = 'open', closed_at = NULL, updated_at = updated_at WHERE issue_type = 'gate'"
 compare_real_database_sql ready-gated-none-human exact "$reopen_gate_sql" ready --gated
 compare_real_database_sql ready-gated-none-json exact "$reopen_gate_sql" ready --gated --json
 compare_real_database search-human exact search parity
@@ -5664,14 +5666,11 @@ compare_watch_refresh() {
 		fi
 		case "$mutation" in
 		update)
-			(
-				cd "$state_root/work"
-				env HOME="$state_root/user-home" \
-					XDG_CONFIG_HOME="$state_root/config" \
-					"${real_database_env[@]}" \
-					"$oracle" update "$real_database_content_id" \
-					--title 'Updated watch parity issue' --json >/dev/null
-			)
+			# Each side writes at its own time, and show prints the date of updated_at, so a clock write
+			# differs when the two writes fall on each side of midnight UTC. The write sets a fixed
+			# updated_at instead; the watch sees the new value and refreshes.
+			printf "UPDATE issues SET title = 'Updated watch parity issue', updated_at = '2030-01-02 03:04:05' WHERE id = '%s'\n" \
+				"$real_database_content_id" | "$fixture_sql" "$state_root/work" >/dev/null
 			wait_for_watch_text "$case_root/$side.stdout" 'Updated watch parity issue'
 			;;
 		row-cap)
