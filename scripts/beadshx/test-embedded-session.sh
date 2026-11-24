@@ -6,8 +6,12 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 oracle="$repository_root/build/bin/bd-upstream"
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-embedded-session.XXXXXX")"
-backup_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-session-generated.XXXXXX")"
+# macOS sets TMPDIR with a trailing slash. Strip it, so the fixture paths have no
+# `//`: Go cleans the paths it prints, and the test replaces the exact path with <beads>.
+temporary_root="${TMPDIR:-/tmp}"
+temporary_root="${temporary_root%/}"
+fixture_root="$(mktemp -d "$temporary_root/beadshx-embedded-session.XXXXXX")"
+backup_root="$(mktemp -d "$temporary_root/beadshx-session-generated.XXXXXX")"
 generated_root="$repository_root/generated/go"
 had_generated=false
 cleanup() {
