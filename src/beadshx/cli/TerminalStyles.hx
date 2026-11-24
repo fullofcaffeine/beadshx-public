@@ -173,6 +173,25 @@ final class TerminalStyles {
 		};
 	}
 
+	/**
+		ui.RenderStatusIconWithCategory (styles.go:309-338): a built-in status
+		keeps its own icon; any other status takes the icon of its category, and
+		an unknown category the custom diamond.
+	**/
+	public function renderStatusIconWithCategory(status:String, category:String):String {
+		return switch status {
+			case "open" | "in_progress" | "blocked" | "closed" | "deferred" | "pinned": renderStatusIcon(status);
+			case _:
+				switch category {
+					case "active": "○";
+					case "wip": statusInProgress.render("◐");
+					case "done": statusClosed.render("✓");
+					case "frozen": muted.render("❄");
+					case _: "◇";
+				}
+		};
+	}
+
 	/** ui.RenderPass (styles.go:428-430). */
 	public function renderPass(text:String):String {
 		return pass.render(text);

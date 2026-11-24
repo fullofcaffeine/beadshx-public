@@ -93,19 +93,22 @@ Like upstream, `list` (every text view, also `children` and `--watch`),
 `ready` (the default, `--pretty` and `--plain` views and their notes), the
 `query` list, `show` (every text view, also `--short`, `--children`,
 `--refs`, `--thread` and `--watch`), `blocked`, the `--explain`, `--mol` and
-`--gated` views of `ready`, `dep list`, `dep tree`, `dep cycles` and `graph`
-(every text view, also `graph check`) print colors. Like upstream, `dep tree` prints the `[READY]` and `[BLOCKED]`
-marks in bold also when colors are off. Colors are on when stdout is a terminal, or when
-`CLICOLOR_FORCE` has any value that is not empty, also `0` and also with
-`TERM=dumb`. Colors are off when `NO_COLOR` is not empty, `CLICOLOR=0` or
-`BD_GIT_HOOK=1` is set, `TERM` is `dumb` (without `CLICOLOR_FORCE`), or
-`--no-color` is given. `bdhx` decides this from the environment at start, as
-upstream does, so a value from the `.beads/.env` file does not change it. The
-colors are upstream's 24-bit Ayu colors, whatever `TERM` says, and the
-`lipgloss` library prints them. When stdin and stdout are both terminals,
-`bdhx` asks the terminal whether its background is dark or light; otherwise it
-uses the dark colors. Also when colors are off, `bdhx` changes each tab to four
-spaces in the parts that upstream styles, such as the title of a closed issue.
+`--gated` views of `ready`, `dep list`, `dep tree`, `dep cycles`, `graph`
+(every text view, also `graph check`), `history`, `label list`,
+`label list-all`, `stale`, `orphans`, `status` (also `stats`), `statuses` and
+`ping` print colors. Like upstream, `dep tree` prints the `[READY]` and
+`[BLOCKED]` marks in bold also when colors are off. Colors are on when stdout
+is a terminal, or when `CLICOLOR_FORCE` has any value that is not empty, also
+`0` and also with `TERM=dumb`. Colors are off when `NO_COLOR` is not empty,
+`CLICOLOR=0` or `BD_GIT_HOOK=1` is set, `TERM` is `dumb` (without
+`CLICOLOR_FORCE`), or `--no-color` is given. `bdhx` decides this from the
+environment at start, as upstream does, so a value from the `.beads/.env` file
+does not change it. The colors are upstream's 24-bit Ayu colors, whatever
+`TERM` says, and the `lipgloss` library prints them. When stdin and stdout are
+both terminals, `bdhx` asks the terminal whether its background is dark or
+light; otherwise it uses the dark colors. Also when colors are off, `bdhx`
+changes each tab to four spaces in the parts that upstream styles, such as the
+title of a closed issue.
 
 Like upstream, `show` prints the close reason on one metadata line when it
 has no line break and fits the Markdown wrap width. This width is the
@@ -525,12 +528,11 @@ Limits:
 - When a `list --format` Go template fails on a later issue, upstream has
   already printed the lines of the issues before it. `bdhx` prints only the
   error.
-- Only `list`, `children`, `query`, `show`, `blocked`, `ready`, `dep list`,
-  `dep tree`, `dep cycles` and `graph` print colors. The other views, such as
-  `stale` and `orphans`, print upstream's text without its colors. On a terminal with colors on,
-  `bdhx` can ask the terminal for its background color twice: once when it
-  starts, in the upstream code of the Markdown renderer, and once before the
-  first colored view. Upstream asks once.
+- `bdhx` refuses `ready --claim`, so it never prints upstream's colored
+  claim lines. On a terminal with colors on, `bdhx` can ask the terminal for
+  its background color twice: once when it starts, in the upstream code of the
+  Markdown renderer, and once before the first colored view. Upstream asks
+  once.
 - `bdhx` prints no tips. Upstream can print a random tip that recommends the
   Beads plugin for Claude Code after `show` and `ready`, and after the flat
   `list` view when agent mode is off. It does this when `CLAUDE_CODE` or

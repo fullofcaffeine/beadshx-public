@@ -1,6 +1,8 @@
 import beadshx.cli.CatalogViews.padRunes;
 import beadshx.cli.CatalogViews.renderStatusesJson;
 import beadshx.cli.CatalogViews.renderStatusesText;
+import beadshx.cli.TerminalStyles;
+import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.cli.CatalogViews.renderTypeSectionsText;
 import beadshx.cli.CatalogViews.renderTypesJson;
 import beadshx.cli.CatalogViews.renderTypesText;
@@ -119,10 +121,11 @@ class Main {
 			{name: "open", category: "weird"},
 			{name: "a-very-long-status-name", category: "unspecified"}
 		];
-		equal(StringTools.endsWith(renderStatusesText(custom),
+		equal(StringTools.endsWith(renderStatusesText(custom, TerminalStyles.plain(_ -> new EmptyStyle())),
 			"\nCustom statuses:\n  ✓ hooked         [done  ]\n  ○ open           [weird ]\n  ◇ a-very-long-status-name [unspecified]\n"),
 			true);
-		equal(renderStatusesText([]).indexOf("  ◇ hooked         [wip   ]  Attached to an agent's hook\n") > 0, true);
+		equal(renderStatusesText([], TerminalStyles.plain(_ -> new EmptyStyle())).indexOf("  ◇ hooked         [wip   ]  Attached to an agent's hook\n") > 0,
+			true);
 		final legacy = renderStatusesJson(custom, false);
 		equal(StringTools.startsWith(legacy,
 			'{\n  "built_in_statuses": [\n    {\n      "category": "active",\n      "description": "Available to work (default)",\n      "icon": "○",\n      "name": "open"\n    },\n'),
@@ -137,5 +140,14 @@ class Main {
 	static function equal<T>(actual:T, expected:T):Void {
 		if (actual != expected)
 			throw 'expected ${expected}, got ${actual}';
+	}
+}
+
+/** Stands in for an empty lipgloss style: the statuses text has no tab, so the text stays as it is. */
+private final class EmptyStyle implements TextStyle {
+	public function new() {}
+
+	public function render(text:String):String {
+		return text;
 	}
 }

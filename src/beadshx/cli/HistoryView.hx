@@ -6,15 +6,23 @@ import beadshx.store.IssueHistory.HistoryIssue;
 import beadshx.store.IssueHistory.IssueEvent;
 import beadshx.store.IssueHistory.IssueHistoryEntry;
 
-/** Upstream runHistory's text layout, after `--limit` cut the entries; colors are off. */
-function renderHistoryText(issueId:String, history:Array<IssueHistoryEntry>):String {
+/**
+	Upstream runHistory's text layout (cmd/bd/history.go:105-130), after `--limit` cut
+	the entries: an accented mark, and each commit's muted hash and date. The status
+	icon is plain.
+**/
+function renderHistoryText(issueId:String, history:Array<IssueHistoryEntry>, styles:TerminalStyles):String {
 	if (history.length == 0)
 		return 'No history found for issue ${issueId}\n';
-	final lines = ["", '📜 History for ${issueId} (${history.length} entries)', ""];
+	final lines = [
+		"",
+		'${styles.renderAccent("📜")} History for ${issueId} (${history.length} entries)',
+		""
+	];
 	for (index in 0...history.length) {
 		final entry:IssueHistoryEntry = history[index];
 		final issue:HistoryIssue = entry.issue;
-		lines.push('${entry.commitHash.substr(0, 8)} ${entry.commitDateText}');
+		lines.push('${styles.renderMuted(entry.commitHash.substr(0, 8))} ${styles.renderMuted(entry.commitDateText)}');
 		lines.push('  Author: ${entry.committer}');
 		lines.push('  ${statusIcon(issue.status)} ${issue.id}: ${issue.title} [P${issue.priority} - ${issue.status}]');
 		if (index < history.length - 1)
@@ -80,14 +88,21 @@ private function historyIssueFields(issue:HistoryIssue):Array<String> {
 	return fields;
 }
 
-/** Upstream printHistoryEvents; an empty or NULL value leaves its line out. */
-function renderHistoryEventsText(issueId:String, events:Array<IssueEvent>):String {
+/**
+	Upstream printHistoryEvents (cmd/bd/history.go:160-185), with its accented mark and
+	muted times; an empty or NULL value leaves its line out.
+**/
+function renderHistoryEventsText(issueId:String, events:Array<IssueEvent>, styles:TerminalStyles):String {
 	if (events.length == 0)
 		return 'No history events found for issue ${issueId}\n';
-	final lines = ["", '📜 History events for ${issueId} (${events.length} entries)', ""];
+	final lines = [
+		"",
+		'${styles.renderAccent("📜")} History events for ${issueId} (${events.length} entries)',
+		""
+	];
 	for (index in 0...events.length) {
 		final event:IssueEvent = events[index];
-		lines.push('${event.createdAtText} ${event.eventType} by ${event.actor}');
+		lines.push('${styles.renderMuted(event.createdAtText)} ${event.eventType} by ${event.actor}');
 		if (event.oldValue != null && event.oldValue != "")
 			lines.push('  Old: ${event.oldValue}');
 		if (event.newValue != null && event.newValue != "")

@@ -4078,6 +4078,32 @@ compare_real_database_colors graph-check-color-pipe exact "" graph check
 real_database_extra_sql=""
 compare_real_database_colors graph-color-pipe exact "" graph test-cl --box
 compare_real_database_colors graph-color-compact-pipe exact "" graph test-cl --compact
+# history mutes each commit's hash and date, or each event's time; label list and list-all, stale,
+# orphans, status (also stats), statuses and ping mark their headings and results and style each
+# priority, ID, status and count as upstream does. The history cases leave out the colour records:
+# importing them adds a commit on each side, whose hash and date differ.
+real_database_extra_env=(NO_COLOR= CLICOLOR_FORCE=1)
+compare_real_database history-color exact history "$real_database_issue_id" --limit 2
+compare_real_database history-color-events exact history "$real_database_issue_id" --events
+compare_real_database history-color-none exact history test-nope
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database_colors label-list-color exact CLICOLOR_FORCE=1 label list test-cl-p0
+compare_real_database_colors label-list-color-none exact CLICOLOR_FORCE=1 label list "$real_database_bug_id"
+compare_real_database_colors label-list-all-color exact CLICOLOR_FORCE=1 label list-all
+compare_real_database_colors stale-color exact CLICOLOR_FORCE=1 stale --days 1
+compare_real_database_colors stale-color-none exact CLICOLOR_FORCE=1 stale --days 100000
+compare_real_database_colors orphans-color exact CLICOLOR_FORCE=1 orphans --details
+compare_real_database_colors orphans-color-none exact CLICOLOR_FORCE=1 orphans --label nothing
+compare_real_database_colors status-color exact CLICOLOR_FORCE=1 status
+compare_real_database_colors status-color-no-blocked exact CLICOLOR_FORCE=1 status --no-blocked
+compare_real_database_colors stats-color exact CLICOLOR_FORCE=1 stats
+compare_real_database_colors statuses-color exact CLICOLOR_FORCE=1 statuses
+real_database_extra_sql="$custom_statuses_sql"
+compare_real_database_colors statuses-color-custom exact CLICOLOR_FORCE=1 statuses
+real_database_extra_sql=""
+compare_real_database_colors ping-color ping-human CLICOLOR_FORCE=1 ping
+compare_real_database_colors stale-color-pipe exact "" stale --days 1
+compare_real_database_colors status-color-pipe exact "" status
 compare_real_database list-parent-gated-all-human exact list --parent "$real_database_gated_molecule_id" --all --include-gates
 compare_real_database children-human exact children "$real_database_gated_molecule_id"
 compare_real_database children-json exact children "$real_database_gated_molecule_id" --json

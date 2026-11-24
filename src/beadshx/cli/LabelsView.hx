@@ -40,11 +40,12 @@ function countLabels(issues:Array<IssueListItem>):Array<LabelCount> {
 }
 
 /** Upstream `bd label list`: the issue's labels, in the detail read's order. */
-function renderIssueLabelsHuman(issueId:String, labels:Array<String>):String {
+function renderIssueLabelsHuman(issueId:String, labels:Array<String>, styles:TerminalStyles):String {
 	if (labels.length == 0)
 		return '\n${issueId} has no labels\n';
 	final rendered = new StringBuf();
-	rendered.add('\n🏷 Labels for ${issueId}:\n');
+	// Upstream label list (cmd/bd/label.go:550) accents its mark.
+	rendered.add('\n${styles.renderAccent("🏷")} Labels for ${issueId}:\n');
 	for (label in labels)
 		rendered.add('  - ${label}\n');
 	rendered.add("\n");
@@ -62,7 +63,7 @@ function renderIssueLabelsJson(labels:Array<String>):String {
 }
 
 /** Upstream `bd label list-all`: each name padded to the longest name, measured in bytes like Go's `len`. */
-function renderLabelCountsHuman(counts:Array<LabelCount>):String {
+function renderLabelCountsHuman(counts:Array<LabelCount>, styles:TerminalStyles):String {
 	if (counts.length == 0)
 		return "\nNo labels found in database\n";
 	var width = 0;
@@ -72,7 +73,8 @@ function renderLabelCountsHuman(counts:Array<LabelCount>):String {
 			width = length;
 	}
 	final rendered = new StringBuf();
-	rendered.add('\n🏷 All labels (${counts.length} unique):\n');
+	// Upstream label list-all (cmd/bd/label.go:369) accents its mark.
+	rendered.add('\n${styles.renderAccent("🏷")} All labels (${counts.length} unique):\n');
 	for (entry in counts) {
 		rendered.add('  ${entry.label}');
 		for (_ in Bytes.ofString(entry.label).length...width)

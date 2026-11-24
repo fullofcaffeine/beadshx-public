@@ -2102,7 +2102,7 @@ final class Application {
 					if (invocation.output == Json)
 						writeJsonStdout(renderStatusesJson(customStatuses, output.usesJsonEnvelope()));
 					else
-						output.writeStdout(renderStatusesText(customStatuses));
+						output.writeStdout(renderStatusesText(customStatuses, terminalStyles()));
 					0;
 			}, sharedServerPreflight(Statuses));
 	}
@@ -2272,7 +2272,7 @@ final class Application {
 			if (invocation.output == Json)
 				writeJsonStdout(renderHistoryEventsJson(events));
 			else
-				output.writeStdout(renderHistoryEventsText(issueId, events));
+				output.writeStdout(renderHistoryEventsText(issueId, events, terminalStyles()));
 			return 0;
 		}
 		final history = switch query.issueHistory(location.path, location.databaseName, issueId, invocation.global) {
@@ -2284,7 +2284,7 @@ final class Application {
 		if (invocation.output == Json)
 			writeJsonStdout(renderHistoryJson(shown));
 		else
-			output.writeStdout(renderHistoryText(issueId, shown));
+			output.writeStdout(renderHistoryText(issueId, shown, terminalStyles()));
 		return 0;
 	}
 
@@ -2822,7 +2822,7 @@ final class Application {
 		if (invocation.output == Json)
 			writeJsonStdout(renderIssueLabelsJson(labels));
 		else
-			output.writeStdout(renderIssueLabelsHuman(issueId, labels));
+			output.writeStdout(renderIssueLabelsHuman(issueId, labels, terminalStyles()));
 		return 0;
 	}
 
@@ -2840,7 +2840,7 @@ final class Application {
 		if (invocation.output == Json)
 			writeJsonStdout(renderLabelCountsJson(counts));
 		else
-			output.writeStdout(renderLabelCountsHuman(counts));
+			output.writeStdout(renderLabelCountsHuman(counts, terminalStyles()));
 		return 0;
 	}
 
@@ -3474,18 +3474,20 @@ final class Application {
 		if (invocation.output == Json) {
 			return writeRenderedJsonStdout(renderRawIssuesJson(issues));
 		}
+		// Upstream displayStaleIssues (cmd/bd/stale.go:70-85).
+		final styles = terminalStyles();
 		if (issues.length == 0) {
-			output.writeStdout("\n✨ No stale issues found (all active)\n\n");
+			output.writeStdout('\n${styles.renderPass("✨")} No stale issues found (all active)\n\n');
 			return 0;
 		}
 		final rendered = new StringBuf();
-		rendered.add('\n⏰ Stale issues (${issues.length} not updated in ${invocation.staleRequest.days}+ days):\n\n');
+		rendered.add('\n${styles.renderWarn("⏰")} Stale issues (${issues.length} not updated in ${invocation.staleRequest.days}+ days):\n\n');
 		final now = Date.now().getTime();
 		for (index in 0...issues.length) {
 			final issue = issues[index];
 			final daysStale = Std.int((now - issue.updatedAtMillis) / 86400000.0);
-			rendered.add('${index + 1}. [P${issue.priority}] ${issue.id}: ${issue.title}\n');
-			rendered.add('   Status: ${issue.status}, Last updated: ${daysStale} days ago\n');
+			rendered.add('${index + 1}. [${styles.renderPriority(issue.priority)}] ${styles.renderId(issue.id)}: ${issue.title}\n');
+			rendered.add('   Status: ${styles.renderStatus(issue.status)}, Last updated: ${daysStale} days ago\n');
 			if (issue.assignee != "")
 				rendered.add('   Assignee: ${issue.assignee}\n');
 			rendered.add("\n");
@@ -3582,16 +3584,18 @@ final class Application {
 			writeJsonStdout(renderOrphansJson(issues));
 			return 0;
 		}
+		// Upstream's orphans view (cmd/bd/orphans.go:80-95).
+		final styles = terminalStyles();
 		if (issues.length == 0) {
-			output.writeStdout("✓ No orphaned issues found\n");
+			output.writeStdout('${styles.renderPass("✓")} No orphaned issues found\n');
 			return 0;
 		}
 		issues.sort((left, right) -> left.id < right.id ? -1 : left.id == right.id ? 0 : 1);
 		final rendered = new StringBuf();
-		rendered.add('\n⚠ Found ${issues.length} orphaned issue(s):\n\n');
+		rendered.add('\n${styles.renderWarn("⚠")} Found ${issues.length} orphaned issue(s):\n\n');
 		for (index in 0...issues.length) {
 			final issue = issues[index];
-			rendered.add('${index + 1}. ${issue.id}: ${issue.title}\n');
+			rendered.add('${index + 1}. ${styles.renderId(issue.id)}: ${issue.title}\n');
 			rendered.add('   Status: ${issue.status}\n');
 			if (invocation.orphansDetails)
 				rendered.add('   Latest commit: ${issue.latestCommit} - ${issue.latestCommitMessage}\n');
@@ -6926,7 +6930,8 @@ final class Application {
 	function renderPing(mode:OutputMode, snapshot:PingSnapshot):Void {
 		switch mode {
 			case Human:
-				output.writeStdout('✓ bd ping: ok (${snapshot.totalMs}ms)\n');
+				// Upstream's ping (cmd/bd/ping.go:81).
+				output.writeStdout('${terminalStyles().renderPass("✓")} bd ping: ok (${snapshot.totalMs}ms)\n');
 			case Json:
 				final document:PingDocument = {
 					schema_version: 1,
@@ -6983,18 +6988,26 @@ final class Application {
 		}
 	}
 
+	/**
+		Upstream's status view (cmd/bd/status.go:135-175): open, ready and closable
+		epic counts in the pass style, in-progress in the warning style, a blocked
+		count above zero in the fail style, and a skipped count muted.
+	**/
 	function renderStatusHuman(snapshot:StatusSnapshot):String {
+		final styles = terminalStyles();
+		final blocked = !snapshot.blockedAvailable ? styles.renderMuted("(skipped)") : snapshot.blockedIssues > 0 ? styles.renderFail(Std.string(snapshot.blockedIssues)) : Std.string(snapshot.blockedIssues);
+		final ready = snapshot.readyAvailable ? styles.renderPass(Std.string(snapshot.readyIssues)) : styles.renderMuted("(skipped)");
 		final lines = [
 			"",
-			"📊 Issue Database Status",
+			'${styles.renderAccent("📊")} Issue Database Status',
 			"",
 			"Summary:",
 			'  Total Issues:           ${snapshot.totalIssues}',
-			'  Open:                   ${snapshot.openIssues}',
-			'  In Progress:            ${snapshot.inProgressIssues}',
-			'  Blocked:                ${formatCount(snapshot.blockedAvailable, snapshot.blockedIssues)}',
+			'  Open:                   ${styles.renderPass(Std.string(snapshot.openIssues))}',
+			'  In Progress:            ${styles.renderWarn(Std.string(snapshot.inProgressIssues))}',
+			'  Blocked:                ${blocked}',
 			'  Closed:                 ${snapshot.closedIssues}',
-			'  Ready to Work:          ${formatCount(snapshot.readyAvailable, snapshot.readyIssues)}'
+			'  Ready to Work:          ${ready}'
 		];
 		if (snapshot.pinnedIssues > 0 || snapshot.epicsEligibleForClosure > 0 || snapshot.averageLeadTime > 0) {
 			lines.push("");
@@ -7002,7 +7015,7 @@ final class Application {
 			if (snapshot.pinnedIssues > 0)
 				lines.push('  Pinned:                 ${snapshot.pinnedIssues}');
 			if (snapshot.epicsEligibleForClosure > 0)
-				lines.push('  Epics Ready to Close:   ${snapshot.epicsEligibleForClosure}');
+				lines.push('  Epics Ready to Close:   ${styles.renderPass(Std.string(snapshot.epicsEligibleForClosure))}');
 			if (snapshot.averageLeadTime > 0)
 				lines.push('  Avg Lead Time:          ${snapshot.averageLeadTime} hours');
 		}
@@ -7010,10 +7023,6 @@ final class Application {
 		lines.push("For more details, use 'bd list' to see individual issues.");
 		lines.push("");
 		return lines.join("\n") + "\n";
-	}
-
-	function formatCount(available:Bool, value:Int):String {
-		return available ? Std.string(value) : "(skipped)";
 	}
 
 	function rootHelp():String {

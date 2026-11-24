@@ -137,6 +137,13 @@ final class Main {
 		equal(styles.renderStatusId("closed", "x"), "<#8090a0>x");
 		equal(styles.renderStatusId("deferred", "x"), "x");
 		equal(styles.renderStatusId("pinned", "x"), "x");
+		// A custom status takes its category's icon; a built-in name keeps its own.
+		equal(styles.renderStatusIconWithCategory("review", "active"), "○");
+		equal(styles.renderStatusIconWithCategory("review", "wip"), "<#ffb454>◐");
+		equal(styles.renderStatusIconWithCategory("review", "done"), "<#8090a0>✓");
+		equal(styles.renderStatusIconWithCategory("review", "frozen"), "<#6c7680>❄");
+		equal(styles.renderStatusIconWithCategory("review", "unspecified"), "◇");
+		equal(styles.renderStatusIconWithCategory("blocked", "done"), "<#f26d78>●");
 	}
 
 	static function lightContracts():Void {

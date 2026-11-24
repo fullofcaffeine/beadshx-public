@@ -114,15 +114,15 @@ private function builtInStatuses():Array<BuiltInStatus> {
 }
 
 /** Upstream renderStatuses text output with colors off. */
-function renderStatusesText(customStatuses:Array<CustomStatus>):String {
+function renderStatusesText(customStatuses:Array<CustomStatus>, styles:TerminalStyles):String {
 	final rendered = new StringBuf();
 	rendered.add("Built-in statuses:\n");
 	for (status in builtInStatuses())
-		rendered.add('  ${statusIcon(status.name)} ${padRunes(status.name, 14)} [${padRunes(status.category, 6)}]  ${status.description}\n');
+		rendered.add('  ${styles.renderStatusIcon(status.name)} ${padRunes(status.name, 14)} [${padRunes(status.category, 6)}]  ${status.description}\n');
 	if (customStatuses.length > 0) {
 		rendered.add("\nCustom statuses:\n");
 		for (status in customStatuses)
-			rendered.add('  ${customStatusIcon(status)} ${padRunes(status.name, 14)} [${padRunes(status.category, 6)}]\n');
+			rendered.add('  ${styles.renderStatusIconWithCategory(status.name, status.category)} ${padRunes(status.name, 14)} [${padRunes(status.category, 6)}]\n');
 	} else {
 		rendered.add("\nNo custom statuses configured.\n");
 		rendered.add('Configure with: bd config set status.custom "name:category,..."\n');
@@ -162,20 +162,6 @@ function renderStatusesJson(customStatuses:Array<CustomStatus>, structOrder:Bool
 	Upstream RenderStatusIconWithCategory with colors off: a built-in name with its
 	own icon keeps it (hooked has none), and any other status follows its category.
 **/
-private function customStatusIcon(status:CustomStatus):String {
-	return switch status.name {
-		case "open" | "in_progress" | "blocked" | "closed" | "deferred" | "pinned": statusIcon(status.name);
-		case _:
-			switch status.category {
-				case "active": statusIcon("open");
-				case "wip": statusIcon("in_progress");
-				case "done": statusIcon("closed");
-				case "frozen": statusIcon("deferred");
-				case _: statusIcon("");
-			}
-	};
-}
-
 /** Upstream printSections JSON: a list, so upstream adds no schema_version and keeps struct order. */
 function renderTypeSectionsJson():String {
 	return renderCatalogJson(JsonList([
