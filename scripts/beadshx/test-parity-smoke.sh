@@ -1501,8 +1501,12 @@ expect_candidate_failure() {
 	if [[ -n "$expected_stdout" ]]; then
 		actual_stdout="$(jq -c . "$case_root/candidate.stdout" 2>/dev/null || cat "$case_root/candidate.stdout")"
 	fi
-	# A warning that names the workspace names it as <work>.
-	actual_stderr="$(sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" "$case_root/candidate.stderr")"
+	# A warning that names the workspace names it as <work>, and one that names
+	# its parent (the candidate state root) names it as <state>.
+	local candidate_state
+	candidate_state="$(cd "$state_root" && pwd -P)"
+	actual_stderr="$(sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
+		-e "s|$candidate_state|<state>|g" "$case_root/candidate.stderr")"
 	if [[ "$candidate_exit" -ne "$candidate_only_exit" || "$actual_stdout" != "$expected_stdout" ||
 		"$actual_stderr" != "$expected_stderr" ]]; then
 		printf '%s: expected exit %s, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
@@ -5670,10 +5674,18 @@ expect_beads_db_refusal() {
 candidate_only_setup=move_workspace_to_db
 expect_beads_db_refusal beads-db-missing-path-unported BEADS_DB=missing/beads.db "" \
 	"Error: count is not available yet when BEADS_DB names this path in this build" count
+# BEADS_DB=. names the working directory as a database path, so upstream sets up
+# its parent (resolveCommandBeadsDir falls back to filepath.Dir), the 0755
+# candidate state root, and warns about its permissions before it opens a store.
 expect_beads_db_refusal beads-db-plain-directory-json-unported BEADS_DB=. \
-	'{"error":"list is not available yet when BEADS_DB names this path in this build","schema_version":1}' "" list --json
+	'{"error":"list is not available yet when BEADS_DB names this path in this build","schema_version":1}' \
+	'Warning: <state> has permissions 0755 (recommended: 0700). Run: chmod 700 <state>' list --json
+# BEADS_DB=<work>/db names a directory with no metadata.json, so upstream sets up
+# the parent <work> (resolveCommandBeadsDir's filepath.Dir fallback) and warns
+# about its 0755 permissions first.
 expect_beads_db_refusal beads-db-project-directory-unported BEADS_DB='<work>/db' "" \
-	"Error: show is not available yet when BEADS_DB names this path in this build" show "$real_database_issue_id"
+	$'Warning: <work> has permissions 0755 (recommended: 0700). Run: chmod 700 <work>\nError: show is not available yet when BEADS_DB names this path in this build' \
+	show "$real_database_issue_id"
 expect_beads_db_refusal beads-db-deeper-path-unported BEADS_DB=db/.beads/missing/beads.db "" \
 	"Error: ready is not available yet when BEADS_DB names this path in this build" ready
 expect_beads_db_refusal beads-db-trailing-slash-unported BEADS_DB=db/.beads/ "" \
