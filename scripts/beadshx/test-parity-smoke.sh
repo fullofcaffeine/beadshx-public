@@ -4971,6 +4971,17 @@ compare_real_database_import show-thread-json-rare exact "$rare_long_record" sho
 compare_real_database show-thread-human exact show test-msg-leaf --thread
 compare_real_database show-thread-json exact show test-msg-leaf ignored-second --thread --json
 compare_real_database show-thread-disabled exact show test-msg-root --thread=false
+# Upstream encodes the thread records as GetIssue and GetDependentsWithMetadata return them, with
+# their labels (cmd/bd/show_thread.go:21, 47, 87-91 and 153). The root and the reply have labels; the
+# thread is read from its leaf, which finds the root upward, and from its root, which finds the
+# replies downward.
+labeled_thread_records="$(printf '%s\n' \
+	'{"id":"test-lt-root","title":"Labeled root","description":"Root body","status":"open","priority":2,"issue_type":"message","assignee":"bob","sender":"alice","labels":["mail","urgent"],"created_at":"2026-08-20T10:00:00Z","updated_at":"2026-08-20T10:00:00Z"}' \
+	'{"id":"test-lt-reply","title":"Re: Labeled root","description":"Reply body","status":"open","priority":2,"issue_type":"message","assignee":"alice","sender":"bob","labels":["mail"],"created_at":"2026-08-20T11:00:00Z","updated_at":"2026-08-20T11:00:00Z","dependencies":[{"issue_id":"test-lt-reply","depends_on_id":"test-lt-root","type":"replies-to","created_at":"2026-08-20T11:00:00Z","created_by":"fixture"}]}' \
+	'{"id":"test-lt-leaf","title":"Re: Re: Labeled root","description":"Leaf body","status":"closed","priority":2,"issue_type":"message","assignee":"bob","sender":"alice","created_at":"2026-08-20T12:00:00Z","updated_at":"2026-08-20T12:00:00Z","closed_at":"2026-08-20T13:00:00Z","dependencies":[{"issue_id":"test-lt-leaf","depends_on_id":"test-lt-reply","type":"replies-to","created_at":"2026-08-20T12:00:00Z","created_by":"fixture"}]}')"
+compare_real_database_import show-thread-labels-json exact "$labeled_thread_records" show test-lt-leaf --thread --json
+compare_real_database_import show-thread-labels-root-json exact "$labeled_thread_records" show test-lt-root --thread --json
+compare_real_database_import show-thread-labels-human exact "$labeled_thread_records" show test-lt-reply --thread
 compare_real_database show-children-human exact show "$real_database_epic_id" --children
 compare_real_database show-children-short exact show "$real_database_epic_id" --children --short
 compare_real_database show-children-json exact show "$real_database_epic_id" --children --json

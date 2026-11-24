@@ -5857,10 +5857,17 @@ final class Application {
 		return value.substr(0, end);
 	}
 
+	/**
+		Upstream showMessageThread's JSON (cmd/bd/show_thread.go:87-91): each
+		message as a types.Issue record. GetIssue and GetDependentsWithMetadata
+		return them with their labels (lines 21, 47 and 153), so each record
+		prints its `labels`.
+	**/
 	static function renderThreadJson(entries:Array<ThreadEntry>):StoreResult<String> {
 		final lines = ["["];
 		for (index in 0...entries.length) {
-			final fields = switch renderRawIssueFields(entries[index].issue) {
+			final issue = entries[index].issue;
+			final fields = switch renderRawIssueFields(issue, false, "    ", issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
