@@ -29,5 +29,8 @@ if ! diff -u "$requirements" "$temporary"; then
     printf 'repository pre-commit environment drifted from its lock\n' >&2
     exit 1
 fi
+# exec replaces this shell before its EXIT trap runs, so remove the freeze file now.
+rm -f "$temporary"
+trap - EXIT
 
 exec "$python" -m pre_commit "$@"

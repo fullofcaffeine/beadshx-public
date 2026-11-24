@@ -342,4 +342,32 @@ GOWORK=off GOTOOLCHAIN="$go_toolchain" go test \
 
 python3 "$repository_root/scripts/beadshx/test_privacy_guards.py"
 
+# run-pre-commit.sh hands over to pre-commit with exec, which skips its EXIT
+# trap, so the freeze file it compares must be removed before the exec. Run it
+# in a disposable copy with a stub interpreter and an empty TMPDIR, and require
+# that TMPDIR is still empty afterwards.
+precommit_fixture="$test_root/run-pre-commit"
+mkdir -p "$precommit_fixture/scripts/beadshx" "$precommit_fixture/engdocs/beadshx/program" \
+    "$precommit_fixture/.toolchains/pre-commit/bin" "$precommit_fixture/tmp"
+cp -f "$repository_root/scripts/beadshx/run-pre-commit.sh" \
+    "$repository_root/scripts/beadshx/pre-commit-requirements.txt" \
+    "$precommit_fixture/scripts/beadshx/"
+cp -f "$locks" "$precommit_fixture/engdocs/beadshx/program/toolchain-locks.json"
+precommit_version="$(jq -er '.common.preCommit' "$locks")"
+cat >"$precommit_fixture/.toolchains/pre-commit/bin/python" <<STUB
+#!/usr/bin/env bash
+case "\$*" in
+    '-m pre_commit --version') printf 'pre-commit %s\n' '$precommit_version' ;;
+    '-m pip freeze --all') cat '$precommit_fixture/scripts/beadshx/pre-commit-requirements.txt' ;;
+    '-m pre_commit '*) exit 0 ;;
+    *) exit 2 ;;
+esac
+STUB
+chmod +x "$precommit_fixture/.toolchains/pre-commit/bin/python"
+TMPDIR="$precommit_fixture/tmp" "$precommit_fixture/scripts/beadshx/run-pre-commit.sh" run >/dev/null
+if [[ -n "$(find "$precommit_fixture/tmp" -mindepth 1 -print -quit)" ]]; then
+    printf 'run-pre-commit.sh left a file in TMPDIR\n' >&2
+    exit 1
+fi
+
 printf 'repository safety policy: PASS\n'
