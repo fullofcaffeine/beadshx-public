@@ -5646,17 +5646,27 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # mode would start a pager there, so it has no case. bdhx prints the hint after --format dot and
 # --format digraph, but not yet after a Go template (see the README), so templates have no case.
 # The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
+# A third argument sets the pseudo-terminal's column count (stty cols) before the binary runs;
+# without it the pseudo-terminal reports no size, so term.GetSize gives 0 columns.
 write_terminal_runner() {
-	local runner="$1" binary="$2"
+	local runner="$1" binary="$2" columns="${3:-}"
 	{
-		printf '#!/usr/bin/env bash\nbinary=%q\n' "$binary"
+		printf '#!/usr/bin/env bash\nbinary=%q\ncolumns=%q\n' "$binary" "$columns"
 		cat <<'RUNNER'
 case "$(uname -s)" in
 Darwin)
-	transcript="$(script -q /dev/null "$binary" "$@" </dev/null; status=$?; printf x; exit "$status")"
+	if [[ -n "$columns" ]]; then
+		transcript="$(script -q /dev/null /bin/sh -c 'stty cols "$0" rows 40; shift; exec "$@"' \
+			"$columns" placeholder "$binary" "$@" </dev/null; status=$?; printf x; exit "$status")"
+	else
+		transcript="$(script -q /dev/null "$binary" "$@" </dev/null; status=$?; printf x; exit "$status")"
+	fi
 	;;
 Linux)
 	printf -v invocation '%q ' "$binary" "$@"
+	if [[ -n "$columns" ]]; then
+		invocation="stty cols $columns rows 40; exec $invocation"
+	fi
 	transcript="$(script -qec "$invocation" /dev/null </dev/null; status=$?; printf x; exit "$status")"
 	;;
 *)
@@ -5675,6 +5685,8 @@ RUNNER
 }
 write_terminal_runner "$test_root/bin/terminal-oracle" "$oracle"
 write_terminal_runner "$test_root/bin/terminal-candidate" "$candidate"
+write_terminal_runner "$test_root/bin/terminal-wide-oracle" "$oracle" 120
+write_terminal_runner "$test_root/bin/terminal-wide-candidate" "$candidate" 120
 pipe_oracle="$oracle"
 pipe_candidate="$candidate"
 import_terminal_issue() {
@@ -5700,6 +5712,30 @@ compare_real_database terminal-list-tree-limit exact list --limit 2
 compare_real_database terminal-list-format-digraph-limit exact list --format digraph --limit 15
 compare_real_database terminal-list-format-dot-limit exact list --format dot --limit 2
 compare_real_database terminal-list-format-digraph-all exact list --format digraph --limit 0
+real_database_setup=""
+oracle="$pipe_oracle"
+candidate="$pipe_candidate"
+# On a 120-column terminal the wrap width is the terminal width, capped at 100 cells: a
+# 67-character reason now fits, 86 characters still fit, and 87 go into the section. The
+# terminal runners read no stdin, so the record is imported through the pipe oracle first.
+wide_close_reason=""
+import_wide_close_reason() {
+	(
+		cd "$1/work"
+		printf '%s\n' "$wide_close_reason" |
+			env HOME="$1/user-home" XDG_CONFIG_HOME="$1/config" "${real_database_env[@]}" \
+				"$pipe_oracle" import - --json >/dev/null
+	)
+}
+oracle="$test_root/bin/terminal-wide-oracle"
+candidate="$test_root/bin/terminal-wide-candidate"
+real_database_setup=import_wide_close_reason
+wide_close_reason="$close_reason_long"
+compare_real_database terminal-wide-show-close-reason-long exact show test-reason
+wide_close_reason="$(close_reason_record "$(printf '%086d' 0 | tr 0 r)")"
+compare_real_database terminal-wide-show-close-reason-cap-fits exact show test-reason
+wide_close_reason="$(close_reason_record "$(printf '%087d' 0 | tr 0 r)")"
+compare_real_database terminal-wide-show-close-reason-cap-long exact show test-reason
 real_database_setup=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"

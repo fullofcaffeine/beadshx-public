@@ -5,6 +5,7 @@ import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.nativeextern.ansi.AnsiPkg;
 import beadshx.nativeextern.lipgloss.LipglossPkg;
 import beadshx.nativeextern.os.OsPkg;
+import beadshx.nativeextern.term.TermPkg;
 
 /** Owns the narrow process-stream effect for the native executable. */
 @:goNative
@@ -40,17 +41,17 @@ final class SystemOutput implements OutputPort {
 	}
 
 	/**
-		The column count of the terminal on stdout, or 0 when it is unknown.
+		The column count of the terminal on stdout, or 0 when it is no terminal.
 
-		Why: upstream's Markdown wrap width asks `term.GetSize(int(os.Stdout.Fd()))`.
-		`Fd()` returns a Go `uintptr`, and the pinned haxe.go has no typed carrier
-		for it yet (haxe_go-5yip), so no typed extern can make that call for every
-		OS. What: this build always returns 0, so the wrap width falls back to
-		upstream's 80 columns. How: callers treat 0 as "not a terminal"; the README
-		lists the difference as a limit until the carrier lands.
+		Why: upstream's Markdown wrap width (internal/uimd WrapWidth) asks
+		`term.GetSize(int(os.Stdout.Fd()))`. What: the width that call returns, or
+		0 when it fails. How: `Fd()` returns a Go `uintptr`, which crosses the
+		extern boundary as `go.NativeUintptr`; its explicit `toInt` is upstream's
+		`int(...)` conversion, so the call is exact on Unix and on Windows.
 	**/
 	public function stdoutColumns():Int {
-		return 0;
+		final size = TermPkg.getSize(go.NativeUintptr.toInt(OsPkg.stdout.fd()));
+		return size.value3 == null ? size.value1 : 0;
 	}
 
 	public function displayWidth(value:String):Int {

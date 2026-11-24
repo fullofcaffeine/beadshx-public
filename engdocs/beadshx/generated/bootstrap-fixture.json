@@ -17,7 +17,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "fbe5375082d180b4cac468fa8434e5114a9f0f3520238a775cf794e279880639"
+        "sha256": "2091b588dd24f6a648f2755d0c36ecdbdc37177e821947586cd48d2d50590f89"
       },
       {
         "path": "src/beadshx/cli/CatalogViews.hx",
@@ -84,6 +84,14 @@
         "sha256": "c09664de614e3f129416468c3c0d731b3ea253e4824609b4d653521b6d9e719b"
       },
       {
+        "path": "src/beadshx/cli/LeaseClock.hx",
+        "sha256": "9f302dc75a3dd3184fc55c6c51dd084a26ef4f214eae77fb31f6b7266fe40f14"
+      },
+      {
+        "path": "src/beadshx/cli/LeaseLine.hx",
+        "sha256": "2ae89419dfde1d89ac73e23a6fa335ea0a8180b982c42fcddcacdc4000f02bc0"
+      },
+      {
         "path": "src/beadshx/cli/LipglossTextStyle.hx",
         "sha256": "53f45fc1111e68155d458f17f3a28b264a4a327ebebf615cf6506c51b622b59a"
       },
@@ -105,7 +113,7 @@
       },
       {
         "path": "src/beadshx/cli/Parser.hx",
-        "sha256": "af08f14c7898dfcaa6f8e1ebfbe819b11db7372c8a4c85b25a806f3cb6a47c1f"
+        "sha256": "5592e7f3958b6c18da77c2ba88eedf08e583666e40e7025cb4831682ae04554b"
       },
       {
         "path": "src/beadshx/cli/PflagValue.hx",
@@ -125,7 +133,7 @@
       },
       {
         "path": "src/beadshx/cli/SystemOutput.hx",
-        "sha256": "a5dfb089da5f662118deff1c147a536fba099b0accd253608407a80ef568e9dd"
+        "sha256": "e8db7c217703c2a8369a0c22d4dc8870f773cfe019d54629c1e16f219ce9cb58"
       },
       {
         "path": "src/beadshx/cli/SystemWatch.hx",
@@ -145,7 +153,7 @@
       },
       {
         "path": "src/beadshx/config/ConfigDrift.hx",
-        "sha256": "e9cd7c8b5da32fbf7d99c610ca394a3db54c3d67172b4bb05cce28ad2d470656"
+        "sha256": "d99e4dc977ebcad6705e588f5881371ea223bcc79b03bdbd08ea2255f3e750fe"
       },
       {
         "path": "src/beadshx/config/ConfigKeys.hx",
@@ -441,7 +449,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/os/File.hx",
-        "sha256": "dd260ea947510fa00ecc9e2620409a02d343a0fe1eb91c4fe1e7f2c8433be690"
+        "sha256": "399f95a3025bfb9c5958f906eab5f0b030d2c1d6dc2fe19ed64c8aad03e3218d"
       },
       {
         "path": "src/beadshx/nativeextern/os/FileInfo.hx",
@@ -520,8 +528,16 @@
         "sha256": "780bb59856e943635e19499e48a29f2d047b7f94895e59adbcc630578b549288"
       },
       {
+        "path": "src/beadshx/nativeextern/term/SizeResult.hx",
+        "sha256": "55c9805c54c56e3a263d15ff425e43c2426dace7d429d0db2308fe19c77d0127"
+      },
+      {
+        "path": "src/beadshx/nativeextern/term/TermPkg.hx",
+        "sha256": "c846a3cf00455f068cc74eb6a2284c2a52286a40c617269f0f4b5a5ad208e8ac"
+      },
+      {
         "path": "src/beadshx/nativeextern/time/Duration.hx",
-        "sha256": "63f7103e9559b8288601c165735e34f244bb372fc2b74460283e2fe92cfb9cb7"
+        "sha256": "5b4361f2e3b03fe59e5a22a4cc8a88468f85dedd79b4ab86c673c7f54b80c54c"
       },
       {
         "path": "src/beadshx/nativeextern/time/Location.hx",
@@ -545,7 +561,7 @@
       },
       {
         "path": "src/beadshx/nativeextern/time/TimePkg.hx",
-        "sha256": "e0c123688e92fd810697f50f7ef2cdda6fc1673c9a007bdc6932ef285271eb1b"
+        "sha256": "6ba4beb45885721fefa074b3958ea9267e82e15aabf1d98fa524c2c893e9ccd7"
       },
       {
         "path": "src/beadshx/nativeextern/timeparsing/ParseCompactDurationResult.hx",
@@ -621,7 +637,7 @@
       },
       {
         "path": "src/beadshx/query/QueryPage.hx",
-        "sha256": "c6855740b046b54bfd396627434fd4de877e83d1edabcb2c7660d78db659b72d"
+        "sha256": "9bb07e4a3e4148716054b786d92bc0eb2749bb9ff50576ed4a76d4ce51a0a291"
       },
       {
         "path": "src/beadshx/query/QueryPlan.hx",
@@ -897,7 +913,7 @@
       },
       {
         "path": "src/beadshx/store/GoReadonlyStore.hx",
-        "sha256": "10948e292c9cf5819baff22b18a3266813c52659b72cc8272257de896a78862d"
+        "sha256": "69c4460e665ac7aa75f6150fee212cf71e353415af178c20685042d0b61903b3"
       },
       {
         "path": "src/beadshx/store/InfoSnapshot.hx",
@@ -917,7 +933,7 @@
       },
       {
         "path": "src/beadshx/store/IssueDependency.hx",
-        "sha256": "c2fd9449949d49544188bb0d6a5baa55128b158183e2cbdca961a9b94d7b2a31"
+        "sha256": "7261444505b99529f81fde521ab35fd2be08a91f8c88923a8afd3b73c53ff2f5"
       },
       {
         "path": "src/beadshx/store/IssueDetails.hx",
@@ -934,6 +950,10 @@
       {
         "path": "src/beadshx/store/IssueHistory.hx",
         "sha256": "ea9ee4661d43d2b0e3316d0612b213ccf3b7672ff56c1df37b76205ffaad3f81"
+      },
+      {
+        "path": "src/beadshx/store/IssueLease.hx",
+        "sha256": "7ad49e33b5e729eaea25e924e929487484870daad837e86cc4e02831d1896e25"
       },
       {
         "path": "src/beadshx/store/IssueListDependency.hx",
@@ -1241,11 +1261,11 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "2094f8e07fa2281a0f3b1d6d2a04e83b6c2feaf990b69fae65097940594afb52"
+      "sha256": "9978cd763fd2637d48d349a683848548f764b4e6f1f20f363a42bcd0c67ff432"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "6c934f3d4a6270bfef35d47a2821d1efbac155c93458e78f6b722196609f0d52"
+      "sha256": "df89497f8a92707ccada08bbdb96f3ac9c62b72ca137a1bac5cb17a196ac61bb"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_bootstrap_commandprocess.go",
@@ -1257,7 +1277,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "d0636fcf338deff9673f8c1383c067bfa56a5a7bba131e8f00290feff540dcc0"
+      "sha256": "c6aed6229c6b02317245d48c50e264cc77400157cf0b3db85ee294f318cf5043"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_catalogviews.go",
@@ -1320,6 +1340,14 @@
       "sha256": "15c9bdf53bc86a44da2598acd89752cf12d12ab66198774bc59ceb91a72944b0"
     },
     {
+      "path": "bdhx/haxego_generated_module_beadshx_cli_leaseclock.go",
+      "sha256": "c616ebe0e08440d6bfa12b6a561a3de3b18528e8a4d087b322a4a36794372865"
+    },
+    {
+      "path": "bdhx/haxego_generated_module_beadshx_cli_leaseline.go",
+      "sha256": "087614065dd3ca873591f0578903f95145bf8a4ae04218b5fe5181a0d032b60a"
+    },
+    {
       "path": "bdhx/haxego_generated_module_beadshx_cli_lipglosstextstyle.go",
       "sha256": "ebd8df3193490351c8f5120851ac6282d3112062e53c9410fa7c1c1d32ccfb01"
     },
@@ -1333,7 +1361,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parser.go",
-      "sha256": "4878280652cf95c590c38b4dd9bb7bfd269ba0e6954c2a9fb494dd50cce0b448"
+      "sha256": "11fdb96fc67ab76cc0bfb29187d87eb66c7ccca6025ee1ce750ea818260cd139"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_parseresult.go",
@@ -1357,7 +1385,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_systemoutput.go",
-      "sha256": "713947cb95f51bbff6f3fdcc0c5b1673aefbd950c534a65411d566163f7fbb59"
+      "sha256": "17a9bd8055202229ec5ff0a5f16addd9acadfc02f5fc4b75a03d25fd18925333"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_systemwatch.go",
@@ -1377,7 +1405,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_config_configdrift.go",
-      "sha256": "7cc5b7b9520b3a000137957062876ab93243a40626c9b4a5505e144ab65cd217"
+      "sha256": "ddc8adb5da388e9d961e09b1d31af601aa0f7c0ad8fd7c4f97e6a1809f338332"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_config_configkeys.go",
@@ -1512,6 +1540,10 @@
       "sha256": "da141d03ca1419d640f62183806f1f15869d36090819cba69dd8c4681ea2a585"
     },
     {
+      "path": "bdhx/haxego_generated_module_beadshx_nativeextern_term_sizeresult.go",
+      "sha256": "206d056612262fc92ff7a87bcd949156a4bc2de509655cae5a86571bec88df84"
+    },
+    {
       "path": "bdhx/haxego_generated_module_beadshx_nativeextern_time_parsedurationresult.go",
       "sha256": "d2ac0993f53cf00eb4518278a313f00efb0d51e7ba1e9134ed54531be41c72ca"
     },
@@ -1553,7 +1585,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_query_querypage.go",
-      "sha256": "c51110b5df50f89327007f746a212f76e2ea84a3335779acd4e68719f8f58af3"
+      "sha256": "739b4368921b9c45227140a6d457a613513633350e5c3d202a3089ade17d2d8e"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_query_queryplan.go",
@@ -1757,7 +1789,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_goreadonlystore.go",
-      "sha256": "f50cb6be965ad1746e1d9a56248f312a422e3755f6c78b3453b079cd1dcdaeec"
+      "sha256": "d45f83f5c36987d4f6e8b169895404ac80cff53eb309798a4d5ba15e2b36c046"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_invaliddatabasename.go",
@@ -2097,7 +2129,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_std.go",
-      "sha256": "1d7d31ed51649ee0cade6a9233929d244058255ed542b49d48a99276fe797c3c"
+      "sha256": "bf7ed23d647f0baa0e9326452185ee82ea67b53f68a04cc7a69558c840da0c3e"
     },
     {
       "path": "bdhx/haxego_generated_module_stringbuf.go",
@@ -2149,15 +2181,15 @@
     },
     {
       "path": "bdhx/haxego_generated_recovery_3.go",
-      "sha256": "2abb3447139058af8a1ba7d2ce8324d520059f6b87f59488ef79bbee19437c6b"
+      "sha256": "e0d1260a7083cc699055b6c1828f7453fc3bd4fa164ed48edc0310fda2581505"
     },
     {
       "path": "bdhx/haxego_generated_recovery_4.go",
-      "sha256": "9a3abd224f5dd10f11ff158a5ca2b14bad31b2abcfb78b7585e91c51b489e77b"
+      "sha256": "576188d77137c527b93e5fb74ccd4169ed144c285fec557d3db1aa44f80ddb76"
     },
     {
       "path": "bdhx/haxego_generated_recovery_5.go",
-      "sha256": "c0ce80e3f74aa8f07510ee7eea7fef5158d664b15af1215db3e9a4300070a6e3"
+      "sha256": "619f85adeea3b2ab16af435c2d94bc54c1c10ad012b6ca5f120260de532818fc"
     },
     {
       "path": "hxrt/anonymous.go",

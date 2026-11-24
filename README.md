@@ -104,10 +104,9 @@ uses the dark colors. Also when colors are off, `bdhx` changes each tab to four
 spaces in the parts that upstream styles, such as the title of a closed issue.
 
 Like upstream, `show` prints the close reason on one metadata line when it
-has no line break and fits the Markdown wrap width. Upstream takes the
-terminal width for it, but not more than 100 columns, or 80 columns when
-stdout is not a terminal; `bdhx` uses 80 columns for now (see the limits). In
-agent mode, the width has no limit. A close reason that
+has no line break and fits the Markdown wrap width. This width is the
+terminal width, but not more than 100 columns, or 80 columns when stdout is
+not a terminal. In agent mode, the width has no limit. A close reason that
 does not fit goes into a `CLOSE REASON` section after the metadata lines.
 When stderr is a terminal and the limit hides more issues, `list` and `query`
 print upstream's hint about `--limit` on stderr.
@@ -530,10 +529,6 @@ Limits:
   terminal for its background color twice: once when it starts, in the
   upstream code of the Markdown renderer, and once before the first colored
   view. Upstream asks once.
-- `bdhx` does not read the terminal width yet: the close-reason rule of
-  `show` uses 80 columns, where upstream uses the width of a terminal on
-  stdout (at most 100 columns). The typed call needs a Go `uintptr` carrier in
-  haxe.go (haxe_go-5yip).
 - `bdhx` prints no tips. Upstream can print a random tip that recommends the
   Beads plugin for Claude Code after `show` and `ready`, and after the flat
   `list` view when agent mode is off. It does this when `CLAUDE_CODE` or
