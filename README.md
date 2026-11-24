@@ -440,9 +440,12 @@ Limits:
   one.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
-- When stderr is a terminal, `bdhx` prints no `--limit` hint after
-  `list --format` output. Upstream prints the hint when the limit hides more
-  issues.
+- When stderr is a terminal and `--limit` hides more issues, upstream prints a
+  hint after `list --format` output. `bdhx` prints it after `--format dot` and
+  `--format digraph`, but not after a Go template.
+- When a `list --format` Go template fails on a later issue, upstream has
+  already printed the lines of the issues before it. `bdhx` prints only the
+  error.
 - `bdhx` does not read the terminal width yet: the close-reason rule of
   `show` uses 80 columns, where upstream uses the width of a terminal on
   stdout (at most 100 columns). The typed call needs a Go `uintptr` carrier in

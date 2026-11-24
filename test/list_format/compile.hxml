@@ -1,0 +1,4 @@
+-cp src
+-cp test/list_format
+-main Main
+--interp

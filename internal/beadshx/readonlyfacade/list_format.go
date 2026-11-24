@@ -13,9 +13,9 @@ import (
 	"github.com/steveyegge/beads/internal/types"
 )
 
-// IssueListFormatOutcome is the typed native result for Go-template and graph
-// list formats. Go owns only the target-specific template and quoting mechanics;
-// Haxe owns parsing, query policy, routing, and process output.
+// IssueListFormatOutcome is the typed native result for a Go-template list
+// format. Go owns only the text/template mechanics; Haxe owns parsing, query
+// policy, routing, the dot and digraph formats, and process output.
 type IssueListFormatOutcome struct {
 	value            string
 	message          string
@@ -86,14 +86,7 @@ func readIssueListFormatPage(beadsDir string, options *IssueListOptions, global 
 }
 
 func formatIssueList(items []*types.IssueWithCounts, format string) (string, error) {
-	if format == "dot" {
-		return formatIssueListDOT(items), nil
-	}
-	templateSource := format
-	if format == "digraph" {
-		templateSource = "{{.IssueID}} {{.DependsOnID}}"
-	}
-	tmpl, err := template.New("format").Parse(templateSource)
+	tmpl, err := template.New("format").Parse(format)
 	if err != nil {
 		return "", fmt.Errorf("invalid format template: %w", err)
 	}
@@ -125,63 +118,6 @@ func formatIssueList(items []*types.IssueWithCounts, format string) (string, err
 		}
 	}
 	return output.String(), nil
-}
-
-func formatIssueListDOT(items []*types.IssueWithCounts) string {
-	visible := visibleIssueIDs(items)
-	var output strings.Builder
-	output.WriteString("digraph dependencies {\n")
-	output.WriteString("  rankdir=TB;\n")
-	output.WriteString("  node [shape=box, style=rounded];\n\n")
-	for _, row := range items {
-		if row == nil || row.Issue == nil {
-			continue
-		}
-		fillColor := "white"
-		fontColor := "black"
-		switch row.Status {
-		case types.StatusClosed:
-			fillColor = "lightgray"
-			fontColor = "dimgray"
-		case types.StatusInProgress:
-			fillColor = "lightyellow"
-		case types.StatusBlocked:
-			fillColor = "lightcoral"
-		}
-		label := fmt.Sprintf("%s\n[%s P%d]\n%s\n(%s)", row.ID, row.IssueType, row.Priority, row.Title, row.Status)
-		fmt.Fprintf(&output, "  %q [label=%q, style=\"rounded,filled\", fillcolor=%q, fontcolor=%q];\n",
-			row.ID, label, fillColor, fontColor)
-	}
-	output.WriteByte('\n')
-	for _, row := range items {
-		if row == nil || row.Issue == nil {
-			continue
-		}
-		for _, dependency := range orderedDependencies(row.Dependencies) {
-			if dependency == nil || !visible[dependency.DependsOnID] {
-				continue
-			}
-			color := "black"
-			style := "solid"
-			switch dependency.Type {
-			case types.DepBlocks:
-				color = "red"
-				style = "bold"
-			case types.DepParentChild:
-				color = "blue"
-			case types.DepDiscoveredFrom:
-				color = "green"
-				style = "dashed"
-			case types.DepRelated:
-				color = "gray"
-				style = "dashed"
-			}
-			fmt.Fprintf(&output, "  %q -> %q [label=%q, color=%s, style=%s];\n",
-				row.ID, dependency.DependsOnID, dependency.Type, color, style)
-		}
-	}
-	output.WriteString("}\n")
-	return output.String()
 }
 
 func visibleIssueIDs(items []*types.IssueWithCounts) map[string]bool {

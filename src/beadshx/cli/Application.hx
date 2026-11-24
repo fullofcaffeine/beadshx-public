@@ -8,6 +8,9 @@ import beadshx.relation.DependencyTree.TreeDirection;
 import beadshx.relation.DependencyTree.TreeNode;
 import beadshx.relation.DependencyTree.parseTreeDirection;
 import beadshx.relation.DependencyRead.compareUtf8;
+import beadshx.cli.ListFormatView.renderListDigraph;
+import beadshx.cli.ListFormatView.renderListDot;
+import beadshx.store.IssueListFormat.selectIssueListFormat;
 import beadshx.relation.AllGraphs.AllGraphIssue;
 import beadshx.relation.AllGraphs.groupAllGraphs;
 import beadshx.relation.GraphLayout;
@@ -4101,8 +4104,13 @@ final class Application {
 			case ListSuccess(page):
 				final skipLabels = invocation.listRequest.skipLabels;
 				final hierarchy = isListHierarchy(invocation);
+				// Upstream checks --format before agent mode, and prints the --limit hint after it.
 				if (invocation.listRequest.format != "") {
-					output.writeStdout(page.formatted);
+					output.writeStdout(switch selectIssueListFormat(invocation.listRequest.format) {
+						case GraphvizDot: renderListDot(page.items, goQuote);
+						case DependencyDigraph: renderListDigraph(page.items);
+						case GoTemplate(_) | NoListFormat: page.formatted;
+					});
 				} else
 					switch invocation.output {
 						case Human:

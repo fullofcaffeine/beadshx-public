@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "root": "internal/beadshx",
-  "nonTestLines": 3179,
+  "nonTestLines": 3115,
   "imports": [
     "bytes",
     "context",

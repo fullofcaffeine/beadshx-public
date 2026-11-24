@@ -33,6 +33,7 @@ import beadshx.store.SchemaSkew.SchemaSkewAbort;
 import beadshx.store.SchemaSkew.SchemaSkewChecks;
 import beadshx.store.SchemaSkew.SchemaSkewWarning;
 import beadshx.store.SchemaSkew.facadeSchemaRefusal;
+import beadshx.store.IssueListFormat.selectIssueListFormat;
 
 /**
 	`bd dep cycles` reads the graph with Haxe-owned SQL, which exists only for embedded
@@ -742,17 +743,27 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		});
 	}
 
+	/** Haxe renders `dot` and `digraph` from the page; only a Go template uses the native renderer. */
 	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
 		final options = issueListOptions(request, effectiveLimit);
-		if (request.format != "") {
-			final outcome = facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, request.format));
-			if (outcome.rowLimitExceeded())
-				return ListRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
-			if (outcome.failed())
-				return ListFailure(facadeMessage(outcome.message()));
-			return ListSuccess({items: [], hasMore: false, formatted: outcome.value()});
-		}
-		return projectIssueListOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global)));
+		return switch selectIssueListFormat(request.format) {
+			case GoTemplate(source):
+				projectIssueListFormatOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, source)));
+			case NoListFormat | GraphvizDot | DependencyDigraph:
+				projectIssueListOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global)));
+		};
+	}
+
+	/**
+		A natively rendered Go template carries no page, so the result has no rows and no
+		truncation signal (see the README limit).
+	**/
+	public static function projectIssueListFormatOutcome(outcome:NativeIssueListFormatOutcome):IssueListResult {
+		if (outcome.rowLimitExceeded())
+			return ListRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
+		if (outcome.failed())
+			return ListFailure(facadeMessage(outcome.message()));
+		return ListSuccess({items: [], hasMore: false, formatted: outcome.value()});
 	}
 
 	public function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
@@ -1476,15 +1487,10 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
 		final options = GoReadonlyStore.issueListOptions(request, effectiveLimit);
-		if (request.format != "") {
-			final outcome = native.readIssueListFormatOutcome(options, request.format);
-			if (outcome.rowLimitExceeded())
-				return ListRowLimitExceeded(outcome.found(), outcome.source(), outcome.cap());
-			if (outcome.failed())
-				return ListFailure(GoReadonlyStore.facadeMessage(outcome.message()));
-			return ListSuccess({items: [], hasMore: false, formatted: outcome.value()});
-		}
-		return GoReadonlyStore.projectIssueListOutcome(native.readIssueListOutcome(options));
+		return switch selectIssueListFormat(request.format) {
+			case GoTemplate(source): GoReadonlyStore.projectIssueListFormatOutcome(native.readIssueListFormatOutcome(options, source));
+			case NoListFormat | GraphvizDot | DependencyDigraph: GoReadonlyStore.projectIssueListOutcome(native.readIssueListOutcome(options));
+		};
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {

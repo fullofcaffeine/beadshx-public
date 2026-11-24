@@ -37,15 +37,10 @@ func TestFormatIssueListExactBytes(t *testing.T) {
 		format string
 		want   string
 	}{
-		{name: "digraph preset", format: "digraph", want: "list-a list-b\n"},
 		{name: "custom template", format: "{{.IssueID}} -> {{.DependsOnID}} [{{.Type}}]", want: "list-a -> list-b [blocks]\n"},
-		{name: "dot", format: "dot", want: "digraph dependencies {\n" +
-			"  rankdir=TB;\n" +
-			"  node [shape=box, style=rounded];\n\n" +
-			"  \"list-a\" [label=\"list-a\\n[bug P1]\\nAlpha\\n(open)\", style=\"rounded,filled\", fillcolor=\"white\", fontcolor=\"black\"];\n" +
-			"  \"list-b\" [label=\"list-b\\n[task P2]\\nBeta\\n(closed)\", style=\"rounded,filled\", fillcolor=\"lightgray\", fontcolor=\"dimgray\"];\n\n" +
-			"  \"list-a\" -> \"list-b\" [label=\"blocks\", color=red, style=bold];\n" +
-			"}\n"},
+		// Haxe renders dot and digraph (src/beadshx/cli/ListFormatView.hx); here they are templates.
+		{name: "dot is a template here", format: "dot", want: "dot\n"},
+		{name: "digraph is a template here", format: "digraph", want: "digraph\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

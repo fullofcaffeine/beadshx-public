@@ -1536,7 +1536,9 @@ final class Parser {
 				maxRowsSource: listMaxRowsSource,
 				skipCounts: outputMode() == OutputMode.Human,
 				// The --long view prints no dependency note, but agent mode replaces it with one that does.
+				// Upstream's --format branch renders before it reads blocking annotations.
 				blockingAnnotations: outputMode() == OutputMode.Human
+				&& listFormat == ""
 				&& !(listPretty || watchMode || listDepsMode != "" || (listTree && !listFlat))
 				&& (!listLong || agentMode)};
 		}

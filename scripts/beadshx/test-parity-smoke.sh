@@ -4347,6 +4347,19 @@ compare_real_database list-format-template exact list '--format={{.IssueID}} -> 
 compare_real_database list-format-invalid-template exact list '--format={{.IssueID'
 compare_real_database list-format-json-alias exact list --format=json --limit 2
 compare_real_database list-format-json-precedence exact list --format=digraph --json --limit 2
+# Upstream renders a Go template with a map of five Go values: IssueID and DependsOnID (string),
+# Type (types.DependencyType), Issue (*types.Issue) and Dependency (*types.Dependency). printf, eq
+# and len see those Go types, a missing key prints <no value>, and a missing field of Issue fails.
+# --json wins before upstream parses the template. dot and digraph are upstream's built-in formats.
+compare_real_database list-format-template-fields exact list \
+	'--format={{printf "%-14s" .IssueID}}|{{.DependsOnID}}|{{printf "%q" .Type}}|{{eq .Type "blocks"}}|{{.Issue.Title}}|{{.Issue.Status}}|P{{.Issue.Priority}}|{{.Issue.IssueType}}|{{.Dependency.IssueID}}|{{.Issue.IsCompound}}|{{len .}}|{{.Missing}}' \
+	--limit 0
+compare_real_database list-format-template-bad-field exact list '--format={{.Issue.Bogus}}' --limit 0
+compare_real_database list-format-template-empty exact list '--format={{.IssueID}}' --status deferred
+compare_real_database list-format-digraph-empty exact list --format digraph --status deferred
+compare_real_database list-format-dot-empty exact list --format dot --status deferred
+compare_real_database list-format-dot-limit exact list --format dot --limit 3
+compare_real_database list-format-invalid-template-json exact list '--format={{.IssueID' --json --limit 2
 compare_real_database list-max-rows-human exact list --limit 0 --max-rows 1
 compare_real_database_env list-max-rows-env-human exact BEADS_MAX_ROWS=1 list --limit 0
 compare_real_database_env list-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 list --limit 1 --max-rows 0
@@ -5221,6 +5234,7 @@ compare_real_database agent-mode-list-flat-limit exact list --flat --limit 3
 compare_real_database agent-mode-list-flat-empty exact list --flat --status deferred
 compare_real_database agent-mode-list-tree exact list
 compare_real_database agent-mode-list-format exact list --flat --format digraph
+compare_real_database agent-mode-list-format-dot exact list --flat --format dot
 compare_real_database agent-mode-list-json exact list --flat --json --limit 3
 compare_real_database agent-mode-children exact children "$real_database_epic_id"
 compare_real_database agent-mode-show-markdown exact show "$real_database_content_id"
@@ -5243,7 +5257,8 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # says on stderr when a limit hid issues. These cases run each side on a pseudo-terminal through a
 # runner that prints the transcript: stdout and stderr in the order written, without carriage
 # returns and without the echo of the end of input that `script` sends. The flat list without agent
-# mode would start a pager there, and bdhx prints no hint after --format yet, so neither has a case.
+# mode would start a pager there, so it has no case. bdhx prints the hint after --format dot and
+# --format digraph, but not yet after a Go template (see the README), so templates have no case.
 # The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
 write_terminal_runner() {
 	local runner="$1" binary="$2"
@@ -5293,8 +5308,12 @@ compare_real_database agent-mode-terminal-list-flat-all exact list --flat --all
 compare_real_database agent-mode-terminal-list-tree exact list --skip-labels
 compare_real_database agent-mode-terminal-list-json exact list --json --limit 2
 compare_real_database agent-mode-terminal-list-parent exact list --parent "$real_database_epic_id" --limit 1
+compare_real_database agent-mode-terminal-list-format-digraph exact list --format digraph
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database terminal-list-tree-limit exact list --limit 2
+compare_real_database terminal-list-format-digraph-limit exact list --format digraph --limit 15
+compare_real_database terminal-list-format-dot-limit exact list --format dot --limit 2
+compare_real_database terminal-list-format-digraph-all exact list --format digraph --limit 0
 real_database_setup=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"
