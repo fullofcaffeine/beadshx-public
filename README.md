@@ -166,6 +166,21 @@ Upstream then runs the command with the settings that loaded, and so does
 `bdhx`, for every command that reads the database too. `where` still prints
 the issue prefix from the embedded database, as upstream does.
 
+Like upstream, each of these setups also prints `Warning: <dir> has
+permissions 0755 (recommended: 0700). Run: chmod 700 <dir>` on stderr when
+group or others have a permission bit on the selected directory. An execute
+bit alone, as in `0711`, also counts. The mode shows as four octal digits. The
+warning comes after the config warning of the setup and before its
+shared-server notice or `.beads/metadata.json` warning, also with `--json`.
+`<dir>` is the directory as that setup names it. A `--db` path, and a
+`BEADS_DB`, `BD_DB` or `db` setting path for `where`, `version` and help
+pages, give it as the path gives it, for example `.` for `--db .beads` when
+`.beads` has no `metadata.json`. For a command that reads the database, a
+`BEADS_DB` path gives the absolute path. When `.beads` is a symbolic link,
+the second setup of such a command names the target. When a `db` setting
+selects the directory of `where`, its second setup names the absolute path.
+`bdhx` only reads the mode; it does not change it.
+
 Each command takes the issue prefix from the same source as upstream. `where`
 prints `issue-prefix` from `.beads/config.yaml`, or else `issue_prefix` from
 that file, or else the `issue_prefix` stored in the database. When an issue ID
@@ -467,9 +482,9 @@ Limits:
   the embedded database, and a `.beads/dolt` directory makes upstream refuse
   the workspace as a legacy Dolt workspace. `bdhx` prints the native open
   error in both cases. Like upstream, `where` prints that data directory.
-- `bdhx` prints no warning for a `.beads` directory that group or others can
-  read. Upstream prints `Warning: <dir> has permissions 0755 (recommended:
-  0700). Run: chmod 700 <dir>` each time it sets up that directory.
+- When `.beads` is a symbolic link, `where` prints the link as the workspace
+  path, and its second permissions warning names the link. Upstream prints
+  the link's target in both places.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 

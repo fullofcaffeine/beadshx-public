@@ -1,5 +1,6 @@
 package beadshx.config;
 
+import beadshx.config.BeadsDirPermissions.beadsDirPermissionWarning;
 import beadshx.config.ConfigDrift.isFalsyBool;
 import beadshx.config.ConfigDrift.testDatabaseRefusal;
 import beadshx.config.ConfigDrift.unreachableServerMessage;
@@ -144,6 +145,23 @@ final class ConfigProbes {
 	public static function statMissing(path:String):Bool {
 		final error = OsPkg.stat(path).value2;
 		return error != null && OsPkg.isNotExist(error);
+	}
+
+	/**
+		Upstream config.CheckBeadsDirPermissions: the warning for the directory
+		`path`, as upstream names it, when group or others have a permission
+		bit on it (see beadsDirPermissionWarning). The bits come from os.Stat,
+		which follows a symbolic link. Null when os.Stat fails, when the bits
+		are private, and on Windows, where upstream's check does nothing.
+	**/
+	public static function beadsDirPermissions(path:String):Null<String> {
+		if (Sys.systemName() == "Windows")
+			return null;
+		final result = OsPkg.stat(path);
+		final information = result.value1;
+		if (result.value2 != null || information == null)
+			return null;
+		return beadsDirPermissionWarning(path, information.mode().perm().toString());
 	}
 
 	/** os.Stat of `path`, narrowed to the answers upstream's path checks read. */

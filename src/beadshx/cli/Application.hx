@@ -716,7 +716,7 @@ final class Application {
 		}
 		// The setup stops at this file, before the notice and before `where` sets up again.
 		if (opensStore)
-			loadSelectedConfig(location.path, 1);
+			loadStoreConfig(invocation, location, 1);
 		else
 			prepareNoStoreWorkspace(invocation, 1);
 		if (refusal != "") {
@@ -756,29 +756,94 @@ final class Application {
 
 	/**
 		Upstream prepareSelectedCommandContext for the `.beads` directory
-		`beadsDir`, which upstream runs `initializations` times for one
-		command. Each run reloads the layered config with BEADS_DIR set to that
-		directory and prints upstream's reinitialize warning when a config file
-		does not parse: the workspace's config.yaml or config.local.yaml, or the
-		user config.yaml. The first run then prints the shared-server notice.
+		`beadsDir`, which upstream runs once for each entry of `setups`, the
+		directory as that setup names it. Each run reloads the layered config
+		with BEADS_DIR set to that directory and prints upstream's reinitialize
+		warning when a config file does not parse: the workspace's config.yaml
+		or config.local.yaml, or the user config.yaml. Each run then prints the
+		permissions warning for its name of the directory (see
+		warnBeadsDirPermissions), and the first run the shared-server notice.
 		Returns the config, which keeps what loaded before the failure.
 	**/
-	function loadSelectedConfig(beadsDir:String, initializations:Int):LayeredConfig {
+	function loadSelectedConfig(beadsDir:String, setups:Array<String>):LayeredConfig {
 		final config = LayeredConfig.forWorkspace(beadsDir);
-		for (initialization in 0...initializations) {
+		for (index => setup in setups) {
 			if (config.failure != null)
 				output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${config.failure}\n');
-			if (initialization == 0)
+			warnBeadsDirPermissions(setup);
+			if (index == 0)
 				warnSharedServerMismatch(beadsDir, config);
 		}
 		return config;
 	}
 
-	/** loadSelectedConfig for the directory that `where`, `version` and help pages set up (see noStoreBeadsDir), when upstream selects one. */
+	/**
+		Upstream config.CheckBeadsDirPermissions, which each selected-directory
+		setup runs for `beadsDir` as upstream names it: a warning on stderr when
+		group or others have a permission bit on the directory. It only reads.
+	**/
+	function warnBeadsDirPermissions(beadsDir:String):Void {
+		final warning = ConfigProbes.beadsDirPermissions(beadsDir);
+		if (warning != null)
+			output.writeStderr(warning);
+	}
+
+	/**
+		loadSelectedConfig for the workspace at `location` that a command which
+		opens a store takes, set up `initializations` times (see
+		storeInitializations). The first setup names the directory as upstream
+		selects it (see WorkspaceEnvironment.storeSetupDirectory). The second
+		comes after upstream binds the database (see boundSetupDirectory).
+	**/
+	function loadStoreConfig(invocation:Invocation, location:WorkspaceLocation, initializations:Int):LayeredConfig {
+		final setups = [
+			WorkspaceEnvironment.storeSetupDirectory(invocation.databaseVariable, location.path)
+		];
+		if (initializations > 1)
+			setups.push(boundSetupDirectory(location));
+		return loadSelectedConfig(location.path, setups);
+	}
+
+	/**
+		The name of the workspace in upstream's second setup for a command that
+		opens a store: resolveCommandBeadsDir of the database path that it
+		binds. That path is the one that FindDatabasePath finds
+		(`location.databasePath`), or the `.beads` directory itself: for a
+		proxied-server workspace, for a workspace without metadata.json whose
+		host implies server mode, and when FindDatabasePath finds no path, as
+		for a backend that upstream does not support. So a `.beads` directory
+		that is a symbolic link has its target's name here.
+	**/
+	static function boundSetupDirectory(location:WorkspaceLocation):String {
+		final bindsDirectory = location.proxiedServer || location.databasePath == "" || switch readMetadataFields(location.path) {
+			case MetadataAbsent: LayeredConfig.forWorkspace(location.path).hostImpliesServerMode();
+			case MetadataFields(_) | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: false;
+		};
+		return WorkspaceEnvironment.commandBeadsDir(bindsDirectory ? location.path : location.databasePath, location.path);
+	}
+
+	/**
+		loadSelectedConfig for the directory that `where`, `version` and help
+		pages set up (see noStoreBeadsDir), when upstream selects one. When
+		`where` sets it up again, upstream's pre-run has set BEADS_DIR to it.
+		Then a --db, BEADS_DB or BD_DB path still names the same directory, but
+		a `db` setting no longer does: upstream's FindBeadsDir finds the
+		directory through BEADS_DIR and names it by its absolute path. It
+		would also name the target of a `.beads` directory that is a symbolic
+		link, which this build's `where` names by the link, without the
+		native discovery that this costs.
+	**/
 	function prepareNoStoreWorkspace(invocation:Invocation, initializations:Int):Void {
 		final beadsDir = noStoreBeadsDir(invocation);
-		if (beadsDir != "")
-			loadSelectedConfig(beadsDir, initializations);
+		if (beadsDir == "")
+			return;
+		final setups = [beadsDir];
+		if (initializations > 1) {
+			final again = databaseSettingSelects(invocation) ? WorkspaceEnvironment.findWithBeadsDir(workspace, beadsDir) : beadsDir;
+			if (again != "")
+				setups.push(again);
+		}
+		loadSelectedConfig(beadsDir, setups);
 	}
 
 	/** `where` sets up its directory in the pre-run and again in its command body; `version` and help pages only in the pre-run. */
@@ -2606,23 +2671,23 @@ final class Application {
 				final selection = findsDatabase(invocation, location) ? validateDatabaseSelection(invocation, location) : Accepted;
 				switch selection {
 					case PlainFailure(message):
-						loadSelectedConfig(location.path, storeInitializations(invocation, location));
+						loadStoreConfig(invocation, location, storeInitializations(invocation, location));
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runStoreFailure(message);
 					case ModeAwareFailure(message):
-						loadSelectedConfig(location.path, storeInitializations(invocation, location));
+						loadStoreConfig(invocation, location, storeInitializations(invocation, location));
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						final reachesServer = reachesSharedServer(invocation, location);
 						if (!findsDatabase(invocation, location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
-							final config = loadSelectedConfig(location.path, 1);
+							final config = loadStoreConfig(invocation, location, 1);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
 							if (refusal != null)
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound(config.sharedServerMode());
 						} else {
-							final config = loadSelectedConfig(location.path, storeInitializations(invocation, location));
+							final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
 							// Upstream warns about a missing metadata.json before the store open that a refusal stands for.
 							warnMissingMetadata(defaultDirectory);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
@@ -6272,7 +6337,7 @@ final class Application {
 		and the command reports the missing database (see findsDatabase).
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
-		final config = loadSelectedConfig(location.path, storeInitializations(invocation, location));
+		final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
 		final defaultDirectory = missingMetadataDirectory(invocation, location);
 		if (config.sharedServerMode() && reachesSharedServer(invocation, location)) {
 			warnMissingMetadata(defaultDirectory);

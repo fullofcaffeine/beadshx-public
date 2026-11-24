@@ -7,6 +7,7 @@ import beadshx.cli.ConfigView.renderConfigListJson;
 import beadshx.cli.ConfigView.renderConfigListText;
 import beadshx.cli.ConfigView.renderConfigShowJson;
 import beadshx.cli.ConfigView.renderConfigShowText;
+import beadshx.config.BeadsDirPermissions.beadsDirPermissionWarning;
 import beadshx.config.ConfigShow.ConfigShowEntry;
 import beadshx.config.ConfigShow.filterConfigShowEntries;
 import beadshx.config.ConfigShow.layeredEntries;
@@ -65,8 +66,9 @@ import sys.io.File;
 	collectMetadataEntries and printConfigEntries, and the `bd config validate`
 	and `bd config drift` rules against upstream's doctor checks,
 	validateSyncConfig, ValidateRemoteURL, getHookVersion, checkHooksDrift and
-	printDriftItems, by hand. Viper, os.Stat, net/url, git and the server dial
-	are native; parity covers the real runs.
+	printDriftItems, and the warning of CheckBeadsDirPermissions, by hand. Viper,
+	os.Stat, net/url, git and the server dial are native; parity covers the
+	real runs.
 **/
 class Main {
 	static function main():Void {
@@ -84,6 +86,7 @@ class Main {
 		validateRenderContracts();
 		driftHookContracts();
 		driftRenderContracts();
+		permissionContracts();
 		Sys.println("config Haxe contracts: PASS");
 	}
 
@@ -660,6 +663,26 @@ class Main {
 
 	static function quote(value:String):String {
 		return '<${value}>';
+	}
+
+	static function permissionContracts():Void {
+		final path = "/w/.beads";
+		final warning = mode -> 'Warning: /w/.beads has permissions ${mode} (recommended: 0700). Run: chmod 700 /w/.beads\n';
+		// Only the owner's bits print nothing, whatever they are.
+		equal(beadsDirPermissionWarning(path, "-rwx------"), null);
+		equal(beadsDirPermissionWarning(path, "----------"), null);
+		equal(beadsDirPermissionWarning(path, "-r--------"), null);
+		// Any group or other bit warns, an execute bit too, with four octal digits.
+		equal(beadsDirPermissionWarning(path, "-rwxr-xr-x"), warning("0755"));
+		equal(beadsDirPermissionWarning(path, "-rwxr-x---"), warning("0750"));
+		equal(beadsDirPermissionWarning(path, "-rwxrwx---"), warning("0770"));
+		equal(beadsDirPermissionWarning(path, "-rwx--x--x"), warning("0711"));
+		equal(beadsDirPermissionWarning(path, "-rwx-----x"), warning("0701"));
+		equal(beadsDirPermissionWarning(path, "-rwxrwxrwx"), warning("0777"));
+		equal(beadsDirPermissionWarning(path, "----r-----"), warning("0040"));
+		equal(beadsDirPermissionWarning(path, "-------r--"), warning("0004"));
+		// The directory prints as upstream names it.
+		equal(beadsDirPermissionWarning(".", "-rwxr-xr-x"), "Warning: . has permissions 0755 (recommended: 0700). Run: chmod 700 .\n");
 	}
 
 	static function equal<T>(actual:T, expected:T, ?pos:haxe.PosInfos):Void {

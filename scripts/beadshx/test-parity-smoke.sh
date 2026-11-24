@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# A directory that a case makes with mkdir gets mode 0755, whatever the caller's umask is. Upstream warns
+# about a selected .beads directory that group or others can read, so each run must compare the same
+# modes. The workspace fixtures set their .beads mode themselves (see real_database_beads_mode).
+umask 022
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 oracle="${1:-$repository_root/build/bin/bd-upstream}"
@@ -665,6 +669,8 @@ copy_fixture_tree() {
 }
 
 store_failure_case_count=0
+# The mode of the .beads directory of each store-failure fixture.
+store_failure_beads_mode=700
 compare_store_failure() {
 	local scenario="$1"
 	local case_name="$2"
@@ -708,7 +714,7 @@ compare_store_failure() {
 
 	for command_root in "$oracle_root" "$candidate_root"; do
 		mkdir -p "$command_root/home" "$command_root/config" "$command_root/work/.beads"
-		chmod 700 "$command_root/work/.beads"
+		chmod "$store_failure_beads_mode" "$command_root/work/.beads"
 		printf '%s\n' "$metadata" >"$command_root/work/.beads/metadata.json"
 		printf '%s\n' "$config_yaml" >"$command_root/work/.beads/config.yaml"
 		# A server workspace that still holds the directory of an earlier embedded store.
@@ -762,9 +768,17 @@ compare_store_failure() {
 		diff -u "$case_root/oracle.stdout" "$case_root/candidate.stdout" >&2 || true
 		return 1
 	fi
-	if ! cmp -s "$case_root/oracle.stderr" "$case_root/candidate.stderr"; then
+	# A warning about the permissions of the .beads directory names each side's own workspace.
+	local side side_work side_work_logical
+	for side in oracle candidate; do
+		side_work="$(cd "$case_root/$side/work" && pwd -P)"
+		side_work_logical="$(cd "$case_root/$side/work" && pwd -L)"
+		sed -e "s|$side_work|<work>|g" -e "s|$side_work_logical|<work>|g" \
+			"$case_root/$side.stderr" >"$case_root/$side.stderr.normalized"
+	done
+	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s/%s stderr differs from upstream\n' "$scenario" "$case_name" >&2
-		diff -u "$case_root/oracle.stderr" "$case_root/candidate.stderr" >&2 || true
+		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
 		return 1
 	fi
 	oracle_after="$(fingerprint_task_state_tree "$oracle_root")"
@@ -1088,6 +1102,8 @@ real_database_extra_sql=""
 real_database_setup=""
 # A directory below the work directory that a database case starts in instead of the work directory.
 real_database_directory=""
+# The mode of the work/.beads directory of each database and candidate-only case, set before its setup.
+real_database_beads_mode=700
 # When set, a database case also requires the upstream command to leave its task state unchanged,
 # and gives each side an empty TMPDIR that must stay empty.
 real_database_read_only=""
@@ -1112,7 +1128,7 @@ compare_real_database() {
 		mkdir -p "$state_root/user-home/.dolt" "$state_root/config"
 		printf '{}\n' >"$state_root/user-home/.dolt/config_global.json"
 		copy_fixture_tree "$real_database_seed/work" "$state_root/work"
-		chmod 700 "$state_root/work/.beads"
+		chmod "$real_database_beads_mode" "$state_root/work/.beads"
 		if [[ -n "$real_database_extra_config" ]]; then
 			printf '%s\n' "$real_database_extra_config" >>"$state_root/work/.beads/config.yaml"
 		fi
@@ -1444,7 +1460,7 @@ expect_candidate_failure() {
 	mkdir -p "$state_root/user-home/.dolt" "$state_root/config"
 	printf '{}\n' >"$state_root/user-home/.dolt/config_global.json"
 	copy_fixture_tree "$real_database_seed/work" "$state_root/work"
-	chmod 700 "$state_root/work/.beads"
+	chmod "$real_database_beads_mode" "$state_root/work/.beads"
 	if [[ -n "$statements" ]]; then
 		printf '%s\n' "$statements" | "$fixture_sql" "$state_root/work" >/dev/null
 	fi
@@ -3178,8 +3194,9 @@ expect_candidate_failure no-metadata-missing-config-get-json-unported \
 	'{"error":"config get is not available yet when the embedded store has no database named \"beads\" in this build","schema_version":1}' \
 	"$no_metadata_warning" "" config get issue_prefix --json
 # A --db path names the directory as upstream derives it from the path as given: `.` for `.beads`.
+# Group and others can read the work directory, so upstream's setup also warns about `.`.
 expect_candidate_failure no-metadata-missing-db-flag-unported "" \
-	'warning: no beads configuration found in .; using default database name "beads"'$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" \
+	'Warning: . has permissions 0755 (recommended: 0700). Run: chmod 700 .'$'\n''warning: no beads configuration found in .; using default database name "beads"'$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" \
 	--db .beads count
 real_database_extra_env=(BD_JSON=1)
 expect_candidate_failure no-metadata-missing-bd-json-unported \
@@ -3213,37 +3230,36 @@ expect_candidate_failure no-metadata-default-server-mode-setting-unported "" \
 	status
 # For a --db path that no workspace claims, upstream takes the first .beads directory beside the path's
 # directory or one of its ancestors (resolveCommandBeadsDir), and so does this build. Upstream then
-# creates `beads` in that directory's embedded store, which this build refuses.
+# creates `beads` in that directory's embedded store, which this build refuses. Group and others can
+# read that directory, so its setup first warns about its permissions.
 no_metadata_nested_directories() {
 	no_metadata_default_database "$1"
 	mkdir -p "$1/work/sub/.beads" "$1/work/sub/data"
 }
 candidate_only_setup=no_metadata_nested_directories
 expect_candidate_failure no-metadata-db-flag-ancestor-unported "" \
-	'warning: no beads configuration found in sub/.beads; using default database name "beads"'$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" \
+	'Warning: sub/.beads has permissions 0755 (recommended: 0700). Run: chmod 700 sub/.beads'$'\n''warning: no beads configuration found in sub/.beads; using default database name "beads"'$'\n''Error: count is not available yet when the embedded store has no database named "beads" in this build' "" \
 	--db sub/data/x count
 candidate_only_setup=""
-# `where` names that directory and writes nothing. Upstream also warns about a .beads directory that
-# group or others can read, which this build does not, so the directory here is private.
-nested_private_directories() {
+# `where` names that directory, warns twice about its permissions, and writes nothing.
+nested_directories() {
 	mkdir -p "$1/work/sub/.beads" "$1/work/sub/data"
-	chmod 700 "$1/work/sub/.beads"
 }
-nested_private_directories_without_metadata() {
+nested_directories_without_metadata() {
 	no_metadata_default_database "$1"
-	nested_private_directories "$1"
+	nested_directories "$1"
 }
 real_database_read_only=1
-real_database_setup=nested_private_directories_without_metadata
+real_database_setup=nested_directories_without_metadata
 compare_real_database db-flag-ancestor-where exact where --db sub/data/x
 compare_real_database db-flag-ancestor-where-json exact where --db sub/data/x --json
-real_database_setup=nested_private_directories
+real_database_setup=nested_directories
 compare_real_database db-flag-ancestor-metadata-where exact where --db sub/data/x
 real_database_read_only=""
 # With a `beads` database in that directory's embedded store, upstream warns and reads it, and so does
 # this build.
 nested_database_without_metadata() {
-	nested_private_directories_without_metadata "$1"
+	nested_directories_without_metadata "$1"
 	mkdir "$1/work/sub/.beads/embeddeddolt"
 	copy_fixture_tree "$1/work/.beads/embeddeddolt/beads" "$1/work/sub/.beads/embeddeddolt/beads"
 }
@@ -5513,8 +5529,12 @@ expect_beads_db_refusal beads-db-trailing-slash-unported BEADS_DB=db/.beads/ "" 
 	"Error: where is not available yet when BEADS_DB names this path in this build" where
 expect_beads_db_refusal beads-db-where-missing-path-unported BEADS_DB=missing/beads.db "" \
 	"Error: where is not available yet when BEADS_DB names this path in this build" where
+# BD_DB=missing selects `.` for where, as its directory, and group and others can read the work
+# directory, so both of upstream's setups first warn about it.
+loose_work_warning='Warning: . has permissions 0755 (recommended: 0700). Run: chmod 700 .'
 expect_beads_db_refusal beads-db-where-bd-db-json-unported BD_DB=missing \
-	'{"error":"where is not available yet when BD_DB names this path in this build","schema_version":1}' "" where --json
+	'{"error":"where is not available yet when BD_DB names this path in this build","schema_version":1}' \
+	"$loose_work_warning"$'\n'"$loose_work_warning" where --json
 move_workspace_without_database() {
 	move_workspace_to_db "$1"
 	rm -rf "$1/work/db/.beads/embeddeddolt"
@@ -5523,6 +5543,135 @@ candidate_only_setup=move_workspace_without_database
 expect_beads_db_refusal beads-db-workspace-without-database-unported BEADS_DB=db/.beads "" \
 	"Error: count is not available yet when BEADS_DB names this path in this build" count
 candidate_only_setup=""
+
+# Each setup of the selected directory (upstream prepareSelectedCommandContext) runs
+# config.CheckBeadsDirPermissions. When group or others have any permission bit on the directory, even
+# only an execute bit, it prints "Warning: <dir> has permissions 0755 (recommended: 0700). Run: chmod
+# 700 <dir>" on stderr, also with --json: the bits as four octal digits, and the directory as that
+# setup names it. The warning comes after the setup's config warning, and before its shared-server
+# notice or metadata.json warning. So it prints twice for where and for a command that reads the
+# database, and once for version, the root help, `bd help`, a --db or BEADS_DB path, and a workspace
+# without a database. A --help flag, a command group's help page and a flag error print none. bdhx
+# writes nothing, and upstream writes nothing where the cases do not say otherwise.
+real_database_read_only=1
+real_database_beads_mode=755
+compare_real_database beads-mode-0755-list exact list
+compare_real_database beads-mode-0755-list-json exact list --json
+compare_real_database beads-mode-0755-config-get-json exact config get issue_prefix --json
+compare_real_database beads-mode-0755-where exact where
+compare_real_database beads-mode-0755-where-json exact where --json
+compare_real_database beads-mode-0755-version stderr-only version
+compare_real_database beads-mode-0755-version-json stderr-only version --json
+compare_real_database beads-mode-0755-root stderr-only
+compare_real_database beads-mode-0755-help-command exact help list
+compare_real_database beads-mode-0755-help-flag exact list --help
+compare_real_database beads-mode-0755-command-group exact label
+compare_real_database beads-mode-0755-flag-error exact ready -n x
+real_database_beads_mode=750
+compare_real_database beads-mode-0750-count exact count
+compare_real_database beads-mode-0750-where exact where
+real_database_beads_mode=770
+compare_real_database beads-mode-0770-ready-json exact ready --json
+real_database_beads_mode=711
+compare_real_database beads-mode-0711-status exact status
+compare_real_database beads-mode-0711-version stderr-only version
+real_database_beads_mode=700
+compare_real_database beads-mode-0700-count exact count
+compare_real_database beads-mode-0700-where-json exact where --json
+# A --db path names the directory as given, also for where. A --db value that names a database finds
+# the workspace as without --db. BEADS_DB makes a command that reads the database name the directory
+# by its absolute path with symbolic links resolved, or by the absolute path of a missing file's
+# directory; where and version take a BEADS_DB or BD_DB path as given.
+real_database_beads_mode=755
+compare_real_database beads-mode-db-path-count exact --db .beads/embeddeddolt count
+compare_real_database beads-mode-db-path-list-json exact --db .beads list --json
+compare_real_database beads-mode-db-path-where exact --db .beads where
+compare_real_database beads-mode-db-path-version stderr-only --db .beads/beads.db version
+compare_real_database beads-mode-db-name-count exact --db other count
+real_database_setup=move_workspace_to_db
+compare_beads_db beads-mode-beads-db-count exact BEADS_DB=db/.beads count
+compare_beads_db beads-mode-beads-db-embedded-list-json exact BEADS_DB=db/.beads/embeddeddolt list --json
+compare_beads_db beads-mode-beads-db-file-info-json exact BEADS_DB=db/.beads/beads.db info --json
+compare_beads_db beads-mode-beads-db-where exact BEADS_DB=db/.beads where
+compare_beads_db beads-mode-bd-db-where-json exact BD_DB=db/.beads where --json
+compare_beads_db beads-mode-bd-db-version stderr-only BD_DB=db/.beads/embeddeddolt version
+# A db setting names the directory as its path gives it. The body of where then sets up the directory
+# that BEADS_DIR names, which upstream's pre-run set to it, by its absolute path.
+set_beads_database_setting() {
+	printf 'db: .beads/beads.db\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=set_beads_database_setting
+compare_real_database beads-mode-db-setting-where exact where
+compare_real_database beads-mode-db-setting-version stderr-only version
+compare_real_database beads-mode-db-setting-help-command exact help count
+# For a .beads directory that is a symbolic link, a command that reads the database names the link
+# first, and then the target, which it binds the database from.
+link_beads_directory() {
+	mv -f "$1/work/.beads" "$1/work/beads-target"
+	ln -s beads-target "$1/work/.beads"
+}
+real_database_setup=link_beads_directory
+compare_real_database beads-mode-link-version stderr-only version
+# Upstream also writes here: it creates a gate lock beside the link's target, which bdhx does not take.
+real_database_read_only=""
+compare_real_database beads-mode-link-count exact count
+compare_real_database beads-mode-link-list-json exact list --json
+real_database_read_only=1
+# A redirect selects its target, which upstream checks instead of the redirecting directory.
+redirect_to_loose_workspace() {
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	chmod 750 "$1/work/sub/.beads"
+	mkdir "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+}
+real_database_setup=redirect_to_loose_workspace
+compare_real_database beads-mode-redirect-count exact count
+compare_real_database beads-mode-redirect-where exact where
+# The order of the warnings in each setup.
+real_database_setup=break_workspace_config
+compare_real_database beads-mode-config-warning-count exact count
+compare_real_database beads-mode-config-warning-where-json exact where --json
+real_database_setup=enable_shared_server
+compare_real_database beads-mode-shared-server-where exact where
+compare_real_database beads-mode-shared-server-version stderr-only version
+break_metadata_json() {
+	printf '{not json' >"$1/work/.beads/metadata.json"
+}
+real_database_setup=break_metadata_json
+compare_real_database beads-mode-bad-metadata-count exact count
+compare_real_database beads-mode-bad-metadata-where exact where
+real_database_setup=remove_embedded_database
+compare_real_database beads-mode-no-database-list exact list
+compare_real_database beads-mode-no-database-count-json exact count --json
+real_database_setup=""
+# Upstream's show also writes the issue ID into .beads/last-touched; bdhx does not.
+real_database_read_only=""
+compare_real_database beads-mode-0755-show-json exact show "$real_database_issue_id" --json
+real_database_read_only=1
+# Upstream reads the database that the db setting names, where this build refuses after the warning.
+candidate_only_setup=set_beads_database_setting
+expect_candidate_failure beads-mode-db-setting-count-unported "" \
+	'Warning: .beads has permissions 0755 (recommended: 0700). Run: chmod 700 .beads'$'\n''Error: count is not available yet when the db setting names a database in this build' "" \
+	count
+candidate_only_setup=""
+real_database_beads_mode=700
+real_database_read_only=""
+# A server that upstream cannot reach fails after both setups; a missing embedded store after one.
+store_failure_beads_mode=755
+compare_store_failure unavailable-server beads-mode-0755-list list
+compare_store_failure unavailable-server beads-mode-0755-count-json count --json
+compare_store_failure missing-embedded beads-mode-0755-ready ready
+store_failure_beads_mode=700
+# Without a workspace, a --db path selects its directory, which group and others can read here.
+make_loose_data_directory() {
+	mkdir -m 755 "$1/work/data"
+}
+no_workspace_setup=make_loose_data_directory
+compare_no_workspace beads_mode_db_path_where where --db data/x
+compare_no_workspace beads_mode_db_path_where_json where --db data/x --json
+compare_no_workspace beads_mode_db_path_help_command help list --db data/x
+no_workspace_setup=""
 
 # Schema skew. Upstream's store open compares the highest schema_migrations version with the
 # binary's latest migration, v65, before any command body runs. A database ahead of the binary

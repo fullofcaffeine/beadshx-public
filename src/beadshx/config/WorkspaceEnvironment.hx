@@ -237,6 +237,39 @@ final class WorkspaceEnvironment {
 	}
 
 	/**
+		The `.beads` directory as upstream's setup names it for a command that
+		opens a store, when discovery names it `beadsDir`. For a BEADS_DB path
+		(`selection`), upstream's FindDatabasePath first makes the path
+		absolute and resolves its symbolic links. For a missing file it keeps
+		the absolute path, and the file's parent `.beads` directory claims it.
+		Any other selection keeps `beadsDir`.
+	**/
+	public static function storeSetupDirectory(selection:DatabaseVariableSelection, beadsDir:String):String {
+		return switch selection {
+			case VariablePath(_, _, missingFile): missingFile != null ? FilepathPkg.dir(missingFile) : canonicalPath(beadsDir);
+			case NoVariable | UnsupportedPath(_): beadsDir;
+		};
+	}
+
+	/**
+		Upstream FindBeadsDir while BEADS_DIR names `beadsDir`, as upstream's
+		setup for that directory leaves it, or "" when it finds no directory.
+		The body of `where` sets up this directory again after its pre-run set
+		up `beadsDir` for a `db` setting. It costs one more native discovery.
+		BEADS_DIR gets its value back before this returns.
+	**/
+	public static function findWithBeadsDir(workspace:WorkspacePort, beadsDir:String):String {
+		final previous = Sys.getEnv("BEADS_DIR");
+		Sys.putEnv("BEADS_DIR", beadsDir);
+		final found = workspace.discover("", "");
+		Sys.putEnv("BEADS_DIR", previous);
+		return switch found {
+			case Found(location): location.path;
+			case NotFound | InvalidSelection(_): "";
+		};
+	}
+
+	/**
 		Upstream resolveBeadsDirForDBPath. A parent directory named `.beads`
 		with a metadata.json file claims `path` first, as written and then
 		canonical. Otherwise the candidates are the path itself when it is a
