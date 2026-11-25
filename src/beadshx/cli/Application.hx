@@ -151,6 +151,7 @@ import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
 import beadshx.workspace.LegacyUpgradeGuard;
+import beadshx.workspace.LegacyUpgradeGuard.LegacyGuardOutcome;
 import beadshx.workspace.RedirectLookups;
 import beadshx.workspace.RedirectSource;
 import beadshx.workspace.RedirectSource.RedirectSourceLookup;
@@ -780,9 +781,11 @@ final class Application {
 		error, as text even under --json. `version`, the root help and `bd help`
 		print only the warning. Returns the exit code when the command stops.
 
-		Upstream names the workspace it selected. When a database path selects
-		it, that is the path as given, or another directory where upstream opens
-		or creates a database, so this build refuses instead.
+		Upstream names the workspace it selected. When a --db path selects it
+		for a command that opens a store, that is the path as given, or another
+		directory where upstream opens or creates a database, so this build
+		refuses instead. `where`, `version` and help pages check the directory
+		that upstream derives from the path (see checkNoStoreMetadata).
 
 		When only a legacy config.json exists, upstream's store open rewrites it
 		as metadata.json for `where` and every command that opens a store. This
@@ -796,7 +799,11 @@ final class Application {
 		`where` and every command that opens a store in a historical SQLite
 		workspace, a workspace with a removed or unknown backend, and a legacy
 		Dolt workspace (see LegacyUpgradeGuard), also before the rewrite of a
-		legacy config.json. Upstream then writes nothing.
+		legacy config.json. Upstream then writes nothing. A command that opens a
+		store with a BEADS_DB path first runs the guard's walk for a workspace
+		that is not found (see guardUndiscoveredStoreWorkspace); with -C it
+		checks the second target of a redirect chain, which upstream's first
+		setup takes then.
 
 		Upstream's setup for the selected directory reloads the config first,
 		so its reinitialize warning comes before the metadata warning, once.
@@ -818,27 +825,111 @@ final class Application {
 		// The db setting refusal follows: upstream would select the workspace from that path.
 		if (opensStore && databaseSettingSelects(invocation))
 			return null;
-		final discovery = opensStore ? workspace.discover(invocation.directory, invocation.databasePath) : noStoreMetadataWorkspace(invocation);
-		final location = switch discovery {
-			case Found(location): location;
-			case NotFound:
-				if (!opensStore)
-					prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
-				return null;
-			case InvalidSelection(_): return null;
-		};
 		if (!opensStore)
-			boundWorkspace = location;
+			return checkNoStoreMetadata(invocation, stops);
+		// A BEADS_DB path selects the workspace only when upstream's FindBeadsDir found none, so its walk runs before FindDatabasePath reads the variable.
+		if (invocation.databaseVariable.match(VariablePath(_, _, _))) {
+			final stop = guardUndiscoveredStoreWorkspace(invocation);
+			if (stop != null)
+				return stop;
+		}
+		final location = switch workspace.discover(invocation.directory, invocation.databasePath) {
+			case Found(location): location;
+			case NotFound | InvalidSelection(_): return null;
+		};
 		// A command that opens a store binds the target of the found workspace's own redirect (see
-		// discoverStoreWorkspace), whose legacy config.json upstream's FindDatabasePath rewrites too.
+		// discoverStoreWorkspace), whose legacy config.json upstream's FindDatabasePath rewrites too. With -C,
+		// upstream's first setup already takes that target, so its first guard reads it.
 		var checked = location;
-		if (opensStore
-			&& legacyOnly(WorkspaceEnvironment.storeChainTarget({directory: invocation.directory, databasePath: invocation.databasePath}, location)))
+		if (invocation.directory != ""
+			|| legacyOnly(WorkspaceEnvironment.storeChainTarget({directory: invocation.directory, databasePath: invocation.databasePath}, location)))
 			switch discoverStoreWorkspace(invocation) {
 				case Found(target):
 					checked = target;
 				case NotFound | InvalidSelection(_):
 			}
+		return checkSelectedMetadata(invocation, location, checked, stops, true);
+	}
+
+	/**
+		checkWorkspaceMetadata for `where`, `version` and help pages, which
+		`stops` tells apart: only `where` runs upstream's legacy-workspace guard
+		(guardLegacyNoStoreCommand, cmd/bd/main.go:845-867, :1166).
+
+		Why: upstream's pre-run binds the directory that selectedNoDBBeadsDir
+		selects (see noStoreSetupDirectory), loads its metadata.json in that
+		setup, which prints the load warning, and guards that directory. For a
+		database path it is the directory that resolveCommandBeadsDir derives,
+		which can differ from the workspace that this build's discovery finds
+		for the path. When it selects none, FindBeadsDir finds none either, and
+		`where` runs guardUndiscoveredLegacyWorkspace instead.
+		What: for a metadata.json there that does not load, one setup, the
+		warning, and for `where` upstream's load error; for a refusal of the
+		guard, one setup and that refusal. Then, unless BEADS_DB or BD_DB names
+		a path that this build refuses for `where`, the checks of the workspace
+		that discovery found (checkSelectedMetadata). How: it only reads.
+	**/
+	function checkNoStoreMetadata(invocation:Invocation, stops:Bool):Null<Int> {
+		final location = switch noStoreMetadataWorkspace(invocation) {
+			case Found(location): location;
+			case NotFound: null;
+			case InvalidSelection(_): return null;
+		};
+		if (location != null)
+			boundWorkspace = location;
+		final beadsDir = noStoreSetupDirectory(invocation);
+		if (beadsDir == "") {
+			prepareNoStoreWorkspace(invocation, 1);
+			if (stops) {
+				final stop = guardUndiscoveredWorkspace(invocation);
+				if (stop != null)
+					return stop;
+			}
+			// The body of `where` looks its directory up again (where.go:50).
+			if (noStoreInitializations(invocation) > 1)
+				noStoreLookups(invocation);
+			return null;
+		}
+		switch readMetadataFields(beadsDir) {
+			case MetadataFieldsUndecodable(error):
+				prepareNoStoreWorkspace(invocation, 1);
+				output.writeStderr(metadataLoadWarning(beadsDir, error));
+				if (!stops)
+					return null;
+				output.writeStderr(metadataLoadFailure(error));
+				return 1;
+			case MetadataFields(_) | MetadataAbsent | MetadataFieldsLegacyOnly if (stops):
+				switch LegacyUpgradeGuard.check(beadsDir, () -> LayeredConfig.forWorkspace(beadsDir).sharedServerMode()) {
+					case GuardRefused(error):
+						prepareNoStoreWorkspace(invocation, 1);
+						output.writeStderr('Error: ${error}\n');
+						return 1;
+					case GuardPasses | GuardLoadFailed(_) | GuardUnknown:
+				}
+			case MetadataFields(_) | MetadataAbsent | MetadataFieldsLegacyOnly | MetadataFieldsUnsupported:
+		}
+		// The workspace that discovery found for a BEADS_DB or BD_DB path that `where` refuses is not the one upstream reads.
+		if (location == null || invocation.databaseVariable.match(UnsupportedPath(_))) {
+			prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
+			return null;
+		}
+		// With -C, upstream's FindBeadsDir finds the workspace through BEADS_DIR, after its redirect (see noStoreSetupDirectory).
+		final pathSelects = WorkspaceEnvironment.noStorePathSelects({directory: invocation.directory, databasePath: invocation.databasePath});
+		final checked = invocation.directory != ""
+			&& !pathSelects
+			&& beadsDir != location.path ? relocated(location, beadsDir, location.databaseName, null) : location;
+		return checkSelectedMetadata(invocation, location, checked, stops, false);
+	}
+
+	/**
+		checkWorkspaceMetadata's checks of the metadata.json, or legacy
+		config.json, that upstream's first setup and the guard after it read
+		for the workspace at `location` that discovery found for the command.
+		`checked` is the workspace that the command binds: `location`, or the
+		second target of a redirect chain (see discoverStoreWorkspace), whose
+		found directory the first setup takes, except with -C.
+	**/
+	function checkSelectedMetadata(invocation:Invocation, location:WorkspaceLocation, checked:WorkspaceLocation, stops:Bool, opensStore:Bool):Null<Int> {
 		// Upstream's first setup and the guard after it take the found workspace, or with -C that target (see loadStoreConfig).
 		final found = checked.foundPath;
 		final selected = found != null && invocation.directory == "" ? found : checked.path;
@@ -957,7 +1048,9 @@ final class Application {
 		directory is not `beadsDir`, such as the other target of a redirect
 		chain, reloads that directory's own config (cmd/bd/main.go:596-614);
 		a name such as a relative path or a symbolic link for `beadsDir`
-		itself takes `beadsDir`'s config.
+		itself takes `beadsDir`'s config, and such a later run prints the load
+		warning of that directory's metadata.json when it does not load
+		(loadServerModeFromBeadsDir, :612).
 		Before the reload each run binds BEADS_DIR to that directory and
 		follows its redirect (RedirectLookups.prepareSelectedContext).
 		`afterFirstSetup` runs what upstream runs after the first setup.
@@ -974,6 +1067,13 @@ final class Application {
 			if (setupConfig.failure != null)
 				output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${setupConfig.failure}\n');
 			warnBeadsDirPermissions(setup);
+			// The first setup's load warning comes from checkWorkspaceMetadata, which stops the command there.
+			if (index > 0 && !own)
+				switch readMetadataFields(setup) {
+					case MetadataFieldsUndecodable(error):
+						output.writeStderr(metadataLoadWarning(setup, error));
+					case MetadataFields(_) | MetadataAbsent | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				}
 			if (!sharedServerNoticeEmitted)
 				warnSharedServerMismatch(own ? beadsDir : setup, setupConfig);
 			if (index == 0 && afterFirstSetup != null)
@@ -1060,9 +1160,7 @@ final class Application {
 		// Upstream selectedNoDBBeadsDir looks the directory up first (cmd/bd/main.go:1156), and `where` again before its second setup (where.go:50).
 		noStoreLookups(invocation);
 		final pathSelects = WorkspaceEnvironment.noStorePathSelects({directory: invocation.directory, databasePath: invocation.databasePath});
-		var beadsDir = noStoreBeadsDir(invocation);
-		if (beadsDir != "" && !pathSelects && invocation.directory != "")
-			beadsDir = findThroughBeadsDir(invocation, beadsDir);
+		final beadsDir = noStoreSetupDirectory(invocation);
 		if (beadsDir == "") {
 			// Without a directory BEADS_DIR stays unset: loadEnvironment and loadServerModeFromConfig look again (:1160-1161, :419, :493), and so does the pre-run (:1170).
 			if (!lookups.beadsDirSet()) {
@@ -1118,15 +1216,30 @@ final class Application {
 		The lookups of upstream selectedNoDBBeadsDir (cmd/bd/main.go:509-539):
 		none when a --db, BEADS_DB or BD_DB path selects the directory, which
 		resolveCommandBeadsDir derives from the path; else FindBeadsDir, through
-		BEADS_DIR once a setup or -C set it (:529), and otherwise only when no
-		`db` setting selects the directory (:538).
+		BEADS_DIR once a setup or -C set it (:529), and then, when that finds
+		none, again unless a `db` setting selects the directory (:533, :538).
 	**/
 	function noStoreLookups(invocation:Invocation):Void {
 		final selection:WorkspaceSelection = {directory: invocation.directory, databasePath: invocation.databasePath};
 		if (WorkspaceEnvironment.noStorePathSelects(selection))
 			return;
-		if (lookups.beadsDirSet() || !WorkspaceEnvironment.databaseSettingSelects(selection))
+		if (lookups.beadsDirSet() && lookups.findBeadsDir() != "")
+			return;
+		if (!WorkspaceEnvironment.databaseSettingSelects(selection))
 			lookups.findBeadsDir();
+	}
+
+	/**
+		The `.beads` directory that upstream's pre-run sets up first for
+		`where`, `version` and help pages, and that its legacy-workspace guard
+		reads for `where`, or "" for none: noStoreBeadsDir, which with -C
+		upstream's FindBeadsDir finds again through BEADS_DIR (see
+		findThroughBeadsDir).
+	**/
+	function noStoreSetupDirectory(invocation:Invocation):String {
+		final beadsDir = noStoreBeadsDir(invocation);
+		final pathSelects = WorkspaceEnvironment.noStorePathSelects({directory: invocation.directory, databasePath: invocation.databasePath});
+		return beadsDir != "" && !pathSelects && invocation.directory != "" ? findThroughBeadsDir(invocation, beadsDir) : beadsDir;
 	}
 
 	/** `where` sets up its directory in the pre-run and again in its command body; `version` and help pages only in the pre-run. */
@@ -1164,21 +1277,30 @@ final class Application {
 		FindDatabasePath at :1250), upstream sets up the directory that
 		resolveCommandBeadsDir derives from it (:1316-1317), which prints its
 		config warning and shared-server notice, and its legacy-workspace guard
-		(:1319) stops a metadata.json there that does not load, before anything
-		is written. What: that setup (see loadSelectedConfig) for
-		WorkspaceEnvironment.variableBeadsDir; then, for such a metadata.json,
-		upstream's load warning and error; else this build's refusal. How: it
-		only reads.
+		(:1319) stops a metadata.json there that does not load, or a legacy
+		workspace layout, before anything is written. Its lookups and its
+		guardUndiscoveredLegacyWorkspace come first (:1210-1243), as for any
+		command that finds no workspace. What: those lookups and that guard
+		(see storeLookupsWithoutWorkspace), that setup (see loadSelectedConfig)
+		for WorkspaceEnvironment.variableBeadsDir, then the guard there: for
+		such a metadata.json upstream's load warning and error, or the guard's
+		refusal; else this build's refusal. How: it only reads.
 	**/
 	function refuseDatabaseVariablePath(invocation:Invocation, name:String):Int {
+		final stop = storeLookupsWithoutWorkspace(invocation);
+		if (stop != null)
+			return stop;
 		final beadsDir = WorkspaceEnvironment.variableBeadsDir(environmentValue(name));
 		loadSelectedConfig(beadsDir, [beadsDir]);
-		switch readMetadataFields(beadsDir) {
-			case MetadataFieldsUndecodable(error):
+		switch LegacyUpgradeGuard.check(beadsDir, () -> LayeredConfig.forWorkspace(beadsDir).sharedServerMode()) {
+			case GuardLoadFailed(error):
 				output.writeStderr(metadataLoadWarning(beadsDir, error));
 				output.writeStderr(metadataLoadFailure(error));
 				return 1;
-			case MetadataAbsent | MetadataFields(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+			case GuardRefused(error):
+				output.writeStderr('Error: ${error}\n');
+				return 1;
+			case GuardPasses | GuardUnknown:
 		}
 		return runModeAwareFailure(invocation.output, databaseVariableRefusal(invocation.command, name));
 	}
@@ -1365,7 +1487,7 @@ final class Application {
 		final selected = workspace.discover(invocation.directory, invocation.databasePath);
 		final bound = whereBeadsDir;
 		if (bound == null)
-			return selected;
+			return derivedWhereWorkspace(invocation, selected);
 		switch selected {
 			case Found(location) if (location.path == bound):
 				return selected;
@@ -1380,6 +1502,25 @@ final class Application {
 			case Found(_) | NotFound | InvalidSelection(_):
 				found;
 		};
+	}
+
+	/**
+		The workspace that upstream's `where` reports for a database path:
+		the directory that resolveCommandBeadsDir derives from the path (see
+		noStoreBeadsDir), which names the workspace that discovery found
+		(`selected`) in its own words. For a path given in another letter case
+		that is the canonical path, with each name's stored case on macOS, when
+		the path's canonical parent claims it.
+	**/
+	function derivedWhereWorkspace(invocation:Invocation, selected:WorkspaceDiscovery):WorkspaceDiscovery {
+		final location = switch selected {
+			case Found(location): location;
+			case NotFound | InvalidSelection(_): return selected;
+		};
+		final derived = noStoreBeadsDir(invocation);
+		if (derived == "" || derived == location.path || !WorkspaceEnvironment.samePath(derived, location.path))
+			return selected;
+		return Found(relocated(location, derived, location.databaseName, location.foundPath));
 	}
 
 	/**
@@ -1406,7 +1547,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFoundWithoutWorkspace();
+				runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1475,7 +1616,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFoundWithoutWorkspace();
+				runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1504,7 +1645,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFoundWithoutWorkspace();
+				runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1527,7 +1668,7 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
-				runDatabaseNotFoundWithoutWorkspace();
+				runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1561,7 +1702,7 @@ final class Application {
 	function runList(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1603,7 +1744,7 @@ final class Application {
 	function runDepList(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1675,7 +1816,7 @@ final class Application {
 	function runDepCycles(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1765,7 +1906,7 @@ final class Application {
 	function runDepTree(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -1996,7 +2137,7 @@ final class Application {
 	function runGraphCheck(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2070,7 +2211,7 @@ final class Application {
 	function runGraph(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2416,7 +2557,7 @@ final class Application {
 	function runWithIssueQuery(invocation:Invocation, action:(IssueQueryPort, WorkspaceLocation) -> Int):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2490,7 +2631,7 @@ final class Application {
 	function runBlocked(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2557,7 +2698,7 @@ final class Application {
 	function runComments(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -2698,7 +2839,7 @@ final class Application {
 			return runModeAwareFailure(OutputMode.Human, TaskSnapshot.ROUTE_UNAVAILABLE);
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3082,7 +3223,9 @@ final class Application {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound:
-				storeLookupsWithoutWorkspace();
+				final stop = storeLookupsWithoutWorkspace(invocation);
+				if (stop != null)
+					return stop;
 				storeFree ? action(startup, null, null) : runDatabaseNotFound(startup.sharedServerMode());
 			case Found(location):
 				boundWorkspace = location;
@@ -3092,7 +3235,11 @@ final class Application {
 				final selection = findsDatabase(invocation, location) ? validateDatabaseSelection(invocation, location) : Accepted;
 				switch selection {
 					case PlainFailure(message):
-						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
+						final initializations = storeInitializations(invocation, location);
+						final config = loadStoreConfig(invocation, location, initializations, true);
+						final targetRefusal = guardBoundTarget(location, initializations, config);
+						if (targetRefusal != null)
+							return runStoreFailure(targetRefusal);
 						final gateRefusal = holdWorkspaceGates(invocation, location, config);
 						if (gateRefusal != null)
 							return runModeAwareFailure(invocation.output, gateRefusal);
@@ -3100,7 +3247,11 @@ final class Application {
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runStoreFailure(message);
 					case ModeAwareFailure(message):
-						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
+						final initializations = storeInitializations(invocation, location);
+						final config = loadStoreConfig(invocation, location, initializations, true);
+						final targetRefusal = guardBoundTarget(location, initializations, config);
+						if (targetRefusal != null)
+							return runStoreFailure(targetRefusal);
 						final gateRefusal = holdWorkspaceGates(invocation, location, config);
 						if (gateRefusal != null)
 							return runModeAwareFailure(invocation.output, gateRefusal);
@@ -3119,7 +3270,11 @@ final class Application {
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound(config.sharedServerMode());
 						} else {
-							final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
+							final initializations = storeInitializations(invocation, location);
+							final config = loadStoreConfig(invocation, location, initializations, true);
+							final targetRefusal = guardBoundTarget(location, initializations, config);
+							if (targetRefusal != null)
+								return runStoreFailure(targetRefusal);
 							final gateRefusal = holdWorkspaceGates(invocation, location, config);
 							if (gateRefusal != null)
 								return runModeAwareFailure(invocation.output, gateRefusal);
@@ -3159,7 +3314,7 @@ final class Application {
 	function runLabel(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3324,7 +3479,7 @@ final class Application {
 	function runCount(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3350,7 +3505,7 @@ final class Application {
 	function runReady(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3618,7 +3773,7 @@ final class Application {
 	function runSearch(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3671,7 +3826,7 @@ final class Application {
 	function runQuery(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3840,7 +3995,7 @@ final class Application {
 	function runStale(invocation:Invocation):Int {
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -3902,7 +4057,7 @@ final class Application {
 			return runModeAwareFailure(invocation.output, "operation 'orphans --fix' is not allowed in read-only mode");
 		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: runDatabaseNotFoundWithoutWorkspace();
+			case NotFound: runDatabaseNotFoundWithoutWorkspace(invocation);
 			case Found(location):
 				switch validateStoreSelection(invocation, location) {
 					case PlainFailure(message): runStoreFailure(message);
@@ -6802,6 +6957,24 @@ final class Application {
 	}
 
 	/**
+		Upstream's legacy-workspace guard after its second setup
+		(cmd/bd/main.go:1319), for the second target of a redirect chain that
+		a command which opens a store binds (see discoverStoreWorkspace), with
+		`config` reloaded for that target. Upstream's first guard read the
+		first target. Returns the refusal, or null when the command goes on.
+		A metadata.json there that does not load makes FindDatabasePath find
+		no database, so upstream never sets that target up.
+	**/
+	static function guardBoundTarget(location:WorkspaceLocation, initializations:Int, config:LayeredConfig):Null<String> {
+		if (initializations < 2 || location.foundPath == null)
+			return null;
+		return switch LegacyUpgradeGuard.check(location.path, () -> config.sharedServerMode()) {
+			case GuardRefused(error): error;
+			case GuardPasses | GuardLoadFailed(_) | GuardUnknown: null;
+		};
+	}
+
+	/**
 		The `.beads` directory that upstream gates: resolveCommandBeadsDir of
 		the database path that its pre-run binds (cmd/bd/main.go:1316). A
 		--db path is that path as typed, so `--db .beads` names a `.beads`
@@ -6823,21 +6996,102 @@ final class Application {
 		return boundSetupDirectory(location);
 	}
 
-	/** runDatabaseNotFound without a workspace: upstream then uses a SQL server only in shared-server mode, from the process-start config. */
-	function runDatabaseNotFoundWithoutWorkspace():Int {
-		storeLookupsWithoutWorkspace();
+	/**
+		runDatabaseNotFound without a workspace: upstream then uses a SQL server
+		only in shared-server mode, from the process-start config. Its
+		legacy-workspace guard can stop the command first.
+	**/
+	function runDatabaseNotFoundWithoutWorkspace(invocation:Invocation):Int {
+		final stop = storeLookupsWithoutWorkspace(invocation);
+		if (stop != null)
+			return stop;
 		return runDatabaseNotFound(LayeredConfig.atStartup().sharedServerMode());
 	}
 
 	/**
 		The lookups of upstream's pre-run for a command that opens a store when
 		it finds no workspace: GetRedirectInfo with preserveRedirectSourceDatabase
-		(cmd/bd/main.go:1210), FindBeadsDir (:1214) and FindDatabasePath (:1250).
+		(cmd/bd/main.go:1210), FindBeadsDir (:1214), and FindDatabasePath
+		(:1250) after guardUndiscoveredLegacyWorkspace (:1242). Returns the
+		exit code when that guard stops the command.
 	**/
-	function storeLookupsWithoutWorkspace():Void {
+	function storeLookupsWithoutWorkspace(invocation:Invocation):Null<Int> {
 		lookups.preserveSourceDatabase(lookups.getRedirectInfo());
 		lookups.findBeadsDir();
+		final stop = guardUndiscoveredWorkspace(invocation);
+		if (stop != null)
+			return stop;
 		lookups.findDatabasePath();
+		return null;
+	}
+
+	/**
+		storeLookupsWithoutWorkspace's guard for a command that opens a store
+		when a BEADS_DB path selects its workspace, which needs no workspace
+		from the current directory. BEADS_DIR is unset then, so the guard's walk
+		prints nothing: its lookups and refusal print only when it refuses,
+		and the store selection runs the lookups otherwise (see loadStoreConfig).
+	**/
+	function guardUndiscoveredStoreWorkspace(invocation:Invocation):Null<Int> {
+		final outcome = undiscoveredGuardOutcome();
+		if (outcome.match(GuardPasses))
+			return null;
+		lookups.preserveSourceDatabase(lookups.getRedirectInfo());
+		lookups.findBeadsDir();
+		return reportGuardStop(invocation, outcome);
+	}
+
+	/**
+		Upstream guardUndiscoveredLegacyWorkspace
+		(cmd/bd/legacy_upgrade_guard.go:177-200), which its pre-run runs when
+		it finds no workspace: for `where` (guardLegacyNoStoreCommand,
+		cmd/bd/main.go:865) and for every command that opens a store without a
+		--db path (:1242).
+
+		Why: workspace discovery skips a `.beads` directory that holds only a
+		SQLite `vc.db`, or only a legacy config.json, but upstream still
+		refuses such historical workspaces without a write. What: upstream's
+		guard (LegacyUpgradeGuard.check) for each directory of its walk (see
+		RedirectLookups.undiscoveredBeadsDirs); the first that does not pass
+		stops the command with `Error: <reason>` in every output mode. Its
+		shared-server check reads the process-start config, as no setup ran.
+		Returns the exit code when it stops the command.
+	**/
+	function guardUndiscoveredWorkspace(invocation:Invocation):Null<Int> {
+		final outcome = undiscoveredGuardOutcome();
+		return outcome.match(GuardPasses) ? null : reportGuardStop(invocation, outcome);
+	}
+
+	/** The outcome of upstream's guard for the first directory of guardUndiscoveredWorkspace's walk that does not pass. */
+	function undiscoveredGuardOutcome():LegacyGuardOutcome {
+		final sharedServer = () -> LayeredConfig.atStartup().sharedServerMode();
+		for (beadsDir in lookups.undiscoveredBeadsDirs()) {
+			final outcome = LegacyUpgradeGuard.check(beadsDir, sharedServer);
+			if (!outcome.match(GuardPasses))
+				return outcome;
+		}
+		return GuardPasses;
+	}
+
+	/**
+		Prints how upstream's guard stops a command for a directory that no
+		setup bound: its load error or its refusal, as text in every output
+		mode. A legacy file whose decoding this build cannot tell is refused.
+	**/
+	function reportGuardStop(invocation:Invocation, outcome:LegacyGuardOutcome):Int {
+		return switch outcome {
+			case GuardLoadFailed(error):
+				output.writeStderr(metadataLoadFailure(error));
+				1;
+			case GuardRefused(error):
+				output.writeStderr('Error: ${error}\n');
+				1;
+			case GuardUnknown:
+				runModeAwareFailure(invocation.output,
+					'${commandPath(invocation.command)} is not available yet when .beads/metadata.json does not decode in this build');
+			case GuardPasses:
+				0;
+		};
 	}
 
 	/**
@@ -6963,10 +7217,33 @@ final class Application {
 			|| WorkspaceEnvironment.storeChainTarget({directory: invocation.directory, databasePath: invocation.databasePath}, found) == null)
 			return discovery;
 		return switch WorkspaceEnvironment.discoverWithBeadsDir(workspace, found.path) {
+			// A metadata.json there that does not load makes upstream's FindDatabasePath find no database (findDatabaseInBeadsDir, beads.go:476-482).
+			case Found(target) if (target.path != found.path && invocation.directory == "" && !metadataLoads(target.path)):
+				Found(withoutDatabase(found));
 			case Found(target) if (target.path != found.path):
 				Found(relocated(target, target.path, found.databaseName, found.path));
 			case Found(_) | NotFound | InvalidSelection(_):
 				discovery;
+		};
+	}
+
+	/** Whether configfile.Load reads the metadata.json, or legacy config.json, of `beadsDir`, finds none, or may read it. */
+	static function metadataLoads(beadsDir:String):Bool {
+		return !readMetadataFields(beadsDir).match(MetadataFieldsUndecodable(_));
+	}
+
+	/** `location` where upstream's pre-run finds no database, so the command reports that (see findsDatabase). */
+	static function withoutDatabase(location:WorkspaceLocation):WorkspaceLocation {
+		return {
+			path: location.path,
+			yamlPrefix: location.yamlPrefix,
+			databasePath: location.databasePath,
+			databaseName: location.databaseName,
+			databaseMissing: true,
+			proxiedServer: location.proxiedServer,
+			listLimitConfigured: location.listLimitConfigured,
+			listLimit: location.listLimit,
+			foundPath: location.foundPath
 		};
 	}
 
@@ -6996,7 +7273,11 @@ final class Application {
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		boundWorkspace = location;
-		final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
+		final initializations = storeInitializations(invocation, location);
+		final config = loadStoreConfig(invocation, location, initializations, true);
+		final targetRefusal = guardBoundTarget(location, initializations, config);
+		if (targetRefusal != null)
+			return PlainFailure(targetRefusal);
 		final gateRefusal = holdWorkspaceGates(invocation, location, config);
 		if (gateRefusal != null)
 			return ModeAwareFailure(gateRefusal);
@@ -7225,7 +7506,9 @@ final class Application {
 		A plain open then creates that directory and the database, which this
 		build refuses. A strict read-only open fails after its identifier
 		check, with the error that this prints as upstream does
-		(ConfigProbes.embeddedStoreOpenError).
+		(ConfigProbes.embeddedStoreOpenError). When a file takes the place of
+		that directory, both opens fail before they write, and this prints
+		their errors (ConfigProbes.embeddedStoreCreateError for a plain open).
 	**/
 	function validateEmbeddedDatabase(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
 		if (invocation.global || location.proxiedServer)
@@ -7267,8 +7550,13 @@ final class Application {
 			}
 		}
 		final strict = strictReadonly(invocation, LayeredConfig.forWorkspace(location.path));
-		if (storeError != null && !strict)
+		if (storeError != null && !strict) {
+			// A plain open that cannot create the directory, as for a file of that name, fails before it writes.
+			final createError = ConfigProbes.embeddedStoreCreateError(location.path);
+			if (createError != null)
+				return PlainFailure('failed to open database: ${createError}');
 			return ModeAwareFailure('${path} is not available yet for an embedded workspace without .beads/embeddeddolt in this build');
+		}
 		if (!isEmbeddedDatabaseIdentifier(selected))
 			return PlainFailure('failed to open database: ${InvalidDatabaseName.error(selected, strict ? ReadOnlyOpenName : InitSchemaName)}');
 		if (storeError != null)

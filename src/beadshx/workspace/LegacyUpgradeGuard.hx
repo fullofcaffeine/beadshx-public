@@ -1,5 +1,8 @@
 package beadshx.workspace;
 
+import beadshx.config.ConfigShow.WorkspaceMetadataFields;
+import beadshx.config.ConfigShow.readLegacyConfigFields;
+import beadshx.config.ConfigShow.readMetadataFields;
 import beadshx.config.LayeredConfig.goQuote;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.nativeextern.os.OsPkg;
@@ -12,10 +15,28 @@ import haxe.io.Bytes;
 import sys.FileSystem;
 import sys.io.File;
 
+/** What upstream guardLegacyUpgradeWorkspace returns for one `.beads` directory, with its LoadForDiscovery step. */
+enum LegacyGuardOutcome {
+	/** The command goes on. */
+	GuardPasses;
+
+	/**
+		metadata.json, or a legacy config.json without metadata.json, does not
+		read or decode: upstream stops with `loading config: <error>`.
+	**/
+	GuardLoadFailed(error:String);
+
+	/** The guard's refusal, which upstream prints after `Error: ` in every output mode. */
+	GuardRefused(error:String);
+
+	/** The file is valid JSON whose fields the typed decoder cannot tell (MetadataFieldsUnsupported), so the answer is unknown. */
+	GuardUnknown;
+}
+
 /**
-	Upstream guardLegacyUpgradeWorkspace (cmd/bd/legacy_upgrade_guard.go:24-69)
-	after its LoadForDiscovery step, which Application.checkWorkspaceMetadata
-	runs.
+	Upstream guardLegacyUpgradeWorkspace (cmd/bd/legacy_upgrade_guard.go:24-69).
+	Application.checkWorkspaceMetadata runs its LoadForDiscovery step itself
+	and calls `refusal`; `check` runs both steps for one directory.
 
 	Why: upstream's pre-run refuses pre-Dolt and legacy-Dolt workspaces, and
 	workspaces with a removed or unknown backend, before it tracks a version,
@@ -36,6 +57,27 @@ import sys.io.File;
 **/
 @:goNative
 final class LegacyUpgradeGuard {
+	/**
+		The whole guard for `beadsDir`: LoadForDiscovery of its metadata.json,
+		or else of a legacy config.json (none gives a nil config), then
+		`refusal`. A directory that does not exist passes.
+	**/
+	public static function check(beadsDir:String, sharedServer:() -> Bool):LegacyGuardOutcome {
+		final fields = switch readMetadataFields(beadsDir) {
+			case MetadataAbsent: null;
+			case MetadataFields(decoded): decoded;
+			case MetadataFieldsLegacyOnly:
+				final legacy = readLegacyConfigFields(beadsDir);
+				if (legacy == null)
+					return GuardUnknown;
+				legacy;
+			case MetadataFieldsUndecodable(error): return GuardLoadFailed(error);
+			case MetadataFieldsUnsupported: return GuardUnknown;
+		};
+		final text = refusal(beadsDir, fields, sharedServer);
+		return text == null ? GuardPasses : GuardRefused(text);
+	}
+
 	public static function refusal(beadsDir:String, metadata:Null<Map<String, String>>, sharedServer:() -> Bool):Null<String> {
 		if (isHistoricalSqliteWorkspace(beadsDir, metadata))
 			return refusalText("historical SQLite workspace");

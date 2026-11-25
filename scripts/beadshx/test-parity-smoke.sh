@@ -3183,10 +3183,14 @@ candidate_only_setup=break_metadata
 expect_candidate_failure metadata-db-flag-unported "" \
 	"Error: count is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build" "" \
 	--db .beads/embeddeddolt count
-expect_candidate_failure metadata-db-flag-where-json-unported \
-	'{"error":"where is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build","schema_version":1}' "" "" \
-	--db .beads/embeddeddolt where --json
 candidate_only_setup=""
+# where, version and help pages set up the directory that upstream derives from the path, which prints the load
+# warning there, and where stops with the load error (beadshx-m08-01.12).
+real_database_setup=break_metadata
+compare_real_database metadata-db-flag-where-json exact --db .beads/embeddeddolt where --json
+compare_real_database metadata-db-flag-version stderr-only --db .beads/embeddeddolt version
+compare_real_database metadata-db-flag-help-command exact --db .beads/embeddeddolt help count
+real_database_setup=""
 # Upstream creates the database that metadata.json selects when the embedded store lacks it: the default
 # `beads` for null, {} or no dolt_database, or the name that dolt_database, its last duplicate or
 # BEADS_DOLT_SERVER_DATABASE gives. This build refuses before it opens anything.
@@ -3644,6 +3648,50 @@ compare_real_database chain-second-target-broken-config-count exact count
 compare_real_database chain-second-target-broken-config-where exact where
 chain_broken_config_target=""
 real_database_setup=""
+# Upstream's legacy-workspace guard runs again after the second setup (cmd/bd/main.go:1319), so a legacy layout in
+# the second target stops a command that opens a store, after the first target's setup and guard. where guards only
+# its pre-run setup, the first target (beadshx-m08.54). With -C, both setups and the first guard take the second
+# target, also for where, so a legacy first target no longer counts. A metadata.json there that does not load makes
+# FindDatabasePath find no database, so upstream reports that, except with -C, where the first setup loads it, and
+# where's second setup warns.
+chain_second_target_layout=""
+redirect_chain_with_second_target_layout() {
+	redirect_chain_to_workspace "$1"
+	case "$chain_second_target_layout" in
+	legacy-dolt) mv -f "$1/work/final/.beads/embeddeddolt" "$1/work/final/.beads/dolt" ;;
+	first-target-legacy-dolt) mv -f "$1/work/sub/.beads/embeddeddolt" "$1/work/sub/.beads/dolt" ;;
+	legacy-server)
+		jq '.dolt_mode = "server"' "$1/work/final/.beads/metadata.json" >"$1/metadata.json"
+		cat "$1/metadata.json" >"$1/work/final/.beads/metadata.json"
+		rm -f "$1/metadata.json"
+		printf '0.58.0\n' >"$1/work/final/.beads/.local_version"
+		;;
+	broken-metadata) printf '{bad' >"$1/work/final/.beads/metadata.json" ;;
+	esac
+}
+real_database_setup=redirect_chain_with_second_target_layout
+chain_second_target_layout=legacy-dolt
+compare_real_database chain-second-target-legacy-dolt-count exact count
+compare_real_database chain-second-target-legacy-dolt-list-json exact list --json
+compare_real_database chain-second-target-legacy-dolt-config-get exact config get issue_prefix
+compare_real_database chain-second-target-legacy-dolt-change-directory-count exact -C . count
+compare_real_database chain-second-target-legacy-dolt-where exact where
+compare_real_database chain-second-target-legacy-dolt-change-directory-where exact -C . where
+compare_real_database chain-second-target-legacy-dolt-change-directory-where-json exact -C . where --json
+chain_second_target_layout=first-target-legacy-dolt
+compare_real_database chain-first-target-legacy-dolt-count exact count
+compare_real_database chain-first-target-legacy-dolt-change-directory-count exact -C . count
+compare_real_database chain-first-target-legacy-dolt-change-directory-list-json exact -C . list --json
+compare_real_database chain-first-target-legacy-dolt-change-directory-where exact -C . where
+chain_second_target_layout=legacy-server
+compare_real_database chain-second-target-legacy-server-show exact show "$real_database_issue_id"
+chain_second_target_layout=broken-metadata
+compare_real_database chain-second-target-broken-metadata-count exact count
+compare_real_database chain-second-target-broken-metadata-config-get exact config get issue_prefix
+compare_real_database chain-second-target-broken-metadata-change-directory-count exact -C . count
+compare_real_database chain-second-target-broken-metadata-where exact where
+chain_second_target_layout=""
+real_database_setup=""
 # Upstream then reaches for the shared server, which creates files under HOME and TMPDIR; this build refuses
 # after the same warnings and the notice for the first target.
 redirect_chain_first_target_pins_embedded() {
@@ -4059,6 +4107,22 @@ real_database_extra_env=("BEADS_DOLT_DATA_DIR=<work>/.beads/data")
 compare_real_database data-dir-absolute-variable-readonly-stale exact --readonly stale
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database_metadata data-dir-metadata-readonly-count exact '.dolt_data_dir = "data"' --readonly count
+# A file in place of .beads/embeddeddolt fails both opens before they write: the strict read-only open in the Dolt
+# driver's directory check, and a plain open when it creates the directory, before its name check (beadshx-m08.54).
+make_custom_data_directory_beside_store_file() {
+	make_custom_data_directory "$1"
+	printf 'not a directory\n' >"$1/work/.beads/embeddeddolt"
+}
+real_database_setup=make_custom_data_directory_beside_store_file
+real_database_extra_env=(BEADS_DOLT_DATA_DIR=data)
+compare_real_database data-dir-store-file-readonly-count exact --readonly count
+compare_real_database data-dir-store-file-readonly-list-json exact --readonly list --json
+compare_real_database data-dir-store-file-count exact count
+compare_real_database data-dir-store-file-show-json exact show "$real_database_issue_id" --json
+compare_real_database_metadata data-dir-store-file-readonly-invalid-name exact '.dolt_database = "te-st"' --readonly count
+compare_real_database_metadata data-dir-store-file-invalid-name exact '.dolt_database = "te-st"' count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=make_custom_data_directory
 # A .beads/dolt link is no legacy Dolt directory, so upstream opens the store the same way.
 link_legacy_dolt_directory() {
 	remove_embedded_database "$1"
@@ -4180,6 +4244,81 @@ discovered_sqlite_workspace() {
 }
 real_database_setup=discovered_sqlite_workspace
 compare_real_database historical-sqlite-discovered-list exact list
+# Discovery skips a .beads directory that holds only a vc.db, a backup database or a legacy config.json. When
+# upstream finds no workspace, guardUndiscoveredLegacyWorkspace (cmd/bd/legacy_upgrade_guard.go:177) checks
+# BEADS_DIR's directory, or each .beads from the current directory up to the repository root, for where and every
+# command that opens a store, before FindDatabasePath reads BEADS_DB (beadshx-m08.54, beadshx-m08-01.12). Outside
+# a repository it checks only the current directory's. version runs.
+undiscovered_legacy_file=""
+# printf's %b turns \0 into the NUL byte of the SQLite header.
+undiscovered_legacy_content='SQLite format 3\0parity'
+undiscovered_legacy_workspace() {
+	: "${1:?state root}"
+	find "$1/work/.beads" -mindepth 1 -delete
+	printf '%b' "$undiscovered_legacy_content" >"$1/work/.beads/$undiscovered_legacy_file"
+	mkdir -p "$1/work/sub/dir"
+}
+real_database_setup=undiscovered_legacy_workspace
+undiscovered_legacy_file=vc.db
+compare_real_database undiscovered-vc-db-count exact count
+compare_real_database undiscovered-vc-db-where-json exact where --json
+compare_real_database undiscovered-vc-db-config-get exact config get issue_prefix
+compare_real_database undiscovered-vc-db-version stderr-only version
+real_database_directory=sub/dir
+compare_real_database undiscovered-vc-db-subdirectory-list exact list
+real_database_directory=""
+real_database_extra_env=('BEADS_DIR=<work>/.beads')
+compare_real_database undiscovered-vc-db-beads-dir-show exact show "$real_database_issue_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+undiscovered_legacy_file=beads.backup.db
+compare_real_database undiscovered-backup-db-ready exact ready
+undiscovered_legacy_file=config.json
+undiscovered_legacy_content='{"backend":"postgres"}'
+compare_real_database undiscovered-legacy-config-removed-backend-count exact count
+undiscovered_legacy_content='{bad'
+compare_real_database undiscovered-legacy-config-broken-where exact where
+undiscovered_legacy_content='SQLite format 3\0parity'
+undiscovered_legacy_without_repository() {
+	undiscovered_legacy_workspace "$1"
+	rm -rf "$1/work/.git"
+}
+real_database_setup=undiscovered_legacy_without_repository
+undiscovered_legacy_file=vc.db
+compare_real_database undiscovered-vc-db-outside-repository-count exact count
+real_database_directory=sub/dir
+compare_real_database undiscovered-vc-db-outside-repository-subdirectory-count exact count
+real_database_directory=""
+# The walk comes before a BEADS_DB path selects the workspace: for a path that this build follows, and for one
+# that it refuses. where takes the BEADS_DB directory instead and runs no walk.
+undiscovered_vc_db_beside_workspace() {
+	mkdir "$1/work/db"
+	mv -f "$1/work/.beads" "$1/work/db/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'SQLite format 3\0parity' >"$1/work/.beads/vc.db"
+}
+real_database_setup=undiscovered_vc_db_beside_workspace
+real_database_extra_env=(BEADS_DB=db/.beads)
+compare_real_database beads-db-undiscovered-vc-db-count exact count
+compare_real_database beads-db-undiscovered-vc-db-info-json exact info --json
+compare_real_database beads-db-undiscovered-vc-db-where exact where
+real_database_extra_env=(BEADS_DB=db/.beads/missing/beads.db)
+compare_real_database beads-db-undiscovered-vc-db-deeper-path-list-json exact list --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# With BEADS_DIR naming a directory without project files, the guard follows its redirect once more, and the
+# selection of where looks that directory up twice in the pre-run and in each of its two lookups, so a broken
+# redirect warns that often.
+beads_dir_with_broken_redirect() {
+	: "${1:?state root}"
+	rm -rf "$1/work/.beads"
+	mkdir -p "$1/work/elsewhere/.beads"
+	printf '../missing/.beads\n' >"$1/work/elsewhere/.beads/redirect"
+}
+real_database_setup=beads_dir_with_broken_redirect
+real_database_extra_env=('BEADS_DIR=<work>/elsewhere/.beads')
+compare_real_database undiscovered-beads-dir-broken-redirect-count exact count
+compare_real_database undiscovered-beads-dir-broken-redirect-where exact where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+undiscovered_legacy_file=""
 real_database_setup=""
 compare_real_database_metadata removed-backend-sqlite-count exact '.backend = "sqlite"' count
 compare_real_database_metadata removed-backend-postgres-where-json exact '.backend = "postgres"' where --json
@@ -7023,6 +7162,27 @@ real_database_read_only=1
 real_database_setup=move_workspace_with_broken_metadata
 compare_beads_db beads-db-deeper-path-broken-metadata-count exact BEADS_DB=db/.beads/missing/beads.db count
 compare_beads_db beads-db-trailing-slash-broken-metadata-list-json exact BEADS_DB=db/.beads/ list --json
+# where, version and help pages set up the directory that the path selects there, and where guards it
+# (beadshx-m08-01.12): the load warning names it as the path gives it, and where stops with the load error.
+compare_beads_db beads-db-where-deeper-path-broken-metadata exact BEADS_DB=db/.beads/missing/beads.db where
+compare_beads_db beads-db-where-trailing-slash-broken-metadata-json exact BEADS_DB=db/.beads/ where --json
+compare_beads_db beads-db-where-database-broken-metadata exact BEADS_DB=db/.beads/embeddeddolt where
+compare_beads_db beads-db-where-workspace-broken-metadata exact BEADS_DB=db/.beads where
+compare_beads_db beads-db-bd-db-where-broken-metadata exact BD_DB=db/.beads/missing/beads.db where
+compare_beads_db beads-db-version-broken-metadata stderr-only BEADS_DB=db/.beads/missing/beads.db version
+compare_beads_db beads-db-help-command-broken-metadata exact BEADS_DB=db/.beads/beads.db help count
+compare_beads_db db-flag-where-broken-metadata exact BEADSHX_PARITY_EXTRA=1 --db db/.beads where
+# The guard stops a legacy layout there, for where and for a command that opens a store.
+move_workspace_to_legacy_dolt_db() {
+	move_workspace_to_db "$1"
+	mv -f "$1/work/db/.beads/embeddeddolt" "$1/work/db/.beads/dolt"
+}
+real_database_setup=move_workspace_to_legacy_dolt_db
+compare_beads_db beads-db-deeper-path-legacy-dolt-count exact BEADS_DB=db/.beads/missing/beads.db count
+compare_beads_db beads-db-workspace-legacy-dolt-list-json exact BEADS_DB=db/.beads list --json
+compare_beads_db beads-db-where-deeper-path-legacy-dolt exact BEADS_DB=db/.beads/missing/beads.db where
+compare_beads_db beads-db-where-workspace-legacy-dolt-json exact BEADS_DB=db/.beads where --json
+real_database_setup=move_workspace_with_broken_metadata
 # Upstream loads the .env file of the directory that it sets up. For `where`, `version` and help pages
 # that is the directory derived from a BEADS_DB, BD_DB or db setting path, even when a workspace is
 # found from the current directory: the .env file of that workspace stays unread.
@@ -7111,19 +7271,21 @@ expect_candidate_failure db-setting-other-json-setting-count-unported \
 	'{"error":"count is not available yet when the db setting names a database in this build","schema_version":1}' "" "" count
 candidate_only_setup=""
 other_json_setting=""
-# A db setting that selects a workspace whose metadata.json does not decode names that workspace as its
-# path gives it, as a --db path does, so this build refuses where there.
+# A db setting that selects a workspace whose metadata.json does not decode: the setup of that directory prints the
+# load warning, which names it as the setting's path gives it, and where stops with the load error.
 break_other_metadata_with_setting() {
 	other_database_setting=other/.beads/beads.db
 	set_other_database_setting "$1"
 	other_database_setting=""
 	printf '{bad' >"$1/work/other/.beads/metadata.json"
 }
-candidate_only_setup=break_other_metadata_with_setting
-expect_candidate_failure db-setting-other-broken-metadata-where-unported "" \
-	"Error: where is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build" "" \
-	where
-candidate_only_setup=""
+real_database_read_only=1
+real_database_setup=break_other_metadata_with_setting
+compare_real_database db-setting-other-broken-metadata-where exact where
+compare_real_database db-setting-other-broken-metadata-version stderr-only version
+compare_real_database db-setting-other-broken-metadata-help-command exact help count
+real_database_setup=""
+real_database_read_only=""
 # Before a refusal this build loads the same .env file, which can turn shared-server mode and JSON on:
 # for a store command the directory that the BEADS_DB path or the db setting selects.
 move_workspace_with_dotenv_selectors() {
@@ -7141,6 +7303,20 @@ candidate_only_setup=add_other_workspace_with_setting_and_dotenv
 store_refusal_notice="$shared_server_notice"
 expect_store_refusal count-db-setting-other-dotenv-notice-unported "$database_reason" count count
 store_refusal_notice=""
+candidate_only_setup=""
+# The json setting of that directory's config.yaml sets the output mode of the refusal too, as upstream's setup
+# rereads it there (beadshx-m08-01.12).
+move_workspace_with_json_setting() {
+	move_workspace_to_db "$1"
+	printf 'json: true\n' >>"$1/work/db/.beads/config.yaml"
+}
+candidate_only_setup=move_workspace_with_json_setting
+expect_beads_db_refusal beads-db-deeper-path-json-setting-unported BEADS_DB=db/.beads/missing/beads.db \
+	'{"error":"count is not available yet when BEADS_DB names this path in this build","schema_version":1}' "" count
+expect_beads_db_refusal beads-db-where-deeper-path-json-setting-unported BEADS_DB=db/.beads/missing/beads.db \
+	'{"error":"where is not available yet when BEADS_DB names this path in this build","schema_version":1}' "" where
+expect_beads_db_refusal beads-db-where-bd-db-json-setting-unported BD_DB=db/.beads/ \
+	'{"error":"where is not available yet when BD_DB names this path in this build","schema_version":1}' "" where
 candidate_only_setup=""
 # On macOS upstream's CanonicalizePath also takes each name's case from the file system. A path typed
 # in another case then names the directory as stored where upstream derives it from the canonical
@@ -7160,8 +7336,24 @@ if [[ -d "$real_database_seed/WORK" ]]; then
 	compare_beads_db beads-db-case-absolute-help-command exact BEADS_DB='<work>/DB/.BEADS/embeddeddolt' help count
 	real_database_setup=move_workspace_to_db
 	compare_beads_db beads-db-case-info-json exact BEADS_DB=DB/.BEADS info --json
+	# Upstream reads the workspace for a path typed in another case: FindDatabasePath canonicalizes a BEADS_DB path
+	# before resolveCommandBeadsDir compares its names with .beads, and that comparison also takes the canonical
+	# path's parent for where (beadshx-m08-01.12). A --db path names the same directory in where.
+	compare_beads_db beads-db-case-database-count exact BEADS_DB=DB/.BEADS/embeddeddolt count
+	compare_beads_db beads-db-case-absolute-database-list-json exact BEADS_DB='<work>/DB/.BEADS/embeddeddolt' list --json
+	compare_beads_db beads-db-case-database-info-json exact BEADS_DB=DB/.BEADS/embeddeddolt info --json
+	compare_beads_db beads-db-case-database-where exact BEADS_DB=DB/.BEADS/embeddeddolt where
+	compare_beads_db beads-db-case-legacy-file-where-json exact BEADS_DB=DB/.BEADS/beads.db where --json
+	compare_beads_db beads-db-case-bd-db-where-json exact BD_DB=DB/.BEADS/embeddeddolt where --json
+	compare_beads_db db-flag-case-database-where exact BEADSHX_PARITY_EXTRA=1 --db DB/.BEADS/embeddeddolt where
 	real_database_setup=""
 	real_database_read_only=""
+	# For a missing file upstream also creates a workspace gate lock named after the typed directory, here
+	# work/db/.BEADS.gate.lock, so these cases skip the read-only check of the upstream side.
+	real_database_setup=move_workspace_to_db
+	compare_beads_db beads-db-case-legacy-file-count exact BEADS_DB=DB/.BEADS/beads.db count
+	compare_beads_db beads-db-case-legacy-file-info-json exact BEADS_DB=DB/.BEADS/beads.db info --json
+	real_database_setup=""
 fi
 
 # Each setup of the selected directory (upstream prepareSelectedCommandContext) runs

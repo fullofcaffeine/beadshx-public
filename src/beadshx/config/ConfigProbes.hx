@@ -175,12 +175,13 @@ final class ConfigProbes {
 	}
 
 	/**
-		Upstream embeddeddolt openReadOnly's check of the store directory
-		(internal/storage/embeddeddolt/store.go:176-183), which a strict
+		Upstream embeddeddolt openReadOnly's checks of the store directory
+		(internal/storage/embeddeddolt/store.go:176-195), which a strict
 		read-only open runs after its identifier check: its error when os.Stat
-		of the absolute `.beads/embeddeddolt` of `beadsDir` fails, or null when
-		a directory or a file of that name exists. Upstream's pre-run prints it
-		after `failed to open database: `.
+		of the absolute `.beads/embeddeddolt` of `beadsDir` fails; the Dolt
+		driver's error when that is no directory (embedded.ParseDSN, which
+		OpenSQL runs first, wrapped in `open db: `); or null for a directory.
+		Upstream's pre-run prints it after `failed to open database: `.
 	**/
 	public static function embeddedStoreOpenError(beadsDir:String):Null<String> {
 		final absolute = FilepathPkg.abs(beadsDir);
@@ -188,8 +189,30 @@ final class ConfigProbes {
 		if (absoluteError != null)
 			return 'embeddeddolt: resolving beads dir: ${absoluteError.message}';
 		final dataDir = FilepathPkg.join(absolute.value1, "embeddeddolt");
-		final error = OsPkg.stat(dataDir).value2;
-		return error == null ? null : 'embeddeddolt: no embedded database at ${dataDir}: ${error.text()}';
+		final result = OsPkg.stat(dataDir);
+		final error = result.value2;
+		if (error != null)
+			return 'embeddeddolt: no embedded database at ${dataDir}: ${error.text()}';
+		final information = result.value1;
+		if (information == null || information.isDir())
+			return null;
+		return 'embeddeddolt: open db: ${dataDir}: is a file. need to specify a directory';
+	}
+
+	/**
+		Upstream embeddeddolt newStore's os.MkdirAll of the store directory
+		(internal/storage/embeddeddolt/store.go:115-122), the first step of a
+		plain open: its error when the absolute `.beads/embeddeddolt` of
+		`beadsDir` exists and is no directory, so the open fails without a
+		write, or null when MkdirAll finds the directory or would create it.
+		Upstream's pre-run prints it after `failed to open database: `.
+	**/
+	public static function embeddedStoreCreateError(beadsDir:String):Null<String> {
+		final absolute = FilepathPkg.abs(beadsDir);
+		if (absolute.value2 != null)
+			return null;
+		final dataDir = FilepathPkg.join(absolute.value1, "embeddeddolt");
+		return statPath(dataDir).match(StatNotDirectory) ? 'embeddeddolt: creating data directory: mkdir ${dataDir}: not a directory' : null;
 	}
 
 	/** Upstream doctor expandPath: a leading `~` becomes the home directory when Go resolves one. */

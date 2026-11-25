@@ -193,7 +193,12 @@ final class WorkspaceEnvironment {
 		from it (refreshBoundCommandConfig, cmd/bd/main.go:1158, :1220, :1318),
 		for `found`, the workspace that discovery found for `selection` (null
 		for none). A `db` setting selects the directory that its path selects
-		(main.go:533, :1316), also when no workspace is found. With -C,
+		(main.go:533, :1316), also when no workspace is found. So does a
+		BEADS_DB or BD_DB path that discovery does not take for `where`,
+		`version` and help pages (see noStoreDirectory), and a BEADS_DB path
+		for a command that opens a store when no workspace is found (see
+		variableBeadsDir); this build refuses there, in the output mode that
+		this directory's config sets, as upstream would print. With -C,
 		BEADS_DIR names the found workspace before the first setup, which
 		takes its redirect target. A command that opens a store also rereads
 		them after it binds the second target of a chain (see
@@ -204,6 +209,15 @@ final class WorkspaceEnvironment {
 	public static function settingsBeadsDir(selection:WorkspaceSelection, use:DatabaseVariableUse, found:Null<WorkspaceLocation>):Null<String> {
 		if (databaseSettingSelects(selection))
 			return commandBeadsDir(LayeredConfig.atStartup().getString("db"), found != null ? found.path : "");
+		// A BEADS_DB or BD_DB path that discovery does not take still names the directory that upstream sets up.
+		final variableDirectory = switch use {
+			case BeforeWorkspace if (selection.databasePath == "" && noStorePathSelects(selection)): noStoreDirectory(selection,
+					found != null ? found.path : "");
+			case WithoutWorkspace if (found == null && selection.databasePath == ""): setupDirectory(selection, use, "");
+			case BeforeWorkspace | WithoutWorkspace: "";
+		};
+		if (variableDirectory != "")
+			return variableDirectory;
 		if (found == null)
 			return null;
 		final pathSelects = switch use {
@@ -442,14 +456,15 @@ final class WorkspaceEnvironment {
 	**/
 	static function selectPath(workspace:WorkspacePort, directory:String, name:String, path:String):DatabaseVariableSelection {
 		final parent = FilepathPkg.dir(path);
-		final inBeadsDirectory = FilepathPkg.base(parent) == ".beads";
+		// Upstream compares the names of the path as given and of its canonical form, which on macOS has each name's stored case.
+		final inBeadsDirectory = FilepathPkg.base(parent) == ".beads" || FilepathPkg.base(canonicalPath(parent)) == ".beads";
 		final selectedPath = switch ConfigProbes.statPath(path) {
 			case StatDirectory if (ConfigProbes.statSucceeds(FilepathPkg.join(path, "metadata.json"))):
 				inBeadsDirectory ? null : path;
 			// Upstream looks for a database inside this directory first, and finds none.
 			case StatDirectory
 				if (inBeadsDirectory
-					&& FilepathPkg.base(path) == "embeddeddolt"
+					&& (FilepathPkg.base(path) == "embeddeddolt" || FilepathPkg.base(canonicalPath(path)) == "embeddeddolt")
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "config.json"))
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "embeddeddolt"))
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "dolt"))):
@@ -769,7 +784,7 @@ final class WorkspaceEnvironment {
 	}
 
 	/** Upstream utils.PathsEqual. */
-	static function samePath(first:String, second:String):Bool {
+	public static function samePath(first:String, second:String):Bool {
 		return comparablePath(first) == comparablePath(second);
 	}
 

@@ -112,7 +112,11 @@ names the directory with the redirect, as upstream does. `where` takes its
 shared-server notice when the second target's `.env` file turns shared-server
 mode on. With `-C`, the first lookup already starts from the first target, so
 every command takes its settings from the second target. A `--db` path
-selects the first target itself.
+selects the first target itself. When the second target's
+`.beads/metadata.json` does not decode, upstream finds no database there, and
+`bdhx` prints the same `no beads database found` error; with `-C` both print
+the load warning and error, and the second setup of `where` prints the
+warning.
 
 Like upstream, `bdhx` has an agent mode for output that AI agents read.
 `BD_AGENT_MODE=1` or any `CLAUDE_CODE` value that is not empty turns it on,
@@ -170,9 +174,12 @@ as a legacy `beads.db`. `bdhx` then reads that workspace with its
 `config.yaml` and `.env` file. `info` prints the database path that upstream
 takes from `BEADS_DB`: the absolute path with symbolic links resolved, or the
 database directory inside it. For a missing file, that is the file. On macOS,
-upstream and `bdhx` take the letter case of each name from the file system
-there, and also when they derive the directory that a path selects, so a path
-typed in another case prints as stored.
+a path typed in another letter case, such as `DB/.BEADS/embeddeddolt` or
+`DB/.BEADS/beads.db`, selects the same workspace, as in upstream. Upstream and
+`bdhx` take the letter case of each name from the file system there, and also
+when they derive the directory that a path selects, so such a path prints as
+stored. `where` prints it so for a `--db` path too. For a missing file the
+names keep the case as typed, as in upstream.
 
 Like upstream, `where` reports the workspace that the `db` setting selects
 when no `--db`, `-C`, `BEADS_DIR`, `BEADS_DB` or `BD_DB` selects one. This can
@@ -189,8 +196,11 @@ and no workspace is found from the current directory.
 
 Like upstream, `bdhx` reads the selected workspace's `.beads/metadata.json`
 (or, when it does not exist, a legacy `.beads/config.json`) before any
-command runs. If the file cannot be read or does not decode, `bdhx` prints
-upstream's `warning: load ...` line. Then `where` and every command that reads
+command runs. For `where`, `version` and help pages, that is the directory
+that a `--db`, `BEADS_DB`, `BD_DB` or `db` setting path selects, as upstream
+derives it. If the file cannot be read or does not decode, `bdhx` prints
+upstream's `warning: load ...` line, which names the directory as the path
+gives it. Then `where` and every command that reads
 the database fail with `Error: loading config: ...` and exit code 1, also with
 `--json`. The error texts are Go's own `encoding/json` errors, for example
 for a number where upstream expects a string, or for a syntax error. `version`,
@@ -229,12 +239,29 @@ with upstream's error for a removed or an unknown backend. Like upstream, the
 guard also reads a legacy `.beads/config.json`, so these errors come before
 the refusal of a legacy-only workspace (see the limits below).
 
+Like upstream, a command that reads the database checks the second target of
+a redirect chain (see above) in the same way, after the setup of that target.
+When no workspace is found, `where` and every command that reads the database
+check the `.beads` directory that `BEADS_DIR` names, or else each `.beads`
+directory from the current directory up to the repository root, also before a
+`BEADS_DB` path selects the workspace. Outside a Git repository only the
+current directory's `.beads` directory counts, as in upstream. So a `.beads`
+directory that holds only a SQLite `vc.db` or a backup database stops them
+with the `historical SQLite workspace` error. A legacy `.beads/config.json`
+there that does not decode stops them with upstream's `Error: loading config:
+...`, without the warning.
+
 A data directory that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names lets
 upstream find the database when `.beads/embeddeddolt` is missing, and `where`
 prints it, as in upstream. Upstream's embedded store still opens
 `.beads/embeddeddolt`. With `--readonly` or the `readonly` setting, `bdhx`
 then prints upstream's `Error: failed to open database: embeddeddolt: no
-embedded database at <dir>` error, after the check of the database name.
+embedded database at <dir>` error, after the check of the database name. When
+a file takes the place of `.beads/embeddeddolt`, both of upstream's opens fail
+before they write, and `bdhx` prints the same errors: `embeddeddolt: open db:
+<dir>: is a file. need to specify a directory` in strict read-only mode, and
+`embeddeddolt: creating data directory: mkdir <dir>: not a directory`, before
+the check of the database name, otherwise.
 
 When the selected workspace has no `.beads/metadata.json` and no legacy
 `.beads/config.json`, every command that reads the database uses the embedded
@@ -539,11 +566,11 @@ Limits:
 - `config show` reports that it is not available yet in a workspace that has
   no database (upstream creates the embedded database there).
 - When `--db` selects a workspace whose `.beads/metadata.json` cannot be read
-  or does not decode, `where` and every command that reads the database
-  report that they are not available yet. For `where`, `BEADS_DB`, `BD_DB`
-  and the `db` setting count too. Upstream then prints the path as given, or
-  opens or creates a database in another directory. In these cases `version`
-  and help pages print no warning.
+  or does not decode, every command that reads the database reports that it
+  is not available yet. Upstream then prints the load warning and error, or
+  opens or creates a database in another directory. `where` reports this too
+  when `bdhx` finds that workspace for a `--db` or `db` setting path, but
+  upstream derives another directory from the path.
 - When `BEADS_DB` (or, for `where`, `BD_DB`) selects with another path,
   `where` and every command that reads the database report that they are not
   available yet. This applies to a missing path outside a `.beads` directory,
@@ -553,12 +580,12 @@ Limits:
   upstream creates an embedded database. `version` and help pages still run.
   Before the refusal, `bdhx` sets up the directory that upstream derives from
   the path: like upstream, it loads the `.env` file there and prints the
-  config warning and the shared-server notice. For a command that reads the
-  database, when `.beads/metadata.json` there does not load, `bdhx` prints
-  upstream's `warning: load ...` line and `Error: loading config: ...`
-  instead of the refusal. On macOS, a path typed in another letter case, such
-  as `DB/.BEADS/embeddeddolt`, is refused too, although upstream reads the
-  workspace.
+  config warning and the shared-server notice. When `.beads/metadata.json`
+  there does not load, `bdhx` prints upstream's `warning: load ...` line and
+  `Error: loading config: ...` instead of the refusal, and a legacy workspace
+  layout there stops the command with upstream's error. The refusal is JSON
+  when the `json` setting of that directory turns JSON on, as upstream rereads
+  it there.
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
@@ -691,14 +718,11 @@ Limits:
   that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names makes upstream create
   the embedded database, unless it is in strict read-only mode. Every command
   that reads the database then reports that it is not available yet for an
-  embedded workspace without `.beads/embeddeddolt`. When a file takes the
-  place of that directory, `bdhx` prints the open error without upstream's
-  `failed to open database: ` prefix.
-- `bdhx` runs upstream's legacy-workspace guard for the workspace that it
-  selects first. Upstream also runs it for the second target of a redirect
-  chain, with `-C` in place of the first target, and, when it finds no
-  workspace, for the `.beads` directories above the current directory.
-  `bdhx` checks a second target only when it is legacy-only (see above).
+  embedded workspace without `.beads/embeddeddolt`.
+- On macOS, `bdhx` takes the stored letter case of a path from the names that
+  its directories list. Upstream first asks the kernel (`F_GETPATH`). This
+  can give other names below a directory that cannot be listed, for a hard
+  link, and for a name stored in another Unicode normalization.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 - `ready --explain` and `graph check` find cycles with upstream's walk, which

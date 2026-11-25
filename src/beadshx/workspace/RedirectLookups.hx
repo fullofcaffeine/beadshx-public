@@ -164,6 +164,41 @@ final class RedirectLookups {
 	}
 
 	/**
+		The `.beads` directories that upstream guardUndiscoveredLegacyWorkspace
+		(cmd/bd/legacy_upgrade_guard.go:177-200) checks, in its order, when the
+		pre-run finds no workspace: BEADS_DIR's directory after its redirect,
+		which prints FollowRedirect's warnings here, or else the `.beads` of
+		each directory from the current one up to the repository root. Outside
+		a repository that is only the current directory's: upstream
+		canonicalizes the empty root to the current directory.
+	**/
+	public function undiscoveredBeadsDirs():Array<String> {
+		final variable = beadsDirVariable();
+		if (variable != "")
+			return [follow(RedirectSource.canonicalizePath(variable))];
+		final root = repositoryRoot();
+		final boundary = comparisonKey(RedirectSource.canonicalizePath(root != "" ? root : Sys.getCwd()));
+		final directories = new Array<String>();
+		var current = RedirectSource.canonicalizePath(Sys.getCwd());
+		while (true) {
+			directories.push(FilepathPkg.join(current, ".beads"));
+			if (comparisonKey(current) == boundary)
+				break;
+			final parent = FilepathPkg.dir(current);
+			if (parent == current)
+				break;
+			current = parent;
+		}
+		return directories;
+	}
+
+	/** Upstream utils.PathsEqual for two canonical paths: in lower case on macOS and Windows. */
+	static function comparisonKey(path:String):String {
+		final system = Sys.systemName();
+		return system == "Mac" || system == "Windows" ? path.toLowerCase() : path;
+	}
+
+	/**
 		Upstream FindBeadsDirFrom (internal/beads/beads.go:600-680) without its
 		worktree and jj fallbacks: the walk from `start` (:636), which stops at
 		the first `.beads` whose redirect target has project files.
