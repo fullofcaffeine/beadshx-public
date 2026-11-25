@@ -740,8 +740,11 @@ compare_store_failure() {
 		metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}'
 		config_yaml='issue-prefix: test'
 		;;
-	unavailable-server | deprecated-port-server | stale-embedded-server)
+	unavailable-server | deprecated-port-server | stale-embedded-server | test-source-server | test-target-server)
 		metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads"}'
+		if [[ "$scenario" == test-target-server ]]; then
+			metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads_test_target"}'
+		fi
 		# metadata.json also names the server port, which upstream warns is deprecated.
 		if [[ "$scenario" == deprecated-port-server ]]; then
 			metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads","dolt_server_port":1}'
@@ -770,6 +773,21 @@ compare_store_failure() {
 		# A server workspace that still holds the directory of an earlier embedded store.
 		if [[ "$scenario" == stale-embedded-server ]]; then
 			mkdir "$command_root/work/.beads/embeddeddolt"
+		fi
+		# The workspace moves to target/.beads, and a server workspace with its own dolt_database redirects to it.
+		if [[ "$scenario" == test-source-server || "$scenario" == test-target-server ]]; then
+			local source_database=source
+			if [[ "$scenario" == test-source-server ]]; then
+				source_database=beads_test_source
+			fi
+			mkdir "$command_root/work/target"
+			mv -f "$command_root/work/.beads" "$command_root/work/target/.beads"
+			mkdir "$command_root/work/.beads"
+			chmod "$store_failure_beads_mode" "$command_root/work/.beads"
+			printf '{"backend":"dolt","dolt_mode":"server","dolt_database":"%s"}\n' "$source_database" \
+				>"$command_root/work/.beads/metadata.json"
+			printf '%s\n' "$config_yaml" >"$command_root/work/.beads/config.yaml"
+			printf 'target/.beads\n' >"$command_root/work/.beads/redirect"
 		fi
 	done
 	oracle_before="$(fingerprint_task_state_tree "$oracle_root")"
@@ -1034,6 +1052,22 @@ compare_store_failure stale-embedded-server dep-cycles dep cycles
 compare_store_failure stale-embedded-server graph-check-json graph check --json
 compare_store_failure stale-embedded-server ready-explain ready --explain
 compare_store_failure stale-embedded-server stale-json stale --days 1 --json
+# Upstream keeps a redirecting workspace's dolt_database in BEADS_DOLT_SERVER_DATABASE in every store mode
+# (preserveRedirectSourceDatabase, cmd/bd/main.go:496-508, :603, :1210). Its server open checks that name before
+# it dials: it refuses a test-named database unless BEADS_TEST_SERVER=1 (internal/storage/dolt/store.go:1509).
+# In test-source-server the redirecting workspace names beads_test_source and its target beads; in
+# test-target-server the redirecting workspace names source and its target beads_test_target (beadshx-m08.53).
+compare_store_failure test-source-server count count
+compare_store_failure test-source-server list-json list --json
+compare_store_failure test-source-server readonly-count --readonly count
+compare_store_failure test-source-server info info
+compare_store_failure test-source-server show show test-1
+compare_store_failure test-source-server config-get config get issue_prefix
+# With -C the pre-run binds the target before it looks for a redirect, so it keeps no name.
+compare_store_failure test-source-server change-directory-count -C . count
+compare_store_failure test-target-server count count
+compare_store_failure test-target-server list-json list --json
+compare_store_failure test-target-server readonly-count --readonly count
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"

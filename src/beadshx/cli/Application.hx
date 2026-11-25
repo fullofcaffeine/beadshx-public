@@ -119,7 +119,6 @@ import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
 import beadshx.store.EmbeddedDatabaseLookup.MissingDatabaseEntry;
 import beadshx.store.EmbeddedDatabaseLookup.missingConfigurationWarning;
 import beadshx.store.EmbeddedDatabaseLookup.missingDatabaseEntry;
-import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
 import beadshx.store.InvalidDatabaseName;
@@ -154,7 +153,6 @@ import beadshx.workspace.LegacyUpgradeGuard;
 import beadshx.workspace.LegacyUpgradeGuard.LegacyGuardOutcome;
 import beadshx.workspace.RedirectLookups;
 import beadshx.workspace.RedirectSource;
-import beadshx.workspace.RedirectSource.RedirectSourceLookup;
 import beadshx.workspace.WorkspaceDiscovery;
 import beadshx.workspace.WorkspaceGate;
 import beadshx.workspace.WorkspaceGate.WorkspaceGateOutcome;
@@ -7430,7 +7428,10 @@ final class Application {
 		takes server mode from configfile IsDoltServerMode over the default
 		config, which matches dolt.mode to `server` with strings.EqualFold.
 		Dolt looks the database name up in lower case (strings.ToLower), so
-		`toLowerCase` is the comparison for BEADS_DOLT_SERVER_DATABASE.
+		`toLowerCase` is the comparison for BEADS_DOLT_SERVER_DATABASE. A
+		dolt_database that a redirect kept in that variable does not count:
+		upstream's open ignores it here too, so it goes before the native
+		open reads it (RedirectLookups.dropPreservedServerDatabase).
 	**/
 	function validateDefaultDatabase(invocation:Invocation, location:WorkspaceLocation, defaultDirectory:String):DatabaseSelectionValidation {
 		if (invocation.global)
@@ -7439,6 +7440,7 @@ final class Application {
 		if (defaultDirectory != location.path)
 			return ModeAwareFailure('${path} is not available yet when --db names this path in a workspace without .beads/metadata.json in this build');
 		final config = LayeredConfig.forWorkspace(location.path);
+		lookups.dropPreservedServerDatabase();
 		final variable = environmentValue("BEADS_DOLT_SERVER_DATABASE");
 		if (variable != "" && variable.toLowerCase() != DEFAULT_EMBEDDED_DATABASE)
 			return ModeAwareFailure('${path} is not available yet when BEADS_DOLT_SERVER_DATABASE names a database other than "${DEFAULT_EMBEDDED_DATABASE}"'
@@ -7493,8 +7495,9 @@ final class Application {
 		BEADS_DOLT_SERVER_DATABASE, which every later store open reads. When
 		that sets none, the setup of a found directory whose own redirect
 		upstream follows keeps that directory's dolt_database (see
-		discoverStoreWorkspace). This does the same (RedirectSource), so the
-		readers and the native facade open that database.
+		discoverStoreWorkspace). The setups (loadStoreConfig) did the same
+		before this runs (RedirectLookups.preserveSourceDatabase), so this,
+		the readers and the native facade take that database.
 
 		Upstream refuses a name that is not an identifier before it reads or
 		creates anything, and so does this, with upstream's words: those of its
@@ -7524,29 +7527,7 @@ final class Application {
 				return Accepted;
 		}
 		final path = commandPath(invocation.command);
-		var selected = resolveEmbeddedDatabaseName(location.path, "");
-		final found = location.foundPath;
-		if (environmentValue("BEADS_DOLT_SERVER_DATABASE") == "" && !databaseFlagSelectsPath(invocation)) {
-			// Upstream's BEADS_DIR at this point: the workspace that -C selects, or the variable.
-			final selection = found != null ? found : location.path;
-			switch RedirectSource.lookup(invocation.directory != "" ? selection : environmentValue("BEADS_DIR")) {
-				case RedirectedFrom(localDir):
-					final source = redirectSourceDatabase(localDir);
-					if (source != "") {
-						RedirectSource.preserveSourceDatabase(source);
-						selected = source;
-					}
-				case NotRedirected:
-			}
-		}
-		// The setup of a found directory whose redirect upstream follows keeps that directory's dolt_database too (main.go:603).
-		if (found != null && invocation.directory == "" && environmentValue("BEADS_DOLT_SERVER_DATABASE") == "") {
-			final source = redirectSourceDatabase(found);
-			if (source != "") {
-				RedirectSource.preserveSourceDatabase(source);
-				selected = source;
-			}
-		}
+		final selected = resolveEmbeddedDatabaseName(location.path, "");
 		final strict = strictReadonly(invocation, LayeredConfig.forWorkspace(location.path));
 		if (storeError != null && !strict) {
 			// A plain open that cannot create the directory, as for a file of that name, fails before it writes.

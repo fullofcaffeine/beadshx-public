@@ -76,7 +76,8 @@ final class RedirectSource {
 	/**
 		Upstream preserveRedirectSourceDatabase: the redirecting workspace's
 		dolt_database goes to BEADS_DOLT_SERVER_DATABASE, which every later
-		store open of the process reads, the native facade's too.
+		store open of the process reads in every store mode, the native
+		facade's too (configfile GetDoltDatabase).
 	**/
 	public static function preserveSourceDatabase(database:String):Void {
 		Sys.putEnv("BEADS_DOLT_SERVER_DATABASE", database);

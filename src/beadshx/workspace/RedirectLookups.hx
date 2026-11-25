@@ -118,7 +118,10 @@ final class RedirectLookups {
 		Upstream preserveRedirectSourceDatabase (cmd/bd/main.go:496-508): unless
 		BEADS_DOLT_SERVER_DATABASE is set, ResolveRedirect follows the redirect
 		of `beadsDir` (internal/beads/beads.go:86), and a followed redirect from
-		a directory whose metadata.json names a dolt_database sets that variable.
+		a directory whose metadata.json names a dolt_database sets that variable
+		(RedirectSource.preserveSourceDatabase). Every later store open reads
+		it, in every store mode: the embedded readers, and the native server
+		open, which checks the name before it dials.
 	**/
 	public function preserveSourceDatabase(beadsDir:String):Void {
 		if (beadsDir == "" || serverDatabaseSet() || follow(beadsDir) == beadsDir)
@@ -127,8 +130,23 @@ final class RedirectLookups {
 		if (source == "")
 			return;
 		serverDatabasePreserved = true;
+		RedirectSource.preserveSourceDatabase(source);
 		if (environmentValue("BD_DEBUG_ROUTING") != "")
 			emit('[routing] Preserved source dolt_database ${StrconvPkg.quote(source)} across redirect\n');
+	}
+
+	/**
+		Removes the dolt_database that preserveSourceDatabase kept in
+		BEADS_DOLT_SERVER_DATABASE, for a workspace without metadata.json.
+
+		Why: there upstream's pre-run opens `beads` whatever the variable says
+		(cmd/bd/main.go:1484-1494), but the native facade's open would read
+		it. What: the variable is unset when this object set it. The lookups
+		still count it as set (see serverDatabaseSet), as upstream's do.
+	**/
+	public function dropPreservedServerDatabase():Void {
+		if (serverDatabasePreserved)
+			Sys.putEnv("BEADS_DOLT_SERVER_DATABASE", null);
 	}
 
 	/**

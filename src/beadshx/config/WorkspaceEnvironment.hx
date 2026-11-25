@@ -144,7 +144,8 @@ final class WorkspaceEnvironment {
 		BEADS_DOLT_SERVER_DATABASE before that (:1210, and :603 for the first
 		target), so the file's own value applies only when neither kept one.
 		What: every other variable of the file that the environment lacks.
-		How: the same reads as Application.validateEmbeddedDatabase's.
+		How: RedirectSource.lookup, the reads that RedirectLookups makes for
+		preserveRedirectSourceDatabase later, without their warnings.
 	**/
 	static function loadSecondTargetFile(foundBeadsDir:String, target:String):Void {
 		final redirecting = switch RedirectSource.lookup(environmentValue("BEADS_DIR")) {
