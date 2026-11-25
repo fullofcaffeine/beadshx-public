@@ -3459,6 +3459,41 @@ compare_real_database chain-of-four-info-json exact info --json
 compare_real_database chain-of-four-list-json exact list --json
 compare_real_database chain-of-four-change-directory-where exact -C . where
 real_database_setup=""
+# Each setup reloads the config of its own directory and checks that directory's metadata.json: a command
+# that opens a store sets up the first target and then the second, and so does where. So a config.yaml that
+# does not parse warns in the setup of its own target, and the shared-server notice comes from the first
+# setup whose target pins dolt_mode embedded.
+chain_broken_config_target=""
+redirect_chain_with_broken_config() {
+	redirect_chain_to_workspace "$1"
+	printf '[a, b\n' >>"$1/work/$chain_broken_config_target/.beads/config.yaml"
+}
+real_database_setup=redirect_chain_with_broken_config
+chain_broken_config_target=sub
+compare_real_database chain-first-target-broken-config-count exact count
+compare_real_database chain-first-target-broken-config-list-json exact list --json
+compare_real_database chain-first-target-broken-config-where exact where
+chain_broken_config_target=final
+compare_real_database chain-second-target-broken-config-count exact count
+compare_real_database chain-second-target-broken-config-where exact where
+chain_broken_config_target=""
+real_database_setup=""
+# Upstream then reaches for the shared server, which creates files under HOME and TMPDIR; this build refuses
+# after the same warnings and the notice for the first target.
+redirect_chain_first_target_pins_embedded() {
+	redirect_chain_to_workspace "$1"
+	jq 'del(.dolt_mode)' "$1/work/final/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/final/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+chain_warning='Warning: redirect chains not allowed, ignoring redirect in <work>/sub/.beads'
+candidate_only_setup=redirect_chain_first_target_pins_embedded
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+expect_candidate_failure chain-first-target-notice-shared-server-count-unported "" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$shared_server_notice"$'\n''Error: count is not available yet in shared-server mode in this build' "" \
+	count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
 # The second setup loads the second target's .env file for each variable that is not set yet, after the
 # first target's. A command that opens a store then reads its JSON switch again (refreshBoundCommandConfig),
 # also from the second target's config.yaml; the body of where does not. With -C, both setups take the second
@@ -3522,7 +3557,6 @@ chain_shared_server_dotenv() {
 	redirect_chain_with_dotenv "$1"
 	chain_second_dotenv=""
 }
-chain_warning='Warning: redirect chains not allowed, ignoring redirect in <work>/sub/.beads'
 candidate_only_setup=chain_shared_server_dotenv
 expect_candidate_failure chain-second-dotenv-shared-server-count-unported "" \
 	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$shared_server_notice"$'\n''Error: count is not available yet in shared-server mode in this build' "" \

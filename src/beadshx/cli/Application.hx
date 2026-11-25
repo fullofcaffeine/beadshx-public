@@ -896,29 +896,32 @@ final class Application {
 		warning when a config file does not parse: the workspace's config.yaml
 		or config.local.yaml, or the user config.yaml. Each run then prints the
 		permissions warning for its name of the directory (see
-		warnBeadsDirPermissions), and the first run the shared-server notice.
-		A later run for another directory, such as the second target of a
-		redirect chain whose `.env` file turns shared-server mode on, prints
-		the notice for that directory when no run printed it before.
+		warnBeadsDirPermissions) and, until one run printed it, the
+		shared-server notice for that directory's metadata.json. A run whose
+		directory is not `beadsDir`, such as the other target of a redirect
+		chain, reloads that directory's own config (cmd/bd/main.go:596-614);
+		a name such as a relative path or a symbolic link for `beadsDir`
+		itself takes `beadsDir`'s config.
 		Before the reload each run binds BEADS_DIR to that directory and
 		follows its redirect (RedirectLookups.prepareSelectedContext).
 		`afterFirstSetup` runs what upstream runs after the first setup.
-		Returns the config, which keeps what loaded before the failure.
+		Returns `beadsDir`'s config, which keeps what loaded before the
+		failure.
 	**/
 	function loadSelectedConfig(beadsDir:String, setups:Array<String>, ?afterFirstSetup:() -> Void):LayeredConfig {
 		final config = LayeredConfig.forWorkspace(beadsDir);
+		final selected = RedirectSource.canonicalizePath(beadsDir);
 		for (index => setup in setups) {
+			final own = RedirectSource.canonicalizePath(setup) == selected;
+			final setupConfig = own ? config : LayeredConfig.forWorkspace(setup);
 			lookups.prepareSelectedContext(setup);
-			if (config.failure != null)
-				output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${config.failure}\n');
+			if (setupConfig.failure != null)
+				output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${setupConfig.failure}\n');
 			warnBeadsDirPermissions(setup);
-			if (index == 0) {
-				warnSharedServerMismatch(beadsDir, config);
-				if (afterFirstSetup != null)
-					afterFirstSetup();
-			} else if (setup != beadsDir && !sharedServerNoticeEmitted) {
-				warnSharedServerMismatch(setup, LayeredConfig.forWorkspace(setup));
-			}
+			if (!sharedServerNoticeEmitted)
+				warnSharedServerMismatch(own ? beadsDir : setup, setupConfig);
+			if (index == 0 && afterFirstSetup != null)
+				afterFirstSetup();
 		}
 		return config;
 	}

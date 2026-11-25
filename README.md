@@ -241,7 +241,10 @@ or the user `config.yaml`. That is once for `version`, the root help and
 reads the database, or once when a `--db` or `BEADS_DB` path selects the
 database or upstream finds no database. A `--db` value that names a database
 is not a path, so it gives two warnings. A `--help` flag prints no warning.
-The first setup then prints the shared-server notice. A
+The first setup then prints the shared-server notice. In a redirect chain
+(see above), the two setups take the two targets, and each setup reads the
+config files of its own target. The notice then comes from the first setup
+whose target's `.beads/metadata.json` pins `dolt_mode` embedded. A
 `.beads/metadata.json` load error stops the first setup after its warning.
 Upstream then runs the command with the settings that loaded, and so does
 `bdhx`, for every command that reads the database too. `where` still prints
