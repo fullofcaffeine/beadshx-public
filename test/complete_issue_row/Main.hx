@@ -89,7 +89,7 @@ class Main {
 			moleculeType: fields.moleculeType,
 			longFields: rare
 		};
-		return switch beadshx.cli.Application.renderRawIssueFields(issue) {
+		return switch beadshx.cli.Application.renderIssueFields(issue) {
 			case Failure(message): throw message;
 			case Success(encoded): "{" + encoded.join(",") + "}";
 		};

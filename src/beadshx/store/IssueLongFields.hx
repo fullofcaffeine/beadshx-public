@@ -1,6 +1,6 @@
 package beadshx.store;
 
-/** Rare issue fields loaded only for the human long-detail projection. */
+/** The issue fields beyond `IssueRecord` that a full issue read fills, which JSON and the long human view print. */
 typedef IssueLongFields = {
 	final isBlocked:Bool;
 	final leaseExpiresAt:String;

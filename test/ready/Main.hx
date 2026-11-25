@@ -231,7 +231,6 @@ final class Main {
 				target: "",
 				payload: ""
 			},
-			sender: "",
 			labels: labels == null ? [] : labels,
 			dependencies: dependencies,
 			dependencyCount: dependencyCount,

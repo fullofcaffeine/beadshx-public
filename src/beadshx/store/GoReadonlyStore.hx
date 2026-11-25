@@ -1005,7 +1005,17 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return Success({prefix: native.prefix(), candidates: candidates});
 	}
 
-	public static function copyIssueLongFields(native:NativeIssueRecord):StoreResult<IssueLongFields> {
+	/**
+		The long fields of one native issue row.
+
+		Why: the island's `IssueDependency` embeds its `IssueRecord` but has no
+		accessor that returns it, and Go does not convert a struct to the struct
+		it embeds. What: the long fields of a record or of a dependency row. How:
+		`@:generic` types one copy of this function for each row type, and Go
+		resolves each call through the embedded record's promoted methods.
+	**/
+	@:generic
+	public static function copyIssueLongFields<T:NativeIssueRecord>(native:T):StoreResult<IssueLongFields> {
 		final bondedFrom = new Array<IssueBondReference>();
 		for (index in 0...native.bondedFromCount()) {
 			final reference = native.bondedFrom(index);
@@ -1115,7 +1125,6 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					wispType: item.wispType(),
 					moleculeType: item.moleculeType(),
 					longFields: longFields,
-					sender: item.sender(),
 					labels: labels,
 					dependencies: dependencies,
 					dependencyCount: item.dependencyCount(),
@@ -1186,10 +1195,20 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			labels.push(native.label(index));
 		final dependencies = new Array<IssueDependency>();
 		for (index in 0...native.dependencyRowCount())
-			dependencies.push(copyIssueDependency(native.dependency(index)));
+			switch copyIssueDependency(native.dependency(index)) {
+				case Failure(message):
+					return Failure(message);
+				case Success(dependency):
+					dependencies.push(dependency);
+			}
 		final dependents = new Array<IssueDependency>();
 		for (index in 0...native.dependentRowCount())
-			dependents.push(copyIssueDependency(native.dependent(index)));
+			switch copyIssueDependency(native.dependent(index)) {
+				case Failure(message):
+					return Failure(message);
+				case Success(dependent):
+					dependents.push(dependent);
+			}
 		final comments = new Array<IssueComment>();
 		for (index in 0...native.commentRowCount()) {
 			final comment = native.comment(index);
@@ -1270,16 +1289,26 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		final native = result.unwrap();
 		final dependents = new Array<IssueDependency>();
 		for (index in 0...native.count())
-			dependents.push(copyIssueDependency(native.item(index)));
+			switch copyIssueDependency(native.item(index)) {
+				case Failure(message):
+					return Failure(message);
+				case Success(dependent):
+					dependents.push(dependent);
+			}
 		return Success(dependents);
 	}
 
-	public static function copyIssueDependency(native:NativeIssueDependency):IssueDependency {
+	/** One related issue row of show, with every field of its full issue read. */
+	public static function copyIssueDependency(native:NativeIssueDependency):StoreResult<IssueDependency> {
 		final estimatedMinutes:OptionalIssueInteger = native.hasEstimatedMinutes() ? OptionalIssueInteger.IntegerPresent(NativeIntegers.fromInt(native.estimatedMinutes())) : OptionalIssueInteger.IntegerAbsent;
 		final labels = new Array<String>();
 		for (index in 0...native.labelCount())
 			labels.push(native.label(index));
-		return {
+		final longFields = switch copyIssueLongFields(native) {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
+		return Success({
 			id: native.id(),
 			title: native.title(),
 			description: native.description(),
@@ -1308,13 +1337,9 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			wispType: native.wispType(),
 			moleculeType: native.moleculeType(),
 			labels: labels,
-			lease: {
-				leaseExpiresAt: native.leaseExpiresAt(),
-				heartbeatAt: native.heartbeatAt(),
-				leaseGrantedNode: native.leaseGrantedNode()
-			},
+			longFields: longFields,
 			dependencyType: native.dependencyType()
-		};
+		});
 	}
 
 	public function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String> {

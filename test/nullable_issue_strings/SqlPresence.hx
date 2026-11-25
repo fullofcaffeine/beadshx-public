@@ -80,10 +80,8 @@ class SqlPresence {
 			if (fields.compactedAtCommit != testCase.commit)
 				failures.push(testCase.name + " SQL compacted_at_commit presence/value");
 			final record:IssueRecord = fields;
-			final shared = Main.fieldsOf(Application.renderIssueRecordFields(record, longFields(fields), "    "));
-			Main.checkField(shared, "external_ref", testCase.externalJson, testCase.name + " SQL shared JSON");
 			final related = relatedIssue(record, [], longFields(fields), "blocks");
-			final raw = Main.fieldsOf(Application.renderRawIssueFields(related));
+			final raw = Main.fieldsOf(Application.renderIssueFields(related));
 			Main.checkField(raw, "external_ref", testCase.externalJson, testCase.name + " SQL related JSON");
 			Main.checkField(raw, "compacted_at_commit", testCase.commitJson, testCase.name + " SQL related JSON");
 			// Ordinary nullable strings deliberately retain their previous empty omission rule.

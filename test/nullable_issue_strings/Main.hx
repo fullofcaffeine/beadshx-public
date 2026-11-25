@@ -71,13 +71,11 @@ class Main {
 		#end
 		for (testCase in cases) {
 			final issue = details(testCase.value);
-			final shared = fieldsOf(Application.renderIssueRecordFields(issue, issue.longFields, "    "));
-			final raw = fieldsOf(Application.renderRawIssueFields(issue));
+			final raw = fieldsOf(Application.renderIssueFields(issue));
 			final related = relatedIssue(issue, [], issue.longFields, "blocks");
-			final nested = fieldsOf(Application.renderRawIssueFields(related));
-			checkField(shared, "external_ref", testCase.externalJson, testCase.name + " shared JSON");
-			checkField(raw, "external_ref", testCase.externalJson, testCase.name + " raw JSON");
-			checkField(raw, "compacted_at_commit", testCase.commitJson, testCase.name + " raw JSON");
+			final nested = fieldsOf(Application.renderIssueFields(related));
+			checkField(raw, "external_ref", testCase.externalJson, testCase.name + " issue JSON");
+			checkField(raw, "compacted_at_commit", testCase.commitJson, testCase.name + " issue JSON");
 			checkField(nested, "external_ref", testCase.externalJson, testCase.name + " related JSON");
 			checkField(nested, "compacted_at_commit", testCase.commitJson, testCase.name + " related JSON");
 			#if (go || go_output)

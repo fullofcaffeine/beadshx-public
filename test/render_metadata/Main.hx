@@ -20,24 +20,16 @@ class Main {
 			{raw: ' {} ', expected: '{}'},
 			{raw: '{"key":1}', expected: '{\n      "key": 1\n    }'}
 		]) {
-			final metadata = StoredMetadata.fromSql(testCase.raw);
-			for (fields in [
-				fieldsOf(Application.renderRawIssueFields(issue(metadata))),
-				fieldsOf(Application.renderIssueRecordFields(issue(metadata), issue(metadata).longFields, "    "))
-			])
-				if (fields.indexOf('"metadata": ' + testCase.expected) < 0) {
-					Sys.println('metadata mismatch for ${testCase.raw}: ${fields.join("\n")}');
-					throw "issue JSON dropped or changed metadata";
-				}
+			final fields = fieldsOf(Application.renderIssueFields(issue(StoredMetadata.fromSql(testCase.raw))));
+			if (fields.indexOf('"metadata": ' + testCase.expected) < 0) {
+				Sys.println('metadata mismatch for ${testCase.raw}: ${fields.join("\n")}');
+				throw "issue JSON dropped or changed metadata";
+			}
 		}
 		for (raw in [null, "", "{}"]) {
-			final absent = issue(StoredMetadata.fromSql(raw));
-			for (fields in [
-				fieldsOf(Application.renderRawIssueFields(absent)),
-				fieldsOf(Application.renderIssueRecordFields(absent, absent.longFields, "    "))
-			])
-				if (fields.join("\n").indexOf('"metadata": ') >= 0)
-					throw "absent metadata must remain omitted";
+			final fields = fieldsOf(Application.renderIssueFields(issue(StoredMetadata.fromSql(raw))));
+			if (fields.join("\n").indexOf('"metadata": ') >= 0)
+				throw "absent metadata must remain omitted";
 		}
 		Sys.println("generic metadata rendering contracts: PASS");
 	}

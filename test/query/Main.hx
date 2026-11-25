@@ -299,7 +299,6 @@ class Main {
 				wispType: "",
 				moleculeType: "",
 				longFields: emptyLongFields(),
-				sender: "",
 				labels: labels,
 				dependencies: [],
 				dependencyCount: 0,

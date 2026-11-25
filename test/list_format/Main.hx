@@ -205,7 +205,6 @@ final class Main {
 				target: "",
 				payload: ""
 			},
-			sender: "",
 			labels: [],
 			dependencies: dependencies,
 			dependencyCount: dependencies.length,

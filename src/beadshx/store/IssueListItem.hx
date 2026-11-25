@@ -4,7 +4,6 @@ package beadshx.store;
 typedef IssueListItem = {
 	> IssueRecord,
 	final longFields:IssueLongFields;
-	final sender:String;
 	final labels:Array<String>;
 	final dependencies:Array<IssueListDependency>;
 	final dependencyCount:Int;

@@ -153,10 +153,34 @@ class Main {
 			wispType: "",
 			moleculeType: "",
 			labels: [],
-			lease: {
+			longFields: {
+				isBlocked: false,
 				leaseExpiresAt: "",
 				heartbeatAt: "",
-				leaseGrantedNode: ""
+				leaseGrantedNode: "",
+				compactionLevel: 0,
+				compactedAt: "",
+				compactedAtCommit: null,
+				originalSize: 0,
+				sender: "",
+				ephemeral: false,
+				noHistory: false,
+				storageClass: "",
+				pinned: false,
+				template: false,
+				bondedFrom: [],
+				awaitType: "",
+				awaitId: "",
+				timeout: "",
+				timeoutNanos: 0,
+				waiters: [],
+				sourceFormula: "",
+				sourceLocation: "",
+				workType: "",
+				eventKind: "",
+				actor: "",
+				target: "",
+				payload: ""
 			},
 			dependencyType: kind
 		};

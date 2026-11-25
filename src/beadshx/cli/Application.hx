@@ -160,13 +160,13 @@ import beadshx.store.IssueDependency;
 import beadshx.store.IssueDetails;
 import beadshx.store.IssueDetailsLookup;
 import beadshx.store.IssueDetailsRequest;
-import beadshx.store.IssueLease;
 import beadshx.store.IssueLookup;
 import beadshx.store.IssueQueryPort;
 import beadshx.store.CountResult;
 import beadshx.store.ReadyLoadResult;
 import beadshx.store.ReadyResult;
 import beadshx.store.ReadyTotal;
+import beadshx.store.IssueListDependency;
 import beadshx.store.IssueListItem;
 import beadshx.store.IssueListPage;
 import beadshx.store.IssueListRequest;
@@ -347,7 +347,8 @@ private typedef ThreadEntry = {
 	final parentId:String;
 }
 
-private typedef RawIssueRecord = {
+/** An issue row with every field that upstream's full issue read fills. */
+private typedef FullIssueRecord = {
 	> IssueRecord,
 	final longFields:IssueLongFields;
 }
@@ -1548,7 +1549,7 @@ final class Application {
 					lines.push('        "id": ${Json.stringify(member.id)}');
 				} else {
 					lines.push('        "id": ${Json.stringify(member.id)},');
-					final fields = switch renderRawIssueFields(issue, false, "          ", issue.labels) {
+					final fields = switch renderIssueFields(issue, false, "          ", issue.labels) {
 						case Failure(message): return Failure(message);
 						case Success(value): value;
 					};
@@ -1779,7 +1780,7 @@ final class Application {
 		final lines = ["["];
 		for (index in 0...nodes.length) {
 			final node = nodes[index];
-			final fields = switch renderRawIssueFields(node.issue, false, "    ", node.issue.labels) {
+			final fields = switch renderIssueFields(node.issue, false, "    ", node.issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -2038,7 +2039,7 @@ final class Application {
 	**/
 	static function renderAllGraphsJson(graphs:Array<AllGraph>):StoreResult<String> {
 		function renderIssue(issue:RelatedIssue, indent:String):StoreResult<String> {
-			return switch renderRawIssueFields(issue, false, indent + "  ", issue.labels) {
+			return switch renderIssueFields(issue, false, indent + "  ", issue.labels) {
 				case Failure(message): Failure(message);
 				case Success(fields): Success(renderJsonObject(fields, indent));
 			};
@@ -2120,7 +2121,7 @@ final class Application {
 	**/
 	static function renderGraphJson(subgraph:GraphSubgraph, layout:GraphLayout, structOrder:Bool):StoreResult<String> {
 		function renderIssue(issue:RelatedIssue, indent:String):StoreResult<String> {
-			final fields = switch renderRawIssueFields(issue, !structOrder, indent + "  ", issue.labels) {
+			final fields = switch renderIssueFields(issue, !structOrder, indent + "  ", issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -2182,6 +2183,32 @@ final class Application {
 	/** An indented object whose own line starts at `indent`; each field is already rendered at `indent` plus two spaces. */
 	static function renderJsonObject(fields:Array<String>, indent:String):String {
 		return "{\n" + [for (field in fields) '${indent}  ${field}'].join(",\n") + '\n${indent}}';
+	}
+
+	/**
+		An object of already-rendered members whose own line starts at `indent`, or `{}`
+		for none. `sorted` puts the members in byte order, as a map round trip does;
+		otherwise they keep the struct order that they come in.
+	**/
+	static function renderJsonMembers(fields:Array<String>, sorted:Bool, indent:String):String {
+		if (fields.length == 0)
+			return "{}";
+		final members = fields.copy();
+		if (sorted)
+			members.sort(compareJsonFields);
+		return renderJsonObject(members, indent);
+	}
+
+	/** Each value as a JSON string. */
+	static function jsonStrings(values:Array<String>):Array<String> {
+		return [for (value in values) Json.stringify(value)];
+	}
+
+	/** An indented array of already-rendered values whose own line starts at `indent`, or `[]` for an empty slice. */
+	static function renderJsonArray(values:Array<String>, indent:String):String {
+		if (values.length == 0)
+			return "[]";
+		return "[\n" + [for (value in values) '${indent}  ${value}'].join(",\n") + '\n${indent}]';
 	}
 
 	/** An indented string list, or null for an empty one, as Go prints a nil slice. */
@@ -2318,7 +2345,7 @@ final class Application {
 		final lines = ["["];
 		for (index in 0...blocked.length) {
 			final entry = blocked[index];
-			final fields = switch renderRawIssueFields(entry.issue, false, "    ", entry.issue.labels) {
+			final fields = switch renderIssueFields(entry.issue, false, "    ", entry.issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -3031,7 +3058,7 @@ final class Application {
 		final lines = ["["];
 		for (index in 0...dependencies.length) {
 			final dependency = dependencies[index];
-			final fields = switch renderRawIssueFields(dependency, false, "    ", dependency.labels) {
+			final fields = switch renderIssueFields(dependency, false, "    ", dependency.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -3251,7 +3278,7 @@ final class Application {
 					case ListSuccess(candidates):
 						final molecules = GatedReady.discover(ready.page.items, candidates.items);
 						if (invocation.output == Json)
-							return writeRenderedJsonStdout(renderGatedReadyJson(molecules));
+							return writeRenderedJsonStdout(renderGatedReadyJson(molecules, output.usesJsonEnvelope()));
 						else
 							output.writeStdout(renderGatedReadyHuman(molecules, terminalStyles()));
 						0;
@@ -3270,7 +3297,7 @@ final class Application {
 					case ListSuccess(candidates):
 						final explanation = ReadyExplain.build(ready.page.items, candidates.items);
 						if (invocation.output == Json)
-							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation));
+							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation, output.usesJsonEnvelope()));
 						else
 							output.writeStdout(renderReadyExplanationHuman(explanation, terminalStyles()));
 						0;
@@ -3334,7 +3361,7 @@ final class Application {
 						}
 						final analysis = MoleculeReady.analyze(root.id, steps, dependencies);
 						if (invocation.output == Json) {
-							writeRenderedJsonStdout(renderMoleculeReadyJson(root.title, page.items, analysis));
+							writeRenderedJsonStdout(renderMoleculeReadyJson(root.title, page.items, analysis, output.usesJsonEnvelope()));
 						} else {
 							output.writeStdout(renderMoleculeReadyHuman(root.title, page.items, analysis, terminalStyles()));
 							0;
@@ -3830,58 +3857,67 @@ final class Application {
 		return rendered.toString();
 	}
 
-	static function renderMoleculeReadyJson(title:String, items:Array<IssueListItem>, analysis:MoleculeReadyAnalysis):StoreResult<String> {
+	/**
+		Upstream ready --mol JSON: `MoleculeReadyOutput` (cmd/bd/ready.go:679-693), whose
+		steps hold each ready step's whole `types.Issue` and its `ParallelInfo`
+		(cmd/bd/mol_show.go:154-162). Upstream leaves `can_parallel` nil for a step
+		in no parallel group. Without the envelope, upstream round-trips the
+		output through a map, which sorts every key (cmd/bd/output.go:68-99).
+	**/
+	static function renderMoleculeReadyJson(title:String, items:Array<IssueListItem>, analysis:MoleculeReadyAnalysis, envelope:Bool):StoreResult<String> {
+		final sorted = !envelope;
 		final byId = new Map<String, IssueListItem>();
 		for (item in items)
 			byId.set(item.id, item);
-		final ready = [for (info in analysis.steps) if (info.isReady) info];
-		final lines = [
-			"{",
-			'  "molecule_id": ${Json.stringify(analysis.moleculeId)},',
-			'  "molecule_title": ${Json.stringify(title)},',
-			'  "total_steps": ${analysis.totalSteps},',
-			'  "ready_steps": ${analysis.readySteps},',
-			'  "steps": ['
-		];
-		for (index in 0...ready.length) {
-			final info = ready[index];
+		final steps = new Array<String>();
+		for (info in analysis.steps) {
+			if (!info.isReady)
+				continue;
 			final issue = byId.get(info.stepId);
 			if (issue == null)
 				continue;
-			lines.push("    {");
-			lines.push('      "issue": {');
-			final issueFields = switch renderRawIssueFields(issue) {
+			final issueFields = switch renderIssueFields(issue, sorted, "        ", issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
-			for (fieldIndex in 0...issueFields.length) {
-				final suffix = fieldIndex == issueFields.length - 1 ? "" : ",";
-				lines.push('        ${issueFields[fieldIndex]}${suffix}');
-			}
-			lines.push("      },");
-			lines.push('      "parallel_info": {');
-			lines.push('        "step_id": ${Json.stringify(info.stepId)},');
-			lines.push('        "status": ${Json.stringify(info.status)},');
-			lines.push('        "is_ready": ${info.isReady},');
-			lines.push('        "parallel_group": ${Json.stringify(info.parallelGroup)},');
-			appendJsonStringArray(lines, "        ", "blocked_by", info.blockedBy, true);
-			appendJsonStringArray(lines, "        ", "blocks", info.blocks, true);
-			appendJsonStringArray(lines, "        ", "can_parallel", info.canParallel, false);
-			lines.push(info.parallelGroup == "" ? "      }" : "      },");
+			final blockedBy = renderJsonArray(jsonStrings(info.blockedBy), "        ");
+			final blocks = renderJsonArray(jsonStrings(info.blocks), "        ");
+			final canParallel = renderJsonStrings(info.canParallel, "        ");
+			final parallelInfo = [
+				'"step_id": ${Json.stringify(info.stepId)}',
+				'"status": ${Json.stringify(info.status)}',
+				'"is_ready": ${info.isReady}',
+				'"parallel_group": ${Json.stringify(info.parallelGroup)}',
+				'"blocked_by": ${blockedBy}',
+				'"blocks": ${blocks}',
+				'"can_parallel": ${canParallel}'
+			];
+			final renderedIssue = renderJsonMembers(issueFields, sorted, "      ");
+			final renderedInfo = renderJsonMembers(parallelInfo, sorted, "      ");
+			final step = ['"issue": ${renderedIssue}', '"parallel_info": ${renderedInfo}'];
 			if (info.parallelGroup != "")
-				lines.push('      "parallel_group": ${Json.stringify(info.parallelGroup)}');
-			lines.push(index == ready.length - 1 ? "    }" : "    },");
+				step.push('"parallel_group": ${Json.stringify(info.parallelGroup)}');
+			steps.push(renderJsonMembers(step, sorted, "    "));
 		}
-		lines.push("  ],");
-		lines.push('  "parallel_groups": {');
-		for (index in 0...analysis.groups.length) {
-			final group = analysis.groups[index];
-			appendJsonStringArray(lines, "    ", group.name, group.members, index != analysis.groups.length - 1);
+		// Go prints the keys of a map in byte order in both modes.
+		final groups = new Array<String>();
+		for (group in analysis.groups) {
+			final members = renderJsonArray(jsonStrings(group.members), "    ");
+			groups.push('${Json.stringify(group.name)}: ${members}');
 		}
-		lines.push("  },");
-		lines.push('  "schema_version": 1');
-		lines.push("}");
-		return Success(lines.join("\n") + "\n");
+		// readySteps stays a nil slice when no step is ready.
+		final renderedSteps = steps.length == 0 ? "null" : renderJsonArray(steps, "  ");
+		final renderedGroups = renderJsonMembers(groups, true, "  ");
+		final document = [
+			'"molecule_id": ${Json.stringify(analysis.moleculeId)}',
+			'"molecule_title": ${Json.stringify(title)}',
+			'"total_steps": ${analysis.totalSteps}',
+			'"ready_steps": ${analysis.readySteps}',
+			'"steps": ${renderedSteps}',
+			'"parallel_groups": ${renderedGroups}',
+			'"schema_version": 1'
+		];
+		return Success(renderJsonMembers(document, sorted, "") + "\n");
 	}
 
 	/** Upstream's ready --explain view (cmd/bd/ready.go:517-573; proxied, ready_proxied_server.go:357-399). */
@@ -3945,170 +3981,101 @@ final class Application {
 		return rendered.toString();
 	}
 
-	static function renderGatedReadyJson(molecules:Array<GatedMolecule>):StoreResult<String> {
-		// Go's encoder writes an empty array as [].
-		final lines = [
-			"{",
-			'  "count": ${molecules.length},',
-			molecules.length == 0 ? '  "molecules": [],' : '  "molecules": ['
-		];
-		for (index in 0...molecules.length) {
-			final molecule = molecules[index];
-			final closedGate = switch renderGatedIssueField("closed_gate", molecule.closedGate) {
+	/**
+		Upstream ready --gated JSON: `GatedReadyOutput` (cmd/bd/mol_ready_gated.go:15-26),
+		with each molecule's closed gate and ready step as a whole `types.Issue`.
+		Without the envelope, upstream round-trips it through a map, which sorts
+		every key (cmd/bd/output.go:68-99).
+	**/
+	static function renderGatedReadyJson(molecules:Array<GatedMolecule>, envelope:Bool):StoreResult<String> {
+		final sorted = !envelope;
+		final rendered = new Array<String>();
+		for (molecule in molecules) {
+			final closedGate = switch renderIssueFields(molecule.closedGate, sorted, "        ", molecule.closedGate.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
-			final readyStep = switch renderGatedIssueField("ready_step", molecule.readyStep) {
+			final readyStep = switch renderIssueFields(molecule.readyStep, sorted, "        ", molecule.readyStep.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
-			final fields = [
-				closedGate,
+			final renderedGate = renderJsonMembers(closedGate, sorted, "      ");
+			final renderedStep = renderJsonMembers(readyStep, sorted, "      ");
+			rendered.push(renderJsonMembers([
 				'"molecule_id": ${Json.stringify(molecule.moleculeId)}',
 				'"molecule_title": ${Json.stringify(molecule.moleculeTitle)}',
-				readyStep
-			];
-			fields.sort(compareJsonFields);
-			lines.push("    {");
-			for (fieldIndex in 0...fields.length) {
-				final suffix = fieldIndex == fields.length - 1 ? "" : ",";
-				lines.push('      ${fields[fieldIndex]}${suffix}');
-			}
-			lines.push(index == molecules.length - 1 ? "    }" : "    },");
+				'"closed_gate": ${renderedGate}',
+				'"ready_step": ${renderedStep}'
+			], sorted, "    "));
 		}
-		if (molecules.length > 0)
-			lines.push("  ],");
-		lines.push('  "schema_version": 1');
-		lines.push("}");
-		return Success(lines.join("\n") + "\n");
-	}
-
-	static function renderGatedIssueField(name:String, issue:IssueListItem):StoreResult<String> {
-		final fields = switch renderRawIssueFields(issue, true, "        ") {
-			case Failure(message): return Failure(message);
-			case Success(value): value;
-		};
-		if (issue.labels.length > 0)
-			fields.push(renderRawStringArray("labels", issue.labels, "        "));
-		fields.sort(compareJsonFields);
-		final lines = ['${Json.stringify(name)}: {'];
-		for (index in 0...fields.length) {
-			final suffix = index == fields.length - 1 ? "" : ",";
-			lines.push('        ${fields[index]}${suffix}');
-		}
-		lines.push("      }");
-		return Success(lines.join("\n"));
+		final renderedMolecules = renderJsonArray(rendered, "  ");
+		final document = [
+			'"molecules": ${renderedMolecules}',
+			'"count": ${molecules.length}',
+			'"schema_version": 1'
+		];
+		return Success(renderJsonMembers(document, sorted, "") + "\n");
 	}
 
 	/**
-		Upstream `ready --explain --json` (cmd/bd/ready.go:450-514). Its
-		types.BuildReadyExplanation makes the ready and blocked lists
-		(internal/types/types.go:1727 and 1767), so an empty one prints `[]`.
+		Upstream ready --explain JSON: `types.ReadyExplanation` (internal/types/types.go:1677-1714).
+		Each ready and blocked item is its whole `types.Issue` and the item's own
+		fields. Without the envelope, upstream round-trips the explanation
+		through a map, which sorts every key (cmd/bd/output.go:68-99).
 	**/
-	static function renderReadyExplanationJson(explanation:ReadyExplanation):StoreResult<String> {
-		final lines = ["{"];
-		lines.push(explanation.blocked.length == 0 ? '  "blocked": [],' : '  "blocked": [');
-		for (index in 0...explanation.blocked.length) {
-			final item = explanation.blocked[index];
-			final fields = switch renderRawIssueFields(item.issue, true, "      ") {
+	static function renderReadyExplanationJson(explanation:ReadyExplanation, envelope:Bool):StoreResult<String> {
+		final sorted = !envelope;
+		final ready = new Array<String>();
+		for (item in explanation.ready) {
+			final fields = switch renderIssueFields(item.issue, sorted, "      ", item.issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
-			if (item.issue.labels.length > 0)
-				fields.push(renderRawStringArray("labels", item.issue.labels, "      "));
-			final blockerLines = ['"blocked_by": ['];
-			for (blockerIndex in 0...item.blockedBy.length) {
-				final blocker = item.blockedBy[blockerIndex];
-				blockerLines.push("        {");
-				blockerLines.push('          "id": ${Json.stringify(blocker.id)},');
-				blockerLines.push('          "priority": ${blocker.priority},');
-				blockerLines.push('          "status": ${Json.stringify(blocker.status)},');
-				blockerLines.push('          "title": ${Json.stringify(blocker.title)}');
-				blockerLines.push(blockerIndex == item.blockedBy.length - 1 ? "        }" : "        },");
-			}
-			blockerLines.push("      ]");
-			fields.push(blockerLines.join("\n"));
-			fields.push('"blocked_by_count": ${item.blockedByCount}');
-			fields.sort(compareJsonFields);
-			lines.push("    {");
-			for (fieldIndex in 0...fields.length) {
-				final suffix = fieldIndex == fields.length - 1 ? "" : ",";
-				lines.push('      ${fields[fieldIndex]}${suffix}');
-			}
-			lines.push(index == explanation.blocked.length - 1 ? "    }" : "    },");
-		}
-		if (explanation.blocked.length > 0)
-			lines.push("  ],");
-		if (explanation.cycles.length > 0) {
-			lines.push('  "cycles": [');
-			for (cycleIndex in 0...explanation.cycles.length) {
-				final cycle = explanation.cycles[cycleIndex];
-				lines.push("    [");
-				for (memberIndex in 0...cycle.length) {
-					final suffix = memberIndex == cycle.length - 1 ? "" : ",";
-					lines.push('      ${Json.stringify(cycle[memberIndex])}${suffix}');
-				}
-				lines.push(cycleIndex == explanation.cycles.length - 1 ? "    ]" : "    ],");
-			}
-			lines.push("  ],");
-		}
-		lines.push(explanation.ready.length == 0 ? '  "ready": [],' : '  "ready": [');
-		for (index in 0...explanation.ready.length) {
-			final item = explanation.ready[index];
-			final fields = switch renderRawIssueFields(item.issue, true, "      ") {
-				case Failure(message): return Failure(message);
-				case Success(value): value;
-			};
-			if (item.issue.labels.length > 0)
-				fields.push(renderRawStringArray("labels", item.issue.labels, "      "));
 			fields.push('"reason": ${Json.stringify(item.reason)}');
-			if (item.resolvedBlockers == null) {
-				fields.push('"resolved_blockers": null');
-			} else {
-				final resolvedLines = ['"resolved_blockers": ['];
-				for (resolvedIndex in 0...item.resolvedBlockers.length) {
-					final suffix = resolvedIndex == item.resolvedBlockers.length - 1 ? "" : ",";
-					resolvedLines.push('        ${Json.stringify(item.resolvedBlockers[resolvedIndex])}${suffix}');
-				}
-				resolvedLines.push("      ]");
-				fields.push(resolvedLines.join("\n"));
-			}
+			final resolvedBlockers = item.resolvedBlockers;
+			final resolved = resolvedBlockers == null ? "null" : renderJsonArray(jsonStrings(resolvedBlockers), "      ");
+			fields.push('"resolved_blockers": ${resolved}');
 			fields.push('"dependency_count": ${item.dependencyCount}');
 			fields.push('"dependent_count": ${item.dependentCount}');
 			if (item.parent != null)
 				fields.push('"parent": ${Json.stringify(item.parent)}');
-			fields.sort(compareJsonFields);
-			lines.push("    {");
-			for (fieldIndex in 0...fields.length) {
-				final suffix = fieldIndex == fields.length - 1 ? "" : ",";
-				lines.push('      ${fields[fieldIndex]}${suffix}');
-			}
-			lines.push(index == explanation.ready.length - 1 ? "    }" : "    },");
+			ready.push(renderJsonMembers(fields, sorted, "    "));
 		}
-		if (explanation.ready.length > 0)
-			lines.push("  ],");
-		lines.push('  "schema_version": 1,');
-		lines.push('  "summary": {');
-		lines.push('    "cycle_count": ${explanation.cycles.length},');
-		lines.push('    "total_blocked": ${explanation.blocked.length},');
-		lines.push('    "total_ready": ${explanation.ready.length}');
-		lines.push("  }");
-		lines.push("}");
-		return Success(lines.join("\n") + "\n");
-	}
-
-	static function appendJsonStringArray(lines:Array<String>, indent:String, name:String, values:Array<String>, comma:Bool):Void {
-		final suffix = comma ? "," : "";
-		if (values.length == 0) {
-			lines.push('${indent}${Json.stringify(name)}: []${suffix}');
-			return;
+		final blocked = new Array<String>();
+		for (item in explanation.blocked) {
+			final fields = switch renderIssueFields(item.issue, sorted, "      ", item.issue.labels) {
+				case Failure(message): return Failure(message);
+				case Success(value): value;
+			};
+			final blockers = [
+				for (blocker in item.blockedBy)
+					renderJsonMembers([
+						'"id": ${Json.stringify(blocker.id)}',
+						'"title": ${Json.stringify(blocker.title)}',
+						'"status": ${Json.stringify(blocker.status)}',
+						'"priority": ${blocker.priority}'
+					], sorted, "        ")
+			];
+			final renderedBlockers = renderJsonArray(blockers, "      ");
+			fields.push('"blocked_by": ${renderedBlockers}');
+			fields.push('"blocked_by_count": ${item.blockedByCount}');
+			blocked.push(renderJsonMembers(fields, sorted, "    "));
 		}
-		lines.push('${indent}${Json.stringify(name)}: [');
-		for (index in 0...values.length) {
-			final valueSuffix = index == values.length - 1 ? "" : ",";
-			lines.push('${indent}  ${Json.stringify(values[index])}${valueSuffix}');
+		final renderedReady = renderJsonArray(ready, "  ");
+		final renderedBlocked = renderJsonArray(blocked, "  ");
+		final document = ['"ready": ${renderedReady}', '"blocked": ${renderedBlocked}'];
+		if (explanation.cycles.length > 0) {
+			final cycles = renderJsonArray([for (cycle in explanation.cycles) renderJsonArray(jsonStrings(cycle), "    ")], "  ");
+			document.push('"cycles": ${cycles}');
 		}
-		lines.push('${indent}]${suffix}');
+		final summary = renderJsonMembers([
+			'"total_ready": ${explanation.ready.length}',
+			'"total_blocked": ${explanation.blocked.length}',
+			'"cycle_count": ${explanation.cycles.length}'
+		], sorted, "  ");
+		document.push('"summary": ${summary}');
+		document.push('"schema_version": 1');
+		return Success(renderJsonMembers(document, sorted, "") + "\n");
 	}
 
 	static function findMoleculeInfo(infos:Array<MoleculeParallelInfo>, id:String):Null<MoleculeParallelInfo> {
@@ -4904,31 +4871,25 @@ final class Application {
 		return appendSkipLabelsFooter(rendered.toString(), skipLabels);
 	}
 
+	/**
+		Upstream's `types.IssueWithCounts` for each item (internal/types/types.go:1136-1142):
+		the whole Issue, with its labels and, when `includeRelations` is on, its
+		dependencies, then the counts and the parent. `forceLabels` is list
+		--skip-labels' empty labels member (cmd/bd/list.go:47-53), whose view
+		upstream round-trips through a map, so `sortFields` sorts every key.
+	**/
 	static function renderListJsonArray(page:IssueListPage, forceLabels:Bool, sortFields:Bool, includeRelations:Bool = true):StoreResult<String> {
 		if (page.items.length == 0)
 			return Success("[]\n");
 		final lines = ["["];
 		for (index in 0...page.items.length) {
 			final item = page.items[index];
-			final fields = switch renderIssueRecordFields(item, item.longFields, "    ", sortFields) {
+			final fields = switch renderIssueFields(item, sortFields, "    ", forceLabels ? null : item.labels, includeRelations ? item.dependencies : null) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
-			if (forceLabels) {
+			if (forceLabels)
 				fields.push('"labels": []');
-			} else if (item.labels.length > 0) {
-				final labelLines = ['"labels": ['];
-				for (labelIndex in 0...item.labels.length) {
-					final suffix = labelIndex == item.labels.length - 1 ? "" : ",";
-					labelLines.push('      ${Json.stringify(item.labels[labelIndex])}${suffix}');
-				}
-				labelLines.push("    ]");
-				fields.push(labelLines.join("\n"));
-			}
-			if (includeRelations && item.dependencies.length > 0)
-				fields.push(renderListDependencies(item, sortFields));
-			if (item.sender != "")
-				fields.push('"sender": ${Json.stringify(item.sender)}');
 			fields.push('"dependency_count": ${item.dependencyCount}');
 			fields.push('"dependent_count": ${item.dependentCount}');
 			fields.push('"comment_count": ${item.commentCount}');
@@ -4947,10 +4908,13 @@ final class Application {
 		return Success(lines.join("\n") + "\n");
 	}
 
-	static function renderListDependencies(item:IssueListItem, sortFields:Bool):String {
+	/** The Issue's own `types.Dependency` rows (internal/types/types.go:1102-1120), at a field indent of `fieldIndent`. */
+	static function renderListDependencies(dependencies:Array<IssueListDependency>, sortFields:Bool, fieldIndent:String):String {
+		final objectIndent = fieldIndent + "  ";
+		final memberIndent = objectIndent + "  ";
 		final lines = ['"dependencies": ['];
-		for (index in 0...item.dependencies.length) {
-			final dependency = item.dependencies[index];
+		for (index in 0...dependencies.length) {
+			final dependency = dependencies[index];
 			final fields = new Array<String>();
 			if (dependency.id != "")
 				fields.push('"id": ${Json.stringify(dependency.id)}');
@@ -4966,15 +4930,15 @@ final class Application {
 				fields.push('"thread_id": ${Json.stringify(dependency.threadId)}');
 			if (sortFields)
 				fields.sort(compareJsonFields);
-			lines.push("      {");
+			lines.push('${objectIndent}{');
 			for (fieldIndex in 0...fields.length) {
 				final suffix = fieldIndex == fields.length - 1 ? "" : ",";
-				lines.push('        ${fields[fieldIndex]}${suffix}');
+				lines.push('${memberIndent}${fields[fieldIndex]}${suffix}');
 			}
-			final suffix = index == item.dependencies.length - 1 ? "" : ",";
-			lines.push('      }${suffix}');
+			final suffix = index == dependencies.length - 1 ? "" : ",";
+			lines.push('${objectIndent}}${suffix}');
 		}
-		lines.push("    ]");
+		lines.push('${fieldIndent}]');
 		return lines.join("\n");
 	}
 
@@ -5354,6 +5318,12 @@ final class Application {
 		return 0;
 	}
 
+	/**
+		Upstream show --children and --refs JSON: a map from each issue ID to its
+		`types.IssueWithDependencyMetadata` rows (internal/types/types.go:1130-1133).
+		Without the envelope, upstream round-trips the map through
+		`map[string]interface{}` (cmd/bd/output.go:68-99), which sorts every key.
+	**/
 	static function renderShowDependencyMapJson(groups:Array<ShowDependencyGroup>, envelope:Bool, emptyAsNull:Bool):StoreResult<String> {
 		final orderedGroups = groups.copy();
 		orderedGroups.sort((left, right) -> compareIssueIds(left.issueId, right.issueId));
@@ -5383,12 +5353,10 @@ final class Application {
 			lines.push('  ${Json.stringify(key)}: [');
 			for (childIndex in 0...children.length) {
 				final child = children[childIndex];
-				final fields = switch renderIssueRecordFields(child, child.lease, "      ", !envelope) {
+				final fields = switch renderIssueFields(child, !envelope, "      ", child.labels) {
 					case Failure(message): return Failure(message);
 					case Success(value): value;
 				};
-				if (child.labels.length > 0)
-					fields.push(renderRawStringArray("labels", child.labels, "      "));
 				fields.push('"dependency_type": ${Json.stringify(child.dependencyType)}');
 				if (!envelope)
 					fields.sort(compareJsonFields);
@@ -6033,16 +6001,15 @@ final class Application {
 	}
 
 	/**
-		Upstream showMessageThread's JSON (cmd/bd/show_thread.go:87-91): each
-		message as a types.Issue record. GetIssue and GetDependentsWithMetadata
-		return them with their labels (lines 21, 47 and 153), so each record
-		prints its `labels`.
+		Upstream show --thread JSON: each message's `types.Issue` with the labels
+		that GetIssue and GetIssuesByIDsInTx read
+		(internal/storage/issueops/get_issue.go:50-54, dependencies.go:1065-1086).
 	**/
 	static function renderThreadJson(entries:Array<ThreadEntry>):StoreResult<String> {
 		final lines = ["["];
 		for (index in 0...entries.length) {
 			final issue = entries[index].issue;
-			final fields = switch renderRawIssueFields(issue, false, "    ", issue.labels) {
+			final fields = switch renderIssueFields(issue, false, "    ", issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -6067,7 +6034,7 @@ final class Application {
 			return Success("[]\n");
 		final lines = ["["];
 		for (index in 0...issues.length) {
-			final fields = switch renderRawIssueFields(issues[index]) {
+			final fields = switch renderIssueFields(issues[index]) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -6082,9 +6049,22 @@ final class Application {
 		return Success(lines.join("\n") + "\n");
 	}
 
-	/** Renders the pinned generic Issue JSON used by `show --thread --json`. */
-	static function renderRawIssueFields(issue:RawIssueRecord, sortMetadata:Bool = false, fieldIndent:String = "    ",
-			?labels:Array<String>):StoreResult<Array<String>> {
+	/**
+		The fields of one upstream `types.Issue` in struct order, with Go's
+		`omitempty` rules (internal/types/types.go:19-190). Every JSON view
+		that prints an issue record renders it here, and adds the fields of its
+		own wrapper type after it.
+
+		`labels` and `dependencies` are the Issue's own collections, which it
+		prints between original_size and sender (types.go:134-136). A view whose
+		wrapper declares its own labels or dependencies (IssueDetails) passes
+		none, and prints them after the Issue fields instead. `sorted` is for a
+		view that upstream round-trips through a map, which sorts the keys of
+		each nested object: metadata and each dependency here, and the record's
+		own fields at the caller.
+	**/
+	static function renderIssueFields(issue:FullIssueRecord, sorted:Bool = false, fieldIndent:String = "    ", ?labels:Array<String>,
+			?dependencies:Array<IssueListDependency>):StoreResult<Array<String>> {
 		final rare = issue.longFields;
 		final fields = new Array<String>();
 		fields.push('"id": ${Json.stringify(issue.id)}');
@@ -6142,7 +6122,7 @@ final class Application {
 		if (issue.sourceSystem != "")
 			fields.push('"source_system": ${Json.stringify(issue.sourceSystem)}');
 		if (!issue.metadata.isAbsent()) {
-			final metadata = switch (sortMetadata ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ")) {
+			final metadata = switch (sorted ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ")) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -6158,6 +6138,8 @@ final class Application {
 			fields.push('"original_size": ${rare.originalSize}');
 		if (labels != null && labels.length > 0)
 			fields.push(renderRawStringArray("labels", labels, fieldIndent));
+		if (dependencies != null && dependencies.length > 0)
+			fields.push(renderListDependencies(dependencies, sorted, fieldIndent));
 		if (rare.sender != "")
 			fields.push('"sender": ${Json.stringify(rare.sender)}');
 		if (rare.ephemeral)
@@ -6229,12 +6211,16 @@ final class Application {
 		return lines.join("\n");
 	}
 
-	/** Renders the pinned Beads field order and zero-value omission rules. */
+	/**
+		Upstream show JSON: each issue's `types.IssueDetails` (internal/types/types.go:1146-1195).
+		Its own labels, dependencies, dependents and comments replace the Issue
+		fields of the same names, so they follow the Issue's last field.
+	**/
 	static function renderShowJson(issues:Array<IssueDetails>):StoreResult<String> {
 		final lines = ["["];
 		for (index in 0...issues.length) {
 			final issue = issues[index];
-			final fields = switch renderIssueRecordFields(issue, issue.longFields, "    ") {
+			final fields = switch renderIssueFields(issue) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
@@ -6290,89 +6276,15 @@ final class Application {
 		return Success(lines.join("\n") + "\n");
 	}
 
-	/**
-		The fields of an issue record in upstream's types.Issue order, with Go's
-		`omitempty` rules. `lease` is the claim lease that upstream reads with
-		every full issue row (internal/types/types.go:55-72).
-	**/
-	static function renderIssueRecordFields(issue:IssueRecord, lease:IssueLease, fieldIndent:String, sortMetadata:Bool = false):StoreResult<Array<String>> {
-		final fields = new Array<String>();
-		fields.push('"id": ${Json.stringify(issue.id)}');
-		fields.push('"title": ${Json.stringify(issue.title)}');
-		if (issue.description != "")
-			fields.push('"description": ${Json.stringify(issue.description)}');
-		if (issue.design != "")
-			fields.push('"design": ${Json.stringify(issue.design)}');
-		if (issue.acceptanceCriteria != "")
-			fields.push('"acceptance_criteria": ${Json.stringify(issue.acceptanceCriteria)}');
-		if (issue.notes != "")
-			fields.push('"notes": ${Json.stringify(issue.notes)}');
-		if (issue.specId != "")
-			fields.push('"spec_id": ${Json.stringify(issue.specId)}');
-		if (issue.status != "")
-			fields.push('"status": ${Json.stringify(issue.status)}');
-		fields.push('"priority": ${issue.priority}');
-		if (issue.issueType != "")
-			fields.push('"issue_type": ${Json.stringify(issue.issueType)}');
-		if (issue.assignee != "")
-			fields.push('"assignee": ${Json.stringify(issue.assignee)}');
-		if (issue.owner != "")
-			fields.push('"owner": ${Json.stringify(issue.owner)}');
-		switch issue.estimatedMinutes {
-			case IntegerAbsent:
-			case IntegerPresent(value):
-				fields.push('"estimated_minutes": ${value}');
-		}
-		fields.push('"created_at": ${Json.stringify(issue.createdAt)}');
-		if (issue.createdBy != "")
-			fields.push('"created_by": ${Json.stringify(issue.createdBy)}');
-		fields.push('"updated_at": ${Json.stringify(issue.updatedAt)}');
-		if (issue.startedAt != "")
-			fields.push('"started_at": ${Json.stringify(issue.startedAt)}');
-		if (issue.closedAt != "")
-			fields.push('"closed_at": ${Json.stringify(issue.closedAt)}');
-		if (issue.closeReason != "")
-			fields.push('"close_reason": ${Json.stringify(issue.closeReason)}');
-		if (issue.closedBySession != "")
-			fields.push('"closed_by_session": ${Json.stringify(issue.closedBySession)}');
-		if (lease.leaseExpiresAt != "")
-			fields.push('"lease_expires_at": ${Json.stringify(lease.leaseExpiresAt)}');
-		if (lease.heartbeatAt != "")
-			fields.push('"heartbeat_at": ${Json.stringify(lease.heartbeatAt)}');
-		if (lease.leaseGrantedNode != "")
-			fields.push('"lease_granted_node": ${Json.stringify(lease.leaseGrantedNode)}');
-		if (issue.dueAt != "")
-			fields.push('"due_at": ${Json.stringify(issue.dueAt)}');
-		if (issue.deferUntil != "")
-			fields.push('"defer_until": ${Json.stringify(issue.deferUntil)}');
-		if (issue.externalRef != null)
-			fields.push('"external_ref": ${Json.stringify(issue.externalRef)}');
-		if (issue.sourceSystem != "")
-			fields.push('"source_system": ${Json.stringify(issue.sourceSystem)}');
-		if (!issue.metadata.isAbsent()) {
-			final metadata = switch (sortMetadata ? issue.metadata.renderSortedIndented(fieldIndent, "  ") : issue.metadata.renderIndented(fieldIndent, "  ")) {
-				case Failure(message): return Failure(message);
-				case Success(value): value;
-			};
-			fields.push('"metadata": ${metadata}');
-		}
-		if (issue.wispType != "")
-			fields.push('"wisp_type": ${Json.stringify(issue.wispType)}');
-		if (issue.moleculeType != "")
-			fields.push('"mol_type": ${Json.stringify(issue.moleculeType)}');
-		return Success(fields);
-	}
-
+	/** Show's dependencies or dependents: each a whole `types.IssueWithDependencyMetadata` (internal/types/types.go:1130-1133). */
 	static function renderIssueRelations(fieldName:String, relations:Array<IssueDependency>):StoreResult<String> {
 		final lines = ['${Json.stringify(fieldName)}: ['];
 		for (index in 0...relations.length) {
 			final dependency = relations[index];
-			final fields = switch renderIssueRecordFields(dependency, dependency.lease, "        ") {
+			final fields = switch renderIssueFields(dependency, false, "        ", dependency.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};
-			if (dependency.labels.length > 0)
-				fields.push(renderRawStringArray("labels", dependency.labels, "        "));
 			fields.push('"dependency_type": ${Json.stringify(dependency.dependencyType)}');
 			lines.push("      {");
 			for (fieldIndex in 0...fields.length) {

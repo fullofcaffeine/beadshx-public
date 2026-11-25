@@ -5058,6 +5058,83 @@ compare_real_database show-long-molecule exact show "$(jq -er '.id' "$real_datab
 rare_long_record='{"id":"test-rare","title":"Rare long","description":"tiny","status":"open","priority":2,"issue_type":"event","created_at":"2026-08-20T12:00:00Z","updated_at":"2026-08-21T13:00:00Z","compaction_level":1,"compacted_at":"2026-08-21T14:00:00Z","compacted_at_commit":"abc123","original_size":100,"sender":"agent-a","ephemeral":true,"wisp_type":"heartbeat","pinned":true,"is_template":true,"bonded_from":[{"source_id":"proto-a","bond_type":"parallel","bond_point":"root"}],"await_type":"human","await_id":"approval","timeout":60000000000,"waiters":["alpha","beta"],"source_formula":"release","source_location":"steps[0]","mol_type":"swarm","work_type":"open_competition","event_kind":"agent.started","actor":"agent://a","target":"bead://b","payload":"{\"k\":1}"}'
 compare_real_database_import show-long-rare exact "$rare_long_record" show test-rare --long
 compare_real_database_import show-thread-json-rare exact "$rare_long_record" show test-rare --thread --json
+# Every Issue field that an upstream read fills, in each JSON view that prints an issue record.
+# Upstream prints types.Issue in struct order (internal/types/types.go:19-190), so labels and
+# list's dependencies come after original_size and before sender. A view that embeds the Issue
+# adds its own fields after it, and IssueDetails' own labels, dependencies and comments replace
+# the Issue fields of the same names at its position (types.go:1146-1152). Import keeps no
+# bonded_from, source_formula, source_location or storage_class, and draws row_lock, which show
+# prints as revision, at random, so SQL sets the last two on each copy and keeps updated_at.
+full_issue_fields='{"description":"Desc","design":"Design","acceptance_criteria":"Accept","notes":"Notes","spec_id":"SPEC-1","assignee":"ann","owner":"owner@example.invalid","estimated_minutes":45,"created_by":"creator","started_at":"2026-08-20T12:00:00Z","due_at":"2030-01-15T00:00:00Z","defer_until":"2026-01-01T00:00:00Z","external_ref":"gh-77","source_system":"jira","metadata":{"team":"port","rank":2},"compaction_level":2,"compacted_at":"2026-08-22T00:00:00Z","compacted_at_commit":"abc123","original_size":4096,"sender":"agent://sender","wisp_type":"heartbeat","pinned":true,"is_template":true,"bonded_from":[{"source_id":"proto-a","bond_type":"parallel","bond_point":"root"}],"await_type":"human","await_id":"approval","timeout":60000000000,"waiters":["alpha@x","beta@x"],"source_formula":"release","source_location":"steps[0]","mol_type":"swarm","work_type":"open_competition","event_kind":"agent.started","actor":"agent://a","target":"bead://b","payload":"{\"k\":1}"}'
+# Usage: full_issue_record ID TITLE PRIORITY CREATED_AT [JSON_OVERRIDES]
+full_issue_record() {
+	local overrides="${5-}"
+	[[ -n "$overrides" ]] || overrides='{}'
+	jq -cn --arg id "$1" --arg title "$2" --argjson priority "$3" --arg created "$4" \
+		--argjson fields "$full_issue_fields" --argjson overrides "$overrides" \
+		'$fields + {id: $id, title: $title, status: "open", priority: $priority, issue_type: "task",
+			created_at: $created, updated_at: "2026-08-21T11:00:00Z"} + $overrides'
+}
+full_issue_import="$(
+	full_issue_record test-full-a "Full field record" 1 2026-08-20T10:00:00Z \
+		'{"labels":["zeta","alpha"],"dependencies":[{"issue_id":"test-full-a","depends_on_id":"test-full-b","type":"blocks","created_at":"2026-08-20T10:00:00Z","created_by":"creator"}]}'
+	full_issue_record test-full-b "Full field blocker" 2 2026-08-20T09:00:00Z \
+		'{"labels":["target"],"sender":"agent://b","mol_type":"patrol"}'
+	full_issue_record test-full-c "Full field child" 3 2026-08-20T08:00:00Z \
+		'{"status":"closed","closed_at":"2026-08-21T08:00:00Z","close_reason":"done","closed_by_session":"session-1","is_template":false,"labels":["kid"],"dependencies":[{"issue_id":"test-full-c","depends_on_id":"test-full-a","type":"parent-child","created_at":"2026-08-20T10:00:00Z"}]}'
+	# Ready leaves out pinned issues; no_history stores the row in the wisps table.
+	full_issue_record test-full-n "Full field no-history wisp" 0 2026-08-20T07:00:00Z \
+		'{"labels":["nl"],"no_history":true,"pinned":false}'
+	full_issue_record test-full-w "Full field ephemeral wisp" 2 2026-08-20T06:00:00Z \
+		'{"labels":["wl"],"ephemeral":true}'
+	full_issue_record test-full-msg-root "Full field root message" 2 2026-08-20T05:00:00Z \
+		'{"issue_type":"message","labels":["mail","urgent"],"sender":"alice"}'
+	full_issue_record test-full-msg-reply "Full field reply" 2 2026-08-20T05:30:00Z \
+		'{"issue_type":"message","labels":["mail"],"sender":"bob","dependencies":[{"issue_id":"test-full-msg-reply","depends_on_id":"test-full-msg-root","type":"replies-to","created_at":"2026-08-20T05:30:00Z"}]}'
+	# A molecule of one step: a parallel group would list its members in Go map order.
+	full_issue_record test-full-mol "Full field molecule" 2 2026-08-20T04:30:00Z '{"issue_type":"molecule","labels":["proto"]}'
+	# A closed gate that lets a ready step of its molecule resume.
+	full_issue_record test-full-gmol "Full field gated molecule" 2 2026-08-20T04:00:00Z '{"issue_type":"epic","labels":["gm"]}'
+	full_issue_record test-full-gate "Full field gate" 2 2026-08-20T04:10:00Z \
+		'{"issue_type":"gate","status":"closed","closed_at":"2026-08-21T04:10:00Z","close_reason":"satisfied","labels":["gate"],"dependencies":[{"issue_id":"test-full-gate","depends_on_id":"test-full-gmol","type":"parent-child","created_at":"2026-08-20T04:10:00Z"}]}'
+	full_issue_record test-full-gstep "Full field gated step" 2 2026-08-20T04:20:00Z \
+		'{"labels":["step"],"pinned":false,"dependencies":[{"issue_id":"test-full-gstep","depends_on_id":"test-full-gmol","type":"parent-child","created_at":"2026-08-20T04:20:00Z"},{"issue_id":"test-full-gstep","depends_on_id":"test-full-gate","type":"blocks","created_at":"2026-08-20T04:20:00Z"}]}'
+)"
+full_issue_sql="UPDATE issues SET row_lock = 7, storage_class = 'versioned', updated_at = updated_at WHERE id LIKE 'test-full-%'
+UPDATE wisps SET row_lock = 7, updated_at = updated_at WHERE id LIKE 'test-full-%'"
+real_database_extra_import="$full_issue_import"
+real_database_extra_sql="$full_issue_sql"
+compare_real_database full-fields-list-json exact list --all --json --include-templates
+compare_real_database full-fields-list-skip-labels-json exact list --all --json --include-templates --skip-labels
+compare_real_database_env full-fields-list-json-envelope exact BD_JSON_ENVELOPE=1 list --all --json --include-templates
+compare_real_database full-fields-children-json exact children test-full-a --json
+compare_real_database full-fields-query-json exact query pinned=true --all --json
+compare_real_database full-fields-search-json exact search "Full field" --json
+compare_real_database full-fields-ready-json exact ready --json
+compare_real_database full-fields-ready-explain-json exact ready --explain --json
+# Upstream round-trips the ready --explain, --mol and --gated output through a map, which sorts
+# every key, unless BD_JSON_ENVELOPE=1 wraps it in struct order (cmd/bd/output.go:36-99).
+compare_real_database_env full-fields-ready-explain-json-envelope exact BD_JSON_ENVELOPE=1 ready --explain --json
+compare_real_database full-fields-ready-molecule-json exact ready --mol test-full-mol --json
+compare_real_database_env full-fields-ready-molecule-json-envelope exact BD_JSON_ENVELOPE=1 ready --mol test-full-mol --json
+compare_real_database full-fields-ready-gated-json exact ready --gated --json
+compare_real_database_env full-fields-ready-gated-json-envelope exact BD_JSON_ENVELOPE=1 ready --gated --json
+compare_real_database full-fields-blocked-json exact blocked --json
+compare_real_database full-fields-show-json exact show test-full-a test-full-b test-full-n test-full-w --json
+compare_real_database full-fields-show-dependents-json exact show test-full-a test-full-b --include-dependents --json
+compare_real_database_env full-fields-show-json-envelope exact BD_JSON_ENVELOPE=1 show test-full-a --json
+compare_real_database full-fields-show-children-json exact show test-full-a --children --json
+compare_real_database_env full-fields-show-children-json-envelope exact BD_JSON_ENVELOPE=1 show test-full-a --children --json
+compare_real_database full-fields-show-refs-json exact show test-full-b --refs --json
+compare_real_database full-fields-show-thread-json exact show test-full-msg-reply --thread --json
+compare_real_database full-fields-dep-list-json exact dep list test-full-a --json
+compare_real_database full-fields-dep-tree-json exact dep tree test-full-a --json
+compare_real_database full-fields-graph-json exact graph test-full-a --json
+# Stale prints no labels yet (beadshx-m08.38), so its record has none.
+real_database_extra_import="$(full_issue_record test-full-s "Full field stale" 2 2026-08-20T04:00:00Z)"
+compare_real_database full-fields-stale-json exact stale --days 1 --json
+real_database_extra_import=""
+real_database_extra_sql=""
 compare_real_database show-thread-human exact show test-msg-leaf --thread
 compare_real_database show-thread-json exact show test-msg-leaf ignored-second --thread --json
 compare_real_database show-thread-disabled exact show test-msg-root --thread=false

@@ -368,7 +368,6 @@ class Main {
 					target: fields.target,
 					payload: fields.payload
 				},
-				sender: fields.sender,
 				labels: [],
 				dependencies: [],
 				dependencyCount: 0,
