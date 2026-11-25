@@ -6,8 +6,10 @@ write commands, every Beads flag, or the complete M08 read-only milestone.
 
 ## Command coverage
 
-The Haxe command enum admits the following commands. Admission means that a
-handler exists. It does not prove compatibility for every argument or backend.
+This table lists the commands that also have proxied-server differential
+coverage. For every command that `bdhx` runs, and its known limits, see the
+[compatibility reference](../compatibility/README.md). A handler does not
+prove compatibility for every argument or backend.
 
 | Commands | Embedded differential coverage | Proxied-server differential coverage |
 | --- | --- | --- |
@@ -26,10 +28,12 @@ separate task state from documented transient embedded-engine files. Development
 identity deliberately differs from upstream. Do not interpret those differences
 as full byte-for-byte compatibility.
 
-`dep list --direction=up` is not implemented in this profile. Configuration,
-comments/history, other dependency and graph commands, and snapshot artifacts
-remain outside this preview. Native Go storage bridges remain in the current
-implementation; this preview is not completion evidence for the Haxe-only port.
+The other commands, such as the configuration, comments, history, other
+dependency and graph commands and `snapshot`, have embedded coverage only.
+Several of them report that they are not available yet in a server-mode or
+proxied workspace; see [Known limits](../compatibility/limits.md). Native Go
+storage bridges remain in the current implementation; this preview is not
+completion evidence for the Haxe-only port.
 
 ## Reproduce qualification
 
