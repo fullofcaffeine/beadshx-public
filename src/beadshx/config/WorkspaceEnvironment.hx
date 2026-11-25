@@ -149,7 +149,7 @@ final class WorkspaceEnvironment {
 	static function loadSecondTargetFile(foundBeadsDir:String, target:String):Void {
 		final redirecting = switch RedirectSource.lookup(environmentValue("BEADS_DIR")) {
 			case RedirectedFrom(localDir): redirectSourceDatabase(localDir);
-			case NotRedirected | RedirectUnknown: "";
+			case NotRedirected: "";
 		};
 		final kept = environmentValue("BEADS_DOLT_SERVER_DATABASE") == ""
 			&& (redirecting != "" || redirectSourceDatabase(foundBeadsDir) != "");
@@ -580,11 +580,6 @@ final class WorkspaceEnvironment {
 		return ConfigProbes.statPath(path).match(StatDirectory);
 	}
 
-	/** Go's filepath.Abs, which upstream's CanonicalizePath returns for a path that does not exist. */
-	static function absolutePath(path:String):String {
-		return FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
-	}
-
 	/**
 		Upstream resolveCommandBeadsDir: the `.beads` directory that a database
 		`path` selects, where `foundBeadsDir` is the directory that upstream's
@@ -666,7 +661,7 @@ final class WorkspaceEnvironment {
 		final seen = new Map<String, Bool>();
 		final candidates = new Array<String>();
 		function addCandidate(candidate:String):Void {
-			final key = comparablePath(candidate);
+			final key = RedirectSource.comparablePath(candidate);
 			if (key == "" || seen.exists(key))
 				return;
 			seen.set(key, true);
@@ -703,33 +698,12 @@ final class WorkspaceEnvironment {
 			};
 			if (dataDirectory != null)
 				for (selected in [path, canonical])
-					if (samePath(candidate, selected)
-						|| samePath(FilepathPkg.dir(selected), candidate)
-						|| samePath(dataDirectory, selected))
+					if (RedirectSource.samePath(candidate, selected)
+						|| RedirectSource.samePath(FilepathPkg.dir(selected), candidate)
+						|| RedirectSource.samePath(dataDirectory, selected))
 						return candidate;
 		}
 		return "";
-	}
-
-	/**
-		Upstream utils.NormalizePathForComparison: the absolute path with its
-		symbolic links resolved when they resolve, in lower case on macOS and
-		Windows; "" for "". Unlike RedirectSource.canonicalizePath, it takes no
-		case from the file system.
-	**/
-	static function comparablePath(path:String):String {
-		if (path == "")
-			return "";
-		final absolute = absolutePath(path);
-		final resolved = FilepathPkg.evalSymlinks(absolute);
-		final normalized = resolved.value2 == null ? resolved.value1 : absolute;
-		final system = Sys.systemName();
-		return system == "Mac" || system == "Windows" ? normalized.toLowerCase() : normalized;
-	}
-
-	/** Upstream utils.PathsEqual. */
-	public static function samePath(first:String, second:String):Bool {
-		return comparablePath(first) == comparablePath(second);
 	}
 
 	/**

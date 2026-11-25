@@ -3673,6 +3673,100 @@ if [[ -d "$real_database_seed/WORK" ]]; then
 	compare_real_database case-redirect-without-database-count exact count
 	real_database_setup=""
 fi
+# Upstream's canonicalizeBeadsDirPath (internal/beads/beads.go:205-275) replaces a redirect target or a BEADS_DIR
+# path in a detached commit worktree, a path with /refs/commits/, with the .beads directory of a branch worktree of
+# the same repository that has the same commit checked out. It takes the first such worktree, those outside
+# /refs/commits/ first and then by path, and only when its .beads is a directory. Here refs/commits/snapshot is a
+# detached worktree of the seed's first commit, and the workspace moves to the branch worktree feature-wt at that
+# commit; the main worktree has a later commit (beadshx-m08.51). A worktree checks out the tracked metadata.json and
+# config.yaml of the seed's .beads, without its database.
+detached_commit_worktrees() {
+	: "${1:?}"
+	git -C "$1/work" worktree add -q --detach refs/commits/snapshot HEAD~1
+	git -C "$1/work" worktree add -q -b feature feature-wt HEAD~1
+	rm -rf "$1/work/feature-wt/.beads"
+	mv -f "$1/work/.beads" "$1/work/feature-wt/.beads"
+	mkdir -m 700 "$1/work/.beads"
+}
+redirect_to_detached_commit_worktree() {
+	detached_commit_worktrees "$1"
+	printf 'refs/commits/snapshot/.beads\n' >"$1/work/.beads/redirect"
+}
+real_database_setup=redirect_to_detached_commit_worktree
+compare_real_database detached-worktree-target-where exact where
+compare_real_database detached-worktree-target-count exact count
+compare_real_database detached-worktree-target-list-json exact list --json
+real_database_extra_env=(BD_DEBUG_ROUTING=1)
+compare_real_database routed-detached-worktree-target-count exact count
+compare_real_database routed-detached-worktree-target-where exact where
+# The detached worktree's own redirect, to a directory inside it, names the branch worktree's .beads too; so does
+# BEADS_DIR when it names the detached worktree's .beads, and then upstream follows no redirect.
+redirect_inside_detached_commit_worktree() {
+	detached_commit_worktrees "$1"
+	mkdir "$1/work/refs/commits/snapshot/sub"
+	copy_fixture_tree "$1/work/feature-wt/.beads" "$1/work/refs/commits/snapshot/sub/.beads"
+	printf 'sub/.beads\n' >"$1/work/refs/commits/snapshot/.beads/redirect"
+}
+real_database_setup=redirect_inside_detached_commit_worktree
+compare_real_database routed-detached-worktree-change-directory-count exact -C refs/commits/snapshot count
+real_database_extra_env=(BD_DEBUG_ROUTING=1 'BEADS_DIR=<work>/refs/commits/snapshot/.beads')
+compare_real_database routed-detached-worktree-beads-dir-count exact count
+compare_real_database routed-detached-worktree-beads-dir-where exact where
+real_database_extra_env=(BD_DEBUG_ROUTING=1)
+real_database_directory=refs/commits/snapshot
+compare_real_database routed-inside-detached-worktree-count exact count
+compare_real_database routed-inside-detached-worktree-where exact where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database inside-detached-worktree-list-json exact list --json
+real_database_directory=""
+# Without a .beads directory in that branch worktree, upstream keeps the detached worktree's.
+redirect_to_detached_commit_worktree_only() {
+	redirect_to_detached_commit_worktree "$1"
+	rm -rf "$1/work/refs/commits/snapshot/.beads"
+	mv -f "$1/work/feature-wt/.beads" "$1/work/refs/commits/snapshot/.beads"
+}
+real_database_setup=redirect_to_detached_commit_worktree_only
+real_database_extra_env=(BD_DEBUG_ROUTING=1)
+compare_real_database routed-detached-worktree-only-count exact count
+compare_real_database routed-detached-worktree-only-where exact where
+# Upstream checks only the first branch worktree: a-wt sorts before feature-wt and has no .beads, so the target
+# stays the detached worktree's .beads, which has no database.
+redirect_to_detached_commit_worktree_beside_branch_without_beads() {
+	redirect_to_detached_commit_worktree "$1"
+	git -C "$1/work" worktree add -q -b alpha a-wt HEAD~1
+	rm -rf "$1/work/a-wt/.beads"
+}
+real_database_setup=redirect_to_detached_commit_worktree_beside_branch_without_beads
+compare_real_database routed-detached-worktree-first-branch-without-beads-count exact count
+compare_real_database routed-detached-worktree-first-branch-without-beads-where exact where
+# A branch worktree under /refs/commits/ comes after one outside it, although its path sorts first.
+redirect_to_detached_commit_worktree_beside_branch_under_refs() {
+	: "${1:?}"
+	git -C "$1/work" worktree add -q --detach refs/commits/snapshot HEAD~1
+	git -C "$1/work" worktree add -q -b pinned refs/commits/pinned HEAD~1
+	git -C "$1/work" worktree add -q -b zebra zebra-wt HEAD~1
+	rm -rf "$1/work/zebra-wt/.beads"
+	mv -f "$1/work/.beads" "$1/work/zebra-wt/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'refs/commits/snapshot/.beads\n' >"$1/work/.beads/redirect"
+}
+real_database_setup=redirect_to_detached_commit_worktree_beside_branch_under_refs
+compare_real_database routed-detached-worktree-stable-branch-first-count exact count
+# A detached worktree of the main worktree's commit makes the main worktree the first candidate. The redirect then
+# names its own directory, which has no database, and upstream ignores it with a warning.
+redirect_to_detached_commit_worktree_of_head() {
+	: "${1:?}"
+	git -C "$1/work" worktree add -q --detach refs/commits/snapshot HEAD
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'refs/commits/snapshot/.beads\n' >"$1/work/.beads/redirect"
+}
+real_database_setup=redirect_to_detached_commit_worktree_of_head
+compare_real_database routed-detached-worktree-of-head-count exact count
+compare_real_database routed-detached-worktree-of-head-where exact where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=""
 # Each setup reloads the config of its own directory and checks that directory's metadata.json: a command
 # that opens a store sets up the first target and then the second, and so does where. So a config.yaml that
 # does not parse warns in the setup of its own target, and the shared-server notice comes from the first

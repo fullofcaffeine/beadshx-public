@@ -1518,7 +1518,7 @@ final class Application {
 			case NotFound | InvalidSelection(_): return selected;
 		};
 		final derived = noStoreBeadsDir(invocation);
-		if (derived == "" || derived == location.path || !WorkspaceEnvironment.samePath(derived, location.path))
+		if (derived == "" || derived == location.path || !RedirectSource.samePath(derived, location.path))
 			return selected;
 		return Found(relocated(location, derived, location.databaseName, location.foundPath));
 	}
@@ -7537,8 +7537,6 @@ final class Application {
 						selected = source;
 					}
 				case NotRedirected:
-				case RedirectUnknown:
-					return ModeAwareFailure('${path} is not available yet when a redirect involves a detached commit worktree in this build');
 			}
 		}
 		// The setup of a found directory whose redirect upstream follows keeps that directory's dolt_database too (main.go:603).

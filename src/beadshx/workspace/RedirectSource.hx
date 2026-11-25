@@ -3,6 +3,7 @@ package beadshx.workspace;
 import beadshx.config.ConfigProbes;
 import beadshx.config.ConfigValidate.PathStat;
 import beadshx.nativeextern.bytes.BytesPkg;
+import beadshx.nativeextern.exec.Cmd;
 import beadshx.nativeextern.exec.ExecPkg;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.nativeextern.strings.StringsPkg;
@@ -17,13 +18,6 @@ enum RedirectSourceLookup {
 
 	/** No local `.beads` directory, or one without a redirect that upstream follows. */
 	NotRedirected;
-
-	/**
-		A redirect in, or to, a detached commit worktree (`/refs/commits/`), for
-		which upstream may take a branch worktree instead. This build does not
-		model that choice.
-	**/
-	RedirectUnknown;
 }
 
 /** What a `.beads/redirect` file names, as upstream FollowRedirect reads it. */
@@ -31,11 +25,8 @@ enum RedirectTarget {
 	/** No readable redirect file, or one that names nothing. */
 	NoTarget;
 
-	/** The target, absolute and with its symbolic links resolved when they resolve. */
+	/** The target as upstream canonicalizes it (see RedirectSource.canonicalBeadsDir). */
 	Target(path:String);
-
-	/** A target in a detached commit worktree (`/refs/commits/`), for which upstream may take a branch worktree. */
-	DetachedTarget;
 }
 
 /** Upstream gitContext: the repository of the current directory. */
@@ -126,13 +117,8 @@ final class RedirectSource {
 
 	/** Upstream findLocalBeadsDir, then checkRedirectInDir on the directory it finds. */
 	static function localRedirect(beadsDirVariable:String, repository:Null<GitRepository>):RedirectSourceLookup {
-		if (beadsDirVariable != "") {
-			final canonical = canonicalBeadsDir(beadsDirVariable);
-			if (canonical != null)
-				return checkRedirect(canonical);
-			// Upstream may take a branch worktree's .beads instead, which this build does not model; it refuses only when this one redirects.
-			return ConfigProbes.statSucceeds(FilepathPkg.join(canonicalizePath(beadsDirVariable), "redirect")) ? RedirectUnknown : NotRedirected;
-		}
+		if (beadsDirVariable != "")
+			return checkRedirect(canonicalBeadsDir(beadsDirVariable));
 		final local = localBeadsDir(repository);
 		return local == "" ? NotRedirected : checkRedirect(local);
 	}
@@ -173,20 +159,18 @@ final class RedirectSource {
 	static function checkRedirect(beadsDir:String):RedirectSourceLookup {
 		if (!ConfigProbes.statSucceeds(FilepathPkg.join(beadsDir, "redirect")))
 			return NotRedirected;
-		final target = followRedirect(beadsDir);
-		return target == null ? RedirectUnknown : target == beadsDir ? NotRedirected : RedirectedFrom(beadsDir);
+		return followRedirect(beadsDir) == beadsDir ? NotRedirected : RedirectedFrom(beadsDir);
 	}
 
 	/**
 		Upstream FollowRedirect: the first line of the redirect file that is not
 		empty or a comment, relative to the directory above `beadsDir`. It is
 		`beadsDir` itself when that target is no directory or has no Beads
-		project files. Null when the target is in a detached commit worktree.
+		project files.
 	**/
-	static function followRedirect(beadsDir:String):Null<String> {
+	static function followRedirect(beadsDir:String):String {
 		return switch redirectTarget(beadsDir) {
 			case NoTarget: beadsDir;
-			case DetachedTarget: null;
 			case Target(target): isDirectory(target) && hasBeadsProjectFiles(target) ? target : beadsDir;
 		};
 	}
@@ -194,19 +178,17 @@ final class RedirectSource {
 	/**
 		The directory that upstream FollowRedirect returns for `beadsDir` when
 		that is another directory: the target of its redirect file, which has
-		project files. Null when FollowRedirect returns `beadsDir` itself, and
-		for a target in a detached commit worktree, which this build does not
-		follow.
+		project files. Null when FollowRedirect returns `beadsDir` itself.
 	**/
 	public static function followedTarget(beadsDir:String):Null<String> {
 		final target = followRedirect(beadsDir);
-		return target == null || target == beadsDir ? null : target;
+		return target == beadsDir ? null : target;
 	}
 
 	/**
 		The target of `beadsDir`'s redirect file, as upstream FollowRedirect
 		reads it: the first line that is not empty or a comment, relative to
-		the directory above `beadsDir`, made canonical.
+		the directory above `beadsDir`, made canonical (see canonicalBeadsDir).
 	**/
 	public static function redirectTarget(beadsDir:String):RedirectTarget {
 		final content:Null<String> = try File.getContent(FilepathPkg.join(beadsDir, "redirect")) catch (_:haxe.Exception) null;
@@ -224,16 +206,102 @@ final class RedirectSource {
 			return NoTarget;
 		if (!FilepathPkg.isAbs(target))
 			target = FilepathPkg.join(FilepathPkg.dir(beadsDir), target);
-		final canonical = canonicalBeadsDir(target);
-		return canonical == null ? DetachedTarget : Target(canonical);
+		return Target(canonicalBeadsDir(target));
 	}
 
-	/** Upstream canonicalizeBeadsDirPath, or null where its detached-worktree preference could apply. */
-	public static function canonicalBeadsDir(path:String):Null<String> {
+	/**
+		Upstream canonicalizeBeadsDirPath (internal/beads/beads.go:205-211),
+		which canonicalizes a BEADS_DIR path and a redirect target: the
+		canonical path, or the `.beads` directory of a branch worktree that
+		upstream prefers to it (see stableBranchWorktreeBeadsDir).
+	**/
+	public static function canonicalBeadsDir(path:String):String {
 		final canonical = canonicalizePath(path);
-		if (FilepathPkg.base(canonical) == ".beads" && FilepathPkg.dir(canonical).indexOf("/refs/commits/") >= 0)
-			return null;
-		return canonical;
+		final stable = stableBranchWorktreeBeadsDir(canonical);
+		return stable != "" ? stable : canonical;
+	}
+
+	/**
+		Upstream preferStableBranchWorktreeBeadsDir (internal/beads/beads.go:
+		221-275): for the `.beads` directory of a detached commit worktree, the
+		canonical `.beads` directory of a branch worktree of the same
+		repository that has the same commit checked out; "" for none.
+
+		Why: upstream prefers a stable branch checkout to a detached snapshot
+		checkout, which the megarepo convention places under
+		`refs/commits/<sha>`, so its lookups, its warnings and the dolt_database
+		that it keeps name the branch worktree's directory.
+		What: `beadsDir` must be named `.beads`, and the directory above it
+		must have `/refs/commits/` in its path and a detached HEAD
+		(`git rev-parse --abbrev-ref HEAD` prints `HEAD`). The candidates are
+		the worktrees that `git worktree list --porcelain` lists that are not
+		bare, not detached and on a branch, with the same HEAD commit, other
+		than that directory (by upstream's PathsEqual). Of them upstream takes
+		only the first, those outside `/refs/commits/` first and then by path,
+		and only when its `.beads` is a directory.
+		How: up to three git commands, only for such a path. Upstream stops
+		each git command after 5 seconds; this build waits for git.
+	**/
+	static function stableBranchWorktreeBeadsDir(beadsDir:String):String {
+		if (FilepathPkg.base(beadsDir) != ".beads")
+			return "";
+		final root = FilepathPkg.dir(beadsDir);
+		if (!inDetachedCommitWorktree(root))
+			return "";
+		if (gitOutput(ExecPkg.command("git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD")) != "HEAD")
+			return "";
+		final head = gitOutput(ExecPkg.command("git", "-C", root, "rev-parse", "HEAD"));
+		if (head == null || head == "")
+			return "";
+		final listing = gitOutput(ExecPkg.command("git", "-C", root, "worktree", "list", "--porcelain"));
+		if (listing == null)
+			return "";
+		final candidates = [
+			for (worktree in listWorktrees(listing))
+				if (!worktree.bare && !worktree.detached && worktree.branch != "" && worktree.head == head && !samePath(worktree.path, root)) worktree.path
+		];
+		if (candidates.length == 0)
+			return "";
+		candidates.sort((first, second) -> {
+			final firstStable = !inDetachedCommitWorktree(first);
+			if (firstStable != !inDetachedCommitWorktree(second))
+				return firstStable ? -1 : 1;
+			return first < second ? -1 : (first > second ? 1 : 0);
+		});
+		final stable = FilepathPkg.join(candidates[0], ".beads");
+		return isDirectory(stable) ? canonicalizePath(stable) : "";
+	}
+
+	/** Upstream isDetachedCommitWorktreePath: the megarepo convention of detached worktrees under `refs/commits/<sha>`. */
+	static function inDetachedCommitWorktree(path:String):Bool {
+		return path.indexOf("/refs/commits/") >= 0;
+	}
+
+	/** Upstream gitOutput: the command's standard output without surrounding white space, or null when it fails. */
+	static function gitOutput(command:Cmd):Null<String> {
+		final result = command.output();
+		return result.value2 != null ? null : goTrimSpace(BytesPkg.newBuffer(result.value1).stringValue());
+	}
+
+	/** Upstream listWorktrees: the entries of `git worktree list --porcelain`, as upstream reads them. */
+	static function listWorktrees(listing:String):Array<GitWorktree> {
+		final worktrees = new Array<GitWorktree>();
+		for (line in listing.split("\n")) {
+			final current = worktrees.length > 0 ? worktrees[worktrees.length - 1] : null;
+			if (StringTools.startsWith(line, "worktree "))
+				worktrees.push(new GitWorktree(line.substr("worktree ".length)));
+			else if (current == null)
+				continue;
+			else if (StringTools.startsWith(line, "HEAD "))
+				current.head = line.substr("HEAD ".length);
+			else if (StringTools.startsWith(line, "branch refs/heads/"))
+				current.branch = line.substr("branch refs/heads/".length);
+			else if (line == "detached")
+				current.detached = true;
+			else if (line == "bare")
+				current.bare = true;
+		}
+		return worktrees;
 	}
 
 	/**
@@ -312,6 +380,27 @@ final class RedirectSource {
 	/** storedCasePath's answer for each path, as typed, whose names it found. */
 	static final storedPrefixes = new Map<String, String>();
 
+	/**
+		Upstream utils.NormalizePathForComparison: the absolute path with its
+		symbolic links resolved when they resolve, in lower case on macOS and
+		Windows; "" for "". Unlike canonicalizePath, it takes no case from the
+		file system.
+	**/
+	public static function comparablePath(path:String):String {
+		if (path == "")
+			return "";
+		final absolute = FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
+		final resolved = FilepathPkg.evalSymlinks(absolute);
+		final normalized = resolved.value2 == null ? resolved.value1 : absolute;
+		final system = Sys.systemName();
+		return system == "Mac" || system == "Windows" ? normalized.toLowerCase() : normalized;
+	}
+
+	/** Upstream utils.PathsEqual. */
+	public static function samePath(first:String, second:String):Bool {
+		return comparablePath(first) == comparablePath(second);
+	}
+
 	/** Upstream hasBeadsProjectFiles. */
 	public static function hasBeadsProjectFiles(beadsDir:String):Bool {
 		if (ConfigProbes.statSucceeds(FilepathPkg.join(beadsDir, "metadata.json"))
@@ -353,5 +442,18 @@ final class RedirectSource {
 	/** Go's filepath.Abs, which upstream applies to the Git directories before it compares them. */
 	static function canonicalizeAbsolute(path:String):String {
 		return FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
+	}
+}
+
+/** One entry of `git worktree list --porcelain`, as upstream's worktreeInfo holds it. */
+private final class GitWorktree {
+	public final path:String;
+	public var head = "";
+	public var branch = "";
+	public var detached = false;
+	public var bare = false;
+
+	public function new(path:String) {
+		this.path = path;
 	}
 }

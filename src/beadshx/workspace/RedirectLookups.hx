@@ -140,7 +140,7 @@ final class RedirectLookups {
 	public function findBeadsDir():String {
 		final variable = beadsDirVariable();
 		if (variable != "") {
-			final followed = follow(canonicalDirectory(variable));
+			final followed = follow(RedirectSource.canonicalBeadsDir(variable));
 			if (RedirectSource.isDirectory(followed) && RedirectSource.hasBeadsProjectFiles(followed))
 				return followed;
 		}
@@ -228,7 +228,7 @@ final class RedirectLookups {
 	public function findDatabasePath():Void {
 		final variable = beadsDirVariable();
 		if (variable != "")
-			follow(canonicalDirectory(variable));
+			follow(RedirectSource.canonicalBeadsDir(variable));
 		else if (environmentValue("BEADS_DB") == "")
 			findDatabaseInTree();
 	}
@@ -276,7 +276,7 @@ final class RedirectLookups {
 				return repositoryBeads;
 		}
 		final variable = beadsDirVariable();
-		final local = variable != "" ? canonicalDirectory(variable) : RedirectSource.localBeadsDir(repository);
+		final local = variable != "" ? RedirectSource.canonicalBeadsDir(variable) : RedirectSource.localBeadsDir(repository);
 		if (local != "" && hasRedirectFile(local))
 			follow(local);
 		return local;
@@ -348,8 +348,7 @@ final class RedirectLookups {
 	function follow(beadsDir:String):String {
 		final target = switch RedirectSource.redirectTarget(beadsDir) {
 			case Target(path): path;
-			// A detached commit worktree's target is upstream's branch-worktree choice, which this build does not model.
-			case NoTarget | DetachedTarget: return beadsDir;
+			case NoTarget: return beadsDir;
 		};
 		if (!RedirectSource.isDirectory(target)) {
 			emit('Warning: redirect target does not exist or is not a directory: ${target}\n');
@@ -384,7 +383,7 @@ final class RedirectLookups {
 	**/
 	public function followsNothing():Bool {
 		final variable = beadsDirVariable();
-		return !redirectNearby() && (variable == "" || !hasRedirectFile(canonicalDirectory(variable)));
+		return !redirectNearby() && (variable == "" || !hasRedirectFile(RedirectSource.canonicalBeadsDir(variable)));
 	}
 
 	/** Whether upstream's BEADS_DIR is set: by -C, by a setup, or in the environment. */
@@ -444,11 +443,6 @@ final class RedirectLookups {
 			repository = RedirectSource.gitRepository();
 		}
 		return repository;
-	}
-
-	static function canonicalDirectory(path:String):String {
-		final canonical = RedirectSource.canonicalBeadsDir(path);
-		return canonical != null ? canonical : RedirectSource.canonicalizePath(path);
 	}
 
 	static function hasRedirectFile(beadsDir:String):Bool {
