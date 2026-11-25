@@ -1,16 +1,31 @@
 package beadshx.ready;
 
+import beadshx.relation.RelatedIssue;
+import beadshx.relation.RelatedIssue.relatedIssue;
 import beadshx.store.IssueListItem;
+
+/** One issue on upstream's blocked list and the IDs of its blockers, in upstream's order. */
+typedef BlockedEntry = {
+	final issue:RelatedIssue;
+	final blockedBy:Array<String>;
+}
 
 /**
 	Builds `ready --explain` policy from copied storage facts.
 
-	The storage boundary supplies issue rows, dependency edges, and the exact
-	ready set. Haxe owns the explanation, blocker hydration, parent selection,
-	and cycle walk; no native facade owns this public command behavior.
+	The storage boundary supplies issue rows, dependency edges, the exact ready
+	set and upstream's blocked list. Haxe owns the explanation, blocker
+	hydration, parent selection, and cycle walk; no native facade owns this
+	public command behavior.
 **/
 final class ReadyExplain {
-	public static function build(readyIssues:Array<IssueListItem>, candidates:Array<IssueListItem>):ReadyExplanation {
+	/**
+		Ports upstream types.BuildReadyExplanation (internal/types/types.go:1718-1810).
+		`blocked` is upstream's GetBlockedIssues list, kept in its order. The
+		candidates, every issue and wisp, give each blocker its title, status and
+		priority; a blocker without a record keeps only its ID, as upstream's.
+	**/
+	public static function build(readyIssues:Array<IssueListItem>, candidates:Array<IssueListItem>, blocked:Array<BlockedEntry>):ReadyExplanation {
 		final byId = new Map<String, IssueListItem>();
 		for (issue in candidates)
 			byId.set(issue.id, issue);
@@ -39,12 +54,10 @@ final class ReadyExplain {
 			ready.push(item);
 		}
 
-		final blocked = new Array<BlockedExplainItem>();
-		for (issue in candidates) {
-			if (issue.blockedBy.length == 0)
-				continue;
+		final blockedItems = new Array<BlockedExplainItem>();
+		for (entry in blocked) {
 			final blockers = new Array<ReadyBlockerInfo>();
-			for (id in issue.blockedBy) {
+			for (id in entry.blockedBy) {
 				final blocker = byId.get(id);
 				blockers.push(blocker == null ? {
 					id: id,
@@ -58,10 +71,23 @@ final class ReadyExplain {
 					priority: blocker.priority
 					});
 			}
-			blocked.push({issue: issue, blockedBy: blockers, blockedByCount: issue.blockedBy.length});
+			blockedItems.push({issue: entry.issue, blockedBy: blockers, blockedByCount: entry.blockedBy.length});
 		}
 
-		return {ready: ready, blocked: blocked, cycles: detectCycles(candidates)};
+		return {ready: ready, blocked: blockedItems, cycles: detectCycles(candidates)};
+	}
+
+	/**
+		The blocked list where no Haxe-owned SQL reads the stored `is_blocked` flag yet
+		(server-mode and proxied workspaces): each candidate with an open blocker, in
+		the candidates' order, named by its blocking annotations. It differs from
+		upstream's list when a stored flag disagrees with the blocking edges.
+	**/
+	public static function blockedFromEdges(candidates:Array<IssueListItem>):Array<BlockedEntry> {
+		return [
+			for (issue in candidates)
+				if (issue.blockedBy.length > 0) {issue: relatedIssue(issue, issue.labels, issue.longFields, ""), blockedBy: issue.blockedBy}
+		];
 	}
 
 	static function detectCycles(issues:Array<IssueListItem>):Array<Array<String>> {

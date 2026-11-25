@@ -4174,6 +4174,15 @@ real_database_extra_sql="UPDATE issues SET status = 'open', closed_at = NULL, up
 compare_real_database_colors ready-color-gated-none exact CLICOLOR_FORCE=1 ready --gated
 real_database_extra_sql=""
 compare_real_database_colors ready-color-explain-pipe exact "" ready --explain
+# ready --explain lists what upstream's GetBlockedIssues lists (cmd/bd/ready.go:464,
+# internal/storage/issueops/blocked.go:240-370): the issues whose stored is_blocked flag is set,
+# not the issues that have an open blocker. An issue with the flag and no open blocker names its
+# parent; an open blocker without the flag lists nothing (one statement a line).
+real_database_extra_sql="UPDATE issues SET is_blocked = 1, updated_at = updated_at WHERE id = 'test-cl-p1'
+UPDATE issues SET is_blocked = 0, updated_at = updated_at WHERE id = 'test-cl-waiting'"
+compare_real_database_colors ready-explain-stored-flag exact "" ready --explain
+compare_real_database_colors ready-explain-stored-flag-json exact "" ready --explain --json
+real_database_extra_sql=""
 # graph accents its heading marks and layer headings, styles each status icon, mutes each ID line,
 # prints a title that is not open in its status style and the box view's counts in the blocked and
 # muted styles. graph check marks its result. The cycle case uses one cycle through a member without
@@ -6540,6 +6549,7 @@ schema_skew_commands=(
 	"dep-tree:dep tree $real_database_issue_id"
 	"dep-cycles:dep cycles"
 	"blocked:blocked"
+	"ready-explain:ready --explain"
 	"graph:graph $real_database_issue_id"
 	"events-tail:events tail"
 	"types:types"

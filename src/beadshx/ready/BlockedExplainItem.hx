@@ -1,10 +1,10 @@
 package beadshx.ready;
 
-import beadshx.store.IssueListItem;
+import beadshx.relation.RelatedIssue;
 
 /** One blocked issue plus the current blocker records known to the workspace. */
 typedef BlockedExplainItem = {
-	final issue:IssueListItem;
+	final issue:RelatedIssue;
 	final blockedBy:Array<ReadyBlockerInfo>;
 	final blockedByCount:Int;
 }

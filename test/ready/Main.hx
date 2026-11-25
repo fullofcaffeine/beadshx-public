@@ -97,7 +97,13 @@ final class Main {
 		final blocked = issue("blocked", "open", 2, [edge("blocked", "first", "blocks")], ["first"], 1, 0);
 		final left = issue("left", "open", 2, [edge("left", "right", "conditional-blocks")], ["right"], 1, 0);
 		final right = issue("right", "open", 2, [edge("right", "left", "blocks")], ["left"], 1, 0);
-		final explanation = ReadyExplain.build([first, ready], [first, second, ready, blocked, left, right]);
+		final candidates = [first, second, ready, blocked, left, right];
+		final fromEdges = ReadyExplain.blockedFromEdges(candidates);
+		equal(fromEdges.length, 3);
+		equal(fromEdges[0].issue.id, "blocked");
+		// Upstream's GetIssuesByIDsInTx leaves the derived flag out of the blocked records.
+		equal(fromEdges[0].issue.longFields.isBlocked, false);
+		final explanation = ReadyExplain.build([first, ready], candidates, fromEdges);
 		equal(explanation.ready.length, 2);
 		equal(explanation.ready[0].reason, "no blocking dependencies");
 		equal(explanation.ready[0].resolvedBlockers, null);
@@ -108,6 +114,20 @@ final class Main {
 		equal(explanation.blocked[0].blockedBy[0].title, "first");
 		equal(explanation.cycles.length, 1);
 		equal(explanation.cycles[0].join(","), "left,right");
+
+		// Upstream's stored-flag list keeps its order and its blockers, also a closed one or
+		// one without a record, which keeps only its ID.
+		final stored = ReadyExplain.build([first], candidates, [
+			{issue: fromEdges[2].issue, blockedBy: ["ghost"]},
+			{issue: fromEdges[0].issue, blockedBy: ["first", "second"]}
+		]);
+		equal(stored.blocked.length, 2);
+		equal(stored.blocked[0].issue.id, "right");
+		equal(stored.blocked[0].blockedBy[0].id, "ghost");
+		equal(stored.blocked[0].blockedBy[0].title, "");
+		equal(stored.blocked[0].blockedBy[0].status, "");
+		equal(stored.blocked[1].blockedByCount, 2);
+		equal(stored.blocked[1].blockedBy[1].status, "closed");
 	}
 
 	static function discoversAndFiltersGatedMolecules():Void {

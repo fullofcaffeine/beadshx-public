@@ -272,6 +272,13 @@ the `--sort` order applies. Other expressions, such as
 `status=open OR status=blocked`, keep the priority order, and `--reverse`
 without `--sort` does not change it.
 
+Like upstream, `ready --explain` takes its blocked list from the stored
+`is_blocked` flag of each issue and wisp, as `blocked` does, and not from the
+dependencies. An issue with the flag names its open blockers, or else its
+parent. An issue with an open blocker but without the flag is not on the
+list. The list is in priority order, then the newest issue first. Upstream
+puts the remaining ties in a random order; `bdhx` puts them in ID order.
+
 The flag parser follows cobra and pflag. It finds the command first, so an
 unknown command comes before any flag error. Until it finds the command, it
 knows only the flags of the root command. It takes the argument after any
@@ -405,8 +412,8 @@ Limits:
   parity (M12) removes this limit.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once, such as `show`
-  with two IDs or `children`, prints the warning once for each open. Upstream
-  prints it once.
+  with two IDs, `children` or `ready --explain`, prints the warning once for
+  each open. Upstream prints it once.
 - `dep tree`, `dep cycles`, `blocked`, `comments`, `history`, `graph`,
   `types`, `statuses`, `events tail`, `events export`, `config get`,
   `config list`, `config show`, `config validate` and `config drift` read
@@ -414,6 +421,10 @@ Limits:
   that they are not available yet. If the server cannot be reached, they print
   the same store error as upstream.
   `types --sections` prints its fixed list in every mode.
+- In a server-mode or proxied workspace, `ready --explain` cannot read the
+  stored `is_blocked` flag yet. Its blocked list then holds each issue that
+  has an open blocker. This list is different from upstream's only when a
+  stored flag does not agree with the dependencies.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - Upstream also trusts the macOS Shared folder when it decides whether to

@@ -142,6 +142,7 @@ import beadshx.store.SqlGraphReader.AllGraphLoad;
 import beadshx.store.SqlGraphReader.GraphDependency;
 import beadshx.store.SqlGraphReader.GraphSubgraph;
 import beadshx.store.SqlBlockedReader.BlockedIssue;
+import beadshx.store.GoReadonlyStore.BLOCKED_ROUTE_UNAVAILABLE;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
@@ -204,6 +205,7 @@ import beadshx.ready.MoleculeSubgraph;
 import beadshx.ready.GatedMolecule;
 import beadshx.ready.GatedReady;
 import beadshx.ready.ReadyExplain;
+import beadshx.ready.ReadyExplain.BlockedEntry;
 import beadshx.ready.ReadyExplanation;
 import beadshx.relation.DependencyRead;
 import beadshx.profile.ProfilePort;
@@ -3286,6 +3288,12 @@ final class Application {
 		};
 	}
 
+	/**
+		Upstream runReadyExplain (cmd/bd/ready.go:450-514): the ready set, then
+		GetBlockedIssues, whose failure stops the command. Its blocked list comes
+		from the stored `is_blocked` flag, which only the embedded route reads with
+		Haxe-owned SQL; elsewhere the blocking edges stand in for it.
+	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		return switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
 			case ReadyFailure(message): runStoreFailure(message);
@@ -3295,7 +3303,12 @@ final class Application {
 					case ListFailure(message): runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
-						final explanation = ReadyExplain.build(ready.page.items, candidates.items);
+						final blocked:Array<BlockedEntry> = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
+							case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE): ReadyExplain.blockedFromEdges(candidates.items);
+							case Failure(message): return runModeAwareFailure(invocation.output, message);
+							case Success(entries): [for (entry in entries) {issue: entry.issue, blockedBy: entry.blockedBy}];
+						};
+						final explanation = ReadyExplain.build(ready.page.items, candidates.items, blocked);
 						if (invocation.output == Json)
 							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation, output.usesJsonEnvelope()));
 						else

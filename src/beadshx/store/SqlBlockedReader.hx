@@ -13,7 +13,8 @@ typedef BlockedIssue = {
 }
 
 /**
-	Lists blocked issues as upstream issueops.GetBlockedIssuesInTx does, for `bd blocked`.
+	Lists blocked issues as upstream issueops.GetBlockedIssuesInTx does, for `bd blocked` and
+	the blocked list of `ready --explain`.
 
 	Upstream does not recompute blocking: the stored `is_blocked` column selects the
 	issues, open `blocks`, `waits-for` and `conditional-blocks` targets name their

@@ -45,7 +45,10 @@ final DEP_CYCLES_ROUTE_UNAVAILABLE = "dep cycles is not available yet for server
 /** `bd comments` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
 final COMMENTS_ROUTE_UNAVAILABLE = "comments is not available yet for server-mode or proxied workspaces in this build";
 
-/** `bd blocked` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
+/**
+	`bd blocked` has the same embedded-only Haxe SQL route as `bd dep cycles`. Elsewhere
+	`ready --explain` builds its blocked list from the blocking edges instead.
+**/
 final BLOCKED_ROUTE_UNAVAILABLE = "blocked is not available yet for server-mode or proxied workspaces in this build";
 
 /** `bd dep tree` has the same embedded-only Haxe SQL route as `bd dep cycles`. */
