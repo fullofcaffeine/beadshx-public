@@ -19,9 +19,15 @@ enum SchemaSkewRefusal {
 	/** Upstream `*schema.SchemaBehindError`: the database is behind, and the open cannot migrate it. */
 	DatabaseBehind(databaseVersion:Int, binaryVersion:Int);
 
-	/** The version read failed. `message` is upstream's whole error, such as `schema behind-drift check: ...`. */
-	SchemaCheckFailed(message:String);
+	/** Upstream `checkSchemaSkew` could not read the version: `schema skew check: <error>`. */
+	ForwardCheckFailed(error:String);
+
+	/** Upstream `CheckBehindDrift` could not read the version: `schema behind-drift check: <error>`. */
+	BehindCheckFailed(error:String);
 }
+
+private final FORWARD_CHECK_PREFIX = "schema skew check: ";
+private final BEHIND_CHECK_PREFIX = "schema behind-drift check: ";
 
 /**
 	A command stopped at its store open because of schema skew.
@@ -77,8 +83,33 @@ function schemaSkewRefusalError(refusal:SchemaSkewRefusal):String {
 		case DatabaseBehind(database, binary):
 			'schema version mismatch: database is at v${database}, binary expects v${binary}, and the read-only open cannot migrate it; ' +
 			"run any bd write command in that workspace to migrate, or set BD_IGNORE_SCHEMA_SKEW=1 to read anyway (queries touching newer schema may fail)";
-		case SchemaCheckFailed(message):
-			message;
+		case ForwardCheckFailed(error):
+			FORWARD_CHECK_PREFIX + error;
+		case BehindCheckFailed(error):
+			BEHIND_CHECK_PREFIX + error;
+	};
+}
+
+/**
+	The error after `failed to open database: ` that upstream's pre-run prints
+	for a refusal other than a database ahead of the binary.
+
+	Why: upstream's two embedded opens wrap the same check failure
+	differently. The plain open (`newStore`, for every command without strict
+	read-only mode) runs the forward check in its schema initialization and
+	wraps its error in `embeddeddolt: init schema: `. The strict read-only
+	open (`openReadOnly`) returns the error as it is.
+	What: `strictOpen` is true in strict read-only mode. A database behind the
+	binary, and a failed behind check, have no plain-open form: there upstream
+	migrates, and this build, which never migrates, refuses with the strict
+	open's words.
+**/
+function schemaSkewOpenError(refusal:SchemaSkewRefusal, strictOpen:Bool):String {
+	return switch refusal {
+		case ForwardCheckFailed(_) if (!strictOpen):
+			'embeddeddolt: init schema: ${schemaSkewRefusalError(refusal)}';
+		case DatabaseAhead(_, _) | DatabaseBehind(_, _) | ForwardCheckFailed(_) | BehindCheckFailed(_):
+			schemaSkewRefusalError(refusal);
 	};
 }
 
@@ -125,7 +156,7 @@ function checkSchemaCursor(cursor:SchemaCursorRead):Null<SchemaSkewRefusal> {
 	final forwardVersion = switch cursor {
 		case CursorVersion(version): version;
 		case CursorTableMissing(_) | CursorNoRow: 0;
-		case CursorReadFailed(error): return SchemaCheckFailed('schema skew check: reading schema_migrations version: ${error}');
+		case CursorReadFailed(error): return ForwardCheckFailed('reading schema_migrations version: ${error}');
 		case CursorDatabaseMissing: return null;
 	};
 	if (forwardVersion != 0 && forwardVersion > BINARY_SCHEMA_VERSION) {
@@ -135,8 +166,8 @@ function checkSchemaCursor(cursor:SchemaCursorRead):Null<SchemaSkewRefusal> {
 	}
 	final behindVersion = switch cursor {
 		case CursorVersion(version): version;
-		case CursorNoRow: return SchemaCheckFailed("schema behind-drift check: sql: no rows in result set");
-		case CursorTableMissing(error) | CursorReadFailed(error): return SchemaCheckFailed('schema behind-drift check: ${error}');
+		case CursorNoRow: return BehindCheckFailed("sql: no rows in result set");
+		case CursorTableMissing(error) | CursorReadFailed(error): return BehindCheckFailed(error);
 		case CursorDatabaseMissing: return null;
 	};
 	if (behindVersion >= BINARY_SCHEMA_VERSION)
@@ -179,8 +210,10 @@ enum SchemaCursorRead {
 	exactly from the versions that it names.
 **/
 function facadeSchemaRefusal(message:String):Null<SchemaSkewRefusal> {
-	if (StringTools.startsWith(message, "schema skew check: ") || StringTools.startsWith(message, "schema behind-drift check: "))
-		return SchemaCheckFailed(message);
+	if (StringTools.startsWith(message, FORWARD_CHECK_PREFIX))
+		return ForwardCheckFailed(message.substr(FORWARD_CHECK_PREFIX.length));
+	if (StringTools.startsWith(message, BEHIND_CHECK_PREFIX))
+		return BehindCheckFailed(message.substr(BEHIND_CHECK_PREFIX.length));
 	final prefix = "schema version mismatch: database is at v";
 	if (!StringTools.startsWith(message, prefix))
 		return null;

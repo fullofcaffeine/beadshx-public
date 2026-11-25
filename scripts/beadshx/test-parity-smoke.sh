@@ -723,6 +723,9 @@ store_failure_case_count=0
 store_failure_beads_mode=700
 # More variable assignments for both sides of a store-failure case.
 store_failure_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Names a function that prepares each side root (its argument) of a store-failure case after the
+# scenario wrote its workspace, before the fixture is fingerprinted.
+store_failure_setup=""
 compare_store_failure() {
 	local scenario="$1"
 	local case_name="$2"
@@ -797,6 +800,9 @@ compare_store_failure() {
 			printf '%s\n' "$source_metadata" >"$command_root/work/.beads/metadata.json"
 			printf '%s\n' "$config_yaml" >"$command_root/work/.beads/config.yaml"
 			printf 'target/.beads\n' >"$command_root/work/.beads/redirect"
+		fi
+		if [[ -n "$store_failure_setup" ]]; then
+			"$store_failure_setup" "$command_root"
 		fi
 	done
 	oracle_before="$(fingerprint_task_state_tree "$oracle_root")"
@@ -8018,6 +8024,40 @@ compare_real_database_sql schema-empty-readonly-comments exact "DELETE FROM sche
 compare_real_database_sql schema-missing-readonly-comments exact "DROP TABLE schema_migrations" \
 	--readonly comments "$real_database_issue_id"
 compare_real_database_sql schema-missing-readonly-count exact "DROP TABLE schema_migrations" --readonly count
+# A cursor that the version read cannot scan stops every open. Upstream's plain open (without strict
+# read-only mode) reports it from its schema initialization, which names itself: "embeddeddolt: init
+# schema: schema skew check: ...". The strict read-only open reports the check's error alone.
+schema_broken_sql=$'ALTER TABLE schema_migrations MODIFY version VARCHAR(32) NOT NULL\nINSERT INTO schema_migrations (version) VALUES (\'x\')'
+compare_real_database_sql schema-broken-readonly-count exact "$schema_broken_sql" --readonly count
+compare_real_database_sql schema-broken-count exact "$schema_broken_sql" count
+compare_real_database_sql schema-broken-count-json exact "$schema_broken_sql" count --json
+compare_real_database_sql schema-broken-comments exact "$schema_broken_sql" comments "$real_database_issue_id"
+compare_real_database_sql schema-broken-show-json exact "$schema_broken_sql" show "$real_database_issue_id" --json
+compare_real_database_sql schema-broken-list exact "$schema_broken_sql" list
+compare_real_database_sql schema-broken-dep-tree exact "$schema_broken_sql" dep tree "$real_database_issue_id"
+compare_real_database_sql schema-broken-info exact "$schema_broken_sql" info
+compare_real_database_sql schema-broken-info-whats-new exact "$schema_broken_sql" info --whats-new
+compare_real_database_sql schema-broken-readonly-info-whats-new exact "$schema_broken_sql" --readonly info --whats-new
+compare_real_database_sql schema-broken-where exact "$schema_broken_sql" where
+real_database_extra_config='readonly: true'
+compare_real_database_sql schema-broken-readonly-setting-comments exact "$schema_broken_sql" comments "$real_database_issue_id"
+compare_real_database_sql schema-broken-readonly-false-comments exact "$schema_broken_sql" \
+	--readonly=false comments "$real_database_issue_id"
+real_database_extra_config=""
+real_database_extra_env=(BD_READONLY=1)
+compare_real_database_sql schema-broken-env-readonly-list exact "$schema_broken_sql" list
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_real_database_sql schema-broken-ignored-dep-list exact "$schema_broken_sql" dep list "$real_database_issue_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# info --whats-new reads nothing, but upstream's pre-run opens the store first, so the check stops it too.
+compare_real_database_sql schema-ahead-info-whats-new exact "$schema_ahead_sql" info --whats-new
+compare_real_database_sql schema-ahead-info-whats-new-json exact "$schema_ahead_sql" info --whats-new --json
+compare_real_database_sql schema-behind-readonly-info-whats-new exact "$schema_behind_sql" --readonly info --whats-new
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_real_database_sql schema-ahead-ignored-info-whats-new exact "$schema_ahead_sql" --readonly info --whats-new
+compare_real_database_sql schema-behind-ignored-info-whats-new-json exact "$schema_behind_sql" \
+	--readonly info --whats-new --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	schema_case=ahead
 	[[ "$schema_sql" == "$schema_behind_sql" ]] && schema_case=behind
@@ -8054,6 +8094,40 @@ real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database_sql schema-ahead-ignored-show exact "$schema_ahead_sql" show "$real_database_issue_id"
 compare_real_database_sql schema-behind-ignored-readonly-show-json exact "$schema_behind_sql" --readonly show "$real_database_issue_id" --json
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+
+# A server-mode workspace checks the schema only through its server, which does not answer here. An
+# embedded store that the workspace still holds, even one ahead of the binary, changes nothing: upstream
+# never opens it, and the escape hatch changes nothing either.
+store_failure_skewed_seed="$test_root/store-failure-skewed-seed"
+copy_fixture_tree "$real_database_seed/work" "$store_failure_skewed_seed"
+printf '%s\n' "$schema_ahead_sql" | "$fixture_sql" "$store_failure_skewed_seed" >/dev/null
+hold_skewed_embedded_store() {
+	local root="$1"
+	local database
+	database="$(jq -er '.dolt_database' "$store_failure_skewed_seed/.beads/metadata.json")"
+	copy_fixture_tree "$store_failure_skewed_seed/.beads/embeddeddolt" "$root/work/.beads/embeddeddolt"
+	# Rewrite metadata.json in place, so the file keeps its mode.
+	jq --arg database "$database" '.dolt_database = $database' "$root/work/.beads/metadata.json" >"$root/metadata.json"
+	cat "$root/metadata.json" >"$root/work/.beads/metadata.json"
+	rm -f "$root/metadata.json"
+}
+store_failure_setup=hold_skewed_embedded_store
+compare_store_failure unavailable-server skewed-store-comments comments test-1
+compare_store_failure unavailable-server skewed-store-show-json show test-1 --json
+compare_store_failure unavailable-server skewed-store-list list
+compare_store_failure unavailable-server skewed-store-count-json count --json
+compare_store_failure unavailable-server skewed-store-readonly-dep-tree --readonly dep tree test-1
+compare_store_failure unavailable-server skewed-store-info-whats-new info --whats-new
+store_failure_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_store_failure unavailable-server skewed-store-ignored-comments comments test-1
+compare_store_failure unavailable-server skewed-store-ignored-list-json list --json
+store_failure_extra_env=(BEADSHX_PARITY_EXTRA=1)
+store_failure_setup=""
+compare_store_failure unavailable-server flag-ignored-show --ignore-schema-skew show test-1
+compare_store_failure redirect-proxied-server flag-ignored-readonly-count --readonly --ignore-schema-skew count
+store_failure_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_store_failure redirect-proxied-server ignored-global-list-json --global list --json
+store_failure_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
 wait_for_watch_text() {
 	local file="$1"

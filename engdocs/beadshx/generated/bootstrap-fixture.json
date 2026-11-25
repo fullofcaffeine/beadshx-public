@@ -17,7 +17,7 @@
       },
       {
         "path": "src/beadshx/cli/Application.hx",
-        "sha256": "4ae3f06c5c3f5e7df24a5ff436c4ec451a15e84071502b39d42bf69f18f03731"
+        "sha256": "c8ead53332c1841f9d0db2e7f87867dafb4785e1fd06b5246f284a3275376c1d"
       },
       {
         "path": "src/beadshx/cli/CatalogViews.hx",
@@ -1157,7 +1157,7 @@
       },
       {
         "path": "src/beadshx/store/SchemaSkew.hx",
-        "sha256": "5b3c0325f3408f9a592f0d687bfe8735e6d85b9e61576ac3ff97cda64897a984"
+        "sha256": "bc3809c9b79316f164a9755913bc46e56936bdc13be96bc1881056a82d469e8f"
       },
       {
         "path": "src/beadshx/store/SqlBlockedReader.hx",
@@ -1329,11 +1329,11 @@
   "files": [
     {
       "path": "bdhx/.reflaxe-go-owned.json",
-      "sha256": "9f9470bda5f75601d0dda75508a50ac7faaae37714984252e74427f9edb28eb2"
+      "sha256": "6f7d7f8e76b7e629b3c29e8c598453a2e58eba3f03c9c2db7dc374e2510d6ff2"
     },
     {
       "path": "bdhx/haxego_generated_main.go",
-      "sha256": "bb7de7bea73c8fcc10a95ab826cd25ac0ccbdc328fca254d1c85b74bb8c6a2d2"
+      "sha256": "e1c5466e608542017005c1177ace274713c95acb9aa72978f9afccc60bf8256b"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_bootstrap_commandprocess.go",
@@ -1345,7 +1345,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_application.go",
-      "sha256": "5b41875fda1d976cda491ac48defe64abe6a2c858ebbddc294148020308aa171"
+      "sha256": "96ecd2920069210bfa7cc97280b346585cc78ec6712244704a70b81d870c6ca8"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_cli_catalogviews.go",
@@ -1993,7 +1993,7 @@
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_schemaskew.go",
-      "sha256": "abfe659586131a43e29d6b3d4bfd108e7c3da0a5b9f4bd4cb277f6eb12edc1db"
+      "sha256": "c54d4cf4e4b94a0a2ac7551775c9deaba809f0106f42b274b47aeb18ee867186"
     },
     {
       "path": "bdhx/haxego_generated_module_beadshx_store_sqlblockedreader.go",
@@ -2301,7 +2301,7 @@
     },
     {
       "path": "bdhx/haxego_generated_recovery_3.go",
-      "sha256": "7498529ec05f2bfee5e2e3fade3a56a1517d6b57a38564b161f870881a89ec5c"
+      "sha256": "e2ce0455be0cf21b5de561161034033fa43c833e7cceba4258cbb85f7e83bbbe"
     },
     {
       "path": "bdhx/haxego_generated_recovery_4.go",

@@ -140,6 +140,7 @@ import beadshx.store.InvalidDatabaseName.InvalidDatabaseNameStep;
 import beadshx.store.SchemaSkew.SCHEMA_SKEW_ESCAPE_HINT;
 import beadshx.store.SchemaSkew.SchemaSkewBoundary;
 import beadshx.store.SchemaSkew.SchemaSkewRefusal;
+import beadshx.store.SchemaSkew.schemaSkewOpenError;
 import beadshx.store.SchemaSkew.schemaSkewRefusalError;
 import beadshx.store.SchemaSkew.schemaSkewUserMessage;
 import beadshx.store.TaskSnapshot;
@@ -559,7 +560,7 @@ final class Application {
 			case Parsed(invocation):
 				if (invocation.cpuProfile && !invocation.showHelp && usesStore(invocation.command))
 					profiler.startCpu(commandName(invocation.command));
-				final exitCode = SchemaSkewBoundary.runCommand(() -> runInvocation(invocation), refusal -> runSchemaSkewRefusal(invocation.output, refusal));
+				final exitCode = SchemaSkewBoundary.runCommand(() -> runInvocation(invocation), refusal -> runSchemaSkewRefusal(invocation, refusal));
 				// A command that wrote nothing after its schema check still prints the escape-hatch warning.
 				output.flushHeldWarning();
 				if (exitCode == 0 && runsPreRun(invocation))
@@ -1592,8 +1593,10 @@ final class Application {
 						if (!findsDatabase(invocation, location)) {
 							runWorkspaceDatabaseNotFound(location);
 						} else if (invocation.infoWhatsNew) {
-							// Upstream's pre-run opens the store first; the checks above stand for an embedded open.
+							// Upstream's pre-run opens the store first; the checks above and the schema check stand for an embedded open.
 							final opensStore = invocation.global || opensServerStore(location);
+							if (!opensStore && !location.proxiedServer)
+								store.checkSchema(location.path, selectedDatabaseName(invocation, location));
 							final opened = opensStore ? store.validate(location.path, invocation.global) : Success(true);
 							finishStoreOpen(opened.match(Success(_)));
 							switch opened {
@@ -7394,19 +7397,22 @@ final class Application {
 		Upstream's pre-run when its store open stops at schema skew
 		(cmd/bd/main.go): a database ahead of the binary prints the stale-binary
 		block, or under JSON output `handleSchemaSkewJSON`'s error on stderr. Any
-		other refusal is a plain open error in every mode.
+		other refusal is a plain open error in every mode, in the words of the
+		open that strict read-only mode selects for the bound workspace.
 	**/
-	function runSchemaSkewRefusal(mode:OutputMode, refusal:SchemaSkewRefusal):Int {
+	function runSchemaSkewRefusal(invocation:Invocation, refusal:SchemaSkewRefusal):Int {
 		switch refusal {
 			case DatabaseAhead(database, binary):
-				switch mode {
+				switch invocation.output {
 					case Human:
 						output.writeStderr(schemaSkewUserMessage(database, binary));
 					case Json:
 						output.writeStderr(renderSchemaSkewJson(refusal, database, binary, output.usesJsonEnvelope()));
 				}
-			case DatabaseBehind(_, _) | SchemaCheckFailed(_):
-				output.writeStderr('Error: failed to open database: ${schemaSkewRefusalError(refusal)}\n');
+			case DatabaseBehind(_, _) | ForwardCheckFailed(_) | BehindCheckFailed(_):
+				final location = boundWorkspace;
+				final config = location != null ? LayeredConfig.forWorkspace(location.path) : LayeredConfig.atStartup();
+				output.writeStderr('Error: failed to open database: ${schemaSkewOpenError(refusal, strictReadonly(invocation, config))}\n');
 		}
 		return 1;
 	}

@@ -16,10 +16,20 @@ exists.
   and `dep add` asks for one of the read subcommands. Writes come with the
   write milestones (M09 and later).
 - Without `--readonly`, upstream migrates a database whose schema is behind
-  the binary, and then runs the command. It also tries to migrate when it
-  cannot read the `schema_migrations` table. `bdhx` never migrates. It stops
-  with upstream's `--readonly` error and leaves the database unchanged.
-  Migration parity (M12) removes this limit.
+  the binary, and then runs the command. It also migrates when the
+  `schema_migrations` table is missing or empty. `bdhx` never migrates. It
+  stops with upstream's `--readonly` error and leaves the database unchanged.
+  When the working set has changes in tables that a pending migration
+  touches, upstream's read commands warn about these dirty tables instead of
+  a migration, and `bdhx` stops in the same way. Migration parity (M12)
+  removes this limit.
+- When such a database has a Dolt remote, upstream does not migrate it. Its
+  read commands, such as `list`, `show` and `comments`, print its
+  remote-migrate gate warning (`Warning: refusing to auto-apply ... (#4259)`)
+  and read the database as it is. Its other commands, such as `types` and
+  `dep tree`, stop with the full gate message, or with its JSON error under
+  `--json`. `bdhx` stops with the `--readonly` error in both cases
+  (beadshx-m08.61).
 - Upstream `show` records the issue that it showed in `.beads/last-touched`.
   `bdhx` reads that file, for `show` without an ID, but never writes it
   (beadshx-m08.27).
@@ -89,8 +99,18 @@ exists.
 - In a server-mode or proxied workspace, the records of `stale --json` have
   no `labels` field, because `bdhx` does not read the labels there yet
   (beadshx-m08.46).
-- The schema version check is compared with upstream only for embedded
-  workspaces (beadshx-m08.15).
+- The parity tests have no Dolt server, so they do not compare the schema
+  version check of a server-mode or proxied workspace. They compare only
+  that it stops at upstream's connection error when the server does not
+  answer. In a server-mode workspace, `bdhx` leaves the check to upstream's
+  server open in its native code. That code puts `failed to open database: `
+  before the error, so `bdhx` does not see a schema refusal there. For a
+  database ahead of the binary, `bdhx` then probably prints `Error: failed to
+  open database: schema version mismatch: ...` on one line in every output
+  mode, where upstream prints its stale-binary message or its JSON error with
+  `schema_skew`. With the escape hatch, the warning probably repeats once for
+  each native open. Upstream's read-only server open does not check a
+  database that is behind the binary (beadshx-m08.62).
 - Every command that reads the database reports that it is not available yet
   in shared-server mode, and when the `db` setting names a database. Only
   `version`, `where` and help pages still run. In these cases upstream
@@ -212,9 +232,13 @@ exists.
   server-mode workspaces, because `bdhx` cannot count the issues for
   upstream's note there.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
-  binary, a command that opens the native store more than once, such as `show`
-  with two IDs, `children` or `ready --explain`, prints the warning once for
-  each open. Upstream prints it once (beadshx-m08.15).
+  binary, a command that opens the native store more than once prints the
+  warning once for each open. Upstream prints it once. These commands can
+  print it more than once: `children` and `list --parent` in human output,
+  once for each list read of the tree; `ready` in human output, once more for
+  the parent of a ready issue; and `ready --gated`, `ready --mol` and
+  `ready --explain`. They stop doing so when these list, ready and issue
+  reads are ported to Haxe (beadshx-m08.63).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,

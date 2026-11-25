@@ -101,9 +101,10 @@ strict read-only mode, and `embeddeddolt: creating data directory: mkdir
 
 In an embedded workspace, every command that reads the database first
 compares the highest version in the `schema_migrations` table with the
-schema version of upstream v1.2.1, v65, as upstream does. Errors from the
-flag parser still come first, and this check comes before the other checks
-of the command's arguments.
+schema version of upstream v1.2.1, v65, as upstream does. `info --whats-new`
+reads nothing, but upstream opens the store first, so it checks too. Errors
+from the flag parser still come first, and this check comes before the other
+checks of the command's arguments.
 
 - When the database is ahead of the binary, the command stops with
   upstream's `schema version mismatch: ... Your bd binary is stale` message
@@ -114,12 +115,27 @@ of the command's arguments.
   mismatch: ... the read-only open cannot migrate it ...`, in every output
   mode. Without `--readonly`, upstream would migrate the database (see
   [Limits](limits.md#writes-and-migration)).
-- A failed read of the table stops the command with the same
-  `failed to open database` prefix.
+- A failed read of the version, for example when a value in the table is not
+  a number, stops the command with the same `failed to open database`
+  prefix. Without strict read-only mode, upstream's schema initialization
+  names itself first, and so does `bdhx`: `Error: failed to open database:
+  embeddeddolt: init schema: schema skew check: reading schema_migrations
+  version: ...`. With `--readonly` or the `readonly` setting, the error
+  starts with `schema skew check:`. A missing or empty table stops the
+  command with upstream's `--readonly` error, `schema behind-drift check:
+  ...`, also without `--readonly` (see
+  [Limits](limits.md#writes-and-migration)).
 
 `BD_IGNORE_SCHEMA_SKEW=1` or `--ignore-schema-skew` prints upstream's warning
 instead, and the command reads the database. `where` prints no stored prefix
 when the check stops, as upstream does. `version` does not check.
+
+A server-mode workspace never checks an embedded store that it still holds in
+`.beads/embeddeddolt`, as upstream never opens that store. Its own check runs
+in upstream's server open, which `bdhx` runs in its native code (see
+[Limits](limits.md#server-mode-proxied-and-shared-server-workspaces)). When
+the server does not answer, the command stops with upstream's connection
+error, also with the escape hatch.
 
 ## Strict read-only mode
 
