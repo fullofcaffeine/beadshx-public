@@ -322,12 +322,14 @@ class Main {
 		final root = '${temporary == null || temporary == "" ? "/tmp" : temporary}/beadshx-database-name-contract-${Date.now().getTime()}-${Std.random(1000000)}';
 		final beadsDir = '$root/.beads';
 		FileSystem.createDirectory('$beadsDir/embeddeddolt/Test/.dolt');
-		// A directory without a Dolt repository, and a file, are not databases.
+		File.saveContent('$beadsDir/embeddeddolt/Test/.dolt/repo_state.json', "{}");
+		// A directory without a Dolt repository, one whose repository has no repo_state.json, and a file, are not databases.
 		FileSystem.createDirectory('$beadsDir/embeddeddolt/other');
+		FileSystem.createDirectory('$beadsDir/embeddeddolt/unstarted/.dolt');
 		File.saveContent('$beadsDir/embeddeddolt/plain', "");
 		for (name in ["test", "TEST", "Test"])
 			equal(embeddedDatabaseExists(beadsDir, name), true);
-		for (name in ["other", "plain", "beads"])
+		for (name in ["other", "unstarted", "plain", "beads"])
 			equal(embeddedDatabaseExists(beadsDir, name), false);
 		equal(embeddedDatabaseExists('$root/missing', "test"), false);
 		// Dolt's create checks the path named like a missing database: a directory, a file, nothing, or an unfinished create.
@@ -346,6 +348,7 @@ class Main {
 			equal(missingDatabaseEntry(beadsDir, name), expected);
 		// DOLT_DBNAME_REPLACE makes Dolt name a database after its directory with spaces and hyphens as one `_`.
 		FileSystem.createDirectory('$beadsDir/embeddeddolt/my--db/.dolt');
+		File.saveContent('$beadsDir/embeddeddolt/my--db/.dolt/repo_state.json', "{}");
 		final previousReplace = Sys.getEnv("DOLT_DBNAME_REPLACE");
 		Sys.putEnv("DOLT_DBNAME_REPLACE", "1");
 		equal(DoltDirectoryName.databaseName(" a - b\tc__d "), "a_b_c_d");
