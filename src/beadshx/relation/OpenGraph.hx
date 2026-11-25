@@ -14,6 +14,9 @@ typedef OpenGraphIssue = {
 typedef OpenGraph = {
 	final rootId:String;
 	final edges:Array<GraphEdge>;
+
+	/** For each kept row, its index in the given rows, or -1 for a new row. */
+	final sources:Array<Int>;
 }
 
 /** Upstream isOpenStatus: `--open` keeps these statuses and leaves out every other one. */
@@ -54,8 +57,9 @@ function filterOpenGraph(rootId:String, issues:Array<OpenGraphIssue>, edges:Arra
 				targets.push(edge.issueId);
 		}
 	final kept = new Array<GraphEdge>();
+	final sources = new Array<Int>();
 	final keptBlocks = new Map<String, Bool>();
-	function keep(edge:GraphEdge):Void {
+	function keep(edge:GraphEdge, source:Int):Void {
 		if (edge.type == "blocks") {
 			// The length prefix keeps two different ID pairs from making one key.
 			final key = '${edge.dependsOnId.length}:${edge.dependsOnId}${edge.issueId}';
@@ -64,10 +68,11 @@ function filterOpenGraph(rootId:String, issues:Array<OpenGraphIssue>, edges:Arra
 			keptBlocks.set(key, true);
 		}
 		kept.push(edge);
+		sources.push(source);
 	}
-	for (edge in edges)
-		if (open.exists(edge.issueId) && open.exists(edge.dependsOnId))
-			keep(edge);
+	for (index in 0...edges.length)
+		if (open.exists(edges[index].issueId) && open.exists(edges[index].dependsOnId))
+			keep(edges[index], index);
 	for (issue in issues) {
 		if (!open.exists(issue.id))
 			continue;
@@ -83,11 +88,11 @@ function filterOpenGraph(rootId:String, issues:Array<OpenGraphIssue>, edges:Arra
 						continue;
 					visited.set(target, true);
 					if (open.exists(target))
-						keep({issueId: target, dependsOnId: issue.id, type: "blocks"});
+						keep({issueId: target, dependsOnId: issue.id, type: "blocks"}, -1);
 					else
 						queue.push(target);
 				}
 		}
 	}
-	return {rootId: open.exists(rootId) ? rootId : fallbackRoot.id, edges: kept};
+	return {rootId: open.exists(rootId) ? rootId : fallbackRoot.id, edges: kept, sources: sources};
 }

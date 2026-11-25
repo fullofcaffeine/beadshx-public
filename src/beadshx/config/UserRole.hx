@@ -1,7 +1,9 @@
 package beadshx.config;
 
 import beadshx.config.LayeredConfig.gitBeadsRole;
+import beadshx.config.LayeredConfig.gitOutput;
 import beadshx.nativeextern.filepath.FilepathPkg;
+import beadshx.nativeextern.url.UrlPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
 import sys.FileSystem;
 import sys.io.File;
@@ -33,6 +35,73 @@ final class UserRole {
 			return true;
 		final primary = jjPrimaryWorkspaceRoot(FilepathPkg.clean(Sys.getCwd()));
 		return primary != null && isUserRole(gitBeadsRole(primary));
+	}
+
+	/**
+		The role that upstream routing.DetectUserRole returns, without its WARNING
+		(internal/routing/routing.go:37-64).
+
+		Without a role from Git, upstream guesses it with the deprecated
+		detectFromURL (:86-113) in the current directory, or in the primary
+		workspace of a jj secondary workspace: without an `origin` remote the user
+		is a maintainer; with an `upstream` remote for another repository a
+		contributor; with an `origin` URL for SSH or with credentials (an `@`) a
+		maintainer; and else a contributor.
+	**/
+	public static function detect():String {
+		final role = gitBeadsRole();
+		if (isUserRole(role))
+			return role;
+		final primary = jjPrimaryWorkspaceRoot(FilepathPkg.clean(Sys.getCwd()));
+		if (primary != null && isUserRole(gitBeadsRole(primary)))
+			return gitBeadsRole(primary);
+		var origin = gitOutput(primary, ["remote", "get-url", "--push", "origin"]);
+		if (origin == null)
+			origin = gitOutput(primary, ["remote", "get-url", "origin"]);
+		if (origin == null)
+			return "maintainer";
+		final originUrl = goTrimSpace(origin);
+		final upstream = gitOutput(primary, ["remote", "get-url", "upstream"]);
+		if (upstream != null && goTrimSpace(upstream) != "" && !sameRemoteRepository(originUrl, goTrimSpace(upstream)))
+			return "contributor";
+		return StringTools.startsWith(originUrl, "git@")
+			|| StringTools.startsWith(originUrl, "ssh://")
+			|| originUrl.indexOf("@") >= 0 ? "maintainer" : "contributor";
+	}
+
+	/** Upstream sameRemoteRepository: the same repository path when both remotes give one, else the same trimmed text. */
+	static function sameRemoteRepository(left:String, right:String):Bool {
+		final leftSlug = remoteRepositorySlug(left);
+		final rightSlug = remoteRepositorySlug(right);
+		if (leftSlug != null && rightSlug != null)
+			return leftSlug == rightSlug;
+		return goTrimSpace(left) == goTrimSpace(right);
+	}
+
+	/** Upstream remoteRepositorySlug: the path of an SCP-like remote after its colon, or of a URL that url.Parse accepts. */
+	static function remoteRepositorySlug(remote:String):Null<String> {
+		final trimmed = goTrimSpace(StringTools.endsWith(remote, "/") ? remote.substr(0, remote.length - 1) : remote);
+		if (trimmed == "")
+			return null;
+		if (trimmed.indexOf("@") >= 0 && trimmed.indexOf(":") >= 0 && trimmed.indexOf("://") < 0)
+			return normalizeRemotePath(trimmed.substr(trimmed.indexOf(":") + 1));
+		final parsed = UrlPkg.parse(trimmed);
+		final url = parsed.value1;
+		return parsed.value2 != null || url == null ? null : normalizeRemotePath(url.path);
+	}
+
+	/** Upstream normalizeRemotePath: without slashes around it and without a final `.git`; null when that leaves nothing. */
+	static function normalizeRemotePath(path:String):Null<String> {
+		var start = 0;
+		var end = path.length;
+		while (start < end && path.charAt(start) == "/")
+			start++;
+		while (end > start && path.charAt(end - 1) == "/")
+			end--;
+		var normalized = goTrimSpace(path.substring(start, end));
+		if (StringTools.endsWith(normalized, ".git"))
+			normalized = normalized.substr(0, normalized.length - 4);
+		return normalized == "" ? null : normalized;
 	}
 
 	/** Upstream roleFromGitConfig accepts only these two values. */

@@ -17,13 +17,7 @@ import beadshx.store.SqlIssueRow.SQL_ISSUE_COLUMNS;
 import beadshx.store.SqlIssueRow.scanSqlIssueFields;
 import beadshx.store.SqlRelationReader.relatedIssueFromSql;
 
-/**
-	Upstream would look an `external:` dependency target up in other repositories
-	(routes.jsonl and contributor auto-routing); this build reads one database only.
-**/
-final GRAPH_EXTERNAL_UNAVAILABLE = "graph of an issue with a dependency on another repository is not available yet in this build";
-
-/** The connected issues of one root and the dependency rows between them, as `bd graph <id>` loads them. */
+/** The connected issues of one root and the dependency rows between them, as `bd graph <id>` shows them. */
 typedef GraphSubgraph = {
 	final root:RelatedIssue;
 
@@ -46,10 +40,24 @@ typedef GraphDependency = {
 	final threadId:String;
 }
 
-/** What `bd graph --all` loads: the issues and the rows between them, or a status search over the row cap. */
+/**
+	What `bd graph <id>` loads before it keeps the rows between its issues (see
+	GraphExternal.selectGraphRows).
+**/
+typedef GraphLoad = {
+	final root:RelatedIssue;
+
+	/** The root, then each issue in the order the walk reached it. */
+	final issues:Array<RelatedIssue>;
+
+	/** Each issue's dependency rows, issue by issue and in row order; an issue whose rows fail to read has none. */
+	final rows:Array<GraphDependency>;
+}
+
+/** What `bd graph --all` loads: the issues and their rows, or a status search over the row cap. */
 enum AllGraphLoad {
-	/** The issues in search order, then each issue's rows whose target is loaded, in row order. */
-	AllGraphRows(issues:Array<RelatedIssue>, dependencies:Array<GraphDependency>);
+	/** The issues in search order, then each issue's dependency rows as GraphLoad reads them. */
+	AllGraphRows(issues:Array<RelatedIssue>, rows:Array<GraphDependency>);
 
 	AllGraphRowLimitExceeded(found:Int, cap:Int);
 }
@@ -98,12 +106,9 @@ final class SqlGraphReader {
 		dependency type in both directions: for each issue, its dependents and then its
 		dependencies, each list read like GetDependentsInTx and GetDependenciesInTx.
 		Like upstream, a failed neighbor read skips the rest of that issue. Then each
-		issue's dependency rows are read like GetDependencyRecords, and a row is kept
-		when its target is in the subgraph. An `external:<project>:<id>` target that
-		names an issue in the subgraph is rewritten to that ID; any other one needs a
-		lookup in another repository and fails with GRAPH_EXTERNAL_UNAVAILABLE.
+		issue's dependency rows are read like GetDependencyRecords (see readRows).
 	**/
-	public static function readGraphSubgraph(context:Context, transaction:Tx, rootId:String):StoreResult<GraphSubgraph> {
+	public static function readGraphSubgraph(context:Context, transaction:Tx, rootId:String):StoreResult<GraphLoad> {
 		final root = switch readIssueInTx(context, transaction, rootId) {
 			case Failure(message): return Failure('failed to get issue: $message');
 			case Success(value): value;
@@ -134,17 +139,7 @@ final class SqlGraphReader {
 					}
 			}
 		}
-		return switch readRowsBetween(context, transaction, issues, known) {
-			case Failure(message): Failure(message);
-			case Success(rows): Success({
-					root: root,
-					issues: issues,
-					edges: [
-						for (row in rows)
-							{issueId: row.issueId, dependsOnId: row.dependsOnId, type: row.type}
-					]
-				});
-		};
+		return Success({root: root, issues: issues, rows: readRows(context, transaction, issues)});
 	}
 
 	/**
@@ -152,8 +147,8 @@ final class SqlGraphReader {
 
 		The open, then the in_progress, then the blocked issues are each searched like
 		SearchIssues with only a status filter (see searchStatus); a positive `maxRows`
-		applies to each status on its own. Then the rows between the loaded issues are
-		read as readGraphSubgraph reads them.
+		applies to each status on its own. Then each issue's rows are read as
+		readGraphSubgraph reads them.
 	**/
 	public static function readAllGraphs(context:Context, transaction:Tx, maxRows:Int):StoreResult<AllGraphLoad> {
 		final issues = new Array<RelatedIssue>();
@@ -167,44 +162,37 @@ final class SqlGraphReader {
 					for (issue in found)
 						issues.push(issue);
 			}
-		final known = [for (issue in issues) issue.id => true];
-		return switch readRowsBetween(context, transaction, issues, known) {
-			case Failure(message): Failure(message);
-			case Success(rows): Success(AllGraphRows(issues, rows));
-		};
+		return Success(AllGraphRows(issues, readRows(context, transaction, issues)));
 	}
 
 	/**
-		Each issue's dependency rows whose target is `known`, issue by issue. Like upstream,
-		a failed read skips that issue's rows. An `external:<project>:<id>` target that
-		names a known issue is rewritten to that ID; any other one needs a lookup in another
-		repository and fails with GRAPH_EXTERNAL_UNAVAILABLE.
+		The issues of exact IDs, each read like GetIssueInTx (see readIssueInTx), as
+		upstream reads the issue that an external row's `<id>` resolves to. The first
+		failed read fails the whole read.
 	**/
-	static function readRowsBetween(context:Context, transaction:Tx, issues:Array<RelatedIssue>, known:Map<String, Bool>):StoreResult<Array<GraphDependency>> {
-		final kept = new Array<GraphDependency>();
+	public static function readGraphIssues(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Array<RelatedIssue>> {
+		final issues = new Array<RelatedIssue>();
+		for (id in ids)
+			switch readIssueInTx(context, transaction, id) {
+				case Failure(message):
+					return Failure('failed to get issue: $message');
+				case Success(issue):
+					issues.push(issue);
+			}
+		return Success(issues);
+	}
+
+	/** Each issue's dependency rows, issue by issue. Like upstream, a failed read skips that issue's rows. */
+	static function readRows(context:Context, transaction:Tx, issues:Array<RelatedIssue>):Array<GraphDependency> {
+		final rows = new Array<GraphDependency>();
 		for (issue in issues)
 			switch readDependencyRows(context, transaction, issue.id) {
 				case Failure(_):
-				case Success(rows):
-					for (row in rows) {
-						final target = externalTarget(row.dependsOnId);
-						if (target != null && !known.exists(target))
-							return Failure(GRAPH_EXTERNAL_UNAVAILABLE);
-						if (target != null)
-							kept.push({
-								issueId: row.issueId,
-								dependsOnId: target,
-								type: row.type,
-								createdAt: row.createdAt,
-								createdBy: row.createdBy,
-								metadata: row.metadata,
-								threadId: row.threadId
-							});
-						else if (known.exists(row.dependsOnId))
-							kept.push(row);
-					}
+				case Success(read):
+					for (row in read)
+						rows.push(row);
 			}
-		return Success(kept);
+		return rows;
 	}
 
 	/**
@@ -336,16 +324,6 @@ final class SqlGraphReader {
 				return Failure('get labels: rows: ${rowError.toString()}');
 		}
 		return Success(labels);
-	}
-
-	/** The `<id>` of an `external:<project>:<id>` reference with a non-empty ID, or null. */
-	static function externalTarget(dependsOnId:String):Null<String> {
-		if (!StringTools.startsWith(dependsOnId, "external:"))
-			return null;
-		final separator = dependsOnId.indexOf(":", 9);
-		if (separator < 0 || separator == dependsOnId.length - 1)
-			return null;
-		return dependsOnId.substr(separator + 1);
 	}
 
 	/** Reads one ID column from both dependency tables, then those issues like GetIssuesByIDsInTx. */

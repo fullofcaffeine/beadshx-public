@@ -122,6 +122,30 @@ Like upstream, `ready --explain` finds its cycles in the `blocks` and
 `conditional-blocks` dependencies of issues and wisps, and a cycle leaves out
 a member that has no issue record.
 
+## graph
+
+Like upstream, `graph` for one issue or `--all` keeps a dependency only when
+both of its issues are in the graph. An `external:<project>:<id>` dependency
+can add its `<id>` to the graph. When the graph does not hold that ID yet,
+`graph` looks it up in the database as it resolves an issue ID argument (see
+[Issue IDs and prefixes](#issue-ids-and-prefixes)):
+
+- A full ID, an ID without the prefix or a unique abbreviation adds that
+  issue to the graph, also a closed one. The dependency then points to it.
+  With `--all`, the issue joins the group of the dependency's issue, and
+  `--open` leaves it out again when it is not open.
+- An ID that resolves to an issue that is already in the graph lists that
+  issue twice in the `issues` of `--json`, and the row cap counts it twice.
+- `graph` does not read the dependencies of an added issue.
+- When no issue matches, or the ID is ambiguous, `graph` leaves the
+  dependency out.
+
+Before it leaves out a dependency whose ID matches no issue, upstream tries
+the `routes.jsonl` prefix routes and then contributor auto-routing. Like
+upstream, `bdhx` follows the redirect of a routed workspace, with its
+warnings, and asks for the role of the user. Where upstream would read
+another repository, `bdhx` refuses (see [Limits](limits.md#commands-and-output)).
+
 ## Flags
 
 The flag parser follows cobra and pflag, the Go libraries that upstream uses.
@@ -190,6 +214,8 @@ not write.
 Like upstream, `list`, `ready` and `children` ask for the role of the user
 after these checks and before they read issues. `show`, `comments`,
 `dep list` and `dep tree` ask for it each time they do not find an issue ID.
+`graph` asks for it each time it does not find the `<id>` of an
+`external:<project>:<id>` dependency.
 The role is the value of `git config --get beads.role` in the current
 directory, so Git's system, global and repository config count. In a jj
 secondary workspace, the config of its primary workspace also counts. When

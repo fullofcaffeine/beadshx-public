@@ -191,13 +191,21 @@ function renderGraphCompact(subgraph:GraphSubgraph, layout:GraphLayout, styles:T
 	Upstream renderGraphHTML for one loaded subgraph: the page that graphHtmlPage fills in.
 
 	The page title names the root. Each issue is one JSON node with its layer, and
-	with its assignee only when it has one. Each `blocks` and `parent-child` row is
-	one JSON link from the blocker to the blocked issue, in load order. Upstream
-	lists the nodes in Go map order, so any order can come out there; this port
-	lists them in load order, the root first.
+	with its assignee only when it has one; an issue that an external row lists
+	twice is still one node. Each `blocks` and `parent-child` row is one JSON link
+	from the blocker to the blocked issue, in load order. Upstream lists the nodes
+	in Go map order, so any order can come out there; this port lists them in load
+	order, the root first.
 **/
 function renderGraphHtml(subgraph:GraphSubgraph, layout:GraphLayout):String {
-	return renderHtmlPage('Beads: ${subgraph.root.title} (${subgraph.root.id})', subgraph.issues, subgraph.edges, layout);
+	final listed = new Map<String, Bool>();
+	final issues = new Array<RelatedIssue>();
+	for (issue in subgraph.issues)
+		if (!listed.exists(issue.id)) {
+			listed.set(issue.id, true);
+			issues.push(issue);
+		}
+	return renderHtmlPage('Beads: ${subgraph.root.title} (${subgraph.root.id})', issues, subgraph.edges, layout);
 }
 
 /**

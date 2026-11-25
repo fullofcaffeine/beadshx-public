@@ -415,6 +415,12 @@ function gitBeadsRole(?directory:String):String {
 	return output == null ? "" : goTrimSpace(output);
 }
 
+/** The stdout of `git <arguments>` in `directory`, or else in the current directory, or null when Git fails. */
+function gitOutput(directory:Null<String>, arguments:Array<String>):Null<String> {
+	final command = directory == null ? ExecPkg.command("git", ...arguments) : ExecPkg.command("git", ...["-C", directory].concat(arguments));
+	return commandOutput(command);
+}
+
 /** Upstream primeHasGitRemote for a selected workspace: `git remote` in the current directory prints a name. */
 function gitHasRemote():Bool {
 	final output = commandOutput(ExecPkg.command("git", "remote"));

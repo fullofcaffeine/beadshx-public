@@ -49,10 +49,13 @@ interface IssueQueryPort extends QueryTimePort {
 	/** The cycles `bd graph check` reports, as member ID lists; an empty list means a clean graph. */
 	function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>>;
 
-	/** The connected subgraph of an exact root ID, as `bd graph <id>` loads it. */
-	function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph>;
+	/** The connected issues of an exact root ID and their rows, as `bd graph <id>` loads them. */
+	function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphLoad>;
 
-	/** The open issues and the rows between them, as `bd graph --all` loads them; a positive `maxRows` caps each status. */
+	/** The issues of exact IDs, as `bd graph` reads the issues that its external rows find. */
+	function graphIssues(beadsDir:String, databaseName:String, ids:Array<String>, global:Bool):StoreResult<Array<beadshx.relation.RelatedIssue>>;
+
+	/** The open issues and their rows, as `bd graph --all` loads them; a positive `maxRows` caps each status. */
 	function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad>;
 
 	/** The database custom types; `bd types` adds the layered config ones and lists them after the built-in ones. */

@@ -19,6 +19,10 @@ import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.AllGraphs.AllGraphIssue;
 import beadshx.relation.AllGraphs.groupAllGraphs;
+import beadshx.relation.GraphExternal.ExternalTargetLookup;
+import beadshx.relation.GraphExternal.GraphRowSelection;
+import beadshx.relation.GraphExternal.externalTarget;
+import beadshx.relation.GraphExternal.selectGraphRows;
 import beadshx.relation.GoSort.goPdqsort;
 import beadshx.relation.GoSort.goSortSlice;
 import beadshx.store.SqlRowCap;
@@ -60,8 +64,60 @@ class Main {
 		htmlContracts();
 		goSortContracts();
 		allGraphContracts();
+		externalRowContracts();
 		rowCapContracts();
 		Sys.println("graph Haxe contracts: PASS");
+	}
+
+	/**
+		The rows that upstream's graph loaders keep around external rows. Each case
+		lists the kept rows as `issue>target` with the lookups in call order, then the
+		added IDs.
+	**/
+	static function externalRowContracts():Void {
+		equal(externalTarget("external:proj:id:with:colons"), "id:with:colons");
+		equal(externalTarget("external:proj:"), null);
+		equal(externalTarget("external:proj"), null);
+		equal(externalTarget("ext:proj:id"), null);
+		final found = [
+			"x" => ExternalTargetFound("p-x"),
+			"y" => ExternalTargetFound("a"),
+			"far" => ExternalTargetElsewhere
+		];
+		function select(loaded:Array<String>, rows:Array<GraphEdge>):String {
+			final calls = new Array<String>();
+			final selection = selectGraphRows(loaded, rows, target -> {
+				calls.push(target);
+				final lookup = found.get(target);
+				return lookup == null ? ExternalTargetMissing : lookup;
+			});
+			return switch selection {
+				case GraphRowsElsewhere: 'elsewhere after ${calls.join(",")}';
+				case GraphRowsSelected(added, kept): [for (row in kept) '${rows[row.index].issueId}>${row.dependsOnId}'].join(" ")
+						+ ' | ${calls.join(",")} | ${added.join(",")}';
+			};
+		}
+		// A known target stays; a row to an unknown issue is left out; an external row to a known ID points to it.
+		equal(select(["a", "b"], [
+			edge("a", "b", "blocks"),
+			edge("a", "c", "blocks"),
+			edge("b", "external:o:a", "blocks")
+		]), "a>b b>a |  | ");
+		// A found ID joins, also when it is already in the graph, and a later row can point to it.
+		equal(select(["a", "b"], [
+			edge("a", "external:o:x", "blocks"),
+			edge("b", "p-x", "relates-to"),
+			edge("b", "external:o:y", "blocks"),
+			edge("b", "external:o:m", "blocks"),
+			edge("a", "external:o:m", "blocks"),
+			edge("a", "external:o:p-x", "blocks")
+		]), "a>p-x b>p-x b>a a>p-x | x,y,m,m | p-x,a");
+		// An ID in another repository stops at that row.
+		equal(select(["a"], [
+			edge("a", "external:o:m", "blocks"),
+			edge("a", "external:o:far", "blocks"),
+			edge("a", "external:o:x", "blocks")
+		]), "elsewhere after m,far");
 	}
 
 	/**
@@ -343,6 +399,8 @@ class Main {
 			"a>f blocks, c>f blocks, p>a parent-child, c>a relates-to, a>c blocks, c>h blocks");
 		// A left-out root gives way to the first issue with the lowest priority number.
 		equal(open.rootId, "p");
+		// Each kept row names the row it came from; the walk's new rows name none.
+		equal(open.sources.join(","), "3,5,6,8,-1,-1");
 		equal(filterOpenGraph("c", issues, edges).rootId, "c");
 		equal(filterOpenGraph("b", [openIssue("b", "closed", 0), openIssue("x", "pinned", 0), openIssue("d", "deferred", 0)], []), null);
 	}

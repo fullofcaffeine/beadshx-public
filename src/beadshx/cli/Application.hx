@@ -18,6 +18,11 @@ import beadshx.relation.AllGraphs.groupAllGraphs;
 import beadshx.relation.GraphLayout;
 import beadshx.relation.GraphLayout.GraphEdge;
 import beadshx.relation.GraphLayout.computeGraphLayout;
+import beadshx.relation.GraphExternal.ExternalTargetLookup;
+import beadshx.relation.GraphExternal.GraphRowSelection;
+import beadshx.relation.GraphExternal.GRAPH_EXTERNAL_UNAVAILABLE;
+import beadshx.relation.GraphExternal.selectGraphRows;
+import beadshx.workspace.PrefixRoutes.prefixRouteDatabase;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.OpenGraph.isOpenGraphStatus;
@@ -216,6 +221,12 @@ import beadshx.profile.ProfilePort;
 import haxe.Json;
 import haxe.io.Path;
 import haxe.ds.StringMap;
+
+/** The issues and complete rows that `bd graph` keeps from what it loaded (see Application.keepGraphRows). */
+private typedef KeptGraph = {
+	final issues:Array<RelatedIssue>;
+	final rows:Array<GraphDependency>;
+}
 
 /** One group of `bd graph --all`: its root, its issues in walk order and its complete rows. */
 private typedef AllGraph = {
@@ -2250,9 +2261,20 @@ final class Application {
 			case Success(IssueMissing) | Failure(_):
 				return runModeAwareFailure(invocation.output, 'issue \'${request.ids[0]}\' not found');
 		};
-		final subgraph = switch query.graphSubgraph(location.path, location.databaseName, rootId, invocation.global) {
+		final load = switch query.graphSubgraph(location.path, location.databaseName, rootId, invocation.global) {
 			case Failure(message): return runModeAwareFailure(invocation.output, 'loading graph: ${message}');
 			case Success(value): value;
+		};
+		final subgraph:GraphSubgraph = switch keepGraphRows(invocation, location, query, load.issues, load.rows) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'loading graph: ${message}');
+			case Success(kept): {
+					root: load.root,
+					issues: kept.issues,
+					edges: [
+						for (row in kept.rows)
+							{issueId: row.issueId, dependsOnId: row.dependsOnId, type: row.type}
+					]
+				};
 		};
 		// Upstream reads the cap only now, after the whole subgraph is loaded.
 		final maxRows = switch request.maxRows {
@@ -2312,7 +2334,11 @@ final class Application {
 		final graphs = switch query.graphAll(location.path, location.databaseName, maxRows, invocation.global) {
 			case Failure(message): return runModeAwareFailure(invocation.output, 'loading all issues: ${message}');
 			case Success(AllGraphRowLimitExceeded(found, cap)): return runListRowLimitExceeded(found, request.maxRowsSource, cap);
-			case Success(AllGraphRows(issues, dependencies)): assembleAllGraphs(issues, dependencies, request.view == "--open");
+			case Success(AllGraphRows(issues, rows)):
+				switch keepGraphRows(invocation, location, query, issues, rows) {
+					case Failure(message): return runModeAwareFailure(invocation.output, 'loading all issues: ${message}');
+					case Success(kept): assembleAllGraphs(kept.issues, kept.rows, request.view == "--open");
+				}
 		};
 		if (graphs.length == 0) {
 			output.writeStdout("No open issues found\n");
@@ -2336,10 +2362,140 @@ final class Application {
 	}
 
 	/**
-		The groups of `bd graph --all` with their issues and complete rows. Every issue
-		that --all loads is open, so upstream filterSubgraphOpen keeps each group whole
-		under `--open`: it only drops a repeated `blocks` row from one issue to another,
-		which an `external:` row rewritten to a loaded ID can make.
+		The rows of a loaded graph that upstream's graph loaders keep (see
+		selectGraphRows), with the issues that external rows add after the loaded
+		ones.
+
+		Why: upstream looks each external row's `<id>` up with
+		resolveAndGetIssueWithRouting (cmd/bd/routed.go:70-96) when the graph does
+		not hold that ID yet.
+		What: the lookup first resolves the ID in this database as a partial ID
+		(see lookupIssueSummary). An error other than "not found", such as an
+		ambiguous ID, leaves the row out. A miss tries the routes.jsonl prefix
+		routes (see prefixRouteDatabase) and then contributor auto-routing, which
+		first asks for the user's role (see warnUnconfiguredRole and
+		autoRouteReadsElsewhere). When either would open another repository, this
+		fails with GRAPH_EXTERNAL_UNAVAILABLE; else the row is left out.
+		How: each ID resolves once in this database; the routes run for each miss,
+		as upstream's warnings repeat. The added issues are read like GetIssue.
+	**/
+	function keepGraphRows(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, issues:Array<RelatedIssue>,
+			rows:Array<GraphDependency>):StoreResult<KeptGraph> {
+		final resolved = new Map<String, StoreResult<IssueLookup>>();
+		var autoRouted:Null<Bool> = null;
+		function lookup(target:String):ExternalTargetLookup {
+			var found = resolved.get(target);
+			if (found == null) {
+				found = lookupIssueSummary(location, target, invocation.global, query);
+				resolved.set(target, found);
+			}
+			switch found {
+				case Success(IssueFound(summary)):
+					return ExternalTargetFound(summary.id);
+				case Failure(_):
+					return ExternalTargetMissing;
+				case Success(IssueMissing):
+			}
+			if (prefixRouteDatabase(location.path, target, lookups.follow) != "")
+				return ExternalTargetElsewhere;
+			warnUnconfiguredRole();
+			if (autoRouted == null)
+				autoRouted = autoRouteReadsElsewhere(invocation, location, query);
+			return autoRouted ? ExternalTargetElsewhere : ExternalTargetMissing;
+		}
+		final edges:Array<GraphEdge> = [for (row in rows) row];
+		return switch selectGraphRows([for (issue in issues) issue.id], edges, lookup) {
+			case GraphRowsElsewhere:
+				Failure(GRAPH_EXTERNAL_UNAVAILABLE);
+			case GraphRowsSelected(addedIds, kept):
+				final keptRows = [
+					for (row in kept)
+						withTarget(rows[row.index], row.dependsOnId)
+				];
+				if (addedIds.length == 0) {
+					Success({issues: issues, rows: keptRows});
+				} else {
+					final distinct = new Array<String>();
+					for (id in addedIds)
+						if (!distinct.contains(id))
+							distinct.push(id);
+					switch query.graphIssues(location.path, location.databaseName, distinct, invocation.global) {
+						case Failure(message): Failure(message);
+						case Success(read):
+							final byId = [for (issue in read) issue.id => issue];
+							Success({issues: issues.concat([for (id in addedIds) byId.get(id)]), rows: keptRows});
+					}
+				}
+		};
+	}
+
+	/** `row` pointing to `dependsOnId`, which an external row's rewrite can change. */
+	static function withTarget(row:GraphDependency, dependsOnId:String):GraphDependency {
+		if (row.dependsOnId == dependsOnId)
+			return row;
+		return {
+			issueId: row.issueId,
+			dependsOnId: dependsOnId,
+			type: row.type,
+			createdAt: row.createdAt,
+			createdBy: row.createdBy,
+			metadata: row.metadata,
+			threadId: row.threadId
+		};
+	}
+
+	/**
+		Whether upstream's contributor auto-routing (determineAutoRoutedRepoPath,
+		cmd/bd/routing_read.go:51-95, routing.DetermineTargetRepoWithRule) names a
+		repository other than the current one.
+
+		Each routing setting comes from config.yaml or the environment when it is
+		set there to more than spaces, or else from the database's config table.
+		routing.mode auto, or contributor.auto_route true without a mode, sends a
+		maintainer (see UserRole.detect) to routing.maintainer and a contributor
+		to routing.contributor, or else contributor.planning_repo. Otherwise
+		routing.default applies. An empty name and "." name the current one.
+	**/
+	function autoRouteReadsElsewhere(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Bool {
+		final config = LayeredConfig.forWorkspace(location.path);
+		final stored = new Map<String, String>();
+		switch query.configSettings(location.path, location.databaseName, invocation.global) {
+			case Success(settings):
+				for (setting in settings)
+					stored.set(setting.key, setting.value);
+			case Failure(_):
+		}
+		function setting(key:String):String {
+			final configured = config.source(key) == DefaultSource ? "" : goTrimSpace(config.getString(key));
+			if (configured != "")
+				return configured;
+			final value = stored.get(key);
+			return value == null ? "" : goTrimSpace(value);
+		}
+		var mode = setting("routing.mode");
+		if (mode == "" && setting("contributor.auto_route") == "true")
+			mode = "auto";
+		var contributorRepository = setting("routing.contributor");
+		if (contributorRepository == "")
+			contributorRepository = setting("contributor.planning_repo");
+		var repository = setting("routing.default");
+		if (mode == "auto") {
+			final maintainerRepository = setting("routing.maintainer");
+			final role = UserRole.detect();
+			if (role == "maintainer" && maintainerRepository != "")
+				repository = maintainerRepository;
+			else if (role == "contributor" && contributorRepository != "")
+				repository = contributorRepository;
+		}
+		return repository != "" && repository != ".";
+	}
+
+	/**
+		The groups of `bd graph --all` with their issues and complete rows (see
+		groupAllGraphs). Under `--open`, upstream filterSubgraphOpen filters each
+		group (see filterOpenGraph). Only an external row can add an issue that is
+		not open; a new `blocks` row over such an issue has only its IDs and type,
+		like upstream's synthetic types.Dependency.
 	**/
 	static function assembleAllGraphs(issues:Array<RelatedIssue>, dependencies:Array<GraphDependency>, open:Bool):Array<AllGraph> {
 		final summaries:Array<AllGraphIssue> = [for (issue in issues) issue];
@@ -2347,19 +2503,36 @@ final class Application {
 		final byId = [for (issue in issues) issue.id => issue];
 		final graphs = new Array<AllGraph>();
 		for (group in groupAllGraphs(summaries, edges)) {
-			final rows = new Array<GraphDependency>();
-			final keptBlocks = new Map<String, Bool>();
-			for (index in group.edgeIndexes) {
-				final row:GraphDependency = dependencies[index];
-				// The length prefix keeps two different ID pairs from making one key.
-				final key = '${row.dependsOnId.length}:${row.dependsOnId}${row.issueId}';
-				if (open && row.type == "blocks" && keptBlocks.exists(key))
-					continue;
-				if (row.type == "blocks")
-					keptBlocks.set(key, true);
-				rows.push(row);
+			final members = [for (id in group.issueIds) byId.get(id)];
+			final rows = [for (index in group.edgeIndexes) dependencies[index]];
+			if (!open) {
+				graphs.push({root: byId.get(group.rootId), issues: members, dependencies: rows});
+				continue;
 			}
-			graphs.push({root: byId.get(group.rootId), issues: [for (id in group.issueIds) byId.get(id)], dependencies: rows});
+			final openIssues:Array<OpenGraphIssue> = [for (issue in members) issue];
+			final rowEdges:Array<GraphEdge> = [for (row in rows) row];
+			final filtered = filterOpenGraph(group.rootId, openIssues, rowEdges);
+			if (filtered == null)
+				continue;
+			final kept = new Array<GraphDependency>();
+			for (index in 0...filtered.edges.length) {
+				final source = filtered.sources[index];
+				final edge = filtered.edges[index];
+				kept.push(source >= 0 ? rows[source] : {
+					issueId: edge.issueId,
+					dependsOnId: edge.dependsOnId,
+					type: edge.type,
+					createdAt: "0001-01-01T00:00:00Z",
+					createdBy: "",
+					metadata: "",
+					threadId: ""
+				});
+			}
+			graphs.push({
+				root: byId.get(filtered.rootId),
+				issues: [for (issue in members) if (isOpenGraphStatus(issue.status)) issue],
+				dependencies: kept
+			});
 		}
 		return graphs;
 	}

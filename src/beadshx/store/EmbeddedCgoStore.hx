@@ -65,8 +65,12 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedGraphReader.readCycles(beadsDir, databaseName);
 	}
 
-	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String):Null<StoreResult<SqlGraphReader.GraphSubgraph>> {
+	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String):Null<StoreResult<SqlGraphReader.GraphLoad>> {
 		return EmbeddedGraphReader.readSubgraph(beadsDir, databaseName, rootId);
+	}
+
+	public function graphIssues(beadsDir:String, databaseName:String, ids:Array<String>):Null<StoreResult<Array<RelatedIssue>>> {
+		return EmbeddedGraphReader.readIssues(beadsDir, databaseName, ids);
 	}
 
 	public function graphAll(beadsDir:String, databaseName:String, maxRows:Int):Null<StoreResult<SqlGraphReader.AllGraphLoad>> {

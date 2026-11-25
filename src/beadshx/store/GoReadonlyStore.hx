@@ -217,9 +217,18 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return Failure(GRAPH_CHECK_ROUTE_UNAVAILABLE);
 	}
 
-	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
+	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphLoad> {
 		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.graphSubgraph(beadsDir, databaseName, rootId);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(GRAPH_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphIssues(beadsDir:String, databaseName:String, ids:Array<String>, global:Bool):StoreResult<Array<RelatedIssue>> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.graphIssues(beadsDir, databaseName, ids);
 			if (embedded != null)
 				return embedded;
 		}
@@ -1517,7 +1526,11 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return Failure(GRAPH_CHECK_ROUTE_UNAVAILABLE);
 	}
 
-	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
+	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphLoad> {
+		return Failure(GRAPH_ROUTE_UNAVAILABLE);
+	}
+
+	public function graphIssues(beadsDir:String, databaseName:String, ids:Array<String>, global:Bool):StoreResult<Array<RelatedIssue>> {
 		return Failure(GRAPH_ROUTE_UNAVAILABLE);
 	}
 

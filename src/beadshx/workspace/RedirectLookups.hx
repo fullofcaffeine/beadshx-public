@@ -363,7 +363,7 @@ final class RedirectLookups {
 		warning for a target without project files prints once per `beadsDir`
 		(warnInvalidRedirectTargetOnce, :196-203).
 	**/
-	function follow(beadsDir:String):String {
+	public function follow(beadsDir:String):String {
 		final target = switch RedirectSource.redirectTarget(beadsDir) {
 			case Target(path): path;
 			case NoTarget: return beadsDir;

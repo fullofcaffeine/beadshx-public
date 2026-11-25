@@ -5685,20 +5685,140 @@ compare_real_database_env graph-all-max-rows-env-malformed exact BEADS_MAX_ROWS=
 compare_real_database_env graph-all-max-rows-env-plus-sign exact BEADS_MAX_ROWS=+1 graph --all --dot
 compare_real_database graph-all-two-args exact graph --all "$real_database_epic_id" "$real_database_child_id"
 compare_real_database graph-check-all-flag exact graph check --all
-# The views that are not ported yet must fail the same way every time; upstream prints them.
-graph_unported_sql="$graph_external_row ('fixture-graph-3', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
-expect_candidate_failure graph-all-other-repository-unported "" \
-	"Error: loading all issues: graph of an issue with a dependency on another repository is not available yet in this build" \
-	"$graph_unported_sql" graph --all
-expect_candidate_failure graph-all-other-repository-json-unported \
-	'{"error":"loading all issues: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
-	"$graph_unported_sql" graph --all --json
-expect_candidate_failure graph-other-repository-unported \
-	'{"error":"loading graph: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
-	"$graph_unported_sql" graph "$real_database_issue_id" --json
-expect_candidate_failure graph-other-repository-visual-unported "" \
+# An external:<project>:<id> row whose <id> names no issue in the graph: upstream looks the <id> up as
+# resolveAndGetIssueWithRouting does (cmd/bd/graph.go:437-458, cmd/bd/routed.go:70-96). It first resolves
+# the <id> in this database as it resolves a partial ID, so a full ID, an ID without the prefix or a
+# unique abbreviation adds that issue to the graph, also a closed one, and an <id> that resolves to an
+# issue already in the graph lists that issue twice. The rows of an added issue are not read. When no
+# issue matches, upstream tries the routes.jsonl prefix routes and then contributor auto-routing,
+# which asks for the user's role, and leaves the row out. An ambiguous <id> fails before the routes,
+# so its row is left out without the role warning.
+graph_external_ids_sql="$graph_external_row ('fixture-graph-ext-1', '$real_database_issue_id', 'external:other:$real_database_bug_id', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$graph_external_row ('fixture-graph-ext-2', '$real_database_issue_id', 'external:other:abcd1', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$graph_external_row ('fixture-graph-ext-3', '$real_database_issue_id', 'external:other:${real_database_labeled_relation_id#test-}', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$graph_external_row ('fixture-graph-ext-4', '$real_database_issue_id', 'external:other:abcd', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$graph_external_row ('fixture-graph-ext-5', '$real_database_issue_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$graph_external_row ('fixture-graph-ext-6', '$real_database_issue_id', 'external:other:$real_database_closed_id', 'relates-to', '2026-08-21 10:00:00', 'fixture')
+$graph_external_row ('fixture-graph-ext-7', '$real_database_labeled_relation_id', 'external:other:test-elsewhere', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_real_database_sql graph-external-ids-json exact "$graph_external_ids_sql" graph "$real_database_issue_id" --json
+compare_real_database_sql graph-external-ids-visual exact "$graph_external_ids_sql" graph "$real_database_issue_id"
+compare_real_database_sql graph-external-ids-compact exact "$graph_external_ids_sql" graph "$real_database_issue_id" --compact
+compare_real_database_sql graph-external-ids-box exact "$graph_external_ids_sql" graph "$real_database_issue_id" --box
+compare_real_database_sql graph-external-ids-dot exact "$graph_external_ids_sql" graph "$real_database_issue_id" --dot
+compare_real_database_sql graph-external-ids-html graph-html "$graph_external_ids_sql" graph "$real_database_issue_id" --html
+compare_real_database_sql graph-external-ids-open-json graph-open-json "$graph_external_ids_sql" graph "$real_database_issue_id" --open --json
+# The row cap counts the issue that is listed twice two times.
+compare_real_database_sql graph-external-ids-max-rows exact "$graph_external_ids_sql" graph "$real_database_issue_id" --max-rows 5
+compare_real_database_sql graph-all-external-ids-json exact "$graph_external_ids_sql" graph --all --json
+compare_real_database_sql graph-all-external-ids-compact exact "$graph_external_ids_sql" graph --all --compact
+compare_real_database_sql graph-all-external-ids-open-json exact "$graph_external_ids_sql" graph --all --open --json
+compare_real_database_sql graph-check-external-ids exact "$graph_external_ids_sql" graph check
+real_database_setup=remove_git_checkout
+compare_real_database_sql graph-external-ids-role-warning exact "$graph_external_ids_sql" graph "$real_database_issue_id" --compact
+compare_real_database_sql graph-all-external-ids-role-warning-json exact "$graph_external_ids_sql" graph --all --json
+real_database_setup=""
+# In --all, an added issue joins the group of the row's issue, and a later row to that issue is kept
+# too. --open then leaves the added closed issue out of that group.
+graph_all_external_sql="$graph_all_sql
+$graph_external_row ('fixture-ga-3', 'test-ga-s6', 'external:other:test-ga-closed', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_graph_all_external() {
+	local name="$1" comparison="$2"
+	shift 2
+	real_database_extra_sql="$graph_all_external_sql"
+	compare_real_database_import "$name" "$comparison" "$graph_all_records" "$@"
+	real_database_extra_sql=""
+}
+compare_graph_all_external graph-all-external-closed-json exact graph --all --json
+compare_graph_all_external graph-all-external-closed-visual exact graph --all
+compare_graph_all_external graph-all-external-closed-open exact graph --all --open
+compare_graph_all_external graph-all-external-closed-open-json exact graph --all --open --json
+compare_graph_all_external graph-all-external-closed-html graph-html graph --all --html
+# The prefix routes come from routes.jsonl in the workspace. Upstream takes the first route whose prefix
+# is the <id> up to its first hyphen, and skips a route to ".". It follows the redirect of the route's
+# workspace, and opens that workspace only when its metadata.json names a dolt_database; otherwise it
+# goes on to auto-routing. Lines that are blank, comments or not a route object are skipped.
+graph_route_sql="$graph_external_row ('fixture-graph-route-1', '$real_database_issue_id', 'external:other:other-f1', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+graph_routes=""
+graph_rig_metadata=""
+graph_rig_redirect=""
+write_graph_routes() {
+	printf '%s' "$graph_routes" >"$1/work/.beads/routes.jsonl"
+	if [[ -n "$graph_rig_metadata" || -n "$graph_rig_redirect" ]]; then
+		mkdir -p "$1/work/rig/.beads"
+	fi
+	if [[ -n "$graph_rig_metadata" ]]; then
+		printf '%s\n' "$graph_rig_metadata" >"$1/work/rig/.beads/metadata.json"
+	fi
+	if [[ -n "$graph_rig_redirect" ]]; then
+		printf '%s\n' "$graph_rig_redirect" >"$1/work/rig/.beads/redirect"
+	fi
+}
+real_database_setup=write_graph_routes
+graph_routes=$'# routes\n\nnot a route\n{"prefix":7,"path":"rig"}\n{"Prefix":"zzz-","path":"rig"}\n{"prefix":"other","path":"rig"}\n{"prefix":"other-","path":"."}\n{"prefix":"other-","path":"rig"}\n'
+graph_rig_metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"rig"}'
+compare_real_database_sql graph-route-to-current-json exact "$graph_route_sql" graph "$real_database_issue_id" --json
+graph_routes=$'{"prefix":"other-","path":"rig"}\n'
+graph_rig_metadata='{"backend":"dolt","dolt_mode":"embedded"}'
+compare_real_database_sql graph-route-without-database exact "$graph_route_sql" graph "$real_database_issue_id" --compact
+graph_rig_metadata='{"dolt_database":7}'
+compare_real_database_sql graph-route-undecodable-metadata exact "$graph_route_sql" graph --all --compact
+graph_rig_metadata=""
+graph_rig_redirect="../missing/.beads"
+compare_real_database_sql graph-route-broken-redirect exact "$graph_route_sql" graph "$real_database_issue_id" --compact
+graph_rig_redirect=""
+graph_routes=$'{"prefix":"other-","path":"rig"}\n'
+graph_rig_metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"rig"}'
+real_database_setup=""
+candidate_only_setup=write_graph_routes
+expect_candidate_failure graph-route-other-repository-unported "" \
 	"Error: loading graph: graph of an issue with a dependency on another repository is not available yet in this build" \
-	"$graph_unported_sql" graph "$real_database_issue_id"
+	"$graph_route_sql" graph "$real_database_issue_id"
+expect_candidate_failure graph-all-route-other-repository-json-unported \
+	'{"error":"loading all issues: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
+	"$graph_route_sql" graph --all --json
+candidate_only_setup=""
+graph_routes=""
+graph_rig_metadata=""
+# Contributor auto-routing takes each routing setting from config.yaml or the environment, or else
+# from the database. routing.mode auto, or contributor.auto_route true, sends a maintainer to
+# routing.maintainer and a contributor to routing.contributor (or contributor.planning_repo);
+# routing.default applies to both. Upstream opens the store there unless that is ".". Without
+# beads.role, the origin and upstream remotes decide the role. A Git remote also turns on upstream's
+# auto-backup after the command, which writes .beads/backup, so the cases with a remote turn it off.
+real_database_extra_sql="$graph_route_sql"
+real_database_extra_config=$'routing:\n  mode: auto\n  contributor: ../planning'
+compare_real_database graph-auto-route-maintainer exact graph "$real_database_issue_id" --compact
+real_database_extra_config=$'routing:\n  default: "."'
+compare_real_database graph-auto-route-default-current exact graph --all --compact
+real_database_extra_config=$'contributor:\n  auto_route: true\n  planning_repo: ../planning'
+real_database_setup=remove_git_checkout
+compare_real_database graph-auto-route-without-remote exact graph "$real_database_issue_id" --compact
+graph_route_remote_setup() {
+	printf 'backup:\n  enabled: false\n' >>"$1/work/.beads/config.yaml"
+	git -C "$1/work" config --unset beads.role
+	git -C "$1/work" remote add origin git@example.invalid:team/project.git
+	git -C "$1/work" remote add upstream ssh://git@example.invalid/team/project
+}
+real_database_setup=graph_route_remote_setup
+compare_real_database graph-auto-route-ssh-remote exact graph "$real_database_issue_id" --compact
+real_database_setup=""
+real_database_extra_config=""
+real_database_extra_sql=""
+graph_role_warning=$'warning: beads.role not configured (GH#2950).\n  Fix: git config beads.role maintainer\n  Or:  git config beads.role contributor'
+graph_route_contributor_setup() {
+	printf 'contributor:\n  auto_route: true\n  planning_repo: ../planning\nbackup:\n  enabled: false\n' >>"$1/work/.beads/config.yaml"
+	git -C "$1/work" config --unset beads.role
+	git -C "$1/work" remote add origin https://example.invalid/team/project.git
+}
+candidate_only_setup=graph_route_contributor_setup
+expect_candidate_failure graph-auto-route-contributor-unported "" \
+	"$graph_role_warning"$'\n'"Error: loading graph: graph of an issue with a dependency on another repository is not available yet in this build" \
+	"$graph_route_sql" graph "$real_database_issue_id"
+candidate_only_setup=""
+expect_candidate_failure graph-auto-route-database-default-unported \
+	'{"error":"loading all issues: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
+	"$graph_route_sql
+INSERT INTO config (\`key\`, value) VALUES ('routing.default', '../planning')" graph --all --json
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

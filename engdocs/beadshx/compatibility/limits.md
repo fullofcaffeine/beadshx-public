@@ -180,9 +180,19 @@ exists.
 ## Commands and output
 
 - `graph` for one issue or `--all` reports that it is not available yet when
-  an issue in the graph has an `external:<project>:<id>` dependency on an
-  issue outside the graph. Upstream looks that issue up in the other
-  repository. `bdhx` reads one database only.
+  upstream would look up the `<id>` of an `external:<project>:<id>`
+  dependency in another repository. This happens when the first
+  `routes.jsonl` rule for the prefix of the ID names another workspace whose
+  `metadata.json` names a `dolt_database`, or when contributor auto-routing
+  names another repository. Upstream then opens that store read-only and adds
+  the issue that it finds there. When it finds none, upstream draws the graph
+  without the dependency, so `bdhx` also refuses some graphs that upstream
+  draws. `bdhx` reads one database only.
+- For an issue ID that is not in the database, `show`, `comments`,
+  `dep list`, `dep tree` and `children` do not try the `routes.jsonl` prefix
+  routes or contributor auto-routing. `list` and `ready` do not read the
+  planning store that contributor auto-routing selects. Upstream reads those
+  other repositories; `bdhx` reads one database only (beadshx-m08.58).
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once, such as `show`
   with two IDs, `children` or `ready --explain`, prints the warning once for
