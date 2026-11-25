@@ -114,6 +114,7 @@ import beadshx.cli.EventsView.renderEventsTruncatedJson;
 import beadshx.config.WorkspaceEnvironment;
 import beadshx.store.EmbeddedDatabaseLookup.DEFAULT_EMBEDDED_DATABASE;
 import beadshx.store.EmbeddedDatabaseLookup.embeddedDatabaseExists;
+import beadshx.store.DoltStoreOpen;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
 import beadshx.store.EmbeddedDatabaseLookup.MissingDatabaseEntry;
 import beadshx.store.EmbeddedDatabaseLookup.missingConfigurationWarning;
@@ -3122,6 +3123,9 @@ final class Application {
 							final gateRefusal = holdWorkspaceGates(invocation, location, config);
 							if (gateRefusal != null)
 								return runModeAwareFailure(invocation.output, gateRefusal);
+							final strictRefusal = proxiedStrictReadonlyRefusal(invocation, location, config);
+							if (strictRefusal != null)
+								return runStoreFailure(strictRefusal);
 							trackVersionLookup(invocation, location, config);
 							// Upstream warns about a missing metadata.json before the store open that a refusal stands for.
 							warnMissingMetadata(defaultDirectory);
@@ -6996,12 +7000,28 @@ final class Application {
 		final gateRefusal = holdWorkspaceGates(invocation, location, config);
 		if (gateRefusal != null)
 			return ModeAwareFailure(gateRefusal);
+		final strictRefusal = proxiedStrictReadonlyRefusal(invocation, location, config);
+		if (strictRefusal != null)
+			return PlainFailure(strictRefusal);
 		trackVersionLookup(invocation, location, config);
 		final selection = validateSelectedStore(invocation, location, config);
 		// Upstream's warnMultipleDatabases looks for the workspaces above the current directory once the store is open (:1688).
 		if (selection.match(Accepted) && findsDatabase(invocation, location))
 			lookups.findAllDatabases();
 		return selection;
+	}
+
+	/**
+		Upstream's refusal of strict read-only mode in a proxied-server
+		workspace, after the workspace gates and before anything else opens
+		(cmd/bd/main.go:1339-1341, backendSupportsStrictReadonly): the server
+		that the proxy starts cannot guarantee that it writes nothing. Null
+		without strict read-only mode or outside a proxied-server workspace.
+	**/
+	static function proxiedStrictReadonlyRefusal(invocation:Invocation, location:WorkspaceLocation, config:LayeredConfig):Null<String> {
+		if (!location.proxiedServer || !strictReadonly(invocation, config))
+			return null;
+		return "strict readonly is unavailable for dolt proxied-server backend; refusing to open a store that cannot guarantee mutation-free access";
 	}
 
 	/**
@@ -7150,9 +7170,14 @@ final class Application {
 			case StatDirectory: true;
 			case StatMissing | StatNotDirectory | StatFailed(_): false;
 		};
-		if (storeDirectory && strictReadonly(invocation, config))
-			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${DEFAULT_EMBEDDED_DATABASE}');
-		return missingDatabaseRefusal(path, location.path, DEFAULT_EMBEDDED_DATABASE);
+		final strict = strictReadonly(invocation, config);
+		if (storeDirectory && strict)
+			return storeOpenFailure(location.path, 'embeddeddolt: open db: Error 1049: database not found: ${DEFAULT_EMBEDDED_DATABASE}');
+		// Without the store directory the strict open stops before Dolt starts.
+		final storeError = strict ? ConfigProbes.embeddedStoreOpenError(RedirectSource.canonicalizePath(location.path)) : null;
+		if (storeError != null && ConfigProbes.statPath(Path.join([location.path, "embeddeddolt"])).match(StatMissing))
+			return PlainFailure('failed to open database: ${storeError}');
+		return missingDatabaseOpen(path, location.path, DEFAULT_EMBEDDED_DATABASE);
 	}
 
 	/**
@@ -7251,17 +7276,43 @@ final class Application {
 		if (embeddedDatabaseExists(location.path, selected))
 			return Accepted;
 		if (strict)
-			return PlainFailure('failed to open database: embeddeddolt: open db: Error 1049: database not found: ${selected}');
-		return missingDatabaseRefusal(path, location.path, selected);
+			return storeOpenFailure(location.path, 'embeddeddolt: open db: Error 1049: database not found: ${selected}');
+		return missingDatabaseOpen(path, location.path, selected);
+	}
+
+	/**
+		missingDatabaseRefusal, with Dolt's warnings for the store's in-progress
+		directories (see storeOpenFailure) when upstream's open fails there
+		without a write.
+	**/
+	function missingDatabaseOpen(path:String, beadsDir:String, name:String):DatabaseSelectionValidation {
+		return switch missingDatabaseRefusal(path, beadsDir, name) {
+			case PlainFailure(message): storeOpenFailure(beadsDir, message);
+			case refusal: refusal;
+		};
+	}
+
+	/**
+		Upstream's failed open of the embedded store in `beadsDir`, with the
+		error `message` after `failed to open database: `. Dolt first warns on
+		stderr for each in-progress database directory that it skips, through
+		logrus's text format with the time of the open.
+	**/
+	function storeOpenFailure(beadsDir:String, message:String):DatabaseSelectionValidation {
+		final warnings = DoltStoreOpen.inProgressWarnings(beadsDir);
+		if (warnings != "")
+			output.writeStderr(warnings);
+		return PlainFailure(StringTools.startsWith(message, "failed to open database: ") ? message : 'failed to open database: ${message}');
 	}
 
 	/**
 		Upstream's plain open of the database `name`, which the embedded store
 		lacks, runs `CREATE DATABASE IF NOT EXISTS`. Dolt first checks the path
 		named like the database: for a directory that holds no database it
-		creates nothing, and the `USE` that follows fails; for a file it refuses
-		to create. Both fail without a write, and this prints upstream's error.
-		Otherwise upstream creates the database, which this build refuses.
+		creates nothing, and the `USE` that follows fails; for a file, and for a
+		directory that a create left unfinished, it refuses to create. These
+		fail without a write, and this prints upstream's error. Otherwise
+		upstream creates the database, which this build refuses.
 	**/
 	static function missingDatabaseRefusal(path:String, beadsDir:String, name:String):DatabaseSelectionValidation {
 		return switch missingDatabaseEntry(beadsDir, name) {
@@ -7269,7 +7320,10 @@ final class Application {
 				PlainFailure('failed to open database: embeddeddolt: init schema: embeddeddolt: switching to database: Error 1049: database not found: ${name}');
 			case EntryFile:
 				PlainFailure('failed to open database: embeddeddolt: init schema: embeddeddolt: creating database: Error 1105: cannot create DB, file exists at ${name}');
-			case EntryAbsent | EntryIncomplete:
+			case EntryIncomplete:
+				PlainFailure('failed to open database: embeddeddolt: init schema: embeddeddolt: creating database: Error 1105: cannot create database ${name}: '
+					+ "incomplete database directory from an interrupted create already exists; remove the directory and try again");
+			case EntryAbsent:
 				ModeAwareFailure('${path} is not available yet when the embedded store has no database named "${name}" in this build');
 		};
 	}

@@ -417,6 +417,12 @@ the table stops the command with the same `failed to open database` prefix.
 instead, and the command reads the database. `where` prints no stored prefix
 when the check stops, as upstream does. `version` does not check.
 
+Like upstream, a command that reads the database refuses strict read-only
+mode (`--readonly` or the `readonly` setting) in a proxied-server workspace,
+before it starts anything: `Error: strict readonly is unavailable for dolt
+proxied-server backend; refusing to open a store that cannot guarantee
+mutation-free access`.
+
 The embedded database name must be an identifier: letters, digits and `_`,
 and not a digit first. The name comes from `.beads/metadata.json`,
 `BEADS_DOLT_SERVER_DATABASE` or a redirecting workspace. For any other name,
@@ -579,7 +585,12 @@ Limits:
   database. With `--readonly` or the `readonly` setting, upstream does not
   create it, and `bdhx` prints the same open error. When a directory or a
   file in `.beads/embeddeddolt` has the name of the missing database,
-  upstream fails without a write, and `bdhx` prints the same error.
+  upstream fails without a write, and `bdhx` prints the same error. This
+  also applies to a directory that a create left unfinished: one with Dolt's
+  in-progress marker, or with a `.dolt` directory without its
+  `repo_state.json`. Like upstream, `bdhx` then first prints Dolt's
+  `level=warning msg="skipping in-progress database directory"` line for
+  each marked directory, with the time of the run.
   `DOLT_DBNAME_REPLACE` counts as in upstream: a directory such as `my-db`
   then holds the database `my_db`. Like upstream, `bdhx` opens the database
   that a redirecting workspace names instead of the target's. Without a
@@ -594,7 +605,9 @@ Limits:
   database prints upstream's warning and then reports that it is not
   available yet when the embedded store has no `beads` database. Upstream
   creates that database. With `--readonly` or the `readonly` setting,
-  `bdhx` prints the same open error as upstream. `bdhx` also reports that the
+  `bdhx` prints the same open error as upstream, also when the workspace has
+  no `.beads/embeddeddolt` directory, as for a `--db` path that names a
+  `.beads` directory with only a redirect. `bdhx` also reports that the
   command is not available yet when `BEADS_DOLT_SERVER_DATABASE` names another
   database, and when `BEADS_DOLT_SERVER_MODE=1` or the `dolt.mode` setting
   selects server mode. Upstream opens `beads` in these cases, but the native

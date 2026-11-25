@@ -1299,10 +1299,11 @@ compare_real_database() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
-	# A metadata.json load warning names each side's own workspace.
-	sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" \
+	# A metadata.json load warning names each side's own workspace. Dolt's logrus warnings carry the time
+	# of each side's own run.
+	sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" -e 's/^time="[^"]*" /time="<time>" /' \
 		"$case_root/oracle.stderr" >"$case_root/oracle.stderr.normalized"
-	sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
+	sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" -e 's/^time="[^"]*" /time="<time>" /' \
 		"$case_root/candidate.stderr" >"$case_root/candidate.stderr.normalized"
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
@@ -3297,6 +3298,64 @@ replace_database_with_file() {
 }
 real_database_setup=replace_database_with_file
 compare_real_database missing-db-replaced-by-file-dep-tree exact dep tree "$real_database_issue_id"
+# A directory that a create left unfinished, with Dolt's in-progress marker or a .dolt without its
+# repo_state.json, is no database. Upstream's plain open then refuses to create one there, and its strict
+# open finds none; neither writes. Dolt warns through logrus for each marked directory when it opens the store,
+# also beside a database that it opens.
+set_other_database() {
+	jq '.dolt_database = "other"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+marked_unfinished_database() {
+	set_other_database "$1"
+	copy_fixture_tree "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/other"
+	: >"$1/work/.beads/embeddeddolt/other/.dolt_safe_to_ignore"
+}
+unstarted_database() {
+	set_other_database "$1"
+	mkdir -p "$1/work/.beads/embeddeddolt/other/.dolt"
+}
+marked_database_beside() {
+	copy_fixture_tree "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/other"
+	: >"$1/work/.beads/embeddeddolt/other/.dolt_safe_to_ignore"
+}
+real_database_setup=marked_unfinished_database
+compare_real_database unfinished-marked-database-count exact count
+compare_real_database unfinished-marked-database-readonly-count exact --readonly count
+real_database_setup=unstarted_database
+compare_real_database unfinished-unstarted-database-list-json exact list --json
+compare_real_database unfinished-unstarted-database-readonly-count exact --readonly count
+real_database_setup=marked_database_beside
+compare_real_database unfinished-marked-database-beside-count exact count
+real_database_setup=""
+# A --db path that names a .beads directory with only a redirect selects the directory above it, which
+# has no metadata.json and no store. The strict open stops at the missing store directory without a write;
+# the plain open would create it.
+redirect_only_beads_directory() {
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+}
+# Upstream also takes a workspace gate lock beside that store directory, which bdhx does not take.
+real_database_setup=redirect_only_beads_directory
+real_database_read_only=""
+compare_real_database db-flag-redirect-only-readonly-list exact --db .beads --readonly list
+compare_real_database db-flag-redirect-only-readonly-count-json exact --db .beads --readonly count --json
+real_database_read_only=1
+real_database_setup=""
+# Upstream refuses strict read-only mode in a proxied-server workspace before it starts the proxy, also for a
+# --db value that names a database and with the readonly setting.
+real_database_extra_metadata='.dolt_mode = "proxied-server"'
+compare_real_database proxied-readonly-count exact --readonly count
+compare_real_database proxied-readonly-list-json exact --readonly list --json
+compare_real_database proxied-readonly-database-name-count exact --db other --readonly count
+compare_real_database proxied-readonly-config-get exact --readonly config get issue_prefix
+real_database_extra_config='readonly: true'
+compare_real_database proxied-readonly-setting-count exact count
+real_database_extra_config=""
+real_database_extra_metadata=""
 no_metadata_default_database_file() {
 	remove_metadata "$1"
 	: >"$1/work/.beads/embeddeddolt/beads"

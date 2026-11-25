@@ -89,8 +89,9 @@ function isEmbeddedDatabaseIdentifier(name:String):Bool {
 /**
 	Whether the embedded Dolt engine of one workspace finds the database `name`
 	without creating it. Dolt loads each directory in `.beads/embeddeddolt`
-	that holds a `.dolt` repository, and no in-progress marker, as a database
-	named after the directory (`DoltDirectoryName`). It finds a
+	that holds a `.dolt` repository with its `repo_state.json`, and no
+	in-progress marker, as a database named after the directory
+	(`DoltDirectoryName`). It finds a
 	database by its lower-case name, so `TEST` finds `test`. `name` must be an
 	embedded database identifier, which is ASCII.
 **/
@@ -108,10 +109,27 @@ function embeddedDatabaseExists(beadsDir:String, name:String):Bool {
 		if (DoltDirectoryName.databaseName(entry).toLowerCase() == wanted
 			&& FileSystem.exists(repository)
 			&& FileSystem.isDirectory(repository)
+			&& FileSystem.exists(Path.join([repository, "repo_state.json"]))
 			&& !FileSystem.exists(Path.join([dataDir, entry, DOLT_IN_PROGRESS_MARKER])))
 			return true;
 	}
 	return false;
+}
+
+/**
+	The directories in a workspace's `.beads/embeddeddolt` that hold Dolt's
+	in-progress marker, in os.ReadDir's sorted order. Dolt skips each of them
+	with a warning when it opens the embedded store.
+**/
+function inProgressDatabaseDirectories(beadsDir:String):Array<String> {
+	final dataDir = Path.join([beadsDir, "embeddeddolt"]);
+	final entries = try FileSystem.readDirectory(dataDir) catch (_:haxe.Exception) [];
+	entries.sort((first, second) -> first < second ? -1 : (first > second ? 1 : 0));
+	return [
+		for (entry in entries)
+			if (FileSystem.isDirectory(Path.join([dataDir, entry]))
+				&& FileSystem.exists(Path.join([dataDir, entry, DOLT_IN_PROGRESS_MARKER]))) entry
+	];
 }
 
 /** Dolt dbfactory's marker file in a database directory that a create has not finished; Dolt skips such a directory. */
@@ -132,7 +150,7 @@ enum MissingDatabaseEntry {
 	/** A file: Dolt refuses to create the database. */
 	EntryFile;
 
-	/** A directory that a Dolt create left unfinished, which Dolt reports in words this build does not model. */
+	/** A directory that a Dolt create left unfinished: Dolt refuses to create the database there. */
 	EntryIncomplete;
 }
 
