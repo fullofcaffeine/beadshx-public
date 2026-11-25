@@ -105,13 +105,14 @@ name comes from the redirecting directory, as for one redirect, or else from
 the `dolt_database` of the first target, or else from
 `BEADS_DOLT_SERVER_DATABASE` in the second target's `.env` file. `where`
 reports the workspace that its last lookup finds from the second target:
-that target, or the target of its own redirect. The origin line names the
-directory with the redirect, as upstream does. `where` takes its `json`
-setting from the first target, and its second setup prints the shared-server
-notice when the second target's `.env` file turns shared-server mode on. With
-`-C`, the first lookup already starts from the first target, so every
-command takes its settings from the second target. A `--db` path selects the
-first target itself.
+that target, or the target of its own redirect. It prints the database in
+that workspace, also when that workspace redirects again. The origin line
+names the directory with the redirect, as upstream does. `where` takes its
+`json` setting from the first target, and its second setup prints the
+shared-server notice when the second target's `.env` file turns shared-server
+mode on. With `-C`, the first lookup already starts from the first target, so
+every command takes its settings from the second target. A `--db` path
+selects the first target itself.
 
 Like upstream, `bdhx` has an agent mode for output that AI agents read.
 `BD_AGENT_MODE=1` or any `CLAUDE_CODE` value that is not empty turns it on,
@@ -476,8 +477,6 @@ Limits:
   read a workspace's redirect after a command. `bdhx` does not, so for a
   workspace in that folder it prints the redirect warning two times fewer than
   upstream.
-- For a chain of four redirects, upstream's `where` prints the database of
-  the third target; `bdhx` prints the database of the fourth target.
 - `snapshot` reads embedded workspaces only. In a server-mode, shared-server
   or proxied workspace and with `--global`, it reports that it is not
   available yet, before it opens anything.

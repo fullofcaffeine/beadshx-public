@@ -3435,6 +3435,21 @@ real_database_setup=redirect_chain_of_three
 compare_real_database chain-of-three-where exact where
 compare_real_database chain-of-three-list-json exact list --json
 compare_real_database chain-of-three-info-json exact info --json
+# A chain of four: the body of where finds the third target through the second, and FindDatabasePath there
+# follows one redirect only, so where prints the third target's database, not the fourth's.
+redirect_chain_of_four() {
+	redirect_chain_of_three "$1"
+	mkdir "$1/work/fourth"
+	copy_fixture_tree "$1/work/third/.beads" "$1/work/fourth/.beads"
+	printf '../fourth/.beads\n' >"$1/work/third/.beads/redirect"
+}
+real_database_setup=redirect_chain_of_four
+compare_real_database chain-of-four-where exact where
+compare_real_database chain-of-four-where-json exact where --json
+compare_real_database chain-of-four-info-json exact info --json
+compare_real_database chain-of-four-list-json exact list --json
+compare_real_database chain-of-four-change-directory-where exact -C . where
+real_database_setup=""
 # The second setup loads the second target's .env file for each variable that is not set yet, after the
 # first target's. A command that opens a store then reads its JSON switch again (refreshBoundCommandConfig),
 # also from the second target's config.yaml; the body of where does not. With -C, both setups take the second

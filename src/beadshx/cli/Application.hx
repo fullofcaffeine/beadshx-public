@@ -1293,7 +1293,10 @@ final class Application {
 		which `where` names by that path, as for a `.beads` symbolic link,
 		without another native discovery. Otherwise, as for a redirect chain
 		or a `db` setting, discovery runs again with BEADS_DIR naming the
-		directory.
+		directory. Its FindDatabasePath (where.go:79) follows that directory's
+		redirect once, so when the workspace that the lookup finds there has
+		a redirect of its own, as in a chain of four, the database is the one
+		in that workspace, which the native discovery would follow again.
 	**/
 	function whereWorkspace(invocation:Invocation):WorkspaceDiscovery {
 		final selected = workspace.discover(invocation.directory, invocation.databasePath);
@@ -1307,15 +1310,25 @@ final class Application {
 				return Found(relocated(location, bound, location.databaseName, location.foundPath));
 			case Found(_) | NotFound | InvalidSelection(_):
 		}
-		return WorkspaceEnvironment.discoverWithBeadsDir(workspace, bound);
+		final found = WorkspaceEnvironment.discoverWithBeadsDir(workspace, bound);
+		return switch found {
+			case Found(location) if (WorkspaceEnvironment.redirectedThrough(location.path) != null):
+				Found(relocated(location, location.path, location.databaseName, location.foundPath, WorkspaceEnvironment.directoryDatabase(location.path)));
+			case Found(_) | NotFound | InvalidSelection(_):
+				found;
+		};
 	}
 
-	/** `location` with another path, database name and found directory (see WorkspaceLocation.foundPath). */
-	static function relocated(location:WorkspaceLocation, path:String, databaseName:String, foundPath:Null<String>):WorkspaceLocation {
+	/**
+		`location` with another path, database name and found directory (see
+		WorkspaceLocation.foundPath), and with another database path when
+		`databasePath` is given.
+	**/
+	static function relocated(location:WorkspaceLocation, path:String, databaseName:String, foundPath:Null<String>, ?databasePath:String):WorkspaceLocation {
 		return {
 			path: path,
 			yamlPrefix: location.yamlPrefix,
-			databasePath: location.databasePath,
+			databasePath: databasePath != null ? databasePath : location.databasePath,
 			databaseName: databaseName,
 			databaseMissing: location.databaseMissing,
 			proxiedServer: location.proxiedServer,

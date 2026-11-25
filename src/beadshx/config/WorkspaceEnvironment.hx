@@ -499,7 +499,10 @@ final class WorkspaceEnvironment {
 		Upstream findDatabaseInBeadsDir: the database path that the metadata.json
 		of `directory` selects, or "" for none.
 
-		Why: FindDatabasePath takes it for a BEADS_DB directory. What: "" when
+		Why: FindDatabasePath takes it for a BEADS_DB directory, and for the
+		target of BEADS_DIR's redirect, without following that target's own
+		redirect, as the last lookup of `where` in a redirect chain does.
+		What: "" when
 		metadata.json does not load or names a backend other than Dolt. In a
 		Dolt server mode, the configured Dolt directory (configfile
 		DatabasePath), which need not exist; else the `embeddeddolt` directory,
@@ -511,7 +514,7 @@ final class WorkspaceEnvironment {
 		comes from the process-start config, which upstream's configfile reads
 		at that point.
 	**/
-	static function directoryDatabase(directory:String):String {
+	public static function directoryDatabase(directory:String):String {
 		final embedded = FilepathPkg.join(directory, "embeddeddolt");
 		var configured = true;
 		var fields:Null<Map<String, String>> = null;
