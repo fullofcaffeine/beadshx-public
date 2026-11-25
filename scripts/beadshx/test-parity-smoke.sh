@@ -6667,8 +6667,47 @@ compare_real_database db-setting-missing-path-where exact where
 other_database_setting=""
 real_database_setup=add_other_workspace_with_setting_and_dotenv
 compare_real_database db-setting-other-dotenv-where exact where
+# Upstream rereads its JSON switch after that setup, from the config of the directory that the setting's path
+# selects: `json` there decides, also against the current directory's config.yaml, and also when the setting
+# comes from the user config.yaml and no workspace is found from the current directory.
+other_json_setting=""
+caller_json_setting=""
+set_other_database_setting_with_json() {
+	other_database_setting=other/.beads/beads.db
+	set_other_database_setting "$1"
+	other_database_setting=""
+	if [[ -n "$other_json_setting" ]]; then
+		printf 'json: %s\n' "$other_json_setting" >>"$1/work/other/.beads/config.yaml"
+	fi
+	if [[ -n "$caller_json_setting" ]]; then
+		printf 'json: %s\n' "$caller_json_setting" >>"$1/work/.beads/config.yaml"
+	fi
+}
+real_database_setup=set_other_database_setting_with_json
+other_json_setting=true
+compare_real_database db-setting-other-json-setting-where exact where
+other_json_setting=""
+caller_json_setting=true
+compare_real_database db-setting-caller-json-setting-where exact where
+caller_json_setting=""
+user_database_setting_with_json() {
+	mkdir "$1/work/elsewhere"
+	mv -f "$1/work/.beads" "$1/work/elsewhere/.beads"
+	printf 'json: true\n' >>"$1/work/elsewhere/.beads/config.yaml"
+	mkdir -p "$1/user-home/.config/bd"
+	printf 'db: %s/work/elsewhere/.beads/beads.db\n' "$1" >"$1/user-home/.config/bd/config.yaml"
+}
+real_database_setup=user_database_setting_with_json
+compare_real_database db-setting-user-config-json-setting-where exact where
 real_database_setup=""
 real_database_read_only=""
+# A command that opens a store reads the setting the same way before this build refuses the db setting.
+other_json_setting=true
+candidate_only_setup=set_other_database_setting_with_json
+expect_candidate_failure db-setting-other-json-setting-count-unported \
+	'{"error":"count is not available yet when the db setting names a database in this build","schema_version":1}' "" "" count
+candidate_only_setup=""
+other_json_setting=""
 # A db setting that selects a workspace whose metadata.json does not decode names that workspace as its
 # path gives it, as a --db path does, so this build refuses where there.
 break_other_metadata_with_setting() {

@@ -191,14 +191,21 @@ final class WorkspaceEnvironment {
 		The `.beads` directory whose config gives a command its settings after
 		upstream's setups, which reread the JSON switch and other settings
 		from it (refreshBoundCommandConfig, cmd/bd/main.go:1158, :1220, :1318),
-		for `found`, the workspace that discovery found for `selection`. With
-		-C, BEADS_DIR names that workspace before the first setup, which takes
-		its redirect target. A command that opens a store also rereads them
-		after it binds the second target of a chain (see storeChainTarget).
-		Otherwise `found` itself; a database path selection follows no
-		redirect.
+		for `found`, the workspace that discovery found for `selection` (null
+		for none). A `db` setting selects the directory that its path selects
+		(main.go:533, :1316), also when no workspace is found. With -C,
+		BEADS_DIR names the found workspace before the first setup, which
+		takes its redirect target. A command that opens a store also rereads
+		them after it binds the second target of a chain (see
+		storeChainTarget). Otherwise `found` itself; a database path selection
+		follows no redirect. Null when no directory is set up, so the
+		process-start config holds.
 	**/
-	public static function settingsBeadsDir(selection:WorkspaceSelection, use:DatabaseVariableUse, found:WorkspaceLocation):String {
+	public static function settingsBeadsDir(selection:WorkspaceSelection, use:DatabaseVariableUse, found:Null<WorkspaceLocation>):Null<String> {
+		if (databaseSettingSelects(selection))
+			return commandBeadsDir(LayeredConfig.atStartup().getString("db"), found != null ? found.path : "");
+		if (found == null)
+			return null;
 		final pathSelects = switch use {
 			case BeforeWorkspace: noStorePathSelects(selection);
 			case WithoutWorkspace: selection.databasePath != "" && !namesDatabase(selection.databasePath);

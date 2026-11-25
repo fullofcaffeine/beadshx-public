@@ -15,7 +15,7 @@ import beadshx.workspace.WorkspacePort;
 	What: Viper's boolean of BD_JSON, config.local.yaml, config.yaml and the user
 	config.yaml, from the config of the workspace that upstream's setups bind
 	last before they reread the setting (see WorkspaceEnvironment.settingsBeadsDir),
-	or from the process-start config when no workspace is found. How: LayeredConfig loads the same layers in the
+	or from the process-start config when upstream sets up no directory. How: LayeredConfig loads the same layers in the
 	same order. Viper reads BD_JSON as strconv.ParseBool does and treats an empty
 	value as unset.
 **/
@@ -27,11 +27,13 @@ final class LayeredJsonSetting implements JsonSettingPort {
 	}
 
 	public function enabled(selection:WorkspaceSelection, use:DatabaseVariableUse):Bool {
-		final config = switch workspace.discover(selection.directory, selection.databasePath) {
-			case Found(location): LayeredConfig.forWorkspace(WorkspaceEnvironment.settingsBeadsDir(selection, use, location));
+		final beadsDir = switch workspace.discover(selection.directory, selection.databasePath) {
+			case Found(location): WorkspaceEnvironment.settingsBeadsDir(selection, use, location);
+			case NotFound: WorkspaceEnvironment.settingsBeadsDir(selection, use, null);
 			// An invalid selection fails before any output, so its config never matters.
-			case NotFound | InvalidSelection(_): LayeredConfig.atStartup();
+			case InvalidSelection(_): null;
 		};
+		final config = beadsDir != null ? LayeredConfig.forWorkspace(beadsDir) : LayeredConfig.atStartup();
 		return config.getBool("json");
 	}
 }

@@ -182,7 +182,10 @@ directory with `metadata.json`, a workspace that claims the path, or else the
 first `.beads` directory above the path's directory. `where` prints the
 absolute path of the workspace there, its prefix and its database. When that
 directory is not a workspace, `where` reports the workspace found from the
-current directory.
+current directory. `where`, `version` and every command that reads the
+database take the `json` setting from the config of the directory that the
+path selects, also when the `db` setting comes from the user `config.yaml`
+and no workspace is found from the current directory.
 
 Like upstream, `bdhx` reads the selected workspace's `.beads/metadata.json`
 (or, when it does not exist, a legacy `.beads/config.json`) before any
