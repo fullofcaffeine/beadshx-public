@@ -746,13 +746,16 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		});
 	}
 
-	/** Haxe renders `dot` and `digraph` from the page; only a Go template uses the native renderer. */
+	/**
+		Haxe renders `dot`, `digraph` and most Go templates from the page; only a Go template
+		that needs upstream's Go types uses the native renderer (see IssueListFormat).
+	**/
 	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
 		final options = issueListOptions(request, effectiveLimit);
 		return switch selectIssueListFormat(request.format) {
-			case GoTemplate(source):
+			case NativeTemplate(source):
 				projectIssueListFormatOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, source)));
-			case NoListFormat | GraphvizDot | DependencyDigraph:
+			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_):
 				projectIssueListOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global)));
 		};
 	}
@@ -1521,8 +1524,8 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
 		final options = GoReadonlyStore.issueListOptions(request, effectiveLimit);
 		return switch selectIssueListFormat(request.format) {
-			case GoTemplate(source): GoReadonlyStore.projectIssueListFormatOutcome(native.readIssueListFormatOutcome(options, source));
-			case NoListFormat | GraphvizDot | DependencyDigraph: GoReadonlyStore.projectIssueListOutcome(native.readIssueListOutcome(options));
+			case NativeTemplate(source): GoReadonlyStore.projectIssueListFormatOutcome(native.readIssueListFormatOutcome(options, source));
+			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_): GoReadonlyStore.projectIssueListOutcome(native.readIssueListOutcome(options));
 		};
 	}
 

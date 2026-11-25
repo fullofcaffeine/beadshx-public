@@ -5,8 +5,8 @@ import beadshx.store.IssueListDependency;
 import beadshx.store.IssueListItem;
 
 /** One dependency edge of a page issue whose target is also on the page. */
-private typedef VisibleEdge = {
-	final issueId:String;
+typedef VisibleEdge = {
+	final issue:IssueListItem;
 	final dependency:IssueListDependency;
 }
 
@@ -23,13 +23,14 @@ private typedef EdgeStyle = {
 	preset template `{{.IssueID}} {{.DependsOnID}}`. Haxe owns this format and `dot`,
 	so `list` prints the `--limit` hint after them, as after the other list views.
 	What: one `<issue> <dependency>` line for each visible edge (see visibleEdges).
-	How: the native list read supplies the page and each issue's raw edges. A Go
-	template does not come here; see IssueListFormat.
+	How: the native list read supplies the page and each issue's raw edges. Any
+	other Go template renders through ListTemplateView or the native store; see
+	IssueListFormat.
 **/
 function renderListDigraph(items:Array<IssueListItem>):String {
 	final rendered = new StringBuf();
 	for (edge in visibleEdges(items))
-		rendered.add('${edge.issueId} ${edge.dependency.dependsOnId}\n');
+		rendered.add('${edge.issue.id} ${edge.dependency.dependsOnId}\n');
 	return rendered.toString();
 }
 
@@ -59,7 +60,7 @@ function renderListDot(items:Array<IssueListItem>, quote:String->String):String 
 	for (edge in visibleEdges(items)) {
 		final dependency = edge.dependency;
 		final style = edgeStyle(dependency.dependencyType);
-		rendered.add('  ${quote(edge.issueId)} -> ${quote(dependency.dependsOnId)} [label=${quote(dependency.dependencyType)}, color=${style.color}, style=${style.line}];\n');
+		rendered.add('  ${quote(edge.issue.id)} -> ${quote(dependency.dependsOnId)} [label=${quote(dependency.dependencyType)}, color=${style.color}, style=${style.line}];\n');
 	}
 	rendered.add("}\n");
 	return rendered.toString();
@@ -77,10 +78,11 @@ private function edgeStyle(dependencyType:String):EdgeStyle {
 }
 
 /**
-	The edges whose target is also on the page. Each page issue keeps its page
-	position, and its edges follow in the order of orderedDependencies.
+	The edges whose target is also on the page, which upstream's outputFormattedList
+	and outputDotFormat visit. Each page issue keeps its page position, and its edges
+	follow in the order of orderedDependencies.
 **/
-private function visibleEdges(items:Array<IssueListItem>):Array<VisibleEdge> {
+function visibleEdges(items:Array<IssueListItem>):Array<VisibleEdge> {
 	final visible = new Map<String, Bool>();
 	for (item in items)
 		visible.set(item.id, true);
@@ -88,7 +90,7 @@ private function visibleEdges(items:Array<IssueListItem>):Array<VisibleEdge> {
 	for (item in items)
 		for (dependency in orderedDependencies(item.dependencies))
 			if (visible.exists(dependency.dependsOnId))
-				edges.push({issueId: item.id, dependency: dependency});
+				edges.push({issue: item, dependency: dependency});
 	return edges;
 }
 

@@ -4961,6 +4961,41 @@ compare_real_database list-format-digraph-empty exact list --format digraph --st
 compare_real_database list-format-dot-empty exact list --format dot --status deferred
 compare_real_database list-format-dot-limit exact list --format dot --limit 3
 compare_real_database list-format-invalid-template-json exact list '--format={{.IssueID' --json --limit 2
+# Upstream prints each edge's line as soon as it renders, so a template that fails on a later edge
+# leaves the lines of the edges before it on stdout. The P3 issue's single label has no index 1.
+compare_real_database list-format-template-later-error exact list \
+	'--format={{.IssueID}} {{.DependsOnID}}{{if eq .Issue.Priority 3}} {{index .Issue.Labels 1}}{{end}}' --limit 0
+compare_real_database list-format-template-first-error exact list '--format={{.IssueID}} {{index .Issue.Labels 9}}' --limit 0
+# bdhx renders a template itself when each use of the data agrees with upstream's Go values: every
+# types.Issue and types.Dependency field that it gives, printf's verbs for each kind, comparisons,
+# and, or, not, len, index, range, with, variables and trim markers. The imported pair adds an edge
+# whose issue and dependency fill the rarer fields; --all adds closed issues and --include-infra
+# the messages and their replies-to edges.
+real_database_extra_import="$(printf '%s\n' \
+	'{"id":"test-rich-b","title":"Rich target","status":"open","priority":2,"issue_type":"task","created_at":"2026-08-21T10:00:00Z","updated_at":"2026-08-21T10:00:00Z"}' \
+	'{"id":"test-rich-a","title":"Rich source","description":"Line one\nLine two","notes":"Rich notes","status":"in_progress","priority":1,"issue_type":"feature","assignee":"alice","owner":"owner@example.invalid","created_by":"creator","spec_id":"spec-rich","wisp_type":"ping","mol_type":"patrol","work_type":"open_competition","pinned":true,"sender":"bob","await_type":"timer","await_id":"t-1","waiters":["w1@example.invalid","w2@example.invalid"],"event_kind":"patrol.muted","actor":"agent://a","target":"test-rich-b","payload":"{\"k\":1}","source_system":"github","labels":["zeta","alpha"],"created_at":"2026-08-21T11:00:00Z","updated_at":"2026-08-21T12:30:00Z","dependencies":[{"issue_id":"test-rich-a","depends_on_id":"test-rich-b","type":"blocks","created_at":"2026-08-21T11:30:00Z","created_by":"linker","metadata":"{\"weight\":2}","thread_id":"thread-9"}]}')"
+list_format_issue_fields='{{.IssueID}}|{{.Issue.ID}}|{{.Issue.Title}}|{{.Issue.Description}}|{{.Issue.Design}}|{{.Issue.AcceptanceCriteria}}|{{.Issue.Notes}}|{{.Issue.SpecID}}|{{.Issue.Status}}|{{.Issue.Priority}}|{{.Issue.IssueType}}|{{.Issue.IsBlocked}}|{{.Issue.Assignee}}|{{.Issue.Owner}}|{{.Issue.CreatedAt}}|{{.Issue.CreatedBy}}|{{.Issue.UpdatedAt}}|{{.Issue.CloseReason}}|{{.Issue.ClosedBySession}}|{{.Issue.LeaseGrantedNode}}|{{.Issue.SourceSystem}}|{{.Issue.CompactionLevel}}|{{.Issue.OriginalSize}}|{{.Issue.Labels}}|{{.Issue.Sender}}|{{.Issue.Ephemeral}}|{{.Issue.NoHistory}}|{{.Issue.WispType}}|{{.Issue.StorageClass}}|{{.Issue.Pinned}}|{{.Issue.IsTemplate}}|{{.Issue.AwaitType}}|{{.Issue.AwaitID}}|{{.Issue.Waiters}}|{{.Issue.SourceFormula}}|{{.Issue.SourceLocation}}|{{.Issue.MolType}}|{{.Issue.WorkType}}|{{.Issue.EventKind}}|{{.Issue.Actor}}|{{.Issue.Target}}|{{.Issue.Payload}}|{{.Issue.IsCompound}}'
+list_format_dependency_fields='{{.IssueID}}|{{.DependsOnID}}|{{.Type}}|{{.Dependency.ID}}|{{.Dependency.IssueID}}|{{.Dependency.DependsOnID}}|{{.Dependency.Type}}|{{.Dependency.CreatedAt}}|{{.Dependency.CreatedBy}}|{{.Dependency.Metadata}}|{{.Dependency.ThreadID}}'
+compare_real_database list-format-template-issue-fields exact list --all --limit 0 "--format=$list_format_issue_fields"
+compare_real_database list-format-template-dependency-fields exact list --all --limit 0 "--format=$list_format_dependency_fields"
+compare_real_database list-format-template-message-fields exact list --include-infra --all --limit 0 \
+	"--format=$list_format_issue_fields/$list_format_dependency_fields"
+compare_real_database list-format-template-printf exact list --all --limit 0 \
+	'--format={{printf "%-14s|%5d|%t|%T %T %T %T" .IssueID .Issue.Priority .Issue.Pinned .IssueID .Issue.Priority .Issue.Labels .Issue.IsBlocked}}|{{printf "%q %x %X %8.3s %-8v| %+v %#v" .Type .Issue.Status .Issue.IssueType .Issue.MolType .Dependency.Type .Issue.WorkType .Issue.WispType}}|{{printf "%v|%s|%q|%30s|%x" .Issue.CreatedAt .Issue.UpdatedAt .Dependency.CreatedAt .Issue.CreatedAt .Dependency.CreatedAt}}|{{printf "%v %q %x %d" .Issue.Labels .Issue.Waiters .Issue.Labels .Issue.Labels}}|{{printf "%s %s" .IssueID}}|{{printf "%5%%s" .Type}}|{{.IssueID | printf "<%s>"}}|{{printf "%.1s" .Type | len}}'
+compare_real_database list-format-template-logic exact list --all --limit 0 \
+	'--format={{if and (eq .Type "blocks") (ne .Issue.Status "closed")}}blocking{{else if eq .Type "parent-child"}}child of {{.DependsOnID}}{{else if not .Issue.Pinned}}{{.Type}}{{else}}pinned{{end}} {{lt .Issue.Priority 2}} {{ge .Type "p"}} {{eq .Issue.Priority 1 2}} {{or .Issue.Assignee "-"}} {{and .Issue.Pinned .Issue.Status}} {{or .Issue.Assignee .Issue.CreatedAt}} {{not .Issue.Labels}} {{eq .Type .Dependency.Type}}'
+compare_real_database list-format-template-range exact list --all --limit 0 \
+	'--format={{range $i, $label := .Issue.Labels}}{{if $i}},{{end}}{{$.IssueID}}:{{$label}}{{else}}no labels{{end}} {{range .Issue.Waiters}}[{{.}}]{{end}} {{len .Issue.Labels}} {{len .Type}} {{len .}} {{with .Issue.Assignee}}{{.}}{{else}}unassigned{{end}} {{with $owner := .Issue.Owner}}{{$owner}}{{end}} {{$title := .Issue.Title}}{{len $title}} {{index .Issue.Labels}} {{print .IssueID .Type .Issue.Labels .Issue.Priority}} {{println .Issue.Pinned}}'
+compare_real_database list-format-template-trim exact list --limit 0 $'--format={{- .IssueID -}}\n {{ .DependsOnID\n}} {{.missing}} {{"literal"}} {{`raw`}} {{3}}'
+real_database_extra_import=""
+# The native store renders a template that needs upstream's Go types, which bdhx's plain Go
+# strings and maps do not have: %T of the named types and of the structs, methods, a field after a
+# string, pointer fields, json.RawMessage, and a nil []string's %#v.
+compare_real_database list-format-template-native-types exact list --all --limit 0 \
+	'--format={{printf "%T %T %T %T %d" .Type .Issue.Status .Issue .Dependency.CreatedAt .Type}} {{.Issue.CreatedAt.Year}} {{.Type.IsValid}} {{printf "%#v" .Issue.Labels}}'
+compare_real_database list-format-template-native-fields exact list --all --limit 0 \
+	'--format={{.Issue.StartedAt}}|{{.Issue.ClosedAt}}|{{.Issue.DueAt}}|{{.Issue.EstimatedMinutes}}|{{.Issue.ExternalRef}}|{{.Issue.Metadata}}|{{.Issue.Timeout}}|{{.Issue.ContentHash}}|{{.Issue.RowVersion}}|{{.Issue.IsLitePartial}}|{{.Issue.EffectiveStorageClass}}|{{.Issue.CompactedAtCommit}}'
+compare_real_database list-format-template-native-error exact list --limit 0 '--format={{.IssueID}} {{.Issue.Title.Foo}}'
 compare_real_database list-max-rows-human exact list --limit 0 --max-rows 1
 compare_real_database_env list-max-rows-env-human exact BEADS_MAX_ROWS=1 list --limit 0
 compare_real_database_env list-max-rows-env-flag-zero exact BEADS_MAX_ROWS=1 list --limit 1 --max-rows 0
@@ -5998,8 +6033,8 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # says on stderr when a limit hid issues. These cases run each side on a pseudo-terminal through a
 # runner that prints the transcript: stdout and stderr in the order written, without carriage
 # returns and without the echo of the end of input that `script` sends. The flat list without agent
-# mode would start a pager there, so it has no case. bdhx prints the hint after --format dot and
-# --format digraph, but not yet after a Go template (see the README), so templates have no case.
+# mode would start a pager there, so it has no case. bdhx prints the hint after a Go template that
+# it renders itself, but not after one that the native store renders (see the README).
 # The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
 # A third argument sets the pseudo-terminal's column count (stty cols) before the binary runs;
 # without it the pseudo-terminal reports no size, so term.GetSize gives 0 columns.
@@ -6062,10 +6097,12 @@ compare_real_database agent-mode-terminal-list-tree exact list --skip-labels
 compare_real_database agent-mode-terminal-list-json exact list --json --limit 2
 compare_real_database agent-mode-terminal-list-parent exact list --parent "$real_database_epic_id" --limit 1
 compare_real_database agent-mode-terminal-list-format-digraph exact list --format digraph
+compare_real_database agent-mode-terminal-list-format-template exact list --format '{{.IssueID}} -> {{.DependsOnID}}'
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database terminal-list-tree-limit exact list --limit 2
 compare_real_database terminal-list-format-digraph-limit exact list --format digraph --limit 15
 compare_real_database terminal-list-format-dot-limit exact list --format dot --limit 2
+compare_real_database terminal-list-format-template-limit exact list --format '{{.IssueID}} {{.DependsOnID}} {{.Type}}' --limit 15
 compare_real_database terminal-list-format-digraph-all exact list --format digraph --limit 0
 real_database_setup=""
 oracle="$pipe_oracle"

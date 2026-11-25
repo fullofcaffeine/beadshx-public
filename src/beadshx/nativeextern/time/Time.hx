@@ -24,6 +24,10 @@ extern class Time {
 	@:go.valueReturn
 	@:go.name("Month") public function month():Month;
 	@:go.name("Nanosecond") public function nanosecond():Int;
+
+	/** Go's default text for a time, which `fmt` prints: `2006-01-02 15:04:05.999999999 -0700 MST`. */
+	@:go.name("String") public function stringValue():String;
+
 	@:go.name("Unix") public function unix():Int;
 	@:go.valueReturn
 	@:go.name("UTC") public function utc():Time;

@@ -11,6 +11,7 @@ import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.cli.JsonSettingPort.WorkspaceSelection;
 import beadshx.cli.ListFormatView.renderListDigraph;
 import beadshx.cli.ListFormatView.renderListDot;
+import beadshx.cli.ListTemplateView.renderListTemplate;
 import beadshx.store.IssueListFormat.selectIssueListFormat;
 import beadshx.relation.AllGraphs.AllGraphIssue;
 import beadshx.relation.AllGraphs.groupAllGraphs;
@@ -4441,8 +4442,9 @@ final class Application {
 		except the `--parent` tree then prints the truncation hint for
 		`effectiveLimit`; that tree reads each level without a limit. The tree
 		views print the --skip-labels footer after the hint. In agent mode the
-		flat view prints renderListAgent. The native --format read reports no
-		has-more flag, so no hint follows --format output yet.
+		flat view prints renderListAgent. A Go template that the native store
+		renders reports no has-more flag, so no hint follows its output yet; a
+		template that fails prints the lines before the failing edge and no hint.
 	**/
 	function renderListResult(invocation:Invocation, result:IssueListResult, effectiveLimit:Int):Int {
 		return switch result {
@@ -4453,11 +4455,18 @@ final class Application {
 				final hierarchy = isListHierarchy(invocation);
 				// Upstream checks --format before agent mode, and prints the --limit hint after it.
 				if (invocation.listRequest.format != "") {
-					output.writeStdout(switch selectIssueListFormat(invocation.listRequest.format) {
-						case GraphvizDot: renderListDot(page.items, goQuote);
-						case DependencyDigraph: renderListDigraph(page.items);
-						case GoTemplate(_) | NoListFormat: page.formatted;
-					});
+					switch selectIssueListFormat(invocation.listRequest.format) {
+						case GraphvizDot:
+							output.writeStdout(renderListDot(page.items, goQuote));
+						case DependencyDigraph:
+							output.writeStdout(renderListDigraph(page.items));
+						case PageTemplate(source):
+							final rendered = renderListTemplate(page.items, source);
+							output.writeStdout(rendered.text);
+							if (rendered.error != null) return runStoreFailure(rendered.error);
+						case NativeTemplate(_) | NoListFormat:
+							output.writeStdout(page.formatted);
+					}
 				} else
 					switch invocation.output {
 						case Human:

@@ -5,19 +5,22 @@ import beadshx.store.IssueListFormat;
 import beadshx.store.IssueListFormat.selectIssueListFormat;
 import beadshx.store.IssueListItem;
 import beadshx.store.JsonInteger;
+import beadshx.store.ListTemplateCheck.templateMatchesUpstream;
 import beadshx.store.StoredMetadata;
 
 /**
 	Pins upstream's two built-in `list --format` renderings (cmd/bd/list_output.go:25-155) by
 	hand: which values select them, the `digraph` preset lines and the Graphviz `dot`
 	document. The expected bytes are the ones the retired native renderer produced, so the
-	port keeps them. Parity covers the real runs, the Go-template route and the hint.
+	port keeps them. It also pins which Go templates Haxe renders and which need upstream's
+	Go types (templateMatchesUpstream). Parity covers the real runs of both routes and the hint.
 **/
 final class Main {
 	static var failures = 0;
 
 	static function main():Void {
 		selectionContracts();
+		templateRouteContracts();
 		digraphContracts();
 		dotContracts();
 		if (failures > 0) {
@@ -32,9 +35,100 @@ final class Main {
 		equal(describe(selectIssueListFormat("dot")), "dot");
 		equal(describe(selectIssueListFormat("digraph")), "digraph");
 		// Upstream compares the names exactly; any other value is a Go template.
-		equal(describe(selectIssueListFormat("DOT")), "template:DOT");
-		equal(describe(selectIssueListFormat("digraph ")), "template:digraph ");
-		equal(describe(selectIssueListFormat("{{.IssueID}}")), "template:{{.IssueID}}");
+		equal(describe(selectIssueListFormat("DOT")), "page-template:DOT");
+		equal(describe(selectIssueListFormat("digraph ")), "page-template:digraph ");
+		equal(describe(selectIssueListFormat("{{.IssueID}}")), "page-template:{{.IssueID}}");
+		equal(describe(selectIssueListFormat("{{printf \"%T\" .Type}}")), "native-template:{{printf \"%T\" .Type}}");
+	}
+
+	/**
+		Haxe renders a template when each use of the data agrees with upstream's Go values; the
+		native store renders the rest with upstream's types. Each rejected template below prints
+		something else upstream than with plain Go strings and maps.
+	**/
+	static function templateRouteContracts():Void {
+		for (source in [
+			"plain text",
+			"{{.IssueID}} {{.DependsOnID}}",
+			"{{.IssueID}} -> {{.DependsOnID}} [{{.Type}}] {{.Issue.Title}}/{{.Dependency.Type}}",
+			'{{printf "%-14s" .IssueID}}|{{.DependsOnID}}|{{printf "%q" .Type}}|{{eq .Type "blocks"}}|{{.Issue.Title}}|{{.Issue.Status}}|P{{.Issue.Priority}}|{{.Issue.IssueType}}|{{.Dependency.IssueID}}|{{.Issue.IsCompound}}|{{len .}}|{{.Missing}}',
+			"{{range $i, $label := .Issue.Labels}}{{if $i}},{{end}}{{$label}}{{end}}",
+			"{{range .Issue.Labels}}{{$.IssueID}}:{{.}} {{else}}none{{end}}",
+			"{{with .Issue.Assignee}}{{.}}{{else}}-{{end}} {{or .Issue.Owner \"-\"}}",
+			'{{if and (eq .Type "blocks") (ne .Issue.Status "closed")}}a{{else if .Issue.Pinned}}b{{else if not .Issue.Ephemeral}}c{{else}}d{{end}}',
+			'{{.Issue.CreatedAt}} {{printf "%-30s|%q|%x" .Dependency.CreatedAt .Issue.UpdatedAt .Issue.CreatedAt}}',
+			'{{printf "%T %T %T %d %#v" .IssueID .Issue.Priority .Issue.Labels .Issue.Priority .Issue.Title}}',
+			'{{printf "%x %X %5.2s %v %+v %#v" .Type .Issue.Status .Issue.IssueType .Issue.MolType .Issue.WorkType .Dependency.Type}}',
+			'{{.IssueID | printf "%s"}} {{.Type | printf "%v" | len}} {{len .Issue.Labels}} {{index .Issue.Labels 0}}',
+			"{{- .IssueID -}} {{ .DependsOnID }}",
+			"{{$title := .Issue.Title}}{{$title}} {{$.Issue.ID}}",
+			"{{print .IssueID .Type .Issue.Labels}} {{println .Issue.Priority}}",
+			'{{lt .Issue.Priority 2}} {{ge .Type "a"}} {{printf "%s %s" .IssueID}} {{printf "%5%%s" .Type}}',
+			"{{range 3}}{{.}}{{end}} {{.issueID}}",
+			'{{printf "%v" (or .Issue.CreatedAt .IssueID)}}',
+			"{{.IssueID\n}}"
+		])
+			equal('${source} => ${templateMatchesUpstream(source)}', '${source} => true');
+		for (source in [
+			// Upstream types: %T names them, bad verbs name them, %#v of a time is time.Date(...).
+			'{{printf "%T" .Type}}',
+			'{{printf "%T" .Issue.Status}}',
+			'{{printf "%d" .Issue.Status}}',
+			'{{printf "%#v" .Issue.CreatedAt}}',
+			'{{printf "%#v" .Issue.Labels}}',
+			'{{printf "%s %s" .IssueID .Type .Type}}',
+			'{{printf .Type}}',
+			'{{printf "%[1]s" .Type}}',
+			'{{printf "%*s" 3 .Type}}',
+			'{{printf "%1234567s" .Type}}',
+			'{{printf "\\x25d" .Type}}',
+			// Structs, missing struct fields, methods and nil pointers.
+			"{{.}}",
+			"{{$}}",
+			"{{.Issue}}",
+			"{{.Dependency}}",
+			"{{len .Issue}}",
+			'{{index .Issue "Title"}}',
+			"{{with .Issue}}{{.Title}}{{end}}",
+			"{{.Issue.Bogus}}",
+			"{{.Issue.Title.Foo}}",
+			"{{.Issue.CreatedAt.Year}}",
+			"{{.Type.IsValid}}",
+			"{{.Issue.StartedAt}}",
+			"{{.Issue.EstimatedMinutes}}",
+			"{{.Issue.ExternalRef}}",
+			"{{.Issue.Metadata}}",
+			"{{.Issue.Timeout}}",
+			"{{.Issue.ContentHash}}",
+			"{{.Issue.RowVersion}}",
+			"{{.Issue.IsLitePartial}}",
+			"{{.Issue.Dependencies}}",
+			"{{.Issue.EffectiveStorageClass}}",
+			// Comparisons and lengths of times and slices, and print's spacing of times.
+			"{{eq .Issue.CreatedAt .Issue.UpdatedAt}}",
+			"{{len .Issue.CreatedAt}}",
+			"{{print .Issue.CreatedAt .Dependency.CreatedAt}}",
+			"{{eq .Issue.Labels .Issue.Labels}}",
+			"{{range .Issue.CreatedAt}}{{end}}",
+			"{{range $label := .Issue.Labels}}{{else}}{{$label}}{{end}}",
+			// A field with arguments fails with a message that names the struct.
+			"{{.IssueID | .Issue.Title}}",
+			// Syntax outside the subset, and templates that Go does not parse.
+			"{{/* comment */}}",
+			'{{template "x"}}',
+			'{{define "x"}}{{end}}',
+			"{{nil}}",
+			"{{html .IssueID}}",
+			"{{$x := 1}}{{$x = 2}}",
+			"{{range .Issue.Labels}}{{break}}{{end}}",
+			"{{'a'}}",
+			"{{1.5}}",
+			"{{.T\u00EFtle}}",
+			"{{.IssueID",
+			"{{.IssueID}}{{end}}",
+			"{{if .IssueID}}"
+		])
+			equal('${source} => ${templateMatchesUpstream(source)}', '${source} => false');
 	}
 
 	static function digraphContracts():Void {
@@ -101,7 +195,8 @@ final class Main {
 			case NoListFormat: "none";
 			case GraphvizDot: "dot";
 			case DependencyDigraph: "digraph";
-			case GoTemplate(source): 'template:${source}';
+			case PageTemplate(source): 'page-template:${source}';
+			case NativeTemplate(source): 'native-template:${source}';
 		};
 	}
 

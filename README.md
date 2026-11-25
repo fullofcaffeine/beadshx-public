@@ -562,12 +562,15 @@ Limits:
   one.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
-- When stderr is a terminal and `--limit` hides more issues, upstream prints a
-  hint after `list --format` output. `bdhx` prints it after `--format dot` and
-  `--format digraph`, but not after a Go template.
-- When a `list --format` Go template fails on a later issue, upstream has
-  already printed the lines of the issues before it. `bdhx` prints only the
-  error.
+- `bdhx` renders a `list --format` Go template itself when each use of the
+  data gives the same text as upstream's Go types. Some templates need those
+  types, for example `{{printf "%T" .Type}}`, `{{.Issue.CreatedAt.Year}}`,
+  `{{.Issue.ClosedAt}}`, `{{.Issue.Metadata}}` or `{{.Issue}}`. For these
+  templates, `bdhx` runs the template on upstream's Go types, so the output
+  is the same, with two differences. When stderr is a terminal and `--limit`
+  hides more issues, `bdhx` does not print upstream's hint after the output.
+  When the template fails on a later issue, `bdhx` prints only the error, and
+  upstream has already printed the lines of the issues before it.
 - `bdhx` refuses `ready --claim`, so it never prints upstream's colored
   claim lines. On a terminal with colors on, `bdhx` can ask the terminal for
   its background color twice: once when it starts, in the upstream code of the
