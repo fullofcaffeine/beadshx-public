@@ -6765,7 +6765,7 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # runner that prints the transcript: stdout and stderr in the order written, without carriage
 # returns and without the echo of the end of input that `script` sends. The flat list without agent
 # mode would start a pager there, so it has no case. bdhx prints the hint after a Go template that
-# it renders itself, but not after one that the native store renders (see the README).
+# it renders itself, but not after one that the native store renders (see engdocs/beadshx/compatibility/limits.md).
 # The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
 # A third argument sets the pseudo-terminal's column count (stty cols) before the binary runs;
 # without it the pseudo-terminal reports no size, so term.GetSize gives 0 columns.
