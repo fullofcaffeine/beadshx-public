@@ -4129,7 +4129,8 @@ compare_real_database_colors show-color-children exact CLICOLOR_FORCE=1 show --c
 compare_real_database_colors show-color-children-short exact CLICOLOR_FORCE=1 show --children --short test-cl
 compare_real_database_colors show-color-children-none exact CLICOLOR_FORCE=1 show --children test-cl-p0
 compare_real_database_colors show-color-refs exact CLICOLOR_FORCE=1 show --refs test-cl
-compare_real_database_colors show-color-refs-blocker exact CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
+# Upstream prints one block per issue from a Go map (cmd/bd/show_refs.go:54), so compare the lines as a multiset.
+compare_real_database_colors show-color-refs-blocker show-grouped-multi CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
 compare_real_database_colors show-color-thread exact CLICOLOR_FORCE=1 show --thread test-msg-reply
 compare_real_database_colors show-color-pipe exact "" show test-cl test-cl-closed
 compare_real_database_colors show-color-no-color-flag exact CLICOLOR_FORCE=1 show test-cl --no-color
