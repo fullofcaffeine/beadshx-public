@@ -38,7 +38,10 @@ function commentTimestamp(createdAt:String, localTime:Bool):String {
 	return millis == null ? stored : Date.fromTime(millis).toString().substr(0, 16);
 }
 
-/** The instant of a `2006-01-02T15:04:05[.fraction](Z|±07:00)` time, in whole seconds, or null. */
+/**
+	The instant of a `2006-01-02T15:04:05[.fraction](Z|±07:00)` time in milliseconds,
+	the fraction cut to whole milliseconds as Go's `UnixMilli` does, or null.
+**/
 function rfc3339Millis(value:String):Null<Float> {
 	if (value.length < 20 || value.charAt(4) != "-" || value.charAt(7) != "-" || value.charAt(10) != "T" || value.charAt(13) != ":" || value.charAt(16) != ":")
 		return null;
@@ -52,10 +55,16 @@ function rfc3339Millis(value:String):Null<Float> {
 		return null;
 	// A fraction never moves the minute: zone offsets are whole seconds.
 	var zone = 19;
+	var fractionMillis = 0;
 	if (value.charAt(zone) == ".") {
 		zone++;
+		final start = zone;
 		while (zone < value.length && value.charCodeAt(zone) >= "0".code && value.charCodeAt(zone) <= "9".code)
 			zone++;
+		final digits = zone - start < 3 ? zone - start : 3;
+		final millis = Std.parseInt(StringTools.rpad(value.substr(start, digits), "0", 3));
+		if (millis != null)
+			fractionMillis = millis;
 	}
 	final designator = value.substr(zone);
 	var offsetSeconds = 0;
@@ -68,7 +77,8 @@ function rfc3339Millis(value:String):Null<Float> {
 			return null;
 		offsetSeconds = (designator.charAt(0) == "-" ? -1 : 1) * (offsetHours * 3600 + offsetMinutes * 60);
 	}
-	return (daysFromCivil(year, month, day) * 86400.0 + hour * 3600 + minute * 60 + second - offsetSeconds) * 1000.0;
+	final seconds = daysFromCivil(year, month, day) * 86400.0 + hour * 3600 + minute * 60 + second - offsetSeconds;
+	return seconds * 1000.0 + fractionMillis;
 }
 
 /** Days since 1970-01-01 in the proleptic Gregorian calendar (H. Hinnant's days_from_civil). */

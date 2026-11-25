@@ -1033,6 +1033,7 @@ compare_store_failure stale-embedded-server blocked-json blocked --json
 compare_store_failure stale-embedded-server dep-cycles dep cycles
 compare_store_failure stale-embedded-server graph-check-json graph check --json
 compare_store_failure stale-embedded-server ready-explain ready --explain
+compare_store_failure stale-embedded-server stale-json stale --days 1 --json
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"
@@ -5366,11 +5367,22 @@ compare_real_database full-fields-show-thread-json exact show test-full-msg-repl
 compare_real_database full-fields-dep-list-json exact dep list test-full-a --json
 compare_real_database full-fields-dep-tree-json exact dep tree test-full-a --json
 compare_real_database full-fields-graph-json exact graph test-full-a --json
-# Stale prints no labels yet (beadshx-m08.38), so its record has none.
-real_database_extra_import="$(full_issue_record test-full-s "Full field stale" 2 2026-08-20T04:00:00Z)"
+# Upstream's stale read takes the records from GetIssuesByIDsInTx, which adds each issue's labels
+# in label order (internal/storage/issueops/stale.go:76, dependencies.go:1065-1083).
+real_database_extra_import="$(full_issue_record test-full-s "Full field stale" 2 2026-08-20T04:00:00Z '{"labels":["zeta","alpha"]}')"
 compare_real_database full-fields-stale-json exact stale --days 1 --json
 real_database_extra_import=""
 real_database_extra_sql=""
+# Stale lists the issues that were not updated since the cutoff, stalest first, with their labels.
+# It leaves out closed issues, and --status and --limit narrow the IDs before the records are read.
+labeled_stale_records="$(printf '%s\n' \
+	'{"id":"test-ls-old","title":"Oldest labeled","status":"in_progress","priority":1,"issue_type":"task","assignee":"ann","labels":["zulu","alpha","mike"],"created_at":"2026-01-01T10:00:00Z","updated_at":"2026-01-02T10:00:00Z"}' \
+	'{"id":"test-ls-mid","title":"Middle labeled","status":"open","priority":2,"issue_type":"bug","labels":["solo"],"created_at":"2026-01-01T10:00:00Z","updated_at":"2026-02-02T10:00:00Z"}' \
+	'{"id":"test-ls-closed","title":"Closed labeled","status":"closed","priority":2,"issue_type":"task","labels":["done"],"created_at":"2026-01-01T10:00:00Z","updated_at":"2026-01-01T12:00:00Z","closed_at":"2026-01-01T12:00:00Z"}')"
+compare_real_database_import stale-labels-json exact "$labeled_stale_records" stale --days 1 --json
+compare_real_database_import stale-labels-limit-json exact "$labeled_stale_records" stale --days 1 --limit 2 --json
+compare_real_database_import stale-labels-status-json exact "$labeled_stale_records" stale --days 1 --status in_progress --json
+compare_real_database_import stale-labels-human exact "$labeled_stale_records" stale --days 1
 compare_real_database show-thread-human exact show test-msg-leaf --thread
 compare_real_database show-thread-json exact show test-msg-leaf ignored-second --thread --json
 compare_real_database show-thread-disabled exact show test-msg-root --thread=false
@@ -5453,6 +5465,11 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 lease_open_sql="INSERT INTO labels (issue_id, label) VALUES ('$real_database_bug_id', 'leased')"$'\n'"INSERT INTO leases (issue_id, holder, granted_at, lease_expires_at, heartbeat_at, granted_node) VALUES ('$real_database_bug_id', 'fixture', '2026-11-01 10:00:00', '$(lease_time 108000)', '2026-11-01 10:00:00', '')"
 compare_real_database_sql lease-open-show exact "$lease_open_sql" show "$real_database_bug_id"
 compare_real_database_sql lease-open-show-json exact "$lease_open_sql" show "$real_database_bug_id" --json
+# Stale leaves out an issue with a lease heartbeat since the cutoff, however old its update
+# (internal/storage/issueops/stale.go:26-37). An older heartbeat keeps it, with its lease fields.
+compare_real_database_sql stale-lease-recent-heartbeat-json exact "$lease_hours_sql" stale --days 1 --json
+compare_real_database_sql stale-lease-old-heartbeat-json exact "$lease_labeled_sql" stale --days 1 --json
+compare_real_database_sql stale-lease-heartbeat-in-window-json exact "$lease_days_sql" stale --days 3 --status in_progress --json
 compare_real_database show-json-comments exact show "$real_database_issue_id" --json --include-comments
 compare_real_database show-json-comments-attached exact show "$real_database_issue_id" --json --include-comments=true
 compare_real_database show-json-comments-disabled exact show "$real_database_issue_id" --json --include-comments=false
@@ -6833,6 +6850,7 @@ schema_skew_commands=(
 	"statuses:statuses"
 	"config-get:config get issue_prefix"
 	"config-list-json:config list --json"
+	"stale-json:stale --days 1 --json"
 	"show:show $real_database_issue_id"
 	"show-json:show $real_database_issue_id --json"
 	"list:list"
@@ -6876,6 +6894,7 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 		--readonly comments "$real_database_issue_id"
 	compare_real_database_sql "schema-$schema_case-ignored-where" exact "$schema_sql" where
 	compare_real_database_sql "schema-$schema_case-ignored-count" exact "$schema_sql" --readonly count
+	compare_real_database_sql "schema-$schema_case-ignored-stale" exact "$schema_sql" --readonly stale --days 1
 	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 	compare_real_database_sql "schema-$schema_case-flag-ignored-dep-list" exact "$schema_sql" \
 		--readonly --ignore-schema-skew dep list "$real_database_issue_id"

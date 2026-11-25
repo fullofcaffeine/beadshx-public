@@ -474,6 +474,9 @@ Limits:
   then holds each issue that has an open blocker. This list is different from
   upstream's only when a stored flag does not agree with the dependencies.
   Its cycles then leave out a cycle through an ID that has no issue record.
+- Like upstream, each record of `stale --json` has the issue's labels. In a
+  server-mode or proxied workspace, `bdhx` does not read the labels yet, so
+  these records have no `labels` field.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - Upstream also trusts the macOS Shared folder when it decides whether to

@@ -463,7 +463,6 @@ type IssueRecord struct {
 	createdAt          string
 	createdBy          string
 	updatedAt          string
-	updatedAtMillis    float64
 	startedAt          string
 	closedAt           string
 	closeReason        string
@@ -526,7 +525,6 @@ func (v IssueRecord) EstimatedMinutes() int {
 func (v IssueRecord) CreatedAt() string          { return v.createdAt }
 func (v IssueRecord) CreatedBy() string          { return v.createdBy }
 func (v IssueRecord) UpdatedAt() string          { return v.updatedAt }
-func (v IssueRecord) UpdatedAtMillis() float64   { return v.updatedAtMillis }
 func (v IssueRecord) StartedAt() string          { return v.startedAt }
 func (v IssueRecord) ClosedAt() string           { return v.closedAt }
 func (v IssueRecord) CloseReason() string        { return v.closeReason }
@@ -792,7 +790,6 @@ func projectIssueRecord(issue types.Issue) IssueRecord {
 		createdAt:          issue.CreatedAt.Format(time.RFC3339Nano),
 		createdBy:          issue.CreatedBy,
 		updatedAt:          issue.UpdatedAt.Format(time.RFC3339Nano),
-		updatedAtMillis:    float64(issue.UpdatedAt.UnixMilli()),
 		startedAt:          optionalTime(issue.StartedAt),
 		closedAt:           optionalTime(issue.ClosedAt),
 		closeReason:        issue.CloseReason,

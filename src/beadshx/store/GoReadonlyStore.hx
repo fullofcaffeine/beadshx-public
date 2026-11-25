@@ -792,7 +792,17 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return projectIssueListOutcome(facadeOpened(beadsDir, NativeReadonlyFacade.readSearchOutcome(beadsDir, query, options, global)));
 	}
 
-	public function issueStale(beadsDir:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>> {
+	/**
+		An embedded workspace reads its stale issues, with their labels, with
+		Haxe-owned SQL. The native facade serves the server route, and its
+		records carry no labels (see the README limit).
+	**/
+	public function issueStale(beadsDir:String, databaseName:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.staleIssues(beadsDir, databaseName, request);
+			if (embedded != null)
+				return embedded;
+		}
 		return projectStaleOutcome(facadeOpened(beadsDir,
 			NativeReadonlyFacade.readStaleOutcome(beadsDir, request.days, request.status, request.limit, global)));
 	}
@@ -1007,8 +1017,9 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				metadata: StoredMetadata.fromSql(native.metadata()),
 				wispType: native.wispType(),
 				moleculeType: native.moleculeType(),
-				longFields: longFields,
-				updatedAtMillis: native.updatedAtMillis()
+				// The native stale page drops the labels that upstream's read returns.
+				labels: [],
+				longFields: longFields
 			});
 		}
 		return Success(issues);
@@ -1568,7 +1579,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return GoReadonlyStore.projectIssueListOutcome(native.readSearchOutcome(query, GoReadonlyStore.searchOptions(request)));
 	}
 
-	public function issueStale(beadsDir:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>> {
+	public function issueStale(beadsDir:String, databaseName:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>> {
 		return GoReadonlyStore.projectStaleOutcome(native.readStaleOutcome(request.days, request.status, request.limit));
 	}
 
@@ -1874,7 +1885,6 @@ extern class NativeIssueRecord {
 	@:go.name("CreatedAt") function createdAt():String;
 	@:go.name("CreatedBy") function createdBy():String;
 	@:go.name("UpdatedAt") function updatedAt():String;
-	@:go.name("UpdatedAtMillis") function updatedAtMillis():Float;
 	@:go.name("StartedAt") function startedAt():String;
 	@:go.name("ClosedAt") function closedAt():String;
 	@:go.name("CloseReason") function closeReason():String;

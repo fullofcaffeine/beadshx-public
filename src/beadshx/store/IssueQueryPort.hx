@@ -10,7 +10,10 @@ interface IssueQueryPort extends QueryTimePort {
 	function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult>;
 	function issueReady(beadsDir:String, request:ReadyRequest, global:Bool):ReadyLoadResult;
 	function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult;
-	function issueStale(beadsDir:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>>;
+
+	/** The stale issues, as `bd stale` lists them, stalest first. */
+	function issueStale(beadsDir:String, databaseName:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>>;
+
 	function issueOrphanCandidates(beadsDir:String, request:IssueListRequest, global:Bool):StoreResult<OrphanCandidateScan>;
 	function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult;
 	function dependencyEdges(beadsDir:String, databaseName:String, ids:Array<String>, dependencyTypes:Array<String>, global:Bool):DependencyEdgeResult;

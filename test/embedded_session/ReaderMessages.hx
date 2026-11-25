@@ -13,6 +13,7 @@ import beadshx.store.EmbeddedIssueIdSearch;
 import beadshx.store.EmbeddedIssueSummaryReader;
 import beadshx.store.EmbeddedRelationReader;
 import beadshx.store.EmbeddedScalarIssueDetailsReader;
+import beadshx.store.EmbeddedStaleReader;
 import beadshx.store.EmbeddedTreeReader;
 import beadshx.store.StoreResult;
 
@@ -33,6 +34,7 @@ class ReaderMessages {
 		add("config-get", done(EmbeddedCustomConfigReader.readSetting(beadsDir, databaseName, "issue_prefix")));
 		add("config-list", done(EmbeddedCustomConfigReader.readSettings(beadsDir, databaseName)));
 		add("blocked", done(EmbeddedBlockedReader.read(beadsDir, databaseName, "")));
+		add("stale", done(EmbeddedStaleReader.read(beadsDir, databaseName, {days: 1, status: "", limit: 0})));
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

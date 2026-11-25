@@ -102,6 +102,7 @@ import beadshx.config.UserRole;
 import beadshx.config.ConfigKeys.CONFIG_ROUTE_UNAVAILABLE;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
+import beadshx.cli.CommentsView.rfc3339Millis;
 import beadshx.cli.CommentsView.renderCommentsJson;
 import beadshx.cli.EventsView.eventsExportHelp;
 import beadshx.cli.EventsView.eventsHelp;
@@ -3794,7 +3795,7 @@ final class Application {
 								} else if (!validStaleStatus(invocation.staleRequest.status)) {
 									runModeAwareFailure(invocation.output,
 										'invalid status \'${invocation.staleRequest.status}\'. Valid values: open, in_progress, blocked, deferred');
-								} else switch query.issueStale(location.path, invocation.staleRequest, invocation.global) {
+								} else switch query.issueStale(location.path, location.databaseName, invocation.staleRequest, invocation.global) {
 									case Failure(message): runStoreFailure(message);
 									case Success(issues): renderStale(invocation, issues);
 								};
@@ -3823,7 +3824,9 @@ final class Application {
 		final now = Date.now().getTime();
 		for (index in 0...issues.length) {
 			final issue = issues[index];
-			final daysStale = Std.int((now - issue.updatedAtMillis) / 86400000.0);
+			// Upstream's int(now.Sub(issue.UpdatedAt).Hours() / 24), in milliseconds.
+			final updated = rfc3339Millis(issue.updatedAt);
+			final daysStale = updated == null ? 0 : Std.int((now - updated) / 86400000.0);
 			rendered.add('${index + 1}. [${styles.renderPriority(issue.priority)}] ${styles.renderId(issue.id)}: ${issue.title}\n');
 			rendered.add('   Status: ${styles.renderStatus(issue.status)}, Last updated: ${daysStale} days ago\n');
 			if (issue.assignee != "")
@@ -6187,15 +6190,16 @@ final class Application {
 
 	/**
 		Upstream renderStale's JSON (cmd/bd/stale.go:59-64): the stale issues as
-		types.Issue records. It replaces a nil result with an empty slice, so no
-		stale issue prints `[]` on one line.
+		types.Issue records, with the labels that its read returns. It replaces a
+		nil result with an empty slice, so no stale issue prints `[]` on one line.
 	**/
 	static function renderRawIssuesJson(issues:Array<StaleIssue>):StoreResult<String> {
 		if (issues.length == 0)
 			return Success("[]\n");
 		final lines = ["["];
 		for (index in 0...issues.length) {
-			final fields = switch renderIssueFields(issues[index]) {
+			final issue = issues[index];
+			final fields = switch renderIssueFields(issue, false, "    ", issue.labels) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
 			};

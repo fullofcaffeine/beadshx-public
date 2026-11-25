@@ -14,6 +14,11 @@ extern class Time {
 	@:go.name("Add")
 	public function add(duration:Duration):Time;
 
+	/** The time `years`, `months` and `days` later, normalized as Go's `Time.AddDate` does. */
+	@:go.valueReturn
+	@:go.name("AddDate")
+	public function addDate(years:Int, months:Int, days:Int):Time;
+
 	@:go.name("Day") public function day():Int;
 	@:go.name("Format") public function format(layout:String):String;
 
