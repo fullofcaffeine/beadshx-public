@@ -1,6 +1,6 @@
 # Go dependency and native-boundary pressure
 
-This report is generated from Beads `634cbbc4bc580fa5124f63fdf65d137a46d5b4ff` with `golang.org/x/tools/go/packages+go/types`. It ranks pressure against haxe.go `11f6980b2c9fc1c01fb698b9e5d2b0c98a21aea7` without treating the Go dependency graph as the Haxe product model.
+This report is generated from Beads `634cbbc4bc580fa5124f63fdf65d137a46d5b4ff` with `golang.org/x/tools/go/packages+go/types`. It ranks pressure against haxe.go `5a0ac46b188b256da5db1580a94aeabfa8c679f3` without treating the Go dependency graph as the Haxe product model.
 
 The complete machine-readable call inventory is `inventory.json.gz`. The report groups those calls by typed native boundary and dependency policy.
 

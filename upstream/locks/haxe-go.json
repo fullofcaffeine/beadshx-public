@@ -5,6 +5,6 @@
   "referenceVersion": "v0.54.0",
   "referenceCommit": "92d458e760a30bcb57f2cefb6202f0996fe1ac71",
   "liveStartingCommit": "990d78bcf7a8641ef589cd230b7d69d59beadb84",
-  "requiredCommit": "11f6980b2c9fc1c01fb698b9e5d2b0c98a21aea7",
+  "requiredCommit": "5a0ac46b188b256da5db1580a94aeabfa8c679f3",
   "requiredHaxe": "4.3.7"
 }

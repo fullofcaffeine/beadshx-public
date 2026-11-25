@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `11f6980b2c9fc1c01fb698b9e5d2b0c98a21aea7`.
+Required BeadsHX compiler revision: `5a0ac46b188b256da5db1580a94aeabfa8c679f3`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -182,6 +182,16 @@ sort key once and reads each declaration once in the type-usage ledger, which
 together cut the BeadsHX bootstrap compile by about a quarter. haxe_go-5yip adds
 the exact `go.NativeUintptr` carrier for Go `uintptr` values at extern
 boundaries. BeadsHX Go output is byte-identical to the previous lock.
+
+Compiler task haxe_go-l197 adds the exact `go.NativeUint32`, `go.NativeUint16`
+and `go.NativeUint` carriers for Go `uint32`, `uint16` and `uint` values at
+extern boundaries. haxe_go-mk6c makes stored-value recovery test only the
+classes that can affect its result, which cuts the BeadsHX bootstrap compile by
+about 7%. haxe_go-by0g, haxe_go-5pk4, haxe_go-ww8k and haxe_go-aahs make type
+tests, stored-value conversions, enum-required classes and downcasts give the
+same result in every class lowering order. BeadsHX Go output changes only from
+haxe_go-by0g: the `Std` module's runtime type-token tests call the shared
+helper `hx_is_of_type_token`, which the generated main file now declares.
 
 Reviewed current authority:
 
