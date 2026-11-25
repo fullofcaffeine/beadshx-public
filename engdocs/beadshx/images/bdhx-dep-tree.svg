@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="704" height="170" viewBox="0 0 704 170" xml:space="preserve" role="img" aria-label="$ bdhx dep tree demo-8xk.4">
+<title>$ bdhx dep tree demo-8xk.4</title>
+<style>text{font-family:Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace;font-size:14px;white-space:pre}.c0{fill:#59c2ff}.c1{fill:#bfbdb6}.c2{fill:#f07178;font-weight:bold}.c3{fill:#6c7680}.c4{fill:#ffb454}</style>
+<rect width="704" height="170" rx="8" fill="#0d1017"/>
+<path d="M0 8a8 8 0 0 1 8-8h688a8 8 0 0 1 8 8v28h-704z" fill="#1a1f29"/>
+<circle cx="20" cy="18" r="6" fill="#ff5f57"/><circle cx="40" cy="18" r="6" fill="#febc2e"/><circle cx="60" cy="18" r="6" fill="#28c840"/>
+<text x="352" y="23" text-anchor="middle" fill="#8a9199">$ bdhx dep tree demo-8xk.4</text>
+<text y="66"><tspan x="16" textLength="16.8" lengthAdjust="spacingAndGlyphs" class="c0">🌲</tspan><tspan x="32.8" textLength="268.8" lengthAdjust="spacingAndGlyphs" class="c1"> Dependency tree for demo-8xk.4:</tspan></text>
+<text y="100"><tspan x="16" textLength="420" lengthAdjust="spacingAndGlyphs" class="c1">demo-8xk.4: Publish the release notes [P3] (open) </tspan><tspan x="436" textLength="75.6" lengthAdjust="spacingAndGlyphs" class="c2">[BLOCKED]</tspan></text>
+<text y="117"><tspan x="16" textLength="445.2" lengthAdjust="spacingAndGlyphs" class="c1">    ├── demo-8xk: Launch the public beta [P1] (open) </tspan><tspan x="461.2" textLength="117.6" lengthAdjust="spacingAndGlyphs" class="c3">[parent-child]</tspan></text>
+<text y="134"><tspan x="16" textLength="562.8" lengthAdjust="spacingAndGlyphs" class="c1">    ├── demo-q3m: App crashes when the session expires [P0] (open) </tspan><tspan x="578.8" textLength="67.2" lengthAdjust="spacingAndGlyphs" class="c3">[blocks]</tspan></text>
+<text y="151"><tspan x="16" textLength="67.2" lengthAdjust="spacingAndGlyphs" class="c1">    └── </tspan><tspan x="83.2" textLength="84" lengthAdjust="spacingAndGlyphs" class="c4">demo-8xk.2</tspan><tspan x="167.2" textLength="420" lengthAdjust="spacingAndGlyphs" class="c1">: Add sign-in with email links [P1] (in_progress) </tspan><tspan x="587.2" textLength="67.2" lengthAdjust="spacingAndGlyphs" class="c3">[blocks]</tspan></text>
+<rect x="0.5" y="0.5" width="703" height="169" rx="7.5" fill="none" stroke="#2d3340"/>
+</svg>
