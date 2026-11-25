@@ -23,6 +23,10 @@ exists.
 - Upstream `show` records the issue that it showed in `.beads/last-touched`.
   `bdhx` reads that file, for `show` without an ID, but never writes it
   (beadshx-m08.27).
+- In an embedded workspace whose Git repository has a remote, upstream writes
+  an automatic backup to `.beads/backup` after a command: the first time, and
+  then at most every 15 minutes when the data changed. `bdhx` never writes a
+  backup.
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
