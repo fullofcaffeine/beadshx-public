@@ -85,8 +85,6 @@ exists.
 - In a server-mode or proxied workspace, the records of `stale --json` have
   no `labels` field, because `bdhx` does not read the labels there yet
   (beadshx-m08.46).
-- With `BD_DEBUG_ROUTING`, when a server-mode store open through a redirect
-  fails, `bdhx` prints one routing line more than upstream (beadshx-m08.57).
 - The schema version check is compared with upstream only for embedded
   workspaces (beadshx-m08.15).
 - Every command that reads the database reports that it is not available yet

@@ -480,6 +480,13 @@ final class Application {
 	**/
 	var uncheckedStore:Null<UncheckedStore> = null;
 
+	/**
+		Set by validateStoreSelection for a server-mode store, whose native open
+		comes later: upstream's warnMultipleDatabases follows the open (see
+		finishStoreOpen).
+	**/
+	var databaseLookupsAfterOpen = false;
+
 	public function new(parser:Parser, output:OutputPort, actor:ActorPort, gitHistory:GitHistoryPort, workspace:WorkspacePort, store:ReadonlyStorePort,
 			profiler:ProfilePort, watch:WatchPort, ?lookups:RedirectLookups) {
 		this.lookups = lookups != null ? lookups : new RedirectLookups();
@@ -1565,19 +1572,20 @@ final class Application {
 						if (!findsDatabase(invocation, location)) {
 							runWorkspaceDatabaseNotFound(location);
 						} else if (invocation.infoWhatsNew) {
-							if (invocation.global) {
-								switch store.validate(location.path, true) {
-									case Failure(message): runStoreFailure(message);
-									case Success(_):
-										renderWhatsNew(invocation.output);
-										0;
-								}
-							} else {
-								renderWhatsNew(invocation.output);
-								0;
+							// Upstream's pre-run opens the store first; the checks above stand for an embedded open.
+							final opensStore = invocation.global || opensServerStore(location);
+							final opened = opensStore ? store.validate(location.path, invocation.global) : Success(true);
+							finishStoreOpen(opened.match(Success(_)));
+							switch opened {
+								case Failure(message): runStoreFailure(message);
+								case Success(_):
+									renderWhatsNew(invocation.output);
+									0;
 							}
 						} else {
-							switch store.info(location.path, invocation.infoSchema, invocation.global) {
+							final read = store.info(location.path, invocation.infoSchema, invocation.global);
+							finishStoreOpen(read.match(Success(_)));
+							switch read {
 								case Failure(message): runStoreFailure(message);
 								case Success(snapshot):
 									// Upstream prints the database path it took: for BEADS_DB, the one FindDatabasePath takes.
@@ -1645,7 +1653,9 @@ final class Application {
 	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingSnapshot> {
 		if (!location.proxiedServer)
 			lookups.findBeadsDir();
-		return store.ping(location.path, global);
+		final pinged = store.ping(location.path, global);
+		finishStoreOpen(pinged.match(Success(_)));
+		return pinged;
 	}
 
 	function runStatus(invocation:Invocation):Int {
@@ -1661,7 +1671,7 @@ final class Application {
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						if (!findsDatabase(invocation,
-							location)) runWorkspaceDatabaseNotFound(location); else switch store.status(location.path, invocation.statusSkipBlocked, assignee,
+							location)) runWorkspaceDatabaseNotFound(location); else switch readStatus(location, invocation.statusSkipBlocked, assignee,
 							invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(snapshot):
@@ -1670,6 +1680,12 @@ final class Application {
 						}
 				}
 		};
+	}
+
+	function readStatus(location:WorkspaceLocation, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot> {
+		final read = store.status(location.path, skipBlocked, assignee, global);
+		finishStoreOpen(read.match(Success(_)));
+		return read;
 	}
 
 	function runShow(invocation:Invocation):Int {
@@ -3469,7 +3485,8 @@ final class Application {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
 									// Upstream's warnMultipleDatabases follows the store open (cmd/bd/main.go:1688).
-									lookups.findAllDatabases();
+									if (looksUpDatabasesAfterOpen(invocation, location))
+										lookups.findAllDatabases();
 									final probe = readsTable ? Success("") : query.configValue(location.path, selectedDatabaseName(invocation, location), "",
 										invocation.global);
 									closeIssueQuery(query, switch probe {
@@ -6932,6 +6949,7 @@ final class Application {
 	function openIssueQuery(invocation:Invocation, location:WorkspaceLocation):StoreResult<IssueQueryPort> {
 		final serverStore = opensServerStore(location);
 		final opened = store.openIssueQuery(location.path, serverStore, selectedDatabaseName(invocation, location), location.proxiedServer, invocation.global);
+		finishStoreOpen(opened.match(Success(_)));
 		switch opened {
 			case Success(_) if (!serverStore && !location.proxiedServer && !invocation.global):
 				uncheckedStore = {beadsDir: location.path, databaseName: selectedDatabaseName(invocation, location)};
@@ -7458,9 +7476,35 @@ final class Application {
 		trackVersionLookup(invocation, location, config);
 		final selection = validateSelectedStore(invocation, location, config);
 		// Upstream's warnMultipleDatabases looks for the workspaces above the current directory once the store is open (:1688).
-		if (selection.match(Accepted) && findsDatabase(invocation, location))
-			lookups.findAllDatabases();
+		// The checks above stand for an embedded open; a server-mode store opens natively later (see finishStoreOpen).
+		if (selection.match(Accepted) && findsDatabase(invocation, location) && looksUpDatabasesAfterOpen(invocation, location)) {
+			if (opensServerStore(location))
+				databaseLookupsAfterOpen = true;
+			else
+				lookups.findAllDatabases();
+		}
 		return selection;
+	}
+
+	/**
+		Whether upstream's pre-run reaches warnMultipleDatabases (cmd/bd/main.go:1688)
+		once its store open succeeds. A proxied-server workspace returns before it
+		(:1554-1577). Outside shared-server mode, which this build refuses earlier,
+		a server-mode open with --global fails.
+	**/
+	function looksUpDatabasesAfterOpen(invocation:Invocation, location:WorkspaceLocation):Bool {
+		return !location.proxiedServer && !(invocation.global && opensServerStore(location));
+	}
+
+	/**
+		Runs the warnMultipleDatabases lookups that validateStoreSelection left for
+		after a server-mode store's native open, when that open `succeeded`. A
+		failed open stops upstream's pre-run before them.
+	**/
+	function finishStoreOpen(succeeded:Bool):Void {
+		if (databaseLookupsAfterOpen && succeeded)
+			lookups.findAllDatabases();
+		databaseLookupsAfterOpen = false;
 	}
 
 	/**

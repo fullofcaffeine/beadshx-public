@@ -721,6 +721,8 @@ copy_fixture_tree() {
 store_failure_case_count=0
 # The mode of the .beads directory of each store-failure fixture.
 store_failure_beads_mode=700
+# More variable assignments for both sides of a store-failure case.
+store_failure_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_store_failure() {
 	local scenario="$1"
 	local case_name="$2"
@@ -740,7 +742,8 @@ compare_store_failure() {
 		metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}'
 		config_yaml='issue-prefix: test'
 		;;
-	unavailable-server | deprecated-port-server | stale-embedded-server | test-source-server | test-target-server)
+	unavailable-server | deprecated-port-server | stale-embedded-server | test-source-server | test-target-server | \
+		redirect-server | redirect-proxied-server)
 		metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads"}'
 		if [[ "$scenario" == test-target-server ]]; then
 			metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads_test_target"}'
@@ -750,6 +753,10 @@ compare_store_failure() {
 			metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads","dolt_server_port":1}'
 		fi
 		config_yaml=$'issue-prefix: test\ndolt:\n  mode: server\n  auto-start: false'
+		if [[ "$scenario" == redirect-proxied-server ]]; then
+			metadata='{"backend":"dolt","dolt_mode":"proxied-server","dolt_database":"beads"}'
+			config_yaml='issue-prefix: test'
+		fi
 		# Upstream counts each failed server connection in a circuit breaker file under
 		# $TMPDIR/beads-circuit, which every process on the machine shares. Five failures in a
 		# minute trip it: that process logs a "[circuit-breaker] ... closed → open" line, and later
@@ -774,18 +781,20 @@ compare_store_failure() {
 		if [[ "$scenario" == stale-embedded-server ]]; then
 			mkdir "$command_root/work/.beads/embeddeddolt"
 		fi
-		# The workspace moves to target/.beads, and a server workspace with its own dolt_database redirects to it.
-		if [[ "$scenario" == test-source-server || "$scenario" == test-target-server ]]; then
-			local source_database=source
-			if [[ "$scenario" == test-source-server ]]; then
-				source_database=beads_test_source
-			fi
+		# The workspace moves to target/.beads, and a workspace of the same mode redirects to it: with its own
+		# dolt_database in test-source-server and test-target-server, and without one in the redirect scenarios.
+		if [[ "$scenario" == test-source-server || "$scenario" == test-target-server || "$scenario" == redirect-* ]]; then
+			local source_metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"source"}'
+			case "$scenario" in
+			test-source-server) source_metadata='{"backend":"dolt","dolt_mode":"server","dolt_database":"beads_test_source"}' ;;
+			redirect-server) source_metadata='{"backend":"dolt","dolt_mode":"server"}' ;;
+			redirect-proxied-server) source_metadata='{"backend":"dolt","dolt_mode":"proxied-server"}' ;;
+			esac
 			mkdir "$command_root/work/target"
 			mv -f "$command_root/work/.beads" "$command_root/work/target/.beads"
 			mkdir "$command_root/work/.beads"
 			chmod "$store_failure_beads_mode" "$command_root/work/.beads"
-			printf '{"backend":"dolt","dolt_mode":"server","dolt_database":"%s"}\n' "$source_database" \
-				>"$command_root/work/.beads/metadata.json"
+			printf '%s\n' "$source_metadata" >"$command_root/work/.beads/metadata.json"
 			printf '%s\n' "$config_yaml" >"$command_root/work/.beads/config.yaml"
 			printf 'target/.beads\n' >"$command_root/work/.beads/redirect"
 		fi
@@ -806,6 +815,7 @@ compare_store_failure() {
 			BD_DISABLE_METRICS=1 \
 			BD_DISABLE_EVENT_FLUSH=1 \
 			NO_COLOR=1 \
+			"${store_failure_extra_env[@]}" \
 			"$oracle" "$@"
 	) >"$case_root/oracle.stdout" 2>"$case_root/oracle.stderr"
 	oracle_exit=$?
@@ -821,6 +831,7 @@ compare_store_failure() {
 			BD_DISABLE_METRICS=1 \
 			BD_DISABLE_EVENT_FLUSH=1 \
 			NO_COLOR=1 \
+			"${store_failure_extra_env[@]}" \
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
@@ -1068,6 +1079,34 @@ compare_store_failure test-source-server change-directory-count -C . count
 compare_store_failure test-target-server count count
 compare_store_failure test-target-server list-json list --json
 compare_store_failure test-target-server readonly-count --readonly count
+# With BD_DEBUG_ROUTING, upstream prints a line each time it follows a redirect. Its warnMultipleDatabases
+# follows the redirects from the current directory up only after the store opens (cmd/bd/main.go:1688),
+# so a server open that fails prints none of those lines. A proxied-server workspace never gets there
+# (:1554-1577); its --global check fails at the store open. info --whats-new opens the store too.
+store_failure_extra_env=(BD_DEBUG_ROUTING=1)
+for scenario in redirect-server test-source-server test-target-server; do
+	compare_store_failure "$scenario" routing-count count
+	compare_store_failure "$scenario" routing-change-directory-count -C . count
+	compare_store_failure "$scenario" routing-show-json show test-1 --json
+	compare_store_failure "$scenario" routing-info info
+	compare_store_failure "$scenario" routing-global-count --global count
+done
+compare_store_failure redirect-server routing-list list
+compare_store_failure redirect-server routing-ready-json ready --json
+compare_store_failure redirect-server routing-ping ping
+compare_store_failure redirect-server routing-status-json status --json
+compare_store_failure redirect-server routing-info-whats-new info --whats-new
+compare_store_failure redirect-server routing-info-whats-new-global info --whats-new --global
+compare_store_failure redirect-server routing-dep-tree dep tree test-1
+compare_store_failure redirect-server routing-graph-all-json graph --all --json
+compare_store_failure redirect-server routing-label-list-all label list-all
+compare_store_failure redirect-server routing-config-get config get issue_prefix
+compare_store_failure redirect-server routing-types types
+compare_store_failure redirect-proxied-server routing-global-count --global count
+compare_store_failure redirect-proxied-server routing-global-show-json show test-1 --global --json
+compare_store_failure redirect-proxied-server routing-global-config-get --global config get issue_prefix
+compare_store_failure redirect-proxied-server routing-readonly-count --readonly count
+store_failure_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"

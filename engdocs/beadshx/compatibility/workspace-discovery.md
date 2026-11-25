@@ -78,6 +78,13 @@ warning for a target without a database prints once for each directory. So a
 broken redirect prints its warning as many times as upstream does, for
 example 9 times for `where` and 11 times for `count`.
 
+One of these lookups, upstream's check for other databases from the current
+directory up, comes after the store opens. So like upstream, `bdhx` prints
+the warnings of that lookup only when the store opens. A server-mode store
+that does not open, for example because its server cannot be reached, prints
+none of them. A proxied-server workspace never makes that check. Like
+upstream, `info --whats-new` also opens a server-mode store first.
+
 Like upstream, `bdhx` opens the database that the redirecting workspace names
 in its `dolt_database`, instead of the target's. Without a `--db` path, that
 workspace is the `.beads` directory of the Git repository root, also when
