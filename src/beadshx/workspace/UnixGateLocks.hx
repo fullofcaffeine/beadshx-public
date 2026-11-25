@@ -23,7 +23,7 @@ final class UnixGateLocks implements GateLockPort {
 	public function new() {}
 
 	public function tryShared(path:String):GateLockAttempt {
-		final opened = UnixPkg.open(path, UnixPkg.oRdonly | UnixPkg.oCloexec, 0);
+		final opened = UnixPkg.open(path, UnixPkg.oRdonly | UnixPkg.oCloexec, go.NativeUint32.fromInt(0));
 		final openError = opened.value2;
 		if (openError != null)
 			return OsPkg.isNotExist(openError) ? GateLockFileMissing : GateLockOpenFailed(openError.text());

@@ -28,12 +28,13 @@ final class WindowsGateLocks implements GateLockPort {
 	public function new() {}
 
 	public function tryShared(path:String):GateLockAttempt {
-		final opened = WindowsPkg.open(path, WindowsPkg.oRdonly | WindowsPkg.oCloexec, 0);
+		final opened = WindowsPkg.open(path, WindowsPkg.oRdonly | WindowsPkg.oCloexec, go.NativeUint32.fromInt(0));
 		final openError = opened.value2;
 		if (openError != null)
 			return OsPkg.isNotExist(openError) ? GateLockFileMissing : GateLockOpenFailed(openError.text());
 		final handle = opened.value1;
-		final lockError = WindowsPkg.lockFileEx(handle, WindowsPkg.lockfileFailImmediately, 0, MathPkg.maxUint32, MathPkg.maxUint32, new Overlapped());
+		final lockError = WindowsPkg.lockFileEx(handle, WindowsPkg.lockfileFailImmediately, go.NativeUint32.fromInt(0), MathPkg.maxUint32, MathPkg.maxUint32,
+			new Overlapped());
 		if (lockError == null)
 			return GateLockHeld(new WindowsGateLock(handle));
 		WindowsPkg.closeHandle(handle);
@@ -54,7 +55,7 @@ private final class WindowsGateLock implements GateLock {
 
 	/** Upstream's release (internal/workspacegate/gate.go:354): unlock, then close. Both are best effort. */
 	public function release():Void {
-		WindowsPkg.unlockFileEx(handle, 0, MathPkg.maxUint32, MathPkg.maxUint32, new Overlapped());
+		WindowsPkg.unlockFileEx(handle, go.NativeUint32.fromInt(0), MathPkg.maxUint32, MathPkg.maxUint32, new Overlapped());
 		WindowsPkg.closeHandle(handle);
 	}
 }

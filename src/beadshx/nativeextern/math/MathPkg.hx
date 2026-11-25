@@ -5,9 +5,6 @@ package beadshx.nativeextern.math;
 @:go.package("math")
 @:goNative
 extern class MathPkg {
-	/**
-		`math.MaxUint32`, an untyped Go constant that does not fit a Haxe Int.
-		Pass it only straight to a Go `uint32` parameter.
-	**/
-	@:go.name("MaxUint32") public static var maxUint32(default, never):Int;
+	/** `math.MaxUint32`, the largest Go `uint32`, which does not fit a Haxe Int. */
+	@:go.name("MaxUint32") public static var maxUint32(default, never):go.NativeUint32;
 }

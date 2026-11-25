@@ -28,11 +28,11 @@ extern class UnixPkg {
 
 	/**
 		`unix.Open(path, mode, perm)`. Go's `perm` is a `uint32`, the mode of a
-		file that `O_CREAT` creates. Callers pass the constant `0` and never
-		`O_CREAT`; Go rejects an `int` variable there at compile time.
+		file that `O_CREAT` creates. Callers never pass `O_CREAT`, so they pass
+		`go.NativeUint32.fromInt(0)`.
 	**/
 	@:go.tupleReturn
-	@:go.name("Open") public static function open(path:String, mode:Int, permission:Int):OpenResult;
+	@:go.name("Open") public static function open(path:String, mode:Int, permission:go.NativeUint32):OpenResult;
 
 	@:go.name("Flock") public static function flock(descriptor:Int, operation:Int):Null<go.NativeError>;
 	@:go.name("Close") public static function close(descriptor:Int):Null<go.NativeError>;
