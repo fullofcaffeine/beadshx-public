@@ -150,6 +150,16 @@ upstream and `bdhx` take the letter case of each name from the file system
 there, and also when they derive the directory that a path selects, so a path
 typed in another case prints as stored.
 
+Like upstream, `where` reports the workspace that the `db` setting selects
+when no `--db`, `-C`, `BEADS_DIR`, `BEADS_DB` or `BD_DB` selects one. This can
+be another workspace than the one found from the current directory. The path
+selects the directory that upstream derives from it: a parent `.beads`
+directory with `metadata.json`, a workspace that claims the path, or else the
+first `.beads` directory above the path's directory. `where` prints the
+absolute path of the workspace there, its prefix and its database. When that
+directory is not a workspace, `where` reports the workspace found from the
+current directory.
+
 Like upstream, `bdhx` reads the selected workspace's `.beads/metadata.json`
 (or, when it does not exist, a legacy `.beads/config.json`) before any
 command runs. If the file cannot be read or does not decode, `bdhx` prints

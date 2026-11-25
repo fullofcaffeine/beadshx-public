@@ -6412,8 +6412,45 @@ add_other_workspace_with_caller_dotenv() {
 real_database_setup=add_other_workspace_with_caller_dotenv
 compare_beads_db beads-db-caller-dotenv-version stderr-only BEADS_DB=other/.beads version
 compare_beads_db beads-db-caller-dotenv-where exact BEADS_DB=other/.beads where
+# Upstream's pre-run sets BEADS_DIR to the directory that a db setting path selects, so the body of where
+# finds the workspace through BEADS_DIR and names it by its absolute path, with its config.yaml prefix and
+# its database. A path that selects no workspace leaves where at the current directory's workspace.
+other_database_setting=""
+set_other_database_setting() {
+	add_other_workspace "$1"
+	printf 'issue-prefix: elsewhere\n' >>"$1/work/other/.beads/config.yaml"
+	printf 'db: %s\n' "$other_database_setting" >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=set_other_database_setting
+other_database_setting=other/.beads/beads.db
+compare_real_database db-setting-other-where exact where
+compare_real_database db-setting-other-where-json exact where --json
+other_database_setting=other/.beads
+compare_real_database db-setting-other-directory-where exact where
+other_database_setting=other/.beads/embeddeddolt
+compare_real_database db-setting-other-database-directory-where-json exact where --json
+other_database_setting=other/beads.db
+compare_real_database db-setting-other-beside-where exact where
+other_database_setting=missing/beads.db
+compare_real_database db-setting-missing-path-where exact where
+other_database_setting=""
+real_database_setup=add_other_workspace_with_setting_and_dotenv
+compare_real_database db-setting-other-dotenv-where exact where
 real_database_setup=""
 real_database_read_only=""
+# A db setting that selects a workspace whose metadata.json does not decode names that workspace as its
+# path gives it, as a --db path does, so this build refuses where there.
+break_other_metadata_with_setting() {
+	other_database_setting=other/.beads/beads.db
+	set_other_database_setting "$1"
+	other_database_setting=""
+	printf '{bad' >"$1/work/other/.beads/metadata.json"
+}
+candidate_only_setup=break_other_metadata_with_setting
+expect_candidate_failure db-setting-other-broken-metadata-where-unported "" \
+	"Error: where is not available yet when a database path selects a workspace whose .beads/metadata.json does not decode in this build" "" \
+	where
+candidate_only_setup=""
 # Before a refusal this build loads the same .env file, which can turn shared-server mode and JSON on:
 # for a store command the directory that the BEADS_DB path or the db setting selects.
 move_workspace_with_dotenv_selectors() {

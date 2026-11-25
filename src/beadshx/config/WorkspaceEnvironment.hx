@@ -477,14 +477,21 @@ final class WorkspaceEnvironment {
 		BEADS_DIR gets its value back before this returns.
 	**/
 	public static function findWithBeadsDir(workspace:WorkspacePort, beadsDir:String):String {
+		return discoveredPath(discoverWithBeadsDir(workspace, beadsDir));
+	}
+
+	/**
+		The workspace that discovery finds while BEADS_DIR names `beadsDir`:
+		the directory that upstream's FindBeadsDir finds then, with its config
+		and the database that FindDatabasePath finds there. BEADS_DIR gets its
+		value back before this returns.
+	**/
+	public static function discoverWithBeadsDir(workspace:WorkspacePort, beadsDir:String):WorkspaceDiscovery {
 		final previous = Sys.getEnv("BEADS_DIR");
 		Sys.putEnv("BEADS_DIR", beadsDir);
 		final found = workspace.discover("", "");
 		Sys.putEnv("BEADS_DIR", previous);
-		return switch found {
-			case Found(location): location.path;
-			case NotFound | InvalidSelection(_): "";
-		};
+		return found;
 	}
 
 	/**

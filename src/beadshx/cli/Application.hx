@@ -432,6 +432,16 @@ final class Application {
 	**/
 	var boundWorkspace:Null<WorkspaceLocation> = null;
 
+	/**
+		The directory that BEADS_DIR names when the body of upstream's `where`
+		looks its workspace up for the last time (resolveWhereBeadsDir,
+		cmd/bd/where.go:54), when that differs from the workspace that this
+		build's discovery finds for the command's selection: the directory of
+		its second setup for a `db` setting (see prepareNoStoreWorkspace).
+		Null otherwise.
+	**/
+	var whereBeadsDir:Null<String> = null;
+
 	var jsonDeprecationEmitted = false;
 	var sharedServerNoticeEmitted = false;
 
@@ -796,7 +806,8 @@ final class Application {
 		// The db setting refusal follows: upstream would select the workspace from that path.
 		if (opensStore && databaseSettingSelects(invocation))
 			return null;
-		final location = switch workspace.discover(invocation.directory, invocation.databasePath) {
+		final discovery = opensStore ? workspace.discover(invocation.directory, invocation.databasePath) : noStoreMetadataWorkspace(invocation);
+		final location = switch discovery {
 			case Found(location): location;
 			case NotFound:
 				if (!opensStore)
@@ -839,6 +850,20 @@ final class Application {
 			return null;
 		output.writeStderr(metadataLoadFailure(error));
 		return 1;
+	}
+
+	/**
+		The workspace whose metadata upstream's pre-run checks for `where`,
+		`version` and help pages: the directory that it sets up first. For a
+		`db` setting that is the directory that the setting's path selects
+		(see noStoreBeadsDir), which upstream's FindBeadsDir then finds
+		through BEADS_DIR, or else the workspace found from the current
+		directory.
+	**/
+	function noStoreMetadataWorkspace(invocation:Invocation):WorkspaceDiscovery {
+		if (databaseSettingSelects(invocation))
+			return WorkspaceEnvironment.discoverWithBeadsDir(workspace, noStoreBeadsDir(invocation));
+		return workspace.discover(invocation.directory, invocation.databasePath);
 	}
 
 	/**
@@ -954,10 +979,11 @@ final class Application {
 		`where` sets it up again, upstream's pre-run has set BEADS_DIR to it.
 		Then a --db, BEADS_DB or BD_DB path still names the same directory, but
 		a `db` setting no longer does: upstream's FindBeadsDir finds the
-		directory through BEADS_DIR and names it by its absolute path. It
-		would also name the target of a `.beads` directory that is a symbolic
-		link, which this build's `where` names by the link, without the
-		native discovery that this costs.
+		directory through BEADS_DIR and names it by its absolute path, and
+		`where` reports the workspace there (see whereBeadsDir). It would also
+		name the target of a `.beads` directory that is a symbolic link, which
+		this build's `where` names by the link, without the native discovery
+		that this costs.
 	**/
 	function prepareNoStoreWorkspace(invocation:Invocation, initializations:Int):Void {
 		// Upstream selectedNoDBBeadsDir looks the directory up first (cmd/bd/main.go:1156), and `where` again before its second setup (where.go:50).
@@ -976,9 +1002,13 @@ final class Application {
 		}
 		final setups = [beadsDir];
 		if (initializations > 1) {
-			final again = databaseSettingSelects(invocation) ? WorkspaceEnvironment.findWithBeadsDir(workspace, beadsDir) : beadsDir;
-			if (again != "")
+			final settingSelects = databaseSettingSelects(invocation);
+			final again = settingSelects ? WorkspaceEnvironment.findWithBeadsDir(workspace, beadsDir) : beadsDir;
+			if (again != "") {
 				setups.push(again);
+				if (settingSelects)
+					whereBeadsDir = again;
+			}
 		}
 		loadSelectedConfig(beadsDir, setups, initializations > 1 ? () -> noStoreLookups(invocation) : null);
 	}
@@ -1177,7 +1207,7 @@ final class Application {
 	function runWhere(invocation:Invocation):Int {
 		// Upstream's where looks its directory up again (resolveWhereBeadsDir, where.go:54).
 		noStoreLookups(invocation);
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch whereWorkspace(invocation) {
 			case Found(location):
 				// Then it looks for the database (FindDatabasePath, :79).
 				lookups.findDatabasePath();
@@ -1208,6 +1238,18 @@ final class Application {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 		};
+	}
+
+	/**
+		The workspace that upstream's `where` reports: the one that its last
+		lookup finds through BEADS_DIR (see whereBeadsDir), or else the one
+		that this build's discovery finds for the command's selection.
+	**/
+	function whereWorkspace(invocation:Invocation):WorkspaceDiscovery {
+		final bound = whereBeadsDir;
+		if (bound != null)
+			return WorkspaceEnvironment.discoverWithBeadsDir(workspace, bound);
+		return workspace.discover(invocation.directory, invocation.databasePath);
 	}
 
 	function runInfo(invocation:Invocation):Int {
