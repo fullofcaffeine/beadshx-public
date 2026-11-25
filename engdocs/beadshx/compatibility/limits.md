@@ -85,10 +85,8 @@ exists.
 - In a server-mode or proxied workspace, the records of `stale --json` have
   no `labels` field, because `bdhx` does not read the labels there yet
   (beadshx-m08.46).
-- `bdhx` keeps a redirecting workspace's `dolt_database` only for an embedded
-  workspace. In a server-mode or proxied workspace that a redirect reaches,
-  it opens the target's own database name. Upstream keeps the redirecting
-  workspace's name in every mode (beadshx-m08.53).
+- With `BD_DEBUG_ROUTING`, when a server-mode store open through a redirect
+  fails, `bdhx` prints one routing line more than upstream (beadshx-m08.57).
 - The schema version check is compared with upstream only for embedded
   workspaces (beadshx-m08.15).
 - Every command that reads the database reports that it is not available yet
@@ -137,12 +135,8 @@ exists.
 - On macOS, `bdhx` takes the stored letter case of a path from the names that
   its directories list. Upstream first asks the kernel (`F_GETPATH`). This
   can give other names below a directory that cannot be listed, for a hard
-  link, and for a name stored in another Unicode normalization
-  (beadshx-m08.55).
-- On a macOS file system that ignores letter case, a `.beads/redirect` that
-  names its target in another letter case keeps that spelling in the
-  `BD_DEBUG_ROUTING` lines of `bdhx`. Upstream prints the stored spelling,
-  and for `count` it prints one more routing line (beadshx-m08.52).
+  link, and for a name stored in another Unicode normalization. This applies
+  to `BEADS_DB`, `BEADS_DIR`, `-C` and redirect targets (beadshx-m08.55).
 - `bdhx` follows redirects at each of upstream's workspace lookups, but these
   lookups do not include upstream's Git worktree and jj workspace fallbacks.
 - When `bdhx` finds a usage error that upstream finds only in its pre-run or
@@ -151,10 +145,9 @@ exists.
   read a workspace's redirect after a command. `bdhx` does not, so for a
   workspace in that folder it prints the redirect warning two times fewer than
   upstream (beadshx-m08-01.13).
-- `bdhx` reports that a command is not available yet when a redirect
-  involves a detached commit worktree (a path with `/refs/commits/`).
-  Upstream prefers the branch worktree there. `where`, `version` and help
-  pages still run (beadshx-m08.51).
+- For a redirect into a detached commit worktree, upstream stops each Git
+  command of its branch-worktree choice after 5 seconds. `bdhx` waits for
+  Git.
 - In a `.beads/.env` file that is not valid UTF-8, `bdhx` changes each
   invalid byte to U+FFFD. Upstream keeps the byte.
 

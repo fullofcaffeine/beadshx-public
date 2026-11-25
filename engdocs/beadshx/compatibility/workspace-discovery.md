@@ -83,7 +83,22 @@ in its `dolt_database`, instead of the target's. Without a `--db` path, that
 workspace is the `.beads` directory of the Git repository root, also when
 `-C` or `BEADS_DIR` selects another workspace. Outside a repository it is
 `BEADS_DIR` or the `-C` workspace, and otherwise the first `.beads` directory
-above the current directory.
+above the current directory. This applies in every store mode. In a
+server-mode workspace, the native open checks that name as upstream does, for
+example when it refuses a test-named database. For a target without
+`.beads/metadata.json`, both open `beads`.
+
+On macOS, a `.beads/redirect` file or a `BEADS_DIR` path that names a
+directory in another letter case, such as `SUB/.BEADS` for `sub/.beads`,
+names the directory as it is stored, as in upstream: the `BD_DEBUG_ROUTING`
+lines and the redirect warnings print `sub/.beads`.
+
+Like upstream, a redirect target or a `BEADS_DIR` path in a detached commit
+worktree (a path with `/refs/commits/`) names the `.beads` directory of a
+branch worktree of the same repository that has the same commit checked out.
+Upstream and `bdhx` take the first such worktree, those outside
+`/refs/commits/` first and then by path, and only when its `.beads` is a
+directory. Otherwise the path stays as it is.
 
 ## Redirect chains
 
