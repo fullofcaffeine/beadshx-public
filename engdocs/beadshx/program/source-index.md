@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `6d1fb2d80c6714d8d3f84c427ef405c526acd22d`.
+Required BeadsHX compiler revision: `bfbe12e8c7bc8d7ab14138768631bcc1782741c3`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -198,6 +198,14 @@ parameter as a Go `string`, and adds `go.NativeAny` and `go.NativeAnyMap` for
 native Go `map[string]any` data, which the `list --format` template port
 (beadshx-m08.26) needs. BeadsHX Go output is byte-identical to the previous
 lock.
+
+Compiler tasks haxe_go-xxpn, haxe_go-k4gd and haxe_go-zopj make the compiler
+faster: carrier-contract checks and nominal type-test discovery walk the class
+list once, the native authority gate first asks whether a type can reach a
+`go.*` declaration at all, and the generated Go files are formatted in one
+gofmt run. Together they cut about 11 s of wall time from the BeadsHX
+bootstrap compile.
+BeadsHX Go output is byte-identical to the previous lock.
 
 Reviewed current authority:
 
