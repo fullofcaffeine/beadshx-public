@@ -896,6 +896,9 @@ final class Application {
 		or config.local.yaml, or the user config.yaml. Each run then prints the
 		permissions warning for its name of the directory (see
 		warnBeadsDirPermissions), and the first run the shared-server notice.
+		A later run for another directory, such as the second target of a
+		redirect chain whose `.env` file turns shared-server mode on, prints
+		the notice for that directory when no run printed it before.
 		Before the reload each run binds BEADS_DIR to that directory and
 		follows its redirect (RedirectLookups.prepareSelectedContext).
 		`afterFirstSetup` runs what upstream runs after the first setup.
@@ -912,6 +915,8 @@ final class Application {
 				warnSharedServerMismatch(beadsDir, config);
 				if (afterFirstSetup != null)
 					afterFirstSetup();
+			} else if (setup != beadsDir && !sharedServerNoticeEmitted) {
+				warnSharedServerMismatch(setup, LayeredConfig.forWorkspace(setup));
 			}
 		}
 		return config;
@@ -1018,7 +1023,13 @@ final class Application {
 					whereBeadsDir = again;
 			}
 		}
-		loadSelectedConfig(beadsDir, setups, initializations > 1 ? () -> noStoreLookups(invocation) : null);
+		final second = setups.length > 1 ? setups[1] : null;
+		loadSelectedConfig(beadsDir, setups, initializations > 1 ? () -> {
+			noStoreLookups(invocation);
+			// The body's setup loads that directory's .env file first (where.go:51, cmd/bd/main.go:598).
+			if (second != null)
+				WorkspaceEnvironment.loadFile(second);
+		} : null);
 	}
 
 	/**
@@ -6871,9 +6882,10 @@ final class Application {
 		What: the second target's workspace, which keeps the directory that
 		discovery found as its `foundPath`, or else the workspace that
 		discovery finds. Upstream binds the found directory itself when its
-		metadata routes it as the database (:1223-1240, see followsToDatabase).
-		How: one more native discovery, with BEADS_DIR naming the found
-		directory, only when FollowRedirect follows that directory's redirect.
+		metadata routes it as the database (:1223-1240, see
+		WorkspaceEnvironment.storeChainTarget). How: one more native
+		discovery, with BEADS_DIR naming the found directory, only when
+		FollowRedirect follows that directory's redirect.
 	**/
 	function discoverStoreWorkspace(invocation:Invocation):WorkspaceDiscovery {
 		final discovery = workspace.discover(invocation.directory, invocation.databasePath);
@@ -6882,8 +6894,7 @@ final class Application {
 			case NotFound | InvalidSelection(_): return discovery;
 		};
 		if (databasePathSelected(invocation, found)
-			|| RedirectSource.followedTarget(RedirectSource.canonicalizePath(found.path)) == null
-			|| !followsToDatabase(found))
+			|| WorkspaceEnvironment.storeChainTarget({directory: invocation.directory, databasePath: invocation.databasePath}, found) == null)
 			return discovery;
 		return switch WorkspaceEnvironment.discoverWithBeadsDir(workspace, found.path) {
 			case Found(target) if (target.path != found.path):
@@ -6891,28 +6902,6 @@ final class Application {
 			case Found(_) | NotFound | InvalidSelection(_):
 				discovery;
 		};
-	}
-
-	/**
-		Whether upstream's pre-run looks for the database through the
-		workspace that it found (cmd/bd/main.go:1223-1250), which follows that
-		workspace's redirect, instead of binding the workspace itself: not for
-		a proxied server, a metadata.json that does not load or names a
-		backend other than Dolt, or a server host that implies server mode
-		without metadata.json.
-	**/
-	static function followsToDatabase(location:WorkspaceLocation):Bool {
-		if (location.proxiedServer)
-			return false;
-		final backend = switch readMetadataFields(location.path) {
-			case MetadataFields(fields):
-				metadataField(fields, "backend");
-			case MetadataAbsent:
-				return !LayeredConfig.forWorkspace(location.path).hostImpliesServerMode();
-			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
-				return false;
-		};
-		return backend == "" || backend == "dolt";
 	}
 
 	/**

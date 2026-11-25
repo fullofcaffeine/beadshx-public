@@ -73,8 +73,11 @@ upstream sets up first. For `where`, `version` and help pages, a `--db`,
 `BEADS_DB`, `BD_DB` or `db` setting path selects it, also when a workspace is
 found from the current directory. For a command that reads the database, a
 `--db` path or the `db` setting selects it, or else the workspace found, or
-else a `BEADS_DB` path. For a redirect, this is the file of the target. The
-file has the same format
+else a `BEADS_DB` path. For a redirect, this is the file of the target. For a
+redirect chain (see below), a command that reads the database also loads the
+file of the second target after it, as upstream's second setup does, and
+`where` loads it after its first setup; with `-C`, only the second target's
+file loads. The file has the same format
 as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
 `export`, `#` comments, single or double quotes and `$VAR` expansion. If one
 line is not valid, `bdhx` ignores the full file, and prints no warning.
@@ -95,13 +98,20 @@ upstream warns that it ignores that chain, and its first lookup finds the
 first target. Its later lookups start from the first target and follow that
 target's redirect. Like upstream, every command that reads the database then
 reads the database and the `config.yaml` of the second target, and `info`
-prints the path of that database. The database name comes from the
-redirecting directory, as for one redirect, or else from the `dolt_database`
-of the first target. `where` reports the workspace that its last lookup finds
-from the second target: that target, or the target of its own redirect. The
-origin line names the directory with the redirect, as upstream does. With
-`-C`, the first lookup already starts from the first target. A `--db` path
-selects the first target itself.
+prints the path of that database. Such a command also takes the `json`
+setting from that `config.yaml`, and its settings from the second target's
+`.env` file when the first target's file does not set them. The database
+name comes from the redirecting directory, as for one redirect, or else from
+the `dolt_database` of the first target, or else from
+`BEADS_DOLT_SERVER_DATABASE` in the second target's `.env` file. `where`
+reports the workspace that its last lookup finds from the second target:
+that target, or the target of its own redirect. The origin line names the
+directory with the redirect, as upstream does. `where` takes its `json`
+setting from the first target, and its second setup prints the shared-server
+notice when the second target's `.env` file turns shared-server mode on. With
+`-C`, the first lookup already starts from the first target, so every
+command takes its settings from the second target. A `--db` path selects the
+first target itself.
 
 Like upstream, `bdhx` has an agent mode for output that AI agents read.
 `BD_AGENT_MODE=1` or any `CLAUDE_CODE` value that is not empty turns it on,
@@ -466,11 +476,8 @@ Limits:
   read a workspace's redirect after a command. `bdhx` does not, so for a
   workspace in that folder it prints the redirect warning two times fewer than
   upstream.
-- When the target of a redirect has its own redirect to another workspace,
-  upstream also loads the `.env` file of that second target when it sets it
-  up. `bdhx` loads only the `.env` file of the first target. For a chain of
-  four redirects, upstream's `where` prints the database of the third
-  target; `bdhx` prints the database of the fourth target.
+- For a chain of four redirects, upstream's `where` prints the database of
+  the third target; `bdhx` prints the database of the fourth target.
 - `snapshot` reads embedded workspaces only. In a server-mode, shared-server
   or proxied workspace and with `--global`, it reports that it is not
   available yet, before it opens anything.

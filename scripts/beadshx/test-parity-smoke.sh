@@ -3435,7 +3435,75 @@ real_database_setup=redirect_chain_of_three
 compare_real_database chain-of-three-where exact where
 compare_real_database chain-of-three-list-json exact list --json
 compare_real_database chain-of-three-info-json exact info --json
+# The second setup loads the second target's .env file for each variable that is not set yet, after the
+# first target's. A command that opens a store then reads its JSON switch again (refreshBoundCommandConfig),
+# also from the second target's config.yaml; the body of where does not. With -C, both setups take the second
+# target, so the first target's .env file stays unread. The first target's dolt_database is kept before the
+# second target's file loads, so a BEADS_DOLT_SERVER_DATABASE there applies only without one.
+chain_first_dotenv=""
+chain_second_dotenv=""
+redirect_chain_with_dotenv() {
+	redirect_chain_to_workspace "$1"
+	if [[ -n "$chain_first_dotenv" ]]; then
+		printf '%s\n' "$chain_first_dotenv" >"$1/work/sub/.beads/.env"
+	fi
+	if [[ -n "$chain_second_dotenv" ]]; then
+		printf '%s\n' "$chain_second_dotenv" >"$1/work/final/.beads/.env"
+	fi
+}
+redirect_chain_with_json_setting() {
+	redirect_chain_to_workspace "$1"
+	printf 'json: true\n' >>"$1/work/final/.beads/config.yaml"
+}
+redirect_chain_source_database_with_dotenv() {
+	redirect_chain_with_source_database "$1"
+	printf 'BEADS_DOLT_SERVER_DATABASE=test\n' >"$1/work/final/.beads/.env"
+}
+redirect_chain_without_source_database_with_dotenv() {
+	redirect_chain_with_source_database "$1"
+	jq 'del(.dolt_database)' "$1/work/sub/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/sub/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+	printf 'BEADS_DOLT_SERVER_DATABASE=other\n' >"$1/work/final/.beads/.env"
+}
+real_database_setup=redirect_chain_with_dotenv
+chain_second_dotenv='BD_JSON=1'
+compare_real_database chain-second-dotenv-count exact count
+compare_real_database chain-second-dotenv-list exact list
+compare_real_database chain-second-dotenv-change-directory-count exact -C . count
+compare_real_database chain-second-dotenv-where exact where
+compare_real_database chain-second-dotenv-change-directory-where exact -C . where
+chain_first_dotenv='BD_JSON=false'
+compare_real_database chain-first-dotenv-wins-count exact count
+chain_second_dotenv=""
+chain_first_dotenv='BD_JSON=1'
+compare_real_database chain-first-dotenv-change-directory-count exact -C . count
+chain_first_dotenv=""
+chain_second_dotenv='BEADS_DOLT_SHARED_SERVER=1'
+compare_real_database chain-second-dotenv-shared-server-where exact where
+chain_second_dotenv=""
+real_database_setup=redirect_chain_with_json_setting
+compare_real_database chain-second-json-setting-count exact count
+compare_real_database chain-second-json-setting-where exact where
+compare_real_database chain-second-json-setting-change-directory-where exact -C . where
+real_database_setup=redirect_chain_source_database_with_dotenv
+compare_real_database chain-source-database-second-dotenv-show-json exact show "$real_database_issue_id" --json
+real_database_setup=redirect_chain_without_source_database_with_dotenv
+compare_real_database chain-second-dotenv-database-show-json exact show "$real_database_issue_id" --json
 real_database_setup=""
+# With BEADS_DOLT_SHARED_SERVER in the second target's .env file, upstream reaches for the shared server,
+# which creates files under HOME and TMPDIR; this build refuses after the same warnings and notice.
+chain_shared_server_dotenv() {
+	chain_second_dotenv='BEADS_DOLT_SHARED_SERVER=1'
+	redirect_chain_with_dotenv "$1"
+	chain_second_dotenv=""
+}
+chain_warning='Warning: redirect chains not allowed, ignoring redirect in <work>/sub/.beads'
+candidate_only_setup=chain_shared_server_dotenv
+expect_candidate_failure chain-second-dotenv-shared-server-count-unported "" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$shared_server_notice"$'\n''Error: count is not available yet in shared-server mode in this build' "" \
+	count
+candidate_only_setup=""
 # Without metadata.json upstream warns and then creates `beads` when the embedded store lacks it, also
 # when BEADS_DOLT_SERVER_DATABASE names the fixture's database, which upstream ignores there. This build
 # prints the same warning and then refuses before it opens anything.

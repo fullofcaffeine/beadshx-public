@@ -10,8 +10,12 @@ import beadshx.nativeextern.os.OsPkg;
 import beadshx.nativeextern.strings.StringsPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
 import beadshx.workspace.RedirectLookups;
+import beadshx.workspace.RedirectSource;
+import beadshx.workspace.RedirectSource.RedirectSourceLookup;
 import beadshx.workspace.WorkspaceDiscovery;
+import beadshx.workspace.WorkspaceLocation;
 import beadshx.workspace.WorkspacePort;
 import sys.FileSystem;
 
@@ -31,9 +35,14 @@ import sys.FileSystem;
 	(see selectDatabaseVariable). Last, every variable of the .env file of the
 	directory that upstream sets up first (see setupDirectory) that the
 	environment does not have is set (upstream loadBeadsEnvFile under
-	prepareSelectedCommandContext). Upstream sets BEADS_DIR to that directory
-	before that last step, so the file cannot set BEADS_DIR there and
-	`$BEADS_DIR` expands to that directory. Nothing is printed: a missing,
+	prepareSelectedCommandContext). With -C that directory is the redirect
+	target of the -C workspace when upstream follows its redirect. A command
+	that opens a store and binds the second target of a redirect chain (see
+	storeChainTarget) then also loads that target's file, as upstream's
+	second setup does before it rereads the settings. Upstream sets BEADS_DIR
+	to each directory before it loads the file, so the file cannot set
+	BEADS_DIR there and `$BEADS_DIR` expands to that directory. Nothing is
+	printed: a missing,
 	unreadable or rejected file adds nothing.
 **/
 @:goNative
@@ -81,10 +90,23 @@ final class WorkspaceEnvironment {
 				found = discovered;
 		}
 		final variable = selectDatabaseVariable(workspace, selection, use);
-		final foundBeadsDir = discoveredPath(found != null ? found : workspace.discover(selection.directory, ""));
+		final discovery = found != null ? found : workspace.discover(selection.directory, "");
+		final foundBeadsDir = discoveredPath(discovery);
 		final beadsDir = setupDirectory(selection, use, foundBeadsDir);
-		if (beadsDir != "")
-			loadFile(beadsDir);
+		if (beadsDir == "")
+			return variable;
+		final location = switch discovery {
+			case Found(location) if (beadsDir == foundBeadsDir): location;
+			case Found(_) | NotFound | InvalidSelection(_): null;
+		};
+		// With -C, upstream's first setup already takes the redirect target, and so does its second.
+		final changeTarget = location != null && goTrimSpace(selection.directory) != "" ? redirectedThrough(foundBeadsDir) : null;
+		loadFile(changeTarget != null ? changeTarget : beadsDir);
+		if (location != null && changeTarget == null && use == WithoutWorkspace) {
+			final storeTarget = storeChainTarget(selection, location);
+			if (storeTarget != null)
+				loadSecondTargetFile(foundBeadsDir, storeTarget);
+		}
 		return variable;
 	}
 
@@ -96,8 +118,12 @@ final class WorkspaceEnvironment {
 		return callerBeadsDirReplaced ? "" : Sys.getEnv("BEADS_DIR");
 	}
 
-	/** Upstream loadBeadsEnvFile with BEADS_DIR set to `beadsDir`: gotenv.Load after an os.Stat check. */
-	static function loadFile(beadsDir:String):Void {
+	/**
+		Upstream loadBeadsEnvFile with BEADS_DIR set to `beadsDir`: gotenv.Load
+		after an os.Stat check, which sets each variable that the environment
+		does not have, except those named in `skipped`.
+	**/
+	public static function loadFile(beadsDir:String, ?skipped:Array<String>):Void {
 		final path = FilepathPkg.join(beadsDir, ".env");
 		if (OsPkg.stat(path).value2 != null)
 			return;
@@ -105,8 +131,108 @@ final class WorkspaceEnvironment {
 		if (variables == null)
 			return;
 		for (name in variables.keys())
-			if (name != "BEADS_DIR" && Sys.getEnv(name) == null)
+			if (name != "BEADS_DIR" && Sys.getEnv(name) == null && (skipped == null || !skipped.contains(name)))
 				Sys.putEnv(name, variables.get(name));
+	}
+
+	/**
+		The second setup's `.env` file for a command that opens a store and
+		binds `target`, the redirect target of `foundBeadsDir` (see
+		storeChainTarget).
+
+		Why: upstream loads it after the first target's file (cmd/bd/main.go:
+		1317), but keeps a redirecting directory's dolt_database in
+		BEADS_DOLT_SERVER_DATABASE before that (:1210, and :603 for the first
+		target), so the file's own value applies only when neither kept one.
+		What: every other variable of the file that the environment lacks.
+		How: the same reads as Application.validateEmbeddedDatabase's.
+	**/
+	static function loadSecondTargetFile(foundBeadsDir:String, target:String):Void {
+		final redirecting = switch RedirectSource.lookup(environmentValue("BEADS_DIR")) {
+			case RedirectedFrom(localDir): redirectSourceDatabase(localDir);
+			case NotRedirected | RedirectUnknown: "";
+		};
+		final kept = environmentValue("BEADS_DOLT_SERVER_DATABASE") == ""
+			&& (redirecting != "" || redirectSourceDatabase(foundBeadsDir) != "");
+		loadFile(target, kept ? ["BEADS_DOLT_SERVER_DATABASE"] : []);
+	}
+
+	/**
+		The workspace that a command which opens a store binds instead of
+		`found`, the workspace that discovery found for `selection`, or null
+		for `found` itself.
+
+		Why: upstream's pre-run sets BEADS_DIR to the found workspace
+		(cmd/bd/main.go:1219) before FindDatabasePath looks for the database
+		through it (:1250), which follows that workspace's own redirect, a
+		chain that FindBeadsDir ignored, and the second setup binds that
+		target (:1316-1317). What: that redirect target, unless a --db path or
+		a `db` setting selects the database, or the found workspace's metadata
+		makes upstream bind it directly (see followsToDatabase). How: it only
+		reads.
+	**/
+	public static function storeChainTarget(selection:WorkspaceSelection, found:WorkspaceLocation):Null<String> {
+		final flag = selection.databasePath;
+		if ((flag != "" && !namesDatabase(flag)) || databaseSettingSelects(selection) || !followsToDatabase(found))
+			return null;
+		return redirectedThrough(found.path);
+	}
+
+	/**
+		The redirect target that upstream's lookups through BEADS_DIR find when
+		BEADS_DIR names `beadsDir`: the target of its redirect when
+		FollowRedirect follows it to another directory, or null.
+	**/
+	public static function redirectedThrough(beadsDir:String):Null<String> {
+		return RedirectSource.followedTarget(RedirectSource.canonicalizePath(beadsDir));
+	}
+
+	/**
+		The `.beads` directory whose config gives a command its settings after
+		upstream's setups, which reread the JSON switch and other settings
+		from it (refreshBoundCommandConfig, cmd/bd/main.go:1158, :1220, :1318),
+		for `found`, the workspace that discovery found for `selection`. With
+		-C, BEADS_DIR names that workspace before the first setup, which takes
+		its redirect target. A command that opens a store also rereads them
+		after it binds the second target of a chain (see storeChainTarget).
+		Otherwise `found` itself; a database path selection follows no
+		redirect.
+	**/
+	public static function settingsBeadsDir(selection:WorkspaceSelection, use:DatabaseVariableUse, found:WorkspaceLocation):String {
+		final pathSelects = switch use {
+			case BeforeWorkspace: noStorePathSelects(selection);
+			case WithoutWorkspace: selection.databasePath != "" && !namesDatabase(selection.databasePath);
+		};
+		if (pathSelects)
+			return found.path;
+		final changeTarget = goTrimSpace(selection.directory) != "" ? redirectedThrough(found.path) : null;
+		if (changeTarget != null)
+			return changeTarget;
+		final storeTarget = use == WithoutWorkspace ? storeChainTarget(selection, found) : null;
+		return storeTarget != null ? storeTarget : found.path;
+	}
+
+	/**
+		Whether upstream's pre-run looks for the database through the
+		workspace that it found (cmd/bd/main.go:1223-1250), which follows that
+		workspace's redirect, instead of binding the workspace itself: not for
+		a proxied server, a metadata.json that does not load or names a
+		backend other than Dolt, or a server host that implies server mode
+		without metadata.json.
+	**/
+	static function followsToDatabase(location:WorkspaceLocation):Bool {
+		if (location.proxiedServer)
+			return false;
+		final backend = switch readMetadataFields(location.path) {
+			case MetadataFields(fields):
+				final value = fields.get("backend");
+				value == null ? "" : value;
+			case MetadataAbsent:
+				return !LayeredConfig.forWorkspace(location.path).hostImpliesServerMode();
+			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				return false;
+		};
+		return backend == "" || backend == "dolt";
 	}
 
 	/** The `.beads` directory of a discovery, or "" when it found none. */

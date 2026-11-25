@@ -1481,7 +1481,7 @@ final class Parser {
 				OutputMode.Json;
 			} else if (jsonFlagSet || (formatFlagSet && !ownFormat) || helpPage) {
 				OutputMode.Human;
-			} else if (jsonSetting.enabled({directory: directory, databasePath: databasePath})) {
+			} else if (jsonSetting.enabled({directory: directory, databasePath: databasePath}, variableUse)) {
 				OutputMode.Json;
 			} else {
 				OutputMode.Human;

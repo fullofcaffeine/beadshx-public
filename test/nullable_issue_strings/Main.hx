@@ -244,7 +244,7 @@ private final class EmptyEnvironment implements EnvironmentPort {
 private final class UnsetJsonSetting implements JsonSettingPort {
 	public function new() {}
 
-	public function enabled(selection:WorkspaceSelection):Bool
+	public function enabled(selection:WorkspaceSelection, use:DatabaseVariableUse):Bool
 		return false;
 }
 
