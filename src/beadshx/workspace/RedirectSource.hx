@@ -5,6 +5,7 @@ import beadshx.config.ConfigValidate.PathStat;
 import beadshx.nativeextern.bytes.BytesPkg;
 import beadshx.nativeextern.exec.ExecPkg;
 import beadshx.nativeextern.filepath.FilepathPkg;
+import beadshx.nativeextern.strings.StringsPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
 import sys.FileSystem;
 import sys.io.File;
@@ -55,9 +56,9 @@ typedef GitRepository = {
 	fallbacks and the first `.beads` directory above the current directory.
 	What: that directory when it holds a redirect that upstream follows.
 	How: a port of GetRedirectInfo, checkRedirectInDir, findLocalBeadsDir and
-	FollowRedirect, without their warnings, which RedirectLookups prints. Paths keep
-	the case that the file system gives them: upstream's case lookup on macOS
-	changes only how a path is written.
+	FollowRedirect, without their warnings, which RedirectLookups prints. Paths
+	are canonical as upstream's are: on macOS each name has the case that the
+	file system stores (see canonicalizePath).
 **/
 @:goNative
 final class RedirectSource {
@@ -235,12 +236,81 @@ final class RedirectSource {
 		return canonical;
 	}
 
-	/** Upstream utils.CanonicalizePath: the absolute path with its symbolic links resolved when they resolve. */
+	/**
+		Upstream utils.CanonicalizePath: the absolute path with symbolic links
+		resolved, or only the absolute path when that fails.
+
+		Why: upstream compares and returns these paths, and on macOS it then
+		takes each name's case from the file system, so a path typed in another
+		case names the directory as stored, which upstream prints: a redirect
+		target in FollowRedirect's routing line and warnings, a BEADS_DIR path,
+		a database path. What: on macOS the resolved path with the names that
+		its directories list (see storedCasePath) when they are all found, else
+		the resolved path. Windows keeps the resolved path, as upstream does.
+		How: it only reads.
+	**/
 	public static function canonicalizePath(path:String):String {
 		final absolute = FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
 		final resolved = FilepathPkg.evalSymlinks(absolute);
-		return resolved.value2 == null ? resolved.value1 : absolute;
+		if (resolved.value2 != null)
+			return absolute;
+		if (Sys.systemName() == "Mac") {
+			final stored = storedCasePath(resolved.value1);
+			if (stored != "")
+				return stored;
+		}
+		return resolved.value1;
 	}
+
+	/**
+		Upstream resolveCanonicalCaseWalk: the absolute `path` with each name
+		replaced by the first entry of its directory, in os.ReadDir's sorted
+		order, that equals it under strings.EqualFold; "" when a directory
+		cannot be read or has no such entry.
+
+		Upstream first asks the kernel for the path (fcntl F_GETPATH) and walks
+		only when that fails. Both give the stored names of a directory or file
+		whose ancestors can be listed. They can differ for an ancestor that
+		cannot be listed, a hard link, or a name stored in another Unicode
+		normalization.
+
+		The F_GETPATH call costs one system call, but each step of the walk
+		lists a whole directory, and a command canonicalizes the same paths
+		many times. So the walk keeps the stored form of each path whose names
+		it found (storedPrefixes): a name keeps its stored case while a command
+		runs.
+	**/
+	static function storedCasePath(path:String):String {
+		var typed = "/";
+		var stored = "/";
+		for (name in FilepathPkg.clean(path).split("/")) {
+			if (name == "")
+				continue;
+			typed = FilepathPkg.join(typed, name);
+			final known = storedPrefixes.get(typed);
+			if (known != null) {
+				stored = known;
+				continue;
+			}
+			final entries = try FileSystem.readDirectory(stored) catch (_:haxe.Exception) null;
+			if (entries == null)
+				return "";
+			var match = "";
+			for (entry in entries)
+				if (StringsPkg.equalFold(entry, name)) {
+					match = entry;
+					break;
+				}
+			if (match == "")
+				return "";
+			stored = FilepathPkg.join(stored, match);
+			storedPrefixes.set(typed, stored);
+		}
+		return stored;
+	}
+
+	/** storedCasePath's answer for each path, as typed, whose names it found. */
+	static final storedPrefixes = new Map<String, String>();
 
 	/** Upstream hasBeadsProjectFiles. */
 	public static function hasBeadsProjectFiles(beadsDir:String):Bool {

@@ -7,7 +7,6 @@ import beadshx.config.DatabaseVariableSelection.DatabaseVariableUse;
 import beadshx.config.LayeredConfig.environmentValue;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.nativeextern.os.OsPkg;
-import beadshx.nativeextern.strings.StringsPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
 import beadshx.store.EmbeddedDatabaseLookup.redirectSourceDatabase;
@@ -457,14 +456,16 @@ final class WorkspaceEnvironment {
 	static function selectPath(workspace:WorkspacePort, directory:String, name:String, path:String):DatabaseVariableSelection {
 		final parent = FilepathPkg.dir(path);
 		// Upstream compares the names of the path as given and of its canonical form, which on macOS has each name's stored case.
-		final inBeadsDirectory = FilepathPkg.base(parent) == ".beads" || FilepathPkg.base(canonicalPath(parent)) == ".beads";
+		final inBeadsDirectory = FilepathPkg.base(parent) == ".beads"
+			|| FilepathPkg.base(RedirectSource.canonicalizePath(parent)) == ".beads";
 		final selectedPath = switch ConfigProbes.statPath(path) {
 			case StatDirectory if (ConfigProbes.statSucceeds(FilepathPkg.join(path, "metadata.json"))):
 				inBeadsDirectory ? null : path;
 			// Upstream looks for a database inside this directory first, and finds none.
 			case StatDirectory
 				if (inBeadsDirectory
-					&& (FilepathPkg.base(path) == "embeddeddolt" || FilepathPkg.base(canonicalPath(path)) == "embeddeddolt")
+					&& (FilepathPkg.base(path) == "embeddeddolt"
+						|| FilepathPkg.base(RedirectSource.canonicalizePath(path)) == "embeddeddolt")
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "config.json"))
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "embeddeddolt"))
 					&& !ConfigProbes.statSucceeds(FilepathPkg.join(path, "dolt"))):
@@ -503,12 +504,12 @@ final class WorkspaceEnvironment {
 
 	/**
 		Upstream FindDatabasePath for a BEADS_DB `path` when BEADS_DIR is unset:
-		the canonical path (see canonicalPath), or, when that is a directory,
-		the database that findDatabaseInBeadsDir finds there (see
-		directoryDatabase). It is absolute, and `bd info` prints it.
+		the canonical path (see RedirectSource.canonicalizePath), or, when that
+		is a directory, the database that findDatabaseInBeadsDir finds there
+		(see directoryDatabase). It is absolute, and `bd info` prints it.
 	**/
 	static function variableDatabasePath(path:String):String {
-		final canonical = canonicalPath(path);
+		final canonical = RedirectSource.canonicalizePath(path);
 		if (isDirectory(canonical)) {
 			final database = directoryDatabase(canonical);
 			if (database != "")
@@ -615,7 +616,7 @@ final class WorkspaceEnvironment {
 	**/
 	public static function storeSetupDirectory(selection:DatabaseVariableSelection, beadsDir:String):String {
 		return switch selection {
-			case VariablePath(_, _, missingFile): missingFile != null ? FilepathPkg.dir(missingFile) : canonicalPath(beadsDir);
+			case VariablePath(_, _, missingFile): missingFile != null ? FilepathPkg.dir(missingFile) : RedirectSource.canonicalizePath(beadsDir);
 			case NoVariable | UnsupportedPath(_): beadsDir;
 		};
 	}
@@ -656,7 +657,7 @@ final class WorkspaceEnvironment {
 		that the config names. Returns "" when none does.
 	**/
 	static function claimingBeadsDir(path:String, foundBeadsDir:String):String {
-		final canonical = canonicalPath(path);
+		final canonical = RedirectSource.canonicalizePath(path);
 		for (selected in [path, canonical]) {
 			final parent = FilepathPkg.dir(selected);
 			if (FilepathPkg.base(parent) == ".beads" && ConfigProbes.statSucceeds(FilepathPkg.join(parent, "metadata.json")))
@@ -692,7 +693,7 @@ final class WorkspaceEnvironment {
 		addAncestorCandidates(FilepathPkg.dir(canonical));
 		if (foundBeadsDir != "") {
 			addCandidate(foundBeadsDir);
-			addCandidate(canonicalPath(foundBeadsDir));
+			addCandidate(RedirectSource.canonicalizePath(foundBeadsDir));
 		}
 		for (candidate in candidates) {
 			final dataDirectory = switch readMetadataFields(candidate) {
@@ -711,67 +712,10 @@ final class WorkspaceEnvironment {
 	}
 
 	/**
-		Upstream utils.CanonicalizePath: the absolute path with symbolic links
-		resolved, or only the absolute path when that fails.
-
-		Why: upstream compares and returns these paths, and on macOS it then
-		takes each name's case from the file system, so a path typed in another
-		case names the directory as stored, which upstream prints. What: on
-		macOS the resolved path with the names that its directories list (see
-		storedCasePath) when they are all found, else the resolved path.
-		Windows keeps the resolved path, as upstream does. How: it only reads.
-	**/
-	static function canonicalPath(path:String):String {
-		final absolute = absolutePath(path);
-		final resolved = FilepathPkg.evalSymlinks(absolute);
-		if (resolved.value2 != null)
-			return absolute;
-		if (Sys.systemName() == "Mac") {
-			final stored = storedCasePath(resolved.value1);
-			if (stored != "")
-				return stored;
-		}
-		return resolved.value1;
-	}
-
-	/**
-		Upstream resolveCanonicalCaseWalk: the absolute `path` with each name
-		replaced by the first entry of its directory, in os.ReadDir's sorted
-		order, that equals it under strings.EqualFold; "" when a directory
-		cannot be read or has no such entry.
-
-		Upstream first asks the kernel for the path (fcntl F_GETPATH) and walks
-		only when that fails. Both give the stored names of a directory or file
-		whose ancestors can be listed. They can differ for an ancestor that
-		cannot be listed, a hard link, or a name stored in another Unicode
-		normalization.
-	**/
-	static function storedCasePath(path:String):String {
-		var stored = "/";
-		for (name in FilepathPkg.clean(path).split("/")) {
-			if (name == "")
-				continue;
-			final entries = try FileSystem.readDirectory(stored) catch (_:haxe.Exception) null;
-			if (entries == null)
-				return "";
-			var match = "";
-			for (entry in entries)
-				if (StringsPkg.equalFold(entry, name)) {
-					match = entry;
-					break;
-				}
-			if (match == "")
-				return "";
-			stored = FilepathPkg.join(stored, match);
-		}
-		return stored;
-	}
-
-	/**
 		Upstream utils.NormalizePathForComparison: the absolute path with its
 		symbolic links resolved when they resolve, in lower case on macOS and
-		Windows; "" for "". Unlike canonicalPath, it takes no case from the file
-		system.
+		Windows; "" for "". Unlike RedirectSource.canonicalizePath, it takes no
+		case from the file system.
 	**/
 	static function comparablePath(path:String):String {
 		if (path == "")

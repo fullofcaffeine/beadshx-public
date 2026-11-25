@@ -3629,6 +3629,50 @@ compare_real_database chain-of-four-info-json exact info --json
 compare_real_database chain-of-four-list-json exact list --json
 compare_real_database chain-of-four-change-directory-where exact -C . where
 real_database_setup=""
+# On macOS upstream's FollowRedirect canonicalizes a redirect target with utils.CanonicalizePath, which takes
+# each name's case from the file system, and so does its lookup of a BEADS_DIR path. A redirect file or a
+# BEADS_DIR that names a directory in another case then prints the directory as stored, in the routing lines
+# and the warnings (beadshx-m08.52). These cases need a case-insensitive file system.
+if [[ -d "$real_database_seed/WORK" ]]; then
+	redirect_to_sub_in_other_case() {
+		redirect_to_sub "$1"
+		printf 'SUB/.BEADS\n' >"$1/work/.beads/redirect"
+	}
+	# An absolute target that names the work directory in another case too.
+	redirect_to_absolute_sub_in_other_case() {
+		redirect_to_sub "$1"
+		printf '%s/WORK/Sub/.Beads\n' "$(cd "$1" && pwd -P)" >"$1/work/.beads/redirect"
+	}
+	redirect_chain_in_other_case() {
+		redirect_chain_to_workspace "$1"
+		printf 'SUB/.BEADS\n' >"$1/work/.beads/redirect"
+		printf '../FINAL/.Beads\n' >"$1/work/sub/.beads/redirect"
+	}
+	redirect_in_other_case_to_directory_without_database() {
+		mkdir -p "$1/work/empty/.beads"
+		printf 'EMPTY/.BEADS\n' >"$1/work/.beads/redirect"
+	}
+	real_database_extra_env=(BD_DEBUG_ROUTING=1)
+	real_database_setup=redirect_to_sub_in_other_case
+	compare_real_database routed-case-redirect-count exact count
+	compare_real_database routed-case-redirect-where exact where
+	compare_real_database routed-case-redirect-list-json exact list --json
+	compare_real_database routed-case-redirect-change-directory-where exact -C . where
+	real_database_extra_env=(BD_DEBUG_ROUTING=1 'BEADS_DIR=<work>/.BEADS')
+	compare_real_database routed-case-redirect-beads-dir-count exact count
+	compare_real_database routed-case-redirect-beads-dir-where exact where
+	real_database_extra_env=(BD_DEBUG_ROUTING=1)
+	real_database_setup=redirect_to_absolute_sub_in_other_case
+	compare_real_database routed-case-absolute-redirect-count exact count
+	real_database_setup=redirect_chain_in_other_case
+	compare_real_database routed-case-chain-count exact count
+	compare_real_database routed-case-chain-change-directory-where exact -C . where
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+	compare_real_database case-chain-where exact where
+	real_database_setup=redirect_in_other_case_to_directory_without_database
+	compare_real_database case-redirect-without-database-count exact count
+	real_database_setup=""
+fi
 # Each setup reloads the config of its own directory and checks that directory's metadata.json: a command
 # that opens a store sets up the first target and then the second, and so does where. So a config.yaml that
 # does not parse warns in the setup of its own target, and the shared-server notice comes from the first
