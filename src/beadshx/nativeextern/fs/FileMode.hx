@@ -16,4 +16,7 @@ extern class FileMode {
 		place of each bit that is not set.
 	**/
 	@:go.name("String") public function toString():String;
+
+	/** `FileMode.IsRegular`: whether the mode has no type bits, as for a regular file but not a link, a directory or a device. */
+	@:go.name("IsRegular") public function isRegular():Bool;
 }

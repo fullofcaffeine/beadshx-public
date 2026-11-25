@@ -66,6 +66,7 @@ import beadshx.config.ConfigProbes;
 import beadshx.config.DeprecatedServerPort;
 import beadshx.config.ConfigShow.WorkspaceMetadataFields;
 import beadshx.config.ConfigShow.readMetadataFields;
+import beadshx.config.ConfigShow.readLegacyConfigFields;
 import beadshx.config.ConfigShow.metadataLoadFailure;
 import beadshx.config.ConfigShow.SHARED_SERVER_EMBEDDED_NOTICE;
 import beadshx.config.ConfigShow.pinsEmbeddedMode;
@@ -148,6 +149,7 @@ import beadshx.store.GoReadonlyStore.BLOCKED_ROUTE_UNAVAILABLE;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
+import beadshx.workspace.LegacyUpgradeGuard;
 import beadshx.workspace.RedirectLookups;
 import beadshx.workspace.RedirectSource;
 import beadshx.workspace.RedirectSource.RedirectSourceLookup;
@@ -786,6 +788,12 @@ final class Application {
 		read-only build refuses those commands there until migration parity
 		(M12); `version` and help pages run as upstream does.
 
+		When the file loads, or there is none, the rest of that guard stops
+		`where` and every command that opens a store in a historical SQLite
+		workspace, a workspace with a removed or unknown backend, and a legacy
+		Dolt workspace (see LegacyUpgradeGuard), also before the rewrite of a
+		legacy config.json. Upstream then writes nothing.
+
 		Upstream's setup for the selected directory reloads the config first,
 		so its reinitialize warning comes before the metadata warning, once.
 		When the file loads, `where`, `version` and help pages run that setup
@@ -820,6 +828,8 @@ final class Application {
 		final path = commandPath(invocation.command);
 		var error = "";
 		var refusal = "";
+		var upgradeRefusal:Null<String> = null;
+		final sharedServer = () -> LayeredConfig.forWorkspace(location.path).sharedServerMode();
 		switch readMetadataFields(location.path) {
 			case MetadataFieldsUndecodable(text):
 				error = text;
@@ -828,17 +838,31 @@ final class Application {
 			case MetadataFieldsUnsupported:
 				refusal = '${path} is not available yet when .beads/metadata.json does not decode in this build';
 			case MetadataFieldsLegacyOnly if (stops):
-				refusal = '${path} is not available yet when the workspace has only a legacy config.json in this build';
-			case MetadataFields(_) | MetadataAbsent | MetadataFieldsLegacyOnly:
-				if (!opensStore)
-					prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
-				return null;
+				final legacyFields = readLegacyConfigFields(location.path);
+				if (legacyFields != null)
+					upgradeRefusal = LegacyUpgradeGuard.refusal(location.path, legacyFields, sharedServer);
+				if (upgradeRefusal == null)
+					refusal = '${path} is not available yet when the workspace has only a legacy config.json in this build';
+			case MetadataFieldsLegacyOnly:
+			case MetadataFields(fields):
+				upgradeRefusal = stops ? LegacyUpgradeGuard.refusal(location.path, fields, sharedServer) : null;
+			case MetadataAbsent:
+				upgradeRefusal = stops ? LegacyUpgradeGuard.refusal(location.path, null, sharedServer) : null;
 		}
-		// The setup stops at this file, before the notice and before `where` sets up again.
+		if (error == "" && refusal == "" && upgradeRefusal == null) {
+			if (!opensStore)
+				prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
+			return null;
+		}
+		// One setup runs before the load error or the legacy-workspace guard stops the command, so `where` does not set up again.
 		if (opensStore)
 			loadStoreConfig(invocation, location, 1, false);
 		else
 			prepareNoStoreWorkspace(invocation, 1);
+		if (upgradeRefusal != null) {
+			output.writeStderr('Error: ${upgradeRefusal}\n');
+			return 1;
+		}
 		if (refusal != "") {
 			// `version` and help pages run without the warning they cannot match.
 			if (!stops)
@@ -2912,9 +2936,9 @@ final class Application {
 		Refusals before `bd config validate` or `bd config drift` opens the
 		store. In shared-server mode upstream connects to the shared server,
 		which writes (a `db` setting is refused before discovery, as for every
-		store command); a non-Dolt backend fails upstream's own checks
-		(checkWorkspaceMetadata already stopped a metadata.json that does not
-		load). Validate also reads the workspace
+		store command). checkWorkspaceMetadata already stopped a metadata.json
+		that does not load and a backend other than Dolt, as upstream's
+		legacy-workspace guard does. Validate also reads the workspace
 		back from its parent directory, which only a `.beads` directory without
 		its own redirect survives unchanged.
 	**/
@@ -2927,11 +2951,6 @@ final class Application {
 			// A configured host can make upstream treat the workspace as a server workspace.
 			if (environmentValue("BEADS_DOLT_SERVER_HOST") != "" || config.getString("dolt.host") != "")
 				return 'config ${name} is not available yet when a Dolt server endpoint is configured in this build';
-			switch readMetadataFields(location.path) {
-				case MetadataFields(fields) if (fields.exists("backend") && fields.get("backend") != "" && fields.get("backend") != "dolt"):
-					return 'config ${name} is not available yet for a storage backend other than dolt in this build';
-				case MetadataFields(_) | MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
-			}
 			if (resolvesFromRepository && !ConfigProbes.resolvesFromRepository(location.path))
 				return 'config ${name} is not available yet for this redirected workspace in this build';
 			return null;
@@ -7140,10 +7159,22 @@ final class Application {
 		Upstream refuses a name that is not an identifier before it reads or
 		creates anything, and so does this, with upstream's words: those of its
 		schema initialization for a plain open, or of its strict read-only open.
+
+		Upstream finds the database at the data directory that
+		BEADS_DOLT_DATA_DIR or dolt_data_dir names when `.beads/embeddeddolt`
+		is missing, but its embedded open still uses `.beads/embeddeddolt`.
+		A plain open then creates that directory and the database, which this
+		build refuses. A strict read-only open fails after its identifier
+		check, with the error that this prints as upstream does
+		(ConfigProbes.embeddedStoreOpenError).
 	**/
 	function validateEmbeddedDatabase(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
-		// The workspace facade names .beads/embeddeddolt only for a workspace that upstream opens embedded.
-		if (invocation.global || location.proxiedServer || Path.withoutDirectory(location.databasePath) != "embeddeddolt")
+		if (invocation.global || location.proxiedServer)
+			return Accepted;
+		// The workspace facade names .beads/embeddeddolt only for a workspace that upstream opens embedded and that has that directory.
+		final storeNamed = Path.withoutDirectory(location.databasePath) == "embeddeddolt";
+		final storeError = storeNamed ? null : ConfigProbes.embeddedStoreOpenError(location.path);
+		if (!storeNamed && (storeError == null || opensServerStore(location)))
 			return Accepted;
 		switch readMetadataFields(location.path) {
 			case MetadataFields(_):
@@ -7177,8 +7208,12 @@ final class Application {
 			}
 		}
 		final strict = strictReadonly(invocation, LayeredConfig.forWorkspace(location.path));
+		if (storeError != null && !strict)
+			return ModeAwareFailure('${path} is not available yet for an embedded workspace without .beads/embeddeddolt in this build');
 		if (!isEmbeddedDatabaseIdentifier(selected))
 			return PlainFailure('failed to open database: ${InvalidDatabaseName.error(selected, strict ? ReadOnlyOpenName : InitSchemaName)}');
+		if (storeError != null)
+			return PlainFailure('failed to open database: ${storeError}');
 		if (embeddedDatabaseExists(location.path, selected))
 			return Accepted;
 		if (strict)

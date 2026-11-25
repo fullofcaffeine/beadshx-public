@@ -2538,10 +2538,10 @@ use_sqlite_backend() {
 	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
 	rm -f "$1/metadata.json"
 }
-candidate_only_setup=use_sqlite_backend
-expect_candidate_failure config-drift-backend-unported "" \
-	"Error: config drift is not available yet for a storage backend other than dolt in this build" "" config drift
-candidate_only_setup=""
+# Upstream's legacy-workspace guard refuses a removed backend before config drift runs, and so does this build.
+real_database_setup=use_sqlite_backend
+compare_real_database config-drift-removed-backend exact config drift
+real_database_setup=""
 expect_candidate_failure config-validate-global-unported \
 	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
 	config validate --global --json
@@ -2740,6 +2740,25 @@ candidate_only_setup=redirect_to_legacy_config
 expect_candidate_failure legacy-config-redirect-where-unported "" "Error: $(legacy_config_refusal where)" "" where
 expect_candidate_failure legacy-config-redirect-list-unported "" "Error: $(legacy_config_refusal list)" "" list
 candidate_only_setup=""
+# Upstream's legacy-workspace guard reads the legacy config.json too, and refuses before the rewrite
+# (beadshx-m08-03.13): a .beads/dolt directory without an embedded repository, or a removed backend.
+legacy_config_with_legacy_dolt_directory() {
+	: "${1:?state root}"
+	use_legacy_config "$1"
+	mv -f "$1/work/.beads/embeddeddolt" "$1/work/.beads/dolt"
+}
+real_database_setup=legacy_config_with_legacy_dolt_directory
+compare_real_database legacy-config-legacy-dolt-count exact count
+compare_real_database legacy-config-legacy-dolt-where-json exact where --json
+legacy_config_with_removed_backend() {
+	use_legacy_config "$1"
+	jq '.backend = "sqlite"' "$1/work/.beads/config.json" >"$1/config.json"
+	cat "$1/config.json" >"$1/work/.beads/config.json"
+	rm -f "$1/config.json"
+}
+real_database_setup=legacy_config_with_removed_backend
+compare_real_database legacy-config-removed-backend-list exact list
+real_database_setup=""
 duplicate_dolt_database() {
 	jq -c . "$1/work/.beads/metadata.json" |
 		sed 's/"dolt_database":"test"/"dolt_database":"other","dolt_database":"test"/' >"$1/metadata.json"
@@ -3847,9 +3866,156 @@ real_database_read_only=1
 real_database_setup=make_custom_data_directory
 real_database_extra_env=(BEADS_DOLT_DATA_DIR=data)
 compare_real_database data-dir-variable-where exact where
+# Upstream finds the database there, but its embedded open still uses .beads/embeddeddolt. In strict
+# read-only mode that open fails before it writes, after its check of the database name, with the same
+# plain error in every output mode (beadshx-m08-03.13).
+compare_real_database data-dir-variable-readonly-count exact --readonly count
+compare_real_database data-dir-variable-readonly-list-json exact --readonly list --json
+compare_real_database data-dir-variable-readonly-show exact --readonly show "$real_database_issue_id"
+compare_real_database data-dir-variable-readonly-info-json exact --readonly info --json
+compare_real_database data-dir-variable-readonly-config-get exact --readonly config get routing.mode
+compare_real_database_config data-dir-variable-readonly-setting-ready exact 'readonly: true' ready
+compare_real_database_metadata data-dir-variable-readonly-invalid-name exact '.dolt_database = "te-st"' --readonly count
+real_database_extra_env=("BEADS_DOLT_DATA_DIR=<work>/.beads/data")
+compare_real_database data-dir-absolute-variable-readonly-stale exact --readonly stale
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database_metadata data-dir-metadata-readonly-count exact '.dolt_data_dir = "data"' --readonly count
+# A .beads/dolt link is no legacy Dolt directory, so upstream opens the store the same way.
+link_legacy_dolt_directory() {
+	remove_embedded_database "$1"
+	mkdir "$1/work/linked-dolt"
+	ln -s ../linked-dolt "$1/work/.beads/dolt"
+}
+real_database_setup=link_legacy_dolt_directory
+compare_real_database legacy-dolt-link-readonly-count exact --readonly count
 real_database_setup=""
 real_database_read_only=""
+# A plain open creates .beads/embeddeddolt and the database there, also for a name that is no
+# identifier, so this build refuses before it opens anything.
+candidate_only_setup=make_custom_data_directory
+real_database_extra_env=(BEADS_DOLT_DATA_DIR=data)
+expect_candidate_failure data-dir-variable-count-unported "" \
+	"Error: count is not available yet for an embedded workspace without .beads/embeddeddolt in this build" "" count
+expect_candidate_failure data-dir-variable-list-json-unported \
+	'{"error":"list is not available yet for an embedded workspace without .beads/embeddeddolt in this build","schema_version":1}' "" "" \
+	list --json
+expect_candidate_failure data-dir-variable-config-get-unported "" \
+	"Error: config get is not available yet for an embedded workspace without .beads/embeddeddolt in this build" "" \
+	config get routing.mode
+make_custom_data_directory_with_invalid_name() {
+	make_custom_data_directory "$1"
+	jq '.dolt_database = "te-st"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+}
+candidate_only_setup=make_custom_data_directory_with_invalid_name
+expect_candidate_failure data-dir-variable-invalid-name-unported "" \
+	"Error: show is not available yet for an embedded workspace without .beads/embeddeddolt in this build" "" \
+	show "$real_database_issue_id"
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
+# Upstream's pre-run also refuses older workspace shapes before it tracks a version or opens a store
+# (guardLegacyUpgradeWorkspace, cmd/bd/legacy_upgrade_guard.go:24), so `where` and every command that
+# opens a store stop with its error after the setup of that workspace, as text even under --json, and
+# write nothing. version and help pages run. A .beads/dolt directory without an embedded repository is a
+# legacy Dolt workspace, named after the version in .beads/.local_version when that is 0.x.y.
+move_database_to_legacy_dolt_directory() {
+	: "${1:?state root}"
+	mv -f "$1/work/.beads/embeddeddolt" "$1/work/.beads/dolt"
+}
+real_database_read_only=1
+real_database_setup=move_database_to_legacy_dolt_directory
+compare_real_database legacy-dolt-count exact count
+compare_real_database legacy-dolt-list-json exact list --json
+compare_real_database legacy-dolt-readonly-show exact --readonly show "$real_database_issue_id"
+compare_real_database legacy-dolt-info-json exact info --json
+compare_real_database legacy-dolt-config-get exact config get routing.mode
+compare_real_database legacy-dolt-where exact where
+compare_real_database legacy-dolt-where-json exact where --json
+compare_real_database legacy-dolt-db-path-count exact --db .beads count
+compare_real_database legacy-dolt-version stderr-only version
+compare_real_database legacy-dolt-help-command exact help count
+compare_real_database_config legacy-dolt-broken-config-count exact "$malformed_yaml" count
+compare_real_database_config legacy-dolt-broken-config-where exact "$malformed_yaml" where
+legacy_dolt_directory_beside_empty_store() {
+	move_database_to_legacy_dolt_directory "$1"
+	mkdir "$1/work/.beads/embeddeddolt"
+}
+real_database_setup=legacy_dolt_directory_beside_empty_store
+compare_real_database legacy-dolt-empty-store-count exact count
+legacy_dolt_directory_without_metadata() {
+	move_database_to_legacy_dolt_directory "$1"
+	rm -f "$1/work/.beads/metadata.json"
+}
+real_database_setup=legacy_dolt_directory_without_metadata
+compare_real_database legacy-dolt-no-metadata-ready exact ready
+legacy_version_witness=""
+legacy_dolt_directory_with_version() {
+	move_database_to_legacy_dolt_directory "$1"
+	printf '%s\n' "$legacy_version_witness" >"$1/work/.beads/.local_version"
+}
+real_database_setup=legacy_dolt_directory_with_version
+legacy_version_witness=0.50.1
+compare_real_database legacy-dolt-version-witness-count exact count
+legacy_version_witness=v0.58.2
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database legacy-dolt-server-version-shared-server-count exact count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+legacy_version_witness=0.x.1
+compare_real_database legacy-dolt-invalid-version-witness-where exact where
+legacy_version_witness=""
+# A server workspace is a legacy one when .beads/.local_version names a 0.55 to 0.62 release, or when it
+# has a .beads/dolt directory and no version witness from 1.0 or later.
+server_workspace_with_version() {
+	jq '.dolt_mode = "server"' "$1/work/.beads/metadata.json" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$1/work/.beads/metadata.json"
+	rm -f "$1/metadata.json"
+	printf '%s\n' "$legacy_version_witness" >"$1/work/.beads/.local_version"
+}
+real_database_setup=server_workspace_with_version
+legacy_version_witness=0.58.0
+compare_real_database legacy-server-version-count exact count
+compare_real_database legacy-server-version-where exact where
+server_workspace_with_dolt_directory() {
+	server_workspace_with_version "$1"
+	mkdir "$1/work/.beads/dolt"
+}
+real_database_setup=server_workspace_with_dolt_directory
+legacy_version_witness=0.9.9
+compare_real_database legacy-server-dolt-count exact count
+legacy_version_witness=""
+# A workspace whose metadata.json names no Dolt setting and whose database is a SQLite file, or one with
+# only a SQLite file, is a historical SQLite workspace; a removed or unknown backend stops the command too.
+configured_sqlite_workspace() {
+	remove_embedded_database "$1"
+	printf '{"database":"beads.db"}' >"$1/work/.beads/metadata.json"
+	printf 'SQLite format 3\0parity' >"$1/work/.beads/beads.db"
+}
+real_database_setup=configured_sqlite_workspace
+compare_real_database historical-sqlite-configured-count exact count
+compare_real_database historical-sqlite-configured-where-json exact where --json
+discovered_sqlite_workspace() {
+	: "${1:?state root}"
+	find "$1/work/.beads" -mindepth 1 -delete
+	printf 'SQLite format 3\0parity' >"$1/work/.beads/beads.db"
+}
+real_database_setup=discovered_sqlite_workspace
+compare_real_database historical-sqlite-discovered-list exact list
+real_database_setup=""
+compare_real_database_metadata removed-backend-sqlite-count exact '.backend = "sqlite"' count
+compare_real_database_metadata removed-backend-postgres-where-json exact '.backend = "postgres"' where --json
+compare_real_database_metadata removed-backend-mysql-config-get exact '.backend = "mysql"' config get routing.mode
+compare_real_database_metadata unknown-backend-show exact '.backend = "Dolt"' show "$real_database_issue_id"
+compare_real_database_metadata unknown-backend-version stderr-only '.backend = "bogus"' version
+real_database_read_only=""
+# In shared-server mode a legacy Dolt workspace from another release goes on to the shared server, which
+# writes, so this build refuses as there.
+candidate_only_setup=move_database_to_legacy_dolt_directory
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+expect_candidate_failure legacy-dolt-shared-server-count-unported "" \
+	"$shared_server_notice"$'\n''Error: count is not available yet in shared-server mode in this build' "" count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
 # In shared-server mode upstream prints its warning for the missing metadata.json, then reaches the
 # shared server, which writes. This build prints the same warning before it refuses.
 candidate_only_setup=no_metadata_default_database
@@ -6659,6 +6825,7 @@ expect_beads_db_refusal beads-db-deeper-path-broken-config-shared-server-env-unp
 	'BEADS_DB=db/.beads/missing/beads.db BEADS_DOLT_SHARED_SERVER=1' "" \
 	"$reinit_config_warning"$'\n'"$shared_server_notice"$'\n'"Error: ready is not available yet when BEADS_DB names this path in this build" ready
 move_workspace_without_database_breaking_config() {
+	: "${1:?}"
 	move_workspace_breaking_config "$1"
 	rm -rf "$1/work/db/.beads/embeddeddolt"
 }

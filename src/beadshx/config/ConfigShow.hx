@@ -159,6 +159,21 @@ function readMetadataFields(beadsDir:String):WorkspaceMetadataFields {
 	return FileSystem.exists(legacyPath) ? decodeMetadataFile(legacyPath, "reading legacy config", true) : MetadataAbsent;
 }
 
+/**
+	The decoded fields of the legacy config.json for which readMetadataFields
+	gives MetadataFieldsLegacyOnly, as LoadForDiscovery's config holds them, or
+	null when the file no longer reads or decodes.
+**/
+function readLegacyConfigFields(beadsDir:String):Null<Map<String, String>> {
+	final raw = try File.getContent(Path.join([beadsDir, "config.json"])) catch (_:haxe.Exception) null;
+	if (raw == null)
+		return null;
+	return switch decodeGoStruct(raw, METADATA_CONFIG) {
+		case GoJsonDecoded(fields): fields;
+		case GoJsonFailed(_) | GoJsonUnsupported: null;
+	};
+}
+
 /** One LoadForDiscovery read: a read error carries `readContext` and the os error text, a decode error `parsing config`. */
 private function decodeMetadataFile(path:String, readContext:String, legacy:Bool):WorkspaceMetadataFields {
 	var raw = "";

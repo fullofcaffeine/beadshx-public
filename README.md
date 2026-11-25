@@ -204,6 +204,36 @@ name does not matter. Like upstream, `bdhx` matches the `dolt.mode` setting to
 server host implies server mode, with Go's `strings.EqualFold`. So `ſerver`
 (with U+017F) selects server mode in the setting, but not in `dolt_mode`.
 
+Like upstream, `bdhx` then refuses older workspace layouts before it opens
+anything. After the setup of the workspace, `where` and every command that
+reads the database print upstream's `Error: <reason> detected; explicit
+migration is required ...` and exit with code 1, also with `--json`.
+`version` and help pages run as usual. The reasons are these:
+
+- `historical SQLite workspace`: the workspace has no embedded repository.
+  Its `.beads/metadata.json` sets no `dolt_mode` and no `dolt_database`, and
+  the file that `sqlite_path`, `database` or else `beads.db` names is not
+  empty. A workspace without `.beads/metadata.json` counts when it holds only
+  one SQLite file, with its `-wal` and `-shm` files, `issues.jsonl` and
+  `embeddeddolt`.
+- `legacy Dolt workspace`: an embedded workspace has a `.beads/dolt`
+  directory (not a symbolic link) and no embedded repository. When
+  `.beads/.local_version` names a `0.x.y` release, the reason adds `from bd
+  <version>`. In shared-server mode only a 0.55 to 0.62 release counts.
+- `legacy Dolt server workspace`: `dolt_mode` is `server`, and
+  `.beads/.local_version` names a 0.55 to 0.62 release, or the workspace has
+  `.beads/dolt` and no version from 1.0 or later.
+
+A `backend` other than `dolt` in `.beads/metadata.json` stops these commands
+with upstream's error for a removed or an unknown backend.
+
+A data directory that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names lets
+upstream find the database when `.beads/embeddeddolt` is missing, and `where`
+prints it, as in upstream. Upstream's embedded store still opens
+`.beads/embeddeddolt`. With `--readonly` or the `readonly` setting, `bdhx`
+then prints upstream's `Error: failed to open database: embeddeddolt: no
+embedded database at <dir>` error, after the check of the database name.
+
 When the selected workspace has no `.beads/metadata.json` and no legacy
 `.beads/config.json`, every command that reads the database uses the embedded
 database `beads`, as upstream does. Before it opens the database, `bdhx` prints
@@ -587,8 +617,7 @@ Limits:
   embedded database, unless `BEADS_DOLT_SHARED_SERVER` or `dolt_mode` makes the
   workspace a server workspace.
 - `config validate` and `config drift` also report that they are not
-  available yet with `--global`, when `.beads/metadata.json` names a backend
-  other than Dolt, and when a Dolt server host, port or
+  available yet with `--global`, and when a Dolt server host, port or
   socket, `BEADS_DOLT_DATA_DIR` or a central server config is set. In these
   cases upstream connects to a server or creates a database. `config validate`
   also reports this when the workspace directory is not named `.beads` or
@@ -637,9 +666,15 @@ Limits:
   no warning.
 - In an embedded workspace without `.beads/embeddeddolt`, a data directory
   that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names makes upstream create
-  the embedded database, and a `.beads/dolt` directory makes upstream refuse
-  the workspace as a legacy Dolt workspace. `bdhx` prints the native open
-  error in both cases. Like upstream, `where` prints that data directory.
+  the embedded database, unless it is in strict read-only mode. Every command
+  that reads the database then reports that it is not available yet for an
+  embedded workspace without `.beads/embeddeddolt`. When a file takes the
+  place of that directory, `bdhx` prints the open error without upstream's
+  `failed to open database: ` prefix.
+- `bdhx` runs upstream's legacy-workspace guard for the workspace that it
+  selects first. Upstream also runs it for the second target of a redirect
+  chain and, when it finds no workspace, for the `.beads` directories above
+  the current directory.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 - `ready --explain` and `graph check` find cycles with upstream's walk, which

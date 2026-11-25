@@ -174,6 +174,24 @@ final class ConfigProbes {
 		return information != null && information.isDir() ? StatDirectory : StatNotDirectory;
 	}
 
+	/**
+		Upstream embeddeddolt openReadOnly's check of the store directory
+		(internal/storage/embeddeddolt/store.go:176-183), which a strict
+		read-only open runs after its identifier check: its error when os.Stat
+		of the absolute `.beads/embeddeddolt` of `beadsDir` fails, or null when
+		a directory or a file of that name exists. Upstream's pre-run prints it
+		after `failed to open database: `.
+	**/
+	public static function embeddedStoreOpenError(beadsDir:String):Null<String> {
+		final absolute = FilepathPkg.abs(beadsDir);
+		final absoluteError = absolute.value2;
+		if (absoluteError != null)
+			return 'embeddeddolt: resolving beads dir: ${absoluteError.message}';
+		final dataDir = FilepathPkg.join(absolute.value1, "embeddeddolt");
+		final error = OsPkg.stat(dataDir).value2;
+		return error == null ? null : 'embeddeddolt: no embedded database at ${dataDir}: ${error.text()}';
+	}
+
 	/** Upstream doctor expandPath: a leading `~` becomes the home directory when Go resolves one. */
 	static function expandHome(path:String):String {
 		if (!StringTools.startsWith(path, "~"))
