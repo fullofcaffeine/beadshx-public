@@ -6085,10 +6085,26 @@ compare_real_database reinit-config-warning-show-thread exact show test-msg-leaf
 compare_real_database reinit-config-warning-show-children exact show "$real_database_epic_id" --children
 # A --db path sets up the workspace once.
 compare_real_database reinit-config-warning-db-path-count exact --db .beads count
+# config show lists what loaded, also when a --db path, BEADS_DIR or -C selects the workspace
+# (beadshx-m08-02.14). Only a user config.yaml that exists makes this build refuse it (see below).
+compare_real_database reinit-config-warning-config-show-json exact config show --json
+compare_real_database reinit-config-warning-db-path-config-show exact --db .beads config show
+compare_real_database reinit-config-warning-directory-config-show exact -C . config show --source config.yaml
+real_database_extra_env=("BEADS_DIR=<work>/.beads")
+compare_real_database reinit-config-warning-beads-dir-config-show exact config show --source default
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_setup=""
 reinit_config_failure="error reading config file: While parsing config: yaml: line 1: did not find expected ',' or ']'"
 reinit_config_warning="Warning: failed to reinitialize config for selected beads dir: $reinit_config_failure"
 reinit_store_warnings="Warning: failed to initialize config: $reinit_config_failure"$'\n'"$reinit_config_warning"$'\n'"$reinit_config_warning"
+# With a user config.yaml, config show prints the same warnings and then refuses, as without a broken file.
+reinit_merged_failure="error merging config file <work>/.beads/config.yaml: While parsing config: yaml: line 1: did not find expected ',' or ']'"
+reinit_merged_warning="Warning: failed to reinitialize config for selected beads dir: $reinit_merged_failure"
+candidate_only_setup=write_user_config_and_break_workspace_config
+expect_candidate_failure reinit-merged-config-warning-config-show-unported "" \
+	"Warning: failed to initialize config: $reinit_merged_failure"$'\n'"$reinit_merged_warning"$'\n'"$reinit_merged_warning"$'\n'"Error: config show is not available yet when a user config.yaml exists in this build" \
+	"" config show
+candidate_only_setup=""
 # Without metadata.json upstream creates the database "beads"; both setups warn before that.
 candidate_only_setup=break_workspace_config_without_metadata
 expect_candidate_failure reinit-config-warning-no-metadata-count-unported "" \
@@ -6529,6 +6545,22 @@ compare_beads_db beads-db-where-db-flag-first exact BEADS_DB=db/.beads --db othe
 real_database_setup=add_other_workspace
 compare_beads_db beads-db-current-directory-first-info-json exact BEADS_DB=other/.beads info --json
 compare_beads_db beads-db-where-before-current-directory exact BEADS_DB=other/.beads where
+# When neither config.yaml parses, each fails on its own line. The startup warning names the current
+# directory's file (line 3). A store command sets up the current directory's workspace twice; where sets up
+# the BEADS_DB or BD_DB workspace twice, version and help pages once, and a --db path once (line 1).
+break_both_workspace_configs() {
+	add_other_workspace "$1"
+	printf 'a: 1\nb: 2\n%s\n' "$broken_yaml" >"$1/work/.beads/config.yaml"
+	printf '%s\n' "$broken_yaml" >"$1/work/other/.beads/config.yaml"
+}
+real_database_setup=break_both_workspace_configs
+compare_beads_db beads-db-both-broken-configs-count exact BEADS_DB=other/.beads count
+compare_beads_db beads-db-both-broken-configs-list-json exact BEADS_DB=other/.beads list --json
+compare_beads_db beads-db-both-broken-configs-where exact BEADS_DB=other/.beads where
+compare_beads_db beads-db-both-broken-configs-version stderr-only BEADS_DB=other/.beads version
+compare_beads_db beads-db-both-broken-configs-help-command exact BEADS_DB=other/.beads help count
+compare_beads_db beads-db-both-broken-configs-bd-db-where-json exact BD_DB=other/.beads where --json
+compare_beads_db beads-db-both-broken-configs-db-flag-count exact BEADS_DB=other/.beads --db other/.beads count
 real_database_setup=""
 real_database_read_only=""
 no_workspace_extra_env=(BD_DB=missing)
@@ -6609,6 +6641,31 @@ candidate_only_setup=move_workspace_to_db
 expect_beads_db_refusal beads-db-missing-path-shared-server-env-unported \
 	'BEADS_DB=missing/beads.db BEADS_DOLT_SHARED_SERVER=1' "" \
 	"Error: ready is not available yet when BEADS_DB names this path in this build" ready
+# A config.yaml there that does not parse makes that setup print its reinitialize warning first, and then
+# the notice (beadshx-m08-02.14): once for a store command, twice for where.
+move_workspace_breaking_config() {
+	move_workspace_to_db "$1"
+	printf '%s\n' "$broken_yaml" >"$1/work/db/.beads/config.yaml"
+}
+candidate_only_setup=move_workspace_breaking_config
+expect_beads_db_refusal beads-db-deeper-path-broken-config-unported BEADS_DB=db/.beads/missing/beads.db "" \
+	"$reinit_config_warning"$'\n'"Error: count is not available yet when BEADS_DB names this path in this build" count
+expect_beads_db_refusal beads-db-trailing-slash-broken-config-json-unported BEADS_DB=db/.beads/ \
+	'{"error":"list is not available yet when BEADS_DB names this path in this build","schema_version":1}' \
+	"$reinit_config_warning" list --json
+expect_beads_db_refusal beads-db-where-deeper-path-broken-config-unported BEADS_DB=db/.beads/missing/beads.db "" \
+	"$reinit_config_warning"$'\n'"$reinit_config_warning"$'\n'"Error: where is not available yet when BEADS_DB names this path in this build" where
+expect_beads_db_refusal beads-db-deeper-path-broken-config-shared-server-env-unported \
+	'BEADS_DB=db/.beads/missing/beads.db BEADS_DOLT_SHARED_SERVER=1' "" \
+	"$reinit_config_warning"$'\n'"$shared_server_notice"$'\n'"Error: ready is not available yet when BEADS_DB names this path in this build" ready
+move_workspace_without_database_breaking_config() {
+	move_workspace_breaking_config "$1"
+	rm -rf "$1/work/db/.beads/embeddeddolt"
+}
+candidate_only_setup=move_workspace_without_database_breaking_config
+expect_beads_db_refusal beads-db-workspace-without-database-broken-config-unported BEADS_DB=db/.beads "" \
+	"$reinit_config_warning"$'\n'"Error: show is not available yet when BEADS_DB names this path in this build" \
+	show "$real_database_issue_id"
 candidate_only_setup=""
 # A metadata.json there that does not load stops upstream in that setup, with the load warning and
 # error, before it writes anything.
