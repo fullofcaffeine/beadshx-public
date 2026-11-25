@@ -4183,6 +4183,17 @@ UPDATE issues SET is_blocked = 0, updated_at = updated_at WHERE id = 'test-cl-wa
 compare_real_database_colors ready-explain-stored-flag exact "" ready --explain
 compare_real_database_colors ready-explain-stored-flag-json exact "" ready --explain --json
 real_database_extra_sql=""
+# Its cycles are upstream's DetectCycles walk (internal/storage/issueops/cycles.go:14-77) over the
+# blocking edges of both dependency tables, which leaves out a member without a record. The walk
+# starts from each node in Go map order, so a cycle of two records can start at either one; these
+# cases use one cycle through a member without a record, which cannot differ.
+real_database_extra_sql="SET FOREIGN_KEY_CHECKS = 0
+$color_dependency_row ('fixture-colour-ghost-1', 'test-cl-p1', 'test-ghost', 'blocks', '2026-08-21 10:00:00', 'fixture')
+$color_dependency_row ('fixture-colour-ghost-2', 'test-ghost', 'test-cl-p1', 'blocks', '2026-08-21 10:00:00', 'fixture')"
+compare_real_database_colors ready-explain-cycle-ghost exact "" ready --explain
+compare_real_database_colors ready-explain-cycle-ghost-json exact "" ready --explain --json
+compare_real_database_colors ready-color-explain-cycle exact CLICOLOR_FORCE=1 ready --explain
+real_database_extra_sql=""
 # graph accents its heading marks and layer headings, styles each status icon, mutes each ID line,
 # prints a title that is not open in its status style and the box view's counts in the blocked and
 # muted styles. graph check marks its result. The cycle case uses one cycle through a member without

@@ -1,5 +1,6 @@
 package beadshx.ready;
 
+import beadshx.relation.DependencyCycle.walkBlockingCycles;
 import beadshx.relation.RelatedIssue;
 import beadshx.relation.RelatedIssue.relatedIssue;
 import beadshx.store.IssueListItem;
@@ -14,18 +15,21 @@ typedef BlockedEntry = {
 	Builds `ready --explain` policy from copied storage facts.
 
 	The storage boundary supplies issue rows, dependency edges, the exact ready
-	set and upstream's blocked list. Haxe owns the explanation, blocker
-	hydration, parent selection, and cycle walk; no native facade owns this
-	public command behavior.
+	set, and upstream's blocked list and cycles. Haxe owns the explanation,
+	blocker hydration, parent selection, and the stand-in lists where no
+	Haxe-owned SQL reads them; no native facade owns this public command
+	behavior.
 **/
 final class ReadyExplain {
 	/**
 		Ports upstream types.BuildReadyExplanation (internal/types/types.go:1718-1810).
-		`blocked` is upstream's GetBlockedIssues list, kept in its order. The
-		candidates, every issue and wisp, give each blocker its title, status and
-		priority; a blocker without a record keeps only its ID, as upstream's.
+		`blocked` is upstream's GetBlockedIssues list and `cycles` its DetectCycles
+		list, both kept in their order. The candidates, every issue and wisp, give
+		each blocker its title, status and priority; a blocker without a record
+		keeps only its ID, as upstream's.
 	**/
-	public static function build(readyIssues:Array<IssueListItem>, candidates:Array<IssueListItem>, blocked:Array<BlockedEntry>):ReadyExplanation {
+	public static function build(readyIssues:Array<IssueListItem>, candidates:Array<IssueListItem>, blocked:Array<BlockedEntry>,
+			cycles:Array<Array<String>>):ReadyExplanation {
 		final byId = new Map<String, IssueListItem>();
 		for (issue in candidates)
 			byId.set(issue.id, issue);
@@ -74,7 +78,7 @@ final class ReadyExplain {
 			blockedItems.push({issue: entry.issue, blockedBy: blockers, blockedByCount: entry.blockedBy.length});
 		}
 
-		return {ready: ready, blocked: blockedItems, cycles: detectCycles(candidates)};
+		return {ready: ready, blocked: blockedItems, cycles: cycles};
 	}
 
 	/**
@@ -90,61 +94,36 @@ final class ReadyExplain {
 		];
 	}
 
-	static function detectCycles(issues:Array<IssueListItem>):Array<Array<String>> {
+	/**
+		The cycles where no Haxe-owned SQL reads the blocking graph yet (server-mode and
+		proxied workspaces), walked as upstream DetectCyclesInTx walks them (see
+		walkBlockingCycles). The graph holds the candidates' own `blocks` and
+		`conditional-blocks` edges in the candidates' order, and like upstream each
+		cycle leaves out a member without a record. An edge from an ID without a
+		record is not among the candidates' edges, so a cycle through such an ID is
+		missing here.
+	**/
+	public static function cyclesFromEdges(candidates:Array<IssueListItem>):Array<Array<String>> {
+		final known = new Map<String, Bool>();
 		final graph = new Map<String, Array<String>>();
-		for (issue in issues)
+		for (issue in candidates) {
+			known.set(issue.id, true);
 			for (dependency in issue.dependencies)
-				if (dependency.dependencyType == "blocks" || dependency.dependencyType == "conditional-blocks")
-					addEdge(graph, dependency.issueId, dependency.dependsOnId);
-
-		final nodes = [for (node in graph.keys()) node];
-		nodes.sort(compareStrings);
-		for (node in nodes) {
-			final neighbors = graph.get(node);
-			if (neighbors != null)
-				neighbors.sort(compareStrings);
-		}
-
-		final visited = new Map<String, Bool>();
-		final active = new Map<String, Bool>();
-		final path = new Array<String>();
-		final cycles = new Array<Array<String>>();
-		function visit(node:String):Void {
-			visited.set(node, true);
-			active.set(node, true);
-			path.push(node);
-			final neighbors = graph.get(node);
-			if (neighbors != null)
-				for (neighbor in neighbors) {
-					if (!visited.exists(neighbor)) {
-						visit(neighbor);
-					} else if (active.exists(neighbor)) {
-						final start = path.indexOf(neighbor);
-						if (start >= 0)
-							cycles.push(path.slice(start));
+				if (dependency.dependencyType == "blocks" || dependency.dependencyType == "conditional-blocks") {
+					var targets = graph.get(dependency.issueId);
+					if (targets == null) {
+						targets = [];
+						graph.set(dependency.issueId, targets);
 					}
+					targets.push(dependency.dependsOnId);
 				}
-			path.pop();
-			active.remove(node);
 		}
-		for (node in nodes)
-			if (!visited.exists(node))
-				visit(node);
-		cycles.sort(function(left, right) return compareStrings(left.join("\x00"), right.join("\x00")));
+		final cycles = new Array<Array<String>>();
+		for (path in walkBlockingCycles(graph)) {
+			final members = [for (id in path) if (known.exists(id)) id];
+			if (members.length > 0)
+				cycles.push(members);
+		}
 		return cycles;
-	}
-
-	static function addEdge(graph:Map<String, Array<String>>, source:String, target:String):Void {
-		var targets = graph.get(source);
-		if (targets == null) {
-			targets = [];
-			graph.set(source, targets);
-		}
-		if (targets.indexOf(target) < 0)
-			targets.push(target);
-	}
-
-	static function compareStrings(left:String, right:String):Int {
-		return left < right ? -1 : left == right ? 0 : 1;
 	}
 }

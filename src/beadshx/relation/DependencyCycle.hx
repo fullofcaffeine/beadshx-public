@@ -70,7 +70,8 @@ function canonicalCyclePaths(graph:Map<String, Array<String>>):Array<Array<Strin
 /**
 	Lists the cycles that one depth-first walk of a blocking graph meets, like upstream DetectCyclesInTx.
 
-	`bd graph check` reports these; `bd dep cycles` uses canonicalCyclePaths instead.
+	`bd graph check` and `ready --explain` report these; `bd dep cycles` uses
+	canonicalCyclePaths instead.
 	Upstream starts the walk from each node in Go map order, which is random, so a
 	cycle with two or more members can start at any of them, and a different start
 	can meet a different set of back edges. This port starts from the nodes in byte

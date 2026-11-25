@@ -3290,9 +3290,11 @@ final class Application {
 
 	/**
 		Upstream runReadyExplain (cmd/bd/ready.go:450-514): the ready set, then
-		GetBlockedIssues, whose failure stops the command. Its blocked list comes
-		from the stored `is_blocked` flag, which only the embedded route reads with
-		Haxe-owned SQL; elsewhere the blocking edges stand in for it.
+		GetBlockedIssues, whose failure stops the command, and DetectCycles, whose
+		failure upstream only logs. Its blocked list comes from the stored
+		`is_blocked` flag and its cycles from the blocking edges of both dependency
+		tables, which only the embedded route reads with Haxe-owned SQL; elsewhere
+		the candidates' blocking edges stand in for both.
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		return switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
@@ -3303,12 +3305,20 @@ final class Application {
 					case ListFailure(message): runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
-						final blocked:Array<BlockedEntry> = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
-							case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE): ReadyExplain.blockedFromEdges(candidates.items);
-							case Failure(message): return runModeAwareFailure(invocation.output, message);
-							case Success(entries): [for (entry in entries) {issue: entry.issue, blockedBy: entry.blockedBy}];
+						final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
+							case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
+								ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
+									ReadyExplain.cyclesFromEdges(candidates.items));
+							case Failure(message):
+								return runModeAwareFailure(invocation.output, message);
+							case Success(entries):
+								final blocked:Array<BlockedEntry> = [for (entry in entries) {issue: entry.issue, blockedBy: entry.blockedBy}];
+								final cycles = switch query.graphCycles(location.path, location.databaseName, invocation.global) {
+									case Success(value): value;
+									case Failure(_): [];
+								};
+								ReadyExplain.build(ready.page.items, candidates.items, blocked, cycles);
 						};
-						final explanation = ReadyExplain.build(ready.page.items, candidates.items, blocked);
 						if (invocation.output == Json)
 							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation, output.usesJsonEnvelope()));
 						else

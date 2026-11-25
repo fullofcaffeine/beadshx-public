@@ -103,7 +103,9 @@ final class Main {
 		equal(fromEdges[0].issue.id, "blocked");
 		// Upstream's GetIssuesByIDsInTx leaves the derived flag out of the blocked records.
 		equal(fromEdges[0].issue.longFields.isBlocked, false);
-		final explanation = ReadyExplain.build([first, ready], candidates, fromEdges);
+		// The stand-in walk keeps edge order and starts from the nodes in byte order.
+		final edgeCycles = ReadyExplain.cyclesFromEdges(candidates);
+		final explanation = ReadyExplain.build([first, ready], candidates, fromEdges, edgeCycles);
 		equal(explanation.ready.length, 2);
 		equal(explanation.ready[0].reason, "no blocking dependencies");
 		equal(explanation.ready[0].resolvedBlockers, null);
@@ -120,7 +122,7 @@ final class Main {
 		final stored = ReadyExplain.build([first], candidates, [
 			{issue: fromEdges[2].issue, blockedBy: ["ghost"]},
 			{issue: fromEdges[0].issue, blockedBy: ["first", "second"]}
-		]);
+		], [["right", "left"], ["first"]]);
 		equal(stored.blocked.length, 2);
 		equal(stored.blocked[0].issue.id, "right");
 		equal(stored.blocked[0].blockedBy[0].id, "ghost");
@@ -128,6 +130,10 @@ final class Main {
 		equal(stored.blocked[0].blockedBy[0].status, "");
 		equal(stored.blocked[1].blockedByCount, 2);
 		equal(stored.blocked[1].blockedBy[1].status, "closed");
+		// Upstream's DetectCycles list keeps its order and each cycle's first member.
+		equal(stored.cycles.length, 2);
+		equal(stored.cycles[0].join(","), "right,left");
+		equal(stored.cycles[1].join(","), "first");
 	}
 
 	static function discoversAndFiltersGatedMolecules():Void {

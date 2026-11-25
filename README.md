@@ -277,7 +277,10 @@ Like upstream, `ready --explain` takes its blocked list from the stored
 dependencies. An issue with the flag names its open blockers, or else its
 parent. An issue with an open blocker but without the flag is not on the
 list. The list is in priority order, then the newest issue first. Upstream
-puts the remaining ties in a random order; `bdhx` puts them in ID order.
+puts the remaining ties in a random order; `bdhx` puts them in ID order. Like
+upstream, `ready --explain` finds its cycles in the `blocks` and
+`conditional-blocks` dependencies of issues and wisps, and a cycle leaves out
+a member that has no issue record.
 
 The flag parser follows cobra and pflag. It finds the command first, so an
 unknown command comes before any flag error. Until it finds the command, it
@@ -422,9 +425,10 @@ Limits:
   the same store error as upstream.
   `types --sections` prints its fixed list in every mode.
 - In a server-mode or proxied workspace, `ready --explain` cannot read the
-  stored `is_blocked` flag yet. Its blocked list then holds each issue that
-  has an open blocker. This list is different from upstream's only when a
-  stored flag does not agree with the dependencies.
+  stored `is_blocked` flag or the full dependency tables yet. Its blocked list
+  then holds each issue that has an open blocker. This list is different from
+  upstream's only when a stored flag does not agree with the dependencies.
+  Its cycles then leave out a cycle through an ID that has no issue record.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
 - Upstream also trusts the macOS Shared folder when it decides whether to
@@ -588,6 +592,11 @@ Limits:
   the link's target in both places.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
+- `ready --explain` and `graph check` find cycles with upstream's walk, which
+  starts at the issues in a random order. So upstream can start a cycle of
+  two or more issues at any one of them, and can list two or more cycles in
+  another order. `bdhx` starts the walk at the issues in the byte order of
+  their IDs, which gives one of upstream's results.
 - For an unknown command, `bdhx` prints no `Did you mean this?` list. Upstream
   lists every command whose name starts with the unknown name, or is at most
   two edits away from it. Most of those commands, such as `gc`, `kv`, `lint`

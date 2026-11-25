@@ -64,7 +64,7 @@ final class SqlGraphReader {
 	static final DEP_TARGET = "COALESCE(depends_on_issue_id, depends_on_wisp_id, depends_on_external)";
 
 	/**
-		The cycles `bd graph check` reports, like upstream DetectCyclesInTx.
+		The cycles `bd graph check` and `ready --explain` report, like upstream DetectCyclesInTx.
 
 		The blocking graph is walked once (see walkBlockingCycles). Each member is read
 		like GetIssueInTx; like upstream, a member whose read fails is left out, and a
