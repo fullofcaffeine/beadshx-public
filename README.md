@@ -90,6 +90,19 @@ include the Git worktree and jj workspace fallbacks of upstream. When `bdhx`
 finds a usage error that upstream finds only in its pre-run or command body,
 it prints no redirect warning before the error.
 
+When the target of a redirect has its own redirect to another workspace,
+upstream warns that it ignores that chain, and its first lookup finds the
+first target. Its later lookups start from the first target and follow that
+target's redirect. Like upstream, every command that reads the database then
+reads the database and the `config.yaml` of the second target, and `info`
+prints the path of that database. The database name comes from the
+redirecting directory, as for one redirect, or else from the `dolt_database`
+of the first target. `where` reports the workspace that its last lookup finds
+from the second target: that target, or the target of its own redirect. The
+origin line names the directory with the redirect, as upstream does. With
+`-C`, the first lookup already starts from the first target. A `--db` path
+selects the first target itself.
+
 Like upstream, `bdhx` has an agent mode for output that AI agents read.
 `BD_AGENT_MODE=1` or any `CLAUDE_CODE` value that is not empty turns it on,
 also from the `.beads/.env` file. In agent mode, the flat `list` view
@@ -234,9 +247,11 @@ shared-server notice or `.beads/metadata.json` warning, also with `--json`.
 pages, give it as the path gives it, for example `.` for `--db .beads` when
 `.beads` has no `metadata.json`. For a command that reads the database, a
 `BEADS_DB` path gives the absolute path. When `.beads` is a symbolic link,
-the second setup of such a command names the target. When a `db` setting
-selects the directory of `where`, its second setup names the absolute path.
-`bdhx` only reads the mode; it does not change it.
+the second setup of such a command names the target, and so does the second
+setup of `where`, which then prints the target as the workspace path. With
+`-C`, both setups of `where`, `version` and help pages name the target. When a `db` setting selects the directory of `where`, its
+second setup names the absolute path. `bdhx` only reads the mode; it does not
+change it.
 
 Each command takes the issue prefix from the same source as upstream. `where`
 prints `issue-prefix` from `.beads/config.yaml`, or else `issue_prefix` from
@@ -452,9 +467,10 @@ Limits:
   workspace in that folder it prints the redirect warning two times fewer than
   upstream.
 - When the target of a redirect has its own redirect to another workspace,
-  upstream warns that it ignores that chain. But its later lookups follow the
-  second redirect, so upstream's `where` and `info` name the database of that
-  other workspace. `bdhx` names the database of the first target.
+  upstream also loads the `.env` file of that second target when it sets it
+  up. `bdhx` loads only the `.env` file of the first target. For a chain of
+  four redirects, upstream's `where` prints the database of the third
+  target; `bdhx` prints the database of the fourth target.
 - `snapshot` reads embedded workspaces only. In a server-mode, shared-server
   or proxied workspace and with `--global`, it reports that it is not
   available yet, before it opens anything.
@@ -606,9 +622,6 @@ Limits:
   the embedded database, and a `.beads/dolt` directory makes upstream refuse
   the workspace as a legacy Dolt workspace. `bdhx` prints the native open
   error in both cases. Like upstream, `where` prints that data directory.
-- When `.beads` is a symbolic link, `where` prints the link as the workspace
-  path, and its second permissions warning names the link. Upstream prints
-  the link's target in both places.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 - `ready --explain` and `graph check` find cycles with upstream's walk, which

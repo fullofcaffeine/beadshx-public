@@ -435,10 +435,9 @@ final class Application {
 	/**
 		The directory that BEADS_DIR names when the body of upstream's `where`
 		looks its workspace up for the last time (resolveWhereBeadsDir,
-		cmd/bd/where.go:54), when that differs from the workspace that this
-		build's discovery finds for the command's selection: the directory of
-		its second setup for a `db` setting (see prepareNoStoreWorkspace).
-		Null otherwise.
+		cmd/bd/where.go:54): the directory of its second setup (see
+		prepareNoStoreWorkspace). Null when a --db, BEADS_DB or BD_DB path
+		selects the workspace, which that lookup derives from the path again.
 	**/
 	var whereBeadsDir:Null<String> = null;
 
@@ -933,8 +932,10 @@ final class Application {
 		loadSelectedConfig for the workspace at `location` that a command which
 		opens a store takes, set up `initializations` times (see
 		storeInitializations). The first setup names the directory as upstream
-		selects it (see WorkspaceEnvironment.storeSetupDirectory). The second
-		comes after upstream binds the database (see boundSetupDirectory).
+		selects it (see WorkspaceEnvironment.storeSetupDirectory): for the
+		target of a found directory's redirect, the found directory, unless -C
+		selected it (see discoverStoreWorkspace). The second comes after
+		upstream binds the database (see boundSetupDirectory).
 
 		Without a --db path upstream first looks up the redirecting workspace
 		(GetRedirectInfo and preserveRedirectSourceDatabase, cmd/bd/main.go:1210)
@@ -943,9 +944,9 @@ final class Application {
 		`bindsDatabase`; a metadata.json that does not load stops it before.
 	**/
 	function loadStoreConfig(invocation:Invocation, location:WorkspaceLocation, initializations:Int, bindsDatabase:Bool):LayeredConfig {
-		final setups = [
-			WorkspaceEnvironment.storeSetupDirectory(invocation.databaseVariable, location.path)
-		];
+		final found = location.foundPath;
+		final first = found != null && invocation.directory == "" ? found : location.path;
+		final setups = [WorkspaceEnvironment.storeSetupDirectory(invocation.databaseVariable, first)];
 		if (initializations > 1)
 			setups.push(boundSetupDirectory(location));
 		if (databaseFlagSelectsPath(invocation))
@@ -963,9 +964,13 @@ final class Application {
 		proxied-server workspace, for a workspace without metadata.json whose
 		host implies server mode, and when FindDatabasePath finds no path, as
 		for a backend that upstream does not support. So a `.beads` directory
-		that is a symbolic link has its target's name here.
+		that is a symbolic link has its target's name here. For the target of
+		a found directory's redirect (see discoverStoreWorkspace), the path
+		is that target: FindDatabasePath followed one redirect to it.
 	**/
 	static function boundSetupDirectory(location:WorkspaceLocation):String {
+		if (location.foundPath != null)
+			return location.path;
 		final bindsDirectory = location.proxiedServer || location.databasePath == "" || switch readMetadataFields(location.path) {
 			case MetadataAbsent: LayeredConfig.forWorkspace(location.path).hostImpliesServerMode();
 			case MetadataFields(_) | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly: false;
@@ -977,18 +982,22 @@ final class Application {
 		loadSelectedConfig for the directory that `where`, `version` and help
 		pages set up (see noStoreBeadsDir), when upstream selects one. When
 		`where` sets it up again, upstream's pre-run has set BEADS_DIR to it.
-		Then a --db, BEADS_DB or BD_DB path still names the same directory, but
-		a `db` setting no longer does: upstream's FindBeadsDir finds the
-		directory through BEADS_DIR and names it by its absolute path, and
-		`where` reports the workspace there (see whereBeadsDir). It would also
-		name the target of a `.beads` directory that is a symbolic link, which
-		this build's `where` names by the link, without the native discovery
-		that this costs.
+		Then a --db, BEADS_DB or BD_DB path still names the same directory.
+		Otherwise upstream's FindBeadsDir finds the directory through BEADS_DIR
+		(see findThroughBeadsDir): by its absolute path for a `db` setting, by
+		its target for a `.beads` symbolic link, and the target of its redirect
+		when it has one that FollowRedirect follows. `where` reports the
+		workspace that it finds from there (see whereBeadsDir). With -C,
+		BEADS_DIR names the -C workspace before the pre-run looks up, so its
+		first setup takes that directory too.
 	**/
 	function prepareNoStoreWorkspace(invocation:Invocation, initializations:Int):Void {
 		// Upstream selectedNoDBBeadsDir looks the directory up first (cmd/bd/main.go:1156), and `where` again before its second setup (where.go:50).
 		noStoreLookups(invocation);
-		final beadsDir = noStoreBeadsDir(invocation);
+		final pathSelects = WorkspaceEnvironment.noStorePathSelects({directory: invocation.directory, databasePath: invocation.databasePath});
+		var beadsDir = noStoreBeadsDir(invocation);
+		if (beadsDir != "" && !pathSelects && invocation.directory != "")
+			beadsDir = findThroughBeadsDir(invocation, beadsDir);
 		if (beadsDir == "") {
 			// Without a directory BEADS_DIR stays unset: loadEnvironment and loadServerModeFromConfig look again (:1160-1161, :419, :493), and so does the pre-run (:1170).
 			if (!lookups.beadsDirSet()) {
@@ -1002,15 +1011,36 @@ final class Application {
 		}
 		final setups = [beadsDir];
 		if (initializations > 1) {
-			final settingSelects = databaseSettingSelects(invocation);
-			final again = settingSelects ? WorkspaceEnvironment.findWithBeadsDir(workspace, beadsDir) : beadsDir;
+			final again = pathSelects ? beadsDir : findThroughBeadsDir(invocation, beadsDir);
 			if (again != "") {
 				setups.push(again);
-				if (settingSelects)
+				if (!pathSelects)
 					whereBeadsDir = again;
 			}
 		}
 		loadSelectedConfig(beadsDir, setups, initializations > 1 ? () -> noStoreLookups(invocation) : null);
+	}
+
+	/**
+		Upstream FindBeadsDir while BEADS_DIR names `beadsDir`, the directory
+		that a setup of `where`, `version` or help pages bound (see
+		prepareNoStoreWorkspace), or "" when it finds none.
+
+		Why: upstream's later lookups through BEADS_DIR canonicalize that
+		directory and follow its redirect (internal/beads/beads.go:759-770),
+		which the first lookup may have ignored as a chain.
+		What: for a directory that discovery found, the target of its redirect
+		when FollowRedirect follows it, or else its canonical path; discovery
+		only finds a directory with project files. For a `db` setting, whose
+		path need not name a workspace, the native discovery's answer.
+		How: only a `db` setting costs a native discovery.
+	**/
+	function findThroughBeadsDir(invocation:Invocation, beadsDir:String):String {
+		if (databaseSettingSelects(invocation))
+			return WorkspaceEnvironment.findWithBeadsDir(workspace, beadsDir);
+		final canonical = RedirectSource.canonicalizePath(beadsDir);
+		final target = RedirectSource.followedTarget(canonical);
+		return target != null ? target : canonical;
 	}
 
 	/**
@@ -1212,7 +1242,8 @@ final class Application {
 				// Then it looks for the database (FindDatabasePath, :79).
 				lookups.findDatabasePath();
 				final prefix = wherePrefix(location);
-				final redirectedFrom = RedirectSource.whereOrigin(location.path);
+				final bound = whereBeadsDir;
+				final redirectedFrom = RedirectSource.whereOrigin(bound != null ? bound : location.path, location.path);
 				switch invocation.output {
 					case Human: output.writeStdout(renderWhereHuman(location, prefix, redirectedFrom));
 					case Json: writeJsonStdout(renderWhereJson(location, prefix, redirectedFrom));
@@ -1242,18 +1273,49 @@ final class Application {
 
 	/**
 		The workspace that upstream's `where` reports: the one that its last
-		lookup finds through BEADS_DIR (see whereBeadsDir), or else the one
-		that this build's discovery finds for the command's selection.
+		lookup finds through BEADS_DIR (see whereBeadsDir), or else, for a
+		database path, the one that this build's discovery finds for it.
+
+		That lookup canonicalizes BEADS_DIR's directory and follows its
+		redirect. When that directory is the canonical path of the workspace
+		that discovery found for the selection, it is the same workspace,
+		which `where` names by that path, as for a `.beads` symbolic link,
+		without another native discovery. Otherwise, as for a redirect chain
+		or a `db` setting, discovery runs again with BEADS_DIR naming the
+		directory.
 	**/
 	function whereWorkspace(invocation:Invocation):WorkspaceDiscovery {
+		final selected = workspace.discover(invocation.directory, invocation.databasePath);
 		final bound = whereBeadsDir;
-		if (bound != null)
-			return WorkspaceEnvironment.discoverWithBeadsDir(workspace, bound);
-		return workspace.discover(invocation.directory, invocation.databasePath);
+		if (bound == null)
+			return selected;
+		switch selected {
+			case Found(location) if (location.path == bound):
+				return selected;
+			case Found(location) if (!databaseSettingSelects(invocation) && RedirectSource.canonicalizePath(location.path) == bound):
+				return Found(relocated(location, bound, location.databaseName, location.foundPath));
+			case Found(_) | NotFound | InvalidSelection(_):
+		}
+		return WorkspaceEnvironment.discoverWithBeadsDir(workspace, bound);
+	}
+
+	/** `location` with another path, database name and found directory (see WorkspaceLocation.foundPath). */
+	static function relocated(location:WorkspaceLocation, path:String, databaseName:String, foundPath:Null<String>):WorkspaceLocation {
+		return {
+			path: path,
+			yamlPrefix: location.yamlPrefix,
+			databasePath: location.databasePath,
+			databaseName: databaseName,
+			databaseMissing: location.databaseMissing,
+			proxiedServer: location.proxiedServer,
+			listLimitConfigured: location.listLimitConfigured,
+			listLimit: location.listLimit,
+			foundPath: foundPath
+		};
 	}
 
 	function runInfo(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
@@ -1322,7 +1384,7 @@ final class Application {
 	}
 
 	function runPing(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
@@ -1351,7 +1413,7 @@ final class Application {
 
 	function runStatus(invocation:Invocation):Int {
 		final assignee = invocation.statusAssigned ? actor.resolve(invocation.actor) : "";
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
@@ -1374,7 +1436,7 @@ final class Application {
 	}
 
 	function runShow(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message):
 				runStoreFailure(message);
 			case NotFound:
@@ -1410,7 +1472,7 @@ final class Application {
 	}
 
 	function runList(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -1452,7 +1514,7 @@ final class Application {
 	}
 
 	function runDepList(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -1524,7 +1586,7 @@ final class Application {
 	}
 
 	function runDepCycles(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -1614,7 +1676,7 @@ final class Application {
 	}
 
 	function runDepTree(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -1845,7 +1907,7 @@ final class Application {
 	}
 
 	function runGraphCheck(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -1919,7 +1981,7 @@ final class Application {
 	}
 
 	function runGraph(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -2265,7 +2327,7 @@ final class Application {
 
 	/** Opens the selected workspace's query like `bd blocked`, runs `action` with it, then closes it. */
 	function runWithIssueQuery(invocation:Invocation, action:(IssueQueryPort, WorkspaceLocation) -> Int):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -2339,7 +2401,7 @@ final class Application {
 	}
 
 	function runBlocked(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -2406,7 +2468,7 @@ final class Application {
 	}
 
 	function runComments(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -2547,7 +2609,7 @@ final class Application {
 	function runSnapshot(invocation:Invocation):Int {
 		if (invocation.global)
 			return runModeAwareFailure(OutputMode.Human, TaskSnapshot.ROUTE_UNAVAILABLE);
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -2935,7 +2997,7 @@ final class Application {
 			?runsWithoutDatabase:WorkspaceLocation->Bool):Int {
 		// run printed this load's failure before the command started.
 		final startup = LayeredConfig.atStartup();
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound:
 				storeLookupsWithoutWorkspace();
@@ -3010,7 +3072,7 @@ final class Application {
 	}
 
 	function runLabel(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -3175,7 +3237,7 @@ final class Application {
 	}
 
 	function runCount(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -3201,7 +3263,7 @@ final class Application {
 	}
 
 	function runReady(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -3480,7 +3542,7 @@ final class Application {
 	}
 
 	function runSearch(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -3533,7 +3595,7 @@ final class Application {
 	}
 
 	function runQuery(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -3702,7 +3764,7 @@ final class Application {
 	}
 
 	function runStale(invocation:Invocation):Int {
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -3762,7 +3824,7 @@ final class Application {
 	function runOrphans(invocation:Invocation):Int {
 		if (invocation.orphansFix)
 			return runModeAwareFailure(invocation.output, "operation 'orphans --fix' is not allowed in read-only mode");
-		return switch workspace.discover(invocation.directory, invocation.databasePath) {
+		return switch discoverStoreWorkspace(invocation) {
 			case InvalidSelection(message): runStoreFailure(message);
 			case NotFound: runDatabaseNotFoundWithoutWorkspace();
 			case Found(location):
@@ -6794,6 +6856,66 @@ final class Application {
 	}
 
 	/**
+		The workspace that upstream's pre-run binds for a command that opens a
+		store.
+
+		Why: without a --db path, upstream sets BEADS_DIR to the workspace that
+		FindBeadsDir finds (cmd/bd/main.go:1214-1219) before FindDatabasePath
+		looks for the database through it (:1250). When that workspace has a
+		redirect of its own to a workspace with project files, FindBeadsDir
+		ignored that chain with a warning, but FindDatabasePath follows that
+		redirect (internal/beads/beads.go:552), and the pre-run binds the
+		second target (:1316-1317): it reads that workspace's config and its
+		database. With -C, BEADS_DIR names the -C workspace before FindBeadsDir
+		runs, which then already finds the second target.
+		What: the second target's workspace, which keeps the directory that
+		discovery found as its `foundPath`, or else the workspace that
+		discovery finds. Upstream binds the found directory itself when its
+		metadata routes it as the database (:1223-1240, see followsToDatabase).
+		How: one more native discovery, with BEADS_DIR naming the found
+		directory, only when FollowRedirect follows that directory's redirect.
+	**/
+	function discoverStoreWorkspace(invocation:Invocation):WorkspaceDiscovery {
+		final discovery = workspace.discover(invocation.directory, invocation.databasePath);
+		final found = switch discovery {
+			case Found(location): location;
+			case NotFound | InvalidSelection(_): return discovery;
+		};
+		if (databasePathSelected(invocation, found)
+			|| RedirectSource.followedTarget(RedirectSource.canonicalizePath(found.path)) == null
+			|| !followsToDatabase(found))
+			return discovery;
+		return switch WorkspaceEnvironment.discoverWithBeadsDir(workspace, found.path) {
+			case Found(target) if (target.path != found.path):
+				Found(relocated(target, target.path, found.databaseName, found.path));
+			case Found(_) | NotFound | InvalidSelection(_):
+				discovery;
+		};
+	}
+
+	/**
+		Whether upstream's pre-run looks for the database through the
+		workspace that it found (cmd/bd/main.go:1223-1250), which follows that
+		workspace's redirect, instead of binding the workspace itself: not for
+		a proxied server, a metadata.json that does not load or names a
+		backend other than Dolt, or a server host that implies server mode
+		without metadata.json.
+	**/
+	static function followsToDatabase(location:WorkspaceLocation):Bool {
+		if (location.proxiedServer)
+			return false;
+		final backend = switch readMetadataFields(location.path) {
+			case MetadataFields(fields):
+				metadataField(fields, "backend");
+			case MetadataAbsent:
+				return !LayeredConfig.forWorkspace(location.path).hostImpliesServerMode();
+			case MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				return false;
+		};
+		return backend == "" || backend == "dolt";
+	}
+
+	/**
 		Upstream's pre-run, in shared-server mode, creates the shared server's
 		directory under HOME (`~/.beads/shared-server/dolt`) and a
 		circuit-breaker file under TMPDIR, then fails to reach the server. It
@@ -7011,9 +7133,11 @@ final class Application {
 
 		Without a --db path, upstream keeps the dolt_database of the workspace
 		that GetRedirectInfo names when its redirect is followed: it sets
-		BEADS_DOLT_SERVER_DATABASE, which every later store open reads. This
-		does the same (RedirectSource), so the readers and the native facade
-		open that database.
+		BEADS_DOLT_SERVER_DATABASE, which every later store open reads. When
+		that sets none, the setup of a found directory whose own redirect
+		upstream follows keeps that directory's dolt_database (see
+		discoverStoreWorkspace). This does the same (RedirectSource), so the
+		readers and the native facade open that database.
 
 		Upstream refuses a name that is not an identifier before it reads or
 		creates anything, and so does this, with upstream's words: those of its
@@ -7030,9 +7154,11 @@ final class Application {
 		}
 		final path = commandPath(invocation.command);
 		var selected = resolveEmbeddedDatabaseName(location.path, "");
+		final found = location.foundPath;
 		if (environmentValue("BEADS_DOLT_SERVER_DATABASE") == "" && !databaseFlagSelectsPath(invocation)) {
 			// Upstream's BEADS_DIR at this point: the workspace that -C selects, or the variable.
-			switch RedirectSource.lookup(invocation.directory != "" ? location.path : environmentValue("BEADS_DIR")) {
+			final selection = found != null ? found : location.path;
+			switch RedirectSource.lookup(invocation.directory != "" ? selection : environmentValue("BEADS_DIR")) {
 				case RedirectedFrom(localDir):
 					final source = redirectSourceDatabase(localDir);
 					if (source != "") {
@@ -7042,6 +7168,14 @@ final class Application {
 				case NotRedirected:
 				case RedirectUnknown:
 					return ModeAwareFailure('${path} is not available yet when a redirect involves a detached commit worktree in this build');
+			}
+		}
+		// The setup of a found directory whose redirect upstream follows keeps that directory's dolt_database too (main.go:603).
+		if (found != null && invocation.directory == "" && environmentValue("BEADS_DOLT_SERVER_DATABASE") == "") {
+			final source = redirectSourceDatabase(found);
+			if (source != "") {
+				RedirectSource.preserveSourceDatabase(source);
+				selected = source;
 			}
 		}
 		final strict = strictReadonly(invocation, LayeredConfig.forWorkspace(location.path));

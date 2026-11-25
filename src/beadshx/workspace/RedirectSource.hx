@@ -92,19 +92,20 @@ final class RedirectSource {
 
 	/**
 		Upstream where's findOriginalBeadsDir (cmd/bd/where.go:146-190), with
-		BEADS_DIR bound to `beadsDir`, the workspace that `where` reports, and
-		where's comparison with that workspace (:69-72): the `.beads` directory
-		that redirected to it, or "".
+		BEADS_DIR bound to `boundBeadsDir`, and where's comparison with
+		`beadsDir`, the workspace that `where` reports (:69-72): the `.beads`
+		directory that redirected to it, or "".
 
-		Why: the pre-run binds BEADS_DIR to the redirect target, so for a target
-		that has a redirect of its own, a chain that upstream does not follow,
-		BEADS_DIR names that target and `where` reports no origin.
+		Why: the setups of `where` bind BEADS_DIR to the directory that its
+		last lookup starts from. When that directory has a redirect of its
+		own, which the lookup follows, upstream names that directory as the
+		origin of the workspace that it reports.
 		What: BEADS_DIR's directory when it has a redirect file, else the first
 		`.beads` directory above the current directory when that one has one;
 		"" when that directory is `beadsDir` itself. How: it only reads.
 	**/
-	public static function whereOrigin(beadsDir:String):String {
-		final bound = canonicalizePath(beadsDir);
+	public static function whereOrigin(boundBeadsDir:String, beadsDir:String):String {
+		final bound = canonicalizePath(boundBeadsDir);
 		if (ConfigProbes.statSucceeds(FilepathPkg.join(bound, "redirect")))
 			return bound == beadsDir ? "" : bound;
 		final directory = FilepathPkg.clean(Sys.getCwd());
@@ -187,6 +188,18 @@ final class RedirectSource {
 			case DetachedTarget: null;
 			case Target(target): isDirectory(target) && hasBeadsProjectFiles(target) ? target : beadsDir;
 		};
+	}
+
+	/**
+		The directory that upstream FollowRedirect returns for `beadsDir` when
+		that is another directory: the target of its redirect file, which has
+		project files. Null when FollowRedirect returns `beadsDir` itself, and
+		for a target in a detached commit worktree, which this build does not
+		follow.
+	**/
+	public static function followedTarget(beadsDir:String):Null<String> {
+		final target = followRedirect(beadsDir);
+		return target == null || target == beadsDir ? null : target;
 	}
 
 	/**

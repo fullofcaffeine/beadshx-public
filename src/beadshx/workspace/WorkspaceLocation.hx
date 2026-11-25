@@ -18,4 +18,12 @@ typedef WorkspaceLocation = {
 	final proxiedServer:Bool;
 	final listLimitConfigured:Bool;
 	final listLimit:Int;
+
+	/**
+		The `.beads` directory that discovery found when a command that opens
+		a store binds the target of that directory's own redirect (`path`)
+		instead, as upstream's later lookups through BEADS_DIR do; null when
+		the command binds the directory that discovery found.
+	**/
+	final ?foundPath:String;
 }

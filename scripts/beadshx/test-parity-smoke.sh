@@ -3346,6 +3346,95 @@ real_database_setup=redirect_only_to_missing_target
 compare_real_database redirect-only-broken-count exact count
 compare_real_database redirect-only-broken-where exact where
 compare_real_database redirect-only-broken-version stderr-only version
+# When the redirect target has its own redirect to a workspace, FindBeadsDir warns that it ignores that chain
+# and finds the first target. But once the pre-run sets BEADS_DIR to it, the later lookups follow its redirect:
+# a command that opens a store binds and reads the second target's database, and the body of where reports
+# the workspace that it finds through the second target. With -C, BEADS_DIR names the first target before the
+# pre-run looks up, so both setups take the second target. A --db path selects the first target. Each copy of
+# the issue has its own title, so each read shows which database it opened.
+rename_parity_issue() {
+	printf "UPDATE issues SET title = '%s', updated_at = updated_at WHERE id = '%s'\n" "$2" "$real_database_issue_id" |
+		"$fixture_sql" "$1/work" >/dev/null
+}
+# Rewrites the dolt_database of the metadata.json file $2 in place, so the file keeps its mode.
+set_fixture_database() {
+	jq --arg name "$3" '.dolt_database = $name' "$2" >"$1/metadata.json"
+	cat "$1/metadata.json" >"$2"
+	rm -f "$1/metadata.json"
+}
+# The workspace moves to the first target, sub, after a copy of it went to the second target, final.
+copy_first_redirect_target() {
+	mkdir "$1/work/sub" "$1/work/final"
+	copy_fixture_tree "$1/work/.beads" "$1/work/sub/.beads"
+}
+link_redirect_chain() {
+	mv -f "$1/work/.beads" "$1/work/final/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+	printf '../final/.beads\n' >"$1/work/sub/.beads/redirect"
+}
+redirect_chain_to_workspace() {
+	copy_first_redirect_target "$1"
+	rename_parity_issue "$1" 'Second target title'
+	link_redirect_chain "$1"
+}
+# The first target names the database `other`, which upstream keeps across its redirect: it reads the
+# second target's `other`, whose copy of the issue has a third title.
+redirect_chain_with_source_database() {
+	copy_fixture_tree "$1/work/.beads/embeddeddolt/test" "$1/work/.beads/embeddeddolt/other"
+	copy_first_redirect_target "$1"
+	rename_parity_issue "$1" 'Second target title'
+	set_fixture_database "$1" "$1/work/.beads/metadata.json" other
+	rename_parity_issue "$1" 'Source database title'
+	set_fixture_database "$1" "$1/work/.beads/metadata.json" test
+	link_redirect_chain "$1"
+	set_fixture_database "$1" "$1/work/sub/.beads/metadata.json" other
+}
+# The second target redirects again, to a third workspace: a command that opens a store reads the second
+# target's database, and where reports the third workspace.
+redirect_chain_of_three() {
+	mkdir "$1/work/sub" "$1/work/final" "$1/work/third"
+	copy_fixture_tree "$1/work/.beads" "$1/work/sub/.beads"
+	rename_parity_issue "$1" 'Second target title'
+	copy_fixture_tree "$1/work/.beads" "$1/work/final/.beads"
+	rename_parity_issue "$1" 'Third target title'
+	mv -f "$1/work/.beads" "$1/work/third/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+	printf '../final/.beads\n' >"$1/work/sub/.beads/redirect"
+	printf '../third/.beads\n' >"$1/work/final/.beads/redirect"
+}
+real_database_setup=redirect_chain_to_workspace
+compare_real_database chain-to-workspace-where exact where
+compare_real_database chain-to-workspace-where-json exact where --json
+compare_real_database chain-to-workspace-info-json exact info --json
+compare_real_database chain-to-workspace-count exact count
+compare_real_database chain-to-workspace-list-json exact list --json
+compare_real_database chain-to-workspace-show exact show "$real_database_issue_id"
+compare_real_database chain-to-workspace-config-get exact config get issue_prefix
+compare_real_database chain-to-workspace-version stderr-only version
+compare_real_database chain-to-workspace-change-directory-where exact -C . where
+compare_real_database chain-to-workspace-change-directory-list-json exact -C . list --json
+compare_real_database chain-to-workspace-db-flag-list-json exact --db sub/.beads/embeddeddolt list --json
+real_database_extra_env=('BEADS_DIR=<work>/.beads')
+compare_real_database chain-to-workspace-beads-dir-where exact where
+compare_real_database chain-to-workspace-beads-dir-list-json exact list --json
+real_database_extra_env=('BEADS_DIR=<work>/sub/.beads')
+compare_real_database chain-to-workspace-first-target-beads-dir-where exact where
+real_database_extra_env=(BD_DEBUG_ROUTING=1)
+compare_real_database routed-chain-to-workspace-where exact where
+compare_real_database routed-chain-to-workspace-count exact count
+compare_real_database routed-chain-to-workspace-info-json exact info --json
+compare_real_database routed-chain-to-workspace-change-directory-where exact -C . where
+real_database_setup=redirect_chain_with_source_database
+compare_real_database routed-chain-source-database-list-json exact list --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database chain-source-database-show-json exact show "$real_database_issue_id" --json
+compare_real_database chain-source-database-where exact where
+real_database_setup=redirect_chain_of_three
+compare_real_database chain-of-three-where exact where
+compare_real_database chain-of-three-list-json exact list --json
+compare_real_database chain-of-three-info-json exact info --json
 real_database_setup=""
 # Without metadata.json upstream warns and then creates `beads` when the embedded store lacks it, also
 # when BEADS_DOLT_SERVER_DATABASE names the fixture's database, which upstream ignores there. This build
@@ -6559,6 +6648,12 @@ link_beads_directory() {
 }
 real_database_setup=link_beads_directory
 compare_real_database beads-mode-link-version stderr-only version
+# The body of where finds the workspace through BEADS_DIR, which names the link: its second setup and
+# the path it prints name the target. With -C, BEADS_DIR names the link before the pre-run, so both setups
+# name the target.
+compare_real_database beads-mode-link-where exact where
+compare_real_database beads-mode-link-where-json exact where --json
+compare_real_database beads-mode-link-change-directory-where exact -C . where
 # Upstream also writes here: it creates a gate lock beside the link's target, which bdhx does not take.
 real_database_read_only=""
 compare_real_database beads-mode-link-count exact count
