@@ -93,6 +93,10 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedCustomConfigReader.readSettings(beadsDir, databaseName);
 	}
 
+	public function issueTotal(beadsDir:String, databaseName:String):Null<StoreResult<Int>> {
+		return EmbeddedCustomConfigReader.readIssueTotal(beadsDir, databaseName);
+	}
+
 	public function taskSnapshot(beadsDir:String, databaseName:String):Null<StoreResult<String>> {
 		return EmbeddedTaskSnapshotReader.read(beadsDir, databaseName);
 	}

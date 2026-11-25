@@ -70,5 +70,8 @@ interface IssueQueryPort extends QueryTimePort {
 	/** Every config table row, as `bd config list` reads them before it filters and sorts. */
 	function configSettings(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>;
 
+	/** The number of rows of the issues table, upstream GetStatistics' TotalIssues, for the note of contributor auto-routing. */
+	function issueTotal(beadsDir:String, databaseName:String, global:Bool):StoreResult<Int>;
+
 	function close():StoreResult<Bool>;
 }

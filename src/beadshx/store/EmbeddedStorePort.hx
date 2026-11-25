@@ -34,6 +34,7 @@ interface EmbeddedStorePort {
 	function customStatuses(beadsDir:String, databaseName:String):Null<StoreResult<CustomConfig.DatabaseCustomStatuses>>;
 	function configValue(beadsDir:String, databaseName:String, key:String):Null<StoreResult<String>>;
 	function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>>;
+	function issueTotal(beadsDir:String, databaseName:String):Null<StoreResult<Int>>;
 
 	/** The whole `TaskSnapshot` artifact, read in one read transaction. */
 	function taskSnapshot(beadsDir:String, databaseName:String):Null<StoreResult<String>>;

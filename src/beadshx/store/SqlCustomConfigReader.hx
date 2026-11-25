@@ -127,6 +127,27 @@ final class SqlCustomConfigReader {
 		return rowError == null ? Success(settings) : Failure(rowError.toString());
 	}
 
+	/**
+		Upstream ScanIssueCountsInTx's TotalIssues: every row of the issues table.
+		Upstream prints it in the note of contributor auto-routing, and drops it
+		when the read fails.
+	**/
+	public static function readIssueTotal(context:Context, transaction:Tx):StoreResult<Int> {
+		final queried = transaction.queryContext(context, "SELECT COUNT(*) FROM issues");
+		if (queried.value2 != null)
+			return Failure('scan issue counts: ${queried.value2.toString()}');
+		final rows = queried.value1;
+		if (!rows.next()) {
+			final rowError = rows.err();
+			rows.close();
+			return Failure('scan issue counts: ${rowError == null ? "no rows in result set" : rowError.toString()}');
+		}
+		final total = go.NativePointer.of(0);
+		final scanError = rows.scan(total);
+		rows.close();
+		return scanError == null ? Success(total.get()) : Failure('scan issue counts: ${scanError.toString()}');
+	}
+
 	/** Upstream GetConfigInTx: an empty string for a missing key, or null for a failed read. */
 	static function readConfigValue(context:Context, transaction:Tx, key:String):Null<String> {
 		final queried = transaction.queryContext(context, "SELECT value FROM config WHERE `key` = ?", key);

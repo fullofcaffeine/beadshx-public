@@ -5858,6 +5858,142 @@ expect_candidate_failure graph-auto-route-database-default-unported \
 	'{"error":"loading all issues: graph of an issue with a dependency on another repository is not available yet in this build","schema_version":1}' "" \
 	"$graph_route_sql
 INSERT INTO config (\`key\`, value) VALUES ('routing.default', '../planning')" graph --all --json
+# show (also --short, --refs, --children, --thread and --watch), comments, dep list and dep tree look
+# an ID up as graph does (resolveAndGetIssueWithRouting, cmd/bd/routed.go:70-96). An ID that this
+# database does not hold tries the routes.jsonl prefix routes and then contributor auto-routing.
+# Where upstream would open another repository for the lookup, bdhx refuses the whole command before
+# it prints an issue. A route whose path names this workspace again (".", "./" or "../work"), or a
+# routed workspace without a dolt_database, reads no other store, so upstream reports the same miss.
+routed_lookup_refusal="of an issue in another repository is not available yet in this build"
+real_database_setup=write_graph_routes
+graph_routes=$'{"prefix":"other-","path":"."}\n{"prefix":"other-","path":"rig"}\n'
+graph_rig_metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"rig"}'
+compare_real_database routed-show-route-to-current exact show other-f1
+graph_routes=$'{"prefix":"other-","path":"./"}\n'
+compare_real_database routed-show-route-to-same-workspace-json exact show other-f1 --json
+graph_routes=$'{"prefix":"other-","path":"../work"}\n'
+compare_real_database routed-dep-tree-route-to-same-workspace exact dep tree other-f1
+graph_routes=$'{"prefix":"other-","path":"rig"}\n'
+graph_rig_metadata='{"backend":"dolt","dolt_mode":"embedded"}'
+compare_real_database routed-comments-route-without-database exact comments other-f1
+# A route for this workspace's own prefix: an ID that this database holds is never routed.
+graph_routes=$'{"prefix":"test-","path":"rig"}\n'
+graph_rig_metadata='{"backend":"dolt","dolt_mode":"embedded","dolt_database":"rig"}'
+compare_real_database routed-show-found-locally exact show "$real_database_issue_id" --short
+compare_real_database routed-dep-list-found-locally-json exact dep list "$real_database_issue_id" --json
+real_database_setup=""
+candidate_only_setup=write_graph_routes
+expect_candidate_failure routed-show-own-prefix-unported "" "Error: show $routed_lookup_refusal" "" show test-missing
+graph_routes=$'{"prefix":"other-","path":"rig"}\n'
+expect_candidate_failure routed-show-prefix-route-json-unported \
+	"{\"error\":\"show $routed_lookup_refusal\",\"schema_version\":1}" "" "" show other-f1 --json
+expect_candidate_failure routed-show-batch-unported "" "Error: show $routed_lookup_refusal" "" \
+	show "$real_database_issue_id" other-f1
+expect_candidate_failure routed-show-batch-after-miss-unported "" \
+	$'Error fetching test-missing: no issue found matching "test-missing"\n'"Error: show $routed_lookup_refusal" "" \
+	show test-missing other-f1
+expect_candidate_failure routed-show-short-unported "" "Error: show $routed_lookup_refusal" "" show other-f1 --short
+expect_candidate_failure routed-show-refs-unported "" "Error: show $routed_lookup_refusal" "" show --refs other-f1
+expect_candidate_failure routed-show-children-json-unported \
+	"{\"error\":\"show $routed_lookup_refusal\",\"schema_version\":1}" "" "" show --children other-f1 --json
+expect_candidate_failure routed-show-thread-unported "" "Error: show $routed_lookup_refusal" "" show --thread other-f1
+expect_candidate_failure routed-show-watch-unported "" "Error: show $routed_lookup_refusal" "" show --watch other-f1
+expect_candidate_failure routed-comments-unported "" "Error: comments $routed_lookup_refusal" "" comments other-f1
+expect_candidate_failure routed-comments-json-unported \
+	"{\"error\":\"comments $routed_lookup_refusal\",\"schema_version\":1}" "" "" comments other-f1 --json
+expect_candidate_failure routed-dep-list-unported "" "Error: dep list $routed_lookup_refusal" "" dep list other-f1
+expect_candidate_failure routed-dep-list-batch-json-unported \
+	"{\"error\":\"dep list $routed_lookup_refusal\",\"schema_version\":1}" "" "" \
+	dep list "$real_database_issue_id" other-f1 --json
+expect_candidate_failure routed-dep-tree-json-unported \
+	"{\"error\":\"dep tree $routed_lookup_refusal\",\"schema_version\":1}" "" "" dep tree other-f1 --json
+candidate_only_setup=""
+graph_routes=""
+graph_rig_metadata=""
+# list, ready and children read the store that contributor auto-routing selects
+# (openRoutedReadStore, cmd/bd/routing_read.go:158-175), and print a note on stderr unless --quiet.
+# A lookup that misses tries the same store. Where that store is another repository, bdhx refuses;
+# upstream's --gated, --mol and --explain views of ready, and an ID that this database holds, read no
+# other store. The planning repository here does not exist: upstream would fail to open it.
+routed_list_refusal="of a planning store in another repository is not available yet in this build"
+routed_contributor_elsewhere() {
+	printf 'routing:\n  mode: auto\n  contributor: ../planning\n' >>"$1/work/.beads/config.yaml"
+	git -C "$1/work" config beads.role contributor
+}
+real_database_setup=routed_contributor_elsewhere
+compare_real_database routed-auto-show-found-locally exact show "$real_database_issue_id"
+compare_real_database routed-auto-ready-explain exact ready --explain
+compare_real_database routed-auto-ready-molecule exact ready --mol "$real_database_molecule_id"
+compare_real_database routed-auto-count exact count
+real_database_setup=""
+candidate_only_setup=routed_contributor_elsewhere
+expect_candidate_failure routed-auto-list-unported "" "Error: list $routed_list_refusal" "" list
+expect_candidate_failure routed-auto-list-json-unported \
+	"{\"error\":\"list $routed_list_refusal\",\"schema_version\":1}" "" "" list --json
+expect_candidate_failure routed-auto-ready-unported "" "Error: ready $routed_list_refusal" "" ready
+expect_candidate_failure routed-auto-ready-json-unported \
+	"{\"error\":\"ready $routed_list_refusal\",\"schema_version\":1}" "" "" ready --json
+expect_candidate_failure routed-auto-children-unported "" "Error: children $routed_list_refusal" "" \
+	children "$real_database_epic_id"
+expect_candidate_failure routed-auto-show-missing-unported "" "Error: show $routed_lookup_refusal" "" show test-missing
+expect_candidate_failure routed-auto-show-refs-unported "" "Error: show $routed_lookup_refusal" "" show --refs test-missing
+expect_candidate_failure routed-auto-show-watch-unported "" "Error: show $routed_lookup_refusal" "" show --watch test-missing
+expect_candidate_failure routed-auto-comments-json-unported \
+	"{\"error\":\"comments $routed_lookup_refusal\",\"schema_version\":1}" "" "" comments test-missing --json
+expect_candidate_failure routed-auto-dep-list-unported "" "Error: dep list $routed_lookup_refusal" "" dep list test-missing
+expect_candidate_failure routed-auto-dep-tree-unported "" "Error: dep tree $routed_lookup_refusal" "" dep tree test-missing
+# Without beads.role, an https origin makes the user a contributor, after the role warning.
+candidate_only_setup=graph_route_contributor_setup
+expect_candidate_failure routed-auto-role-warning-list-unported "" \
+	"$graph_role_warning"$'\n'"Error: list $routed_list_refusal" "" list
+expect_candidate_failure routed-auto-role-warning-show-unported "" \
+	"$graph_role_warning"$'\n'"Error: show $routed_lookup_refusal" "" show test-missing
+# A maintainer goes to routing.maintainer; routing.default applies to both roles, also from the database.
+routed_maintainer_elsewhere() {
+	printf 'routing:\n  mode: auto\n  maintainer: ../planning\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=routed_maintainer_elsewhere
+expect_candidate_failure routed-auto-maintainer-ready-unported "" "Error: ready $routed_list_refusal" "" ready
+candidate_only_setup=""
+expect_candidate_failure routed-auto-database-default-list-json-unported \
+	"{\"error\":\"list $routed_list_refusal\",\"schema_version\":1}" "" \
+	"INSERT INTO config (\`key\`, value) VALUES ('routing.default', '../planning')" list --json
+# A planning repository that is this workspace again, by a relative or absolute path or through a
+# symbolic link: upstream opens this store a second time, prints its note with the number of issues
+# in this workspace, and reads the same issues. A lookup that misses misses again, and graph leaves
+# the external dependency out.
+routed_contributor_current() {
+	printf 'routing:\n  mode: auto\n  contributor: ../work\n' >>"$1/work/.beads/config.yaml"
+	git -C "$1/work" config beads.role contributor
+}
+real_database_setup=routed_contributor_current
+compare_real_database routed-auto-current-list exact list
+compare_real_database routed-auto-current-ready-json exact ready --json
+compare_real_database routed-auto-current-children exact children "$real_database_epic_id"
+compare_real_database routed-auto-current-list-quiet exact list --quiet
+compare_real_database routed-auto-current-show-missing exact show test-missing
+compare_real_database_sql routed-auto-current-graph exact "$graph_route_sql" graph "$real_database_issue_id" --compact
+routed_contributor_absolute() {
+	printf 'contributor:\n  auto_route: true\n  planning_repo: %s\n' "$1/work" >>"$1/work/.beads/config.yaml"
+	git -C "$1/work" config beads.role contributor
+}
+real_database_setup=routed_contributor_absolute
+compare_real_database routed-auto-current-absolute-ready exact ready
+routed_contributor_link() {
+	ln -s work "$1/link"
+	printf 'routing:\n  mode: auto\n  contributor: ../link\n' >>"$1/work/.beads/config.yaml"
+	git -C "$1/work" config beads.role contributor
+}
+real_database_setup=routed_contributor_link
+compare_real_database routed-auto-current-link-list-json exact list --json
+routed_maintainer_current() {
+	printf 'routing:\n  mode: auto\n  maintainer: ../work\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=routed_maintainer_current
+compare_real_database routed-auto-current-maintainer-ready exact ready
+real_database_setup=""
+compare_real_database_sql routed-auto-current-database-default-list exact \
+	"INSERT INTO config (\`key\`, value) VALUES ('routing.default', '../work/')" list
 compare_real_database dep-list-up-invalid-type-json exact dep list "$real_database_epic_id" "$real_database_gated_molecule_id" --direction up --type xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --json
 compare_real_database list-label-pattern-json exact list --label-pattern 'par*' --json
 compare_real_database list-label-regex-json exact list --label-regex '^(alpha|parity)$' --json

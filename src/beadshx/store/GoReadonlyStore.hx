@@ -67,6 +67,12 @@ final TYPES_ROUTE_UNAVAILABLE = "types is not available yet for server-mode or p
 final STATUSES_ROUTE_UNAVAILABLE = "statuses is not available yet for server-mode or proxied workspaces in this build";
 
 /**
+	The issue count of the auto-routing note has the same embedded-only Haxe SQL route as
+	`bd dep cycles`; the application refuses a server-mode note before it asks.
+**/
+final ISSUE_TOTAL_ROUTE_UNAVAILABLE = "issue statistics are not available yet for server-mode or proxied workspaces in this build";
+
+/**
 	Typed adapter over the narrow native read-only facade.
 
 	The Go package owns storage selection and lifetime. This adapter narrows its
@@ -278,6 +284,15 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 				return embedded;
 		}
 		return Failure(CONFIG_ROUTE_UNAVAILABLE);
+	}
+
+	public function issueTotal(beadsDir:String, databaseName:String, global:Bool):StoreResult<Int> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.issueTotal(beadsDir, databaseName);
+			if (embedded != null)
+				return embedded;
+		}
+		return Failure(ISSUE_TOTAL_ROUTE_UNAVAILABLE);
 	}
 
 	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
@@ -1552,6 +1567,10 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function configSettings(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>> {
 		return Failure(CONFIG_ROUTE_UNAVAILABLE);
+	}
+
+	public function issueTotal(beadsDir:String, databaseName:String, global:Bool):StoreResult<Int> {
+		return Failure(ISSUE_TOTAL_ROUTE_UNAVAILABLE);
 	}
 
 	final native:NativeQuerySession;

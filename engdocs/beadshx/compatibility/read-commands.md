@@ -144,7 +144,7 @@ Before it leaves out a dependency whose ID matches no issue, upstream tries
 the `routes.jsonl` prefix routes and then contributor auto-routing. Like
 upstream, `bdhx` follows the redirect of a routed workspace, with its
 warnings, and asks for the role of the user. Where upstream would read
-another repository, `bdhx` refuses (see [Limits](limits.md#commands-and-output)).
+another repository, `bdhx` refuses (see [Routed reads](#routed-reads)).
 
 ## Flags
 
@@ -224,3 +224,41 @@ repository, the command prints upstream's three-line
 `warning: beads.role not configured (GH#2950).` on stderr each time it asks,
 also with `--json`. In a proxied workspace these commands do not ask. `bdhx`
 only reads this setting; it never writes it.
+
+## Routed reads
+
+Upstream can answer some reads from another repository. `bdhx` reads one
+database only. Where upstream would read another repository, the command
+reports that it is not available yet, before it prints a result (see
+[Limits](limits.md#commands-and-output)). Where upstream reads no other
+store, `bdhx` gives the same output.
+
+- `show` (also `--short`, `--refs`, `--children`, `--thread` and
+  `--watch`), `comments`, `dep list` and `dep tree` route an issue ID that
+  the database does not hold. Upstream first takes the first `routes.jsonl`
+  rule for the prefix of the ID, and opens that workspace when its
+  `metadata.json` names a `dolt_database`. Then it tries contributor
+  auto-routing, after it asks for the role of the user. One ID that upstream
+  would look up in another repository stops the whole command, also when
+  the database holds the other IDs. An ID that the database holds is never
+  routed.
+- `list`, `ready` and `children` read the planning store that contributor
+  auto-routing selects. `ready --gated`, `ready --mol` and `ready --explain`
+  do not.
+- Contributor auto-routing takes each routing setting from `config.yaml` or
+  the environment, or else from the database. `routing.mode: auto`, or
+  `contributor.auto_route: true`, sends a maintainer to `routing.maintainer`
+  and a contributor to `routing.contributor`, or else to
+  `contributor.planning_repo`. Otherwise `routing.default` applies to both
+  roles. A relative path starts at the current directory, and `~/` is the
+  home directory.
+- A `routes.jsonl` path or a planning repository of `.` keeps the read in
+  this store, without a note. Another path to this workspace's `.beads`
+  directory, such as `../work`, an absolute path or a symbolic link, makes
+  upstream open this store a second time. A lookup then misses again, so
+  `bdhx` reports the same miss. `list`, `ready` and `children` read the same
+  issues, and print upstream's note on stderr unless `--quiet`: for example
+  `note: contributor routing (beads.role=contributor, or inferred from the
+  origin URL) routes bd list/ready to the contributor planning store, not
+  this project (this project has 26 total issue(s)).`, then a `Fix:` line.
+- In a proxied workspace these commands do not route.

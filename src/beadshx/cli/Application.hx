@@ -22,7 +22,10 @@ import beadshx.relation.GraphExternal.ExternalTargetLookup;
 import beadshx.relation.GraphExternal.GraphRowSelection;
 import beadshx.relation.GraphExternal.GRAPH_EXTERNAL_UNAVAILABLE;
 import beadshx.relation.GraphExternal.selectGraphRows;
-import beadshx.workspace.PrefixRoutes.prefixRouteDatabase;
+import beadshx.nativeextern.filepath.FilepathPkg;
+import beadshx.workspace.PrefixRoutes.prefixRouteLeaves;
+import beadshx.workspace.RoutePaths.expandRoutePath;
+import beadshx.workspace.RoutePaths.sameDirectory;
 import beadshx.relation.OpenGraph.OpenGraphIssue;
 import beadshx.relation.OpenGraph.filterOpenGraph;
 import beadshx.relation.OpenGraph.isOpenGraphStatus;
@@ -105,6 +108,12 @@ import beadshx.config.LayeredConfig.goQuote;
 import beadshx.config.LayeredConfig.userConfigYamlDisplayPath;
 import beadshx.config.LayeredConfig.userConfigYamlPresent;
 import beadshx.config.UserRole;
+import beadshx.config.AutoRouting.AutoRoute;
+import beadshx.config.AutoRouting.autoRouteNote;
+import beadshx.config.AutoRouting.autoRouteTarget;
+import beadshx.config.AutoRouting.routedListServerUnavailable;
+import beadshx.config.AutoRouting.routedListUnavailable;
+import beadshx.config.AutoRouting.routedLookupUnavailable;
 import beadshx.config.ConfigKeys.CONFIG_ROUTE_UNAVAILABLE;
 import beadshx.cli.CommentsView.MISPLACED_COMMENTS_LIST;
 import beadshx.cli.CommentsView.commentTimestamp;
@@ -221,6 +230,17 @@ import beadshx.profile.ProfilePort;
 import haxe.Json;
 import haxe.io.Path;
 import haxe.ds.StringMap;
+
+/**
+	A read that upstream may route to another repository (see
+	Application.lookupIssueWithRouting): this store's answer, which upstream
+	also gives after any routing that reads this store again, or the refusal
+	of a read that upstream would answer from another repository.
+**/
+private enum RoutedRead<T> {
+	ReadHere(value:T);
+	ReadElsewhere;
+}
 
 /** The issues and complete rows that `bd graph` keeps from what it loaded (see Application.keepGraphRows). */
 private typedef KeptGraph = {
@@ -1751,10 +1771,11 @@ final class Application {
 									} else if (positiveOffset && !location.proxiedServer) {
 										runStoreFailure("--offset is only supported under --proxied-server");
 									} else {
-										// Upstream's openRoutedReadStore asks for the user's role before it reads.
-										if (!location.proxiedServer)
-											warnUnconfiguredRole();
-										if (invocation.watchMode)
+										// Upstream's openRoutedReadStore asks for the user's role before it reads; a proxied server does not route.
+										final routedExit = location.proxiedServer ? null : routeListRead(invocation, location, query);
+										if (routedExit != null)
+											routedExit;
+										else if (invocation.watchMode)
 											runListWatch(invocation, location, effectiveLimit, query);
 										else
 											renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query), effectiveLimit);
@@ -1790,16 +1811,18 @@ final class Application {
 		final resolved = new Array<String>();
 		for (id in invocation.showIds)
 			switch lookupIssueWithRouting(location, id, invocation.global, query) {
-				case Failure(message):
+				case ReadElsewhere:
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(message)):
 					if (!batch)
 						return runModeAwareFailure(invocation.output, 'resolving ${id}: ${message}');
 					output.writeStderr('warning: resolving ${id}: ${message} (skipped)\n');
-				case Success(IssueMissing):
+				case ReadHere(Success(IssueMissing)):
 					final message = 'no issue found matching "${id}"';
 					if (!batch)
 						return runModeAwareFailure(invocation.output, 'resolving ${id}: ${message}');
 					output.writeStderr('warning: resolving ${id}: ${message} (skipped)\n');
-				case Success(IssueFound(summary)):
+				case ReadHere(Success(IssueFound(summary))):
 					resolved.push(summary.id);
 			}
 		if (resolved.length == 0) {
@@ -1964,11 +1987,13 @@ final class Application {
 		if (request.maxRowsWarning != "")
 			output.writeStderr(request.maxRowsWarning);
 		final rootId = switch lookupIssueWithRouting(location, request.root, invocation.global, query) {
-			case Failure(message):
+			case ReadElsewhere:
+				return runRoutedLookupRefusal(invocation);
+			case ReadHere(Failure(message)):
 				return runModeAwareFailure(invocation.output, 'resolving issue ID ${request.root}: ${message}');
-			case Success(IssueMissing):
+			case ReadHere(Success(IssueMissing)):
 				return runModeAwareFailure(invocation.output, 'resolving issue ID ${request.root}: no issue found matching "${request.root}"');
-			case Success(IssueFound(summary)): summary.id;
+			case ReadHere(Success(IssueFound(summary))): summary.id;
 		};
 		final nodes = switch query.dependencyTree(location.path, location.databaseName, {
 			rootId: rootId,
@@ -2388,10 +2413,10 @@ final class Application {
 		What: the lookup first resolves the ID in this database as a partial ID
 		(see lookupIssueSummary). An error other than "not found", such as an
 		ambiguous ID, leaves the row out. A miss tries the routes.jsonl prefix
-		routes (see prefixRouteDatabase) and then contributor auto-routing, which
-		first asks for the user's role (see warnUnconfiguredRole and
-		autoRouteReadsElsewhere). When either would open another repository, this
-		fails with GRAPH_EXTERNAL_UNAVAILABLE; else the row is left out.
+		routes (see prefixRouteLeaves) and then contributor auto-routing, which
+		first asks for the user's role (see warnUnconfiguredRole and autoRoute).
+		When either would open another repository, this fails with
+		GRAPH_EXTERNAL_UNAVAILABLE; else the row is left out.
 		How: each ID resolves once in this database; the routes run for each miss,
 		as upstream's warnings repeat. The added issues are read like GetIssue.
 	**/
@@ -2412,11 +2437,11 @@ final class Application {
 					return ExternalTargetMissing;
 				case Success(IssueMissing):
 			}
-			if (prefixRouteDatabase(location.path, target, lookups.follow) != "")
+			if (prefixRouteLeaves(location.path, target, lookups.follow))
 				return ExternalTargetElsewhere;
 			warnUnconfiguredRole();
 			if (autoRouted == null)
-				autoRouted = autoRouteReadsElsewhere(invocation, location, query);
+				autoRouted = autoRoute(location, invocation.global, query).match(AutoRouteElsewhere);
 			return autoRouted ? ExternalTargetElsewhere : ExternalTargetMissing;
 		}
 		final edges:Array<GraphEdge> = [for (row in rows) row];
@@ -2461,21 +2486,21 @@ final class Application {
 	}
 
 	/**
-		Whether upstream's contributor auto-routing (determineAutoRoutedRepoPath,
-		cmd/bd/routing_read.go:51-95, routing.DetermineTargetRepoWithRule) names a
-		repository other than the current one.
+		Where upstream's contributor auto-routing (openRoutedReadStore,
+		cmd/bd/routing_read.go:158-175) sends a read: the planning repository of
+		autoRouteTarget, made absolute like upstream routing.ExpandPath. Upstream
+		opens that repository's `.beads` read-only; when that is this store's
+		`.beads` (see sameDirectory), it reads this store a second time.
 
 		Each routing setting comes from config.yaml or the environment when it is
 		set there to more than spaces, or else from the database's config table.
-		routing.mode auto, or contributor.auto_route true without a mode, sends a
-		maintainer (see UserRole.detect) to routing.maintainer and a contributor
-		to routing.contributor, or else contributor.planning_repo. Otherwise
-		routing.default applies. An empty name and "." name the current one.
+		A workspace whose config table this build cannot read yet (server mode)
+		takes config.yaml and the environment only.
 	**/
-	function autoRouteReadsElsewhere(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Bool {
+	function autoRoute(location:WorkspaceLocation, global:Bool, query:IssueQueryPort):AutoRoute {
 		final config = LayeredConfig.forWorkspace(location.path);
 		final stored = new Map<String, String>();
-		switch query.configSettings(location.path, location.databaseName, invocation.global) {
+		switch query.configSettings(location.path, location.databaseName, global) {
 			case Success(settings):
 				for (setting in settings)
 					stored.set(setting.key, setting.value);
@@ -2488,22 +2513,44 @@ final class Application {
 			final value = stored.get(key);
 			return value == null ? "" : goTrimSpace(value);
 		}
-		var mode = setting("routing.mode");
-		if (mode == "" && setting("contributor.auto_route") == "true")
-			mode = "auto";
-		var contributorRepository = setting("routing.contributor");
-		if (contributorRepository == "")
-			contributorRepository = setting("contributor.planning_repo");
-		var repository = setting("routing.default");
-		if (mode == "auto") {
-			final maintainerRepository = setting("routing.maintainer");
-			final role = UserRole.detect();
-			if (role == "maintainer" && maintainerRepository != "")
-				repository = maintainerRepository;
-			else if (role == "contributor" && contributorRepository != "")
-				repository = contributorRepository;
-		}
-		return repository != "" && repository != ".";
+		final target = autoRouteTarget(setting, UserRole.detect);
+		if (target == null)
+			return NoAutoRoute;
+		return sameDirectory(FilepathPkg.join(expandRoutePath(target.repository), ".beads"),
+			location.path) ? AutoRouteToCurrent(target.rule) : AutoRouteElsewhere;
+	}
+
+	/**
+		Upstream openRoutedReadStore before list, ready and children read
+		(cmd/bd/list.go:231-240, cmd/bd/ready.go:124-138), after the role
+		warning that it asks for. Null to read this store, or the exit code of a
+		refusal where upstream would read another repository.
+
+		When auto-routing names this workspace again, upstream reads the same
+		issues and prints its note on stderr, unless --quiet, with the number of
+		rows of the issues table. The count reads this build's embedded store
+		only, so a server-mode workspace refuses there.
+	**/
+	function routeListRead(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Null<Int> {
+		warnUnconfiguredRole();
+		final command = commandPath(invocation.command);
+		return switch autoRoute(location, invocation.global, query) {
+			case NoAutoRoute:
+				null;
+			case AutoRouteElsewhere:
+				runModeAwareFailure(invocation.output, routedListUnavailable(command));
+			case AutoRouteToCurrent(_) if (opensServerStore(location)):
+				runModeAwareFailure(invocation.output, routedListServerUnavailable(command));
+			case AutoRouteToCurrent(rule):
+				if (!invocation.quiet) {
+					final total:Null<Int> = switch query.issueTotal(location.path, location.databaseName, invocation.global) {
+						case Success(value): value;
+						case Failure(_): null;
+					};
+					output.writeStderr(autoRouteNote(rule, total));
+				}
+				null;
+		};
 	}
 
 	/**
@@ -2907,10 +2954,11 @@ final class Application {
 		if (request.misplacedList)
 			return runModeAwareFailure(invocation.output, MISPLACED_COMMENTS_LIST);
 		final issueId = switch lookupIssueWithRouting(location, request.issueId, invocation.global, query) {
-			case Failure(message): return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: ${message}');
-			case Success(IssueMissing):
+			case ReadElsewhere: return runRoutedLookupRefusal(invocation);
+			case ReadHere(Failure(message)): return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: ${message}');
+			case ReadHere(Success(IssueMissing)):
 				return runModeAwareFailure(invocation.output, 'resolving ${request.issueId}: no issue found matching "${request.issueId}"');
-			case Success(IssueFound(summary)): summary.id;
+			case ReadHere(Success(IssueFound(summary))): summary.id;
 		};
 		final comments = switch query.issueComments(location.path, location.databaseName, issueId, invocation.global) {
 			case Failure(message): return runModeAwareFailure(invocation.output, 'getting comments: ${message}');
@@ -3770,7 +3818,9 @@ final class Application {
 		if (invocation.readyClaim)
 			return runReadyClaimRefusal();
 		// Upstream's openRoutedReadStore asks for the user's role before it reads.
-		warnUnconfiguredRole();
+		final routedExit = routeListRead(invocation, location, query);
+		if (routedExit != null)
+			return routedExit;
 		return runReadyList(invocation, location, query);
 	}
 
@@ -5530,13 +5580,15 @@ final class Application {
 		var canonicalId = requestedId;
 		var current:Null<IssueDetails> = null;
 		switch loadWatchedIssue(location, requestedId, invocation.global, true, query) {
-			case Failure(message):
+			case ReadElsewhere:
+				return runRoutedLookupRefusal(invocation);
+			case ReadHere(Failure(message)):
 				output.writeStderr('Error fetching issue: ${message}\n');
 				return 0;
-			case Success(DetailsMissing):
+			case ReadHere(Success(DetailsMissing)):
 				output.writeStdout('Issue not found: ${requestedId}\n');
 				return 0;
-			case Success(DetailsFound(issue)):
+			case ReadHere(Success(DetailsFound(issue))):
 				canonicalId = issue.id;
 				current = issue;
 		}
@@ -5559,8 +5611,11 @@ final class Application {
 			if (stopped)
 				continue;
 			switch loadWatchedIssue(location, canonicalId, invocation.global, true, query) {
-				case Failure(_) | Success(DetailsMissing):
-				case Success(DetailsFound(issue)):
+				case ReadElsewhere:
+					watch.close();
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(_) | Success(DetailsMissing)):
+				case ReadHere(Success(DetailsFound(issue))):
 					final nextSnapshot = issueWatchSnapshot(issue);
 					if (nextSnapshot != snapshot) {
 						switch renderIssueHuman(issue, invocation.agentMode, false, localNode, WatchedShow) {
@@ -5585,16 +5640,18 @@ final class Application {
 		return goTrimSpace(LayeredConfig.forWorkspace(location.path).getString("node_id"));
 	}
 
-	function loadWatchedIssue(location:WorkspaceLocation, id:String, global:Bool, includeComments:Bool, query:IssueQueryPort):StoreResult<IssueDetailsLookup> {
+	function loadWatchedIssue(location:WorkspaceLocation, id:String, global:Bool, includeComments:Bool,
+			query:IssueQueryPort):RoutedRead<StoreResult<IssueDetailsLookup>> {
 		return switch lookupIssueWithRouting(location, id, global, query) {
-			case Failure(message): Failure(message);
-			case Success(IssueMissing): Failure('no issue found matching "${id}"');
-			case Success(IssueFound(summary)):
-				query.issueDetails(location.path, summary.id, {
+			case ReadElsewhere: ReadElsewhere;
+			case ReadHere(Failure(message)): ReadHere(Failure(message));
+			case ReadHere(Success(IssueMissing)): ReadHere(Failure('no issue found matching "${id}"'));
+			case ReadHere(Success(IssueFound(summary))):
+				ReadHere(query.issueDetails(location.path, summary.id, {
 					includeDependents: true,
 					includeComments: includeComments,
 					briefDependencies: false
-				}, global);
+				}, global));
 		};
 	}
 
@@ -5618,11 +5675,13 @@ final class Application {
 		final requestedId = ids[0];
 		var canonicalId = "";
 		switch lookupIssueWithRouting(location, requestedId, invocation.global, query) {
-			case Failure(_) | Success(IssueMissing):
+			case ReadElsewhere:
+				return runRoutedLookupRefusal(invocation);
+			case ReadHere(Failure(_) | Success(IssueMissing)):
 				if (invocation.output == Human)
 					return runShowHuman(invocation, location, query);
 				return runShowJson(invocation, location, query);
-			case Success(IssueFound(summary)):
+			case ReadHere(Success(IssueFound(summary))):
 				canonicalId = summary.id;
 		}
 		final detailRequest:IssueDetailsRequest = {
@@ -5738,11 +5797,13 @@ final class Application {
 		final groups = new Array<ShowDependencyGroup>();
 		for (id in ids) {
 			switch lookupIssueWithRouting(location, id, invocation.global, query) {
-				case Failure(message):
+				case ReadElsewhere:
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(message)):
 					output.writeStderr('Error resolving ${id}: ${message}\n');
-				case Success(IssueMissing):
+				case ReadHere(Success(IssueMissing)):
 					output.writeStderr('Error resolving ${id}: no issue found matching "${id}"\n');
-				case Success(IssueFound(summary)):
+				case ReadHere(Success(IssueFound(summary))):
 					switch query.issueDependents(location.path, summary.id, invocation.global) {
 						case Failure(message): output.writeStderr('Error getting refs for ${id}: ${message}\n');
 						case Success(references):
@@ -5841,11 +5902,13 @@ final class Application {
 		final groups = new Array<ShowDependencyGroup>();
 		for (id in ids) {
 			switch lookupIssueWithRouting(location, id, invocation.global, query) {
-				case Failure(message):
+				case ReadElsewhere:
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(message)):
 					output.writeStderr('Error resolving ${id}: ${message}\n');
-				case Success(IssueMissing):
+				case ReadHere(Success(IssueMissing)):
 					output.writeStderr('Error resolving ${id}: no issue found matching "${id}"\n');
-				case Success(IssueFound(summary)):
+				case ReadHere(Success(IssueFound(summary))):
 					switch query.issueDependents(location.path, summary.id, invocation.global) {
 						case Failure(message): output.writeStderr('Error getting children for ${id}: ${message}\n');
 						case Success(dependents):
@@ -5960,11 +6023,13 @@ final class Application {
 		final found = new Array<IssueDetails>();
 		for (id in ids) {
 			switch lookupIssueWithRouting(location, id, invocation.global, query) {
-				case Failure(message):
+				case ReadElsewhere:
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(message)):
 					output.writeStderr('Error fetching ${id}: ${message}\n');
-				case Success(IssueMissing):
+				case ReadHere(Success(IssueMissing)):
 					output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
-				case Success(IssueFound(summary)):
+				case ReadHere(Success(IssueFound(summary))):
 					switch query.issueDetails(location.path, summary.id, request, invocation.global) {
 						case Failure(message): output.writeStderr('Error fetching ${id}: ${message}\n');
 						case Success(DetailsMissing): output.writeStderr('Issue ${id} not found\n');
@@ -6011,11 +6076,13 @@ final class Application {
 		final found = new Array<IssueSummary>();
 		for (id in ids) {
 			switch lookupIssueWithRouting(location, id, invocation.global, query) {
-				case Failure(message):
+				case ReadElsewhere:
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(message)):
 					output.writeStderr('Error fetching ${id}: ${message}\n');
-				case Success(IssueMissing):
+				case ReadHere(Success(IssueMissing)):
 					output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
-				case Success(IssueFound(summary)):
+				case ReadHere(Success(IssueFound(summary))):
 					found.push(summary);
 			}
 		}
@@ -6063,11 +6130,13 @@ final class Application {
 		};
 		for (id in ids) {
 			switch lookupIssueWithRouting(location, id, invocation.global, query) {
-				case Failure(message):
+				case ReadElsewhere:
+					return runRoutedLookupRefusal(invocation);
+				case ReadHere(Failure(message)):
 					output.writeStderr('Error fetching ${id}: ${message}\n');
-				case Success(IssueMissing):
+				case ReadHere(Success(IssueMissing)):
 					output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
-				case Success(IssueFound(summary)):
+				case ReadHere(Success(IssueFound(summary))):
 					switch query.issueDetails(location.path, summary.id, request, invocation.global) {
 						case Failure(message): output.writeStderr('Error fetching ${id}: ${message}\n');
 						case Success(DetailsMissing): output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
@@ -6100,20 +6169,38 @@ final class Application {
 	}
 
 	/**
-		Upstream resolveAndGetIssueWithRouting, the lookup of show, comments,
-		dep list and dep tree. After a miss upstream tries contributor
-		auto-routing, which asks for the user's role and so prints the
-		beads.role warning when Git sets no role. A proxied workspace does not
-		route.
+		Upstream resolveAndGetIssueWithRouting (cmd/bd/routed.go:70-96), the
+		lookup of show, comments, dep list and dep tree.
+
+		After a miss upstream tries the routes.jsonl prefix routes (see
+		prefixRouteLeaves) and then contributor auto-routing, which asks for the
+		user's role and so prints the beads.role warning when Git sets no role
+		(see autoRoute). Where either would open another repository, this is
+		ReadElsewhere, and the command refuses (see runRoutedLookupRefusal). A
+		route that opens this store again misses there again, so upstream
+		reports the miss of this store. A proxied workspace does not route.
 	**/
-	function lookupIssueWithRouting(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):StoreResult<IssueLookup> {
+	function lookupIssueWithRouting(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):RoutedRead<StoreResult<IssueLookup>> {
 		final lookup = lookupIssueSummary(location, id, global, query);
 		switch lookup {
 			case Success(IssueMissing) if (!location.proxiedServer):
+				if (prefixRouteLeaves(location.path, id, lookups.follow))
+					return ReadElsewhere;
 				warnUnconfiguredRole();
+				if (autoRoute(location, global, query).match(AutoRouteElsewhere))
+					return ReadElsewhere;
 			case Success(_) | Failure(_):
 		}
-		return lookup;
+		return ReadHere(lookup);
+	}
+
+	/**
+		The refusal of a command whose lookup upstream would answer from another
+		repository. It stops the whole command before it prints an issue, also
+		in a batch whose other IDs this store holds.
+	**/
+	function runRoutedLookupRefusal(invocation:Invocation):Int {
+		return runModeAwareFailure(invocation.output, routedLookupUnavailable(commandPath(invocation.command)));
 	}
 
 	/** Upstream routing.DetectUserRole's warning on stderr, when Git sets no beads.role. It only reads Git's config. */

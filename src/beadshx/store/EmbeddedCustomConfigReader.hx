@@ -7,7 +7,8 @@ import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 
 /**
 	Own one read transaction for `bd types`, `bd statuses`, `bd config get` or
-	`bd config list`; the config table semantics are authored Haxe.
+	`bd config list`, or for the routing settings and the issue count of
+	contributor auto-routing; the config table semantics are authored Haxe.
 **/
 @:goBuildConstraint("cgo")
 @:goNative
@@ -26,6 +27,10 @@ final class EmbeddedCustomConfigReader {
 
 	public static function readSettings(beadsDir:String, databaseName:String):StoreResult<Array<ConfigSetting>> {
 		return read(beadsDir, databaseName, (context, transaction) -> SqlCustomConfigReader.readSettings(context, transaction));
+	}
+
+	public static function readIssueTotal(beadsDir:String, databaseName:String):StoreResult<Int> {
+		return read(beadsDir, databaseName, (context, transaction) -> SqlCustomConfigReader.readIssueTotal(context, transaction));
 	}
 
 	static function read<T>(beadsDir:String, databaseName:String, reader:(Context, Tx) -> StoreResult<T>):StoreResult<T> {

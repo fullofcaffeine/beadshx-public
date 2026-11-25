@@ -190,11 +190,27 @@ exists.
   the issue that it finds there. When it finds none, upstream draws the graph
   without the dependency, so `bdhx` also refuses some graphs that upstream
   draws. `bdhx` reads one database only.
-- For an issue ID that is not in the database, `show`, `comments`,
-  `dep list`, `dep tree` and `children` do not try the `routes.jsonl` prefix
-  routes or contributor auto-routing. `list` and `ready` do not read the
-  planning store that contributor auto-routing selects. Upstream reads those
-  other repositories; `bdhx` reads one database only (beadshx-m08.58).
+- `show`, `comments`, `dep list` and `dep tree` report that they are not
+  available yet when upstream would look up an issue ID that is not in the
+  database in another repository: through the first `routes.jsonl` rule for
+  the prefix of the ID, when it names another workspace whose
+  `metadata.json` names a `dolt_database`, or through contributor
+  auto-routing. `list`, `ready` and `children` report it when contributor
+  auto-routing selects the planning store of another repository. Upstream
+  opens that store read-only. When the routed store does not hold the ID
+  either, upstream reports the miss, and when the planning store does not
+  open, upstream fails. So `bdhx` also refuses some commands that upstream
+  answers with an error. `bdhx` reads one database only; the routed reads
+  themselves wait for routing and shared stores (beadshx-m13-07). See
+  [Read commands](read-commands.md#routed-reads).
+- In a server-mode workspace, contributor auto-routing takes its settings
+  only from `config.yaml` and the environment: `bdhx` cannot read the
+  database's config table there yet. When only the database sets them,
+  `bdhx` reads this workspace where upstream reads another repository
+  (beadshx-m08.60). When auto-routing names the workspace itself, `list`,
+  `ready` and `children` report that they are not available yet for
+  server-mode workspaces, because `bdhx` cannot count the issues for
+  upstream's note there.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once, such as `show`
   with two IDs, `children` or `ready --explain`, prints the warning once for

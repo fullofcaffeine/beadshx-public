@@ -100,6 +100,10 @@ final class EmbeddedStoreAccess {
 		return implementation.configSettings(beadsDir, databaseName);
 	}
 
+	public static function issueTotal(beadsDir:String, databaseName:String):Null<StoreResult<Int>> {
+		return implementation.issueTotal(beadsDir, databaseName);
+	}
+
 	public static function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
@@ -196,6 +200,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function configSettings(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>>> {
+		return null;
+	}
+
+	public function issueTotal(beadsDir:String, databaseName:String):Null<StoreResult<Int>> {
 		return null;
 	}
 

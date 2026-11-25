@@ -1,6 +1,7 @@
 package beadshx.workspace;
 
 import beadshx.nativeextern.filepath.FilepathPkg;
+import beadshx.workspace.RoutePaths.sameDirectory;
 import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.JsonValue.GoJsonStruct;
 import beadshx.store.JsonValue.decodeGoStruct;
@@ -92,22 +93,28 @@ function routedDoltDatabase(beadsDir:String):String {
 }
 
 /**
-	The database that upstream's prefix routing (resolveViaPrefixRoutingWithAccess,
-	cmd/bd/routed.go:162-246) would open for `id`, or "" when it opens none and
-	goes on to auto-routing.
+	Whether upstream's prefix routing (resolveViaPrefixRoutingWithAccess,
+	cmd/bd/routed.go:162-246) would open another store for `id`, after the
+	lookup missed in the store of `beadsDir`.
 
 	The first rule of `beadsDir`'s routes.jsonl for the ID's prefix names the
-	routed workspace, relative to the parent of `beadsDir`; a rule for "." names
-	the current one. `follow` is upstream FollowRedirect with its warnings, which
-	upstream applies to the routed workspace's `.beads` before it reads the
-	dolt_database there.
+	routed workspace, relative to the parent of `beadsDir`. Upstream opens
+	that workspace's `.beads`, after FollowRedirect (`follow`, with its
+	warnings), when its metadata.json names a dolt_database. A rule for "."
+	opens nothing. A rule whose `.beads` is `beadsDir` again (see
+	sameDirectory) opens the same store, so the lookup misses again there.
+	Without a rule that opens a store, upstream goes on to auto-routing.
 **/
-function prefixRouteDatabase(beadsDir:String, id:String, follow:String->String):String {
+function prefixRouteLeaves(beadsDir:String, id:String, follow:String->String):Bool {
 	final prefix = beadPrefix(id);
 	if (prefix == "")
-		return "";
+		return false;
 	for (route in loadPrefixRoutes(beadsDir))
-		if (route.prefix == prefix)
-			return route.path == "." ? "" : routedDoltDatabase(follow(FilepathPkg.join(FilepathPkg.dir(beadsDir), route.path, ".beads")));
-	return "";
+		if (route.prefix == prefix) {
+			if (route.path == ".")
+				return false;
+			final routed = follow(FilepathPkg.join(FilepathPkg.dir(beadsDir), route.path, ".beads"));
+			return routedDoltDatabase(routed) != "" && !sameDirectory(routed, beadsDir);
+		}
+	return false;
 }
