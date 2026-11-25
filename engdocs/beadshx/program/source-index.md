@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `5a0ac46b188b256da5db1580a94aeabfa8c679f3`.
+Required BeadsHX compiler revision: `6d1fb2d80c6714d8d3f84c427ef405c526acd22d`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -192,6 +192,12 @@ tests, stored-value conversions, enum-required classes and downcasts give the
 same result in every class lowering order. BeadsHX Go output changes only from
 haxe_go-by0g: the `Std` module's runtime type-token tests call the shared
 helper `hx_is_of_type_token`, which the generated main file now declares.
+
+Compiler task haxe_go-ya0z passes a Haxe string to a Go `any` extern
+parameter as a Go `string`, and adds `go.NativeAny` and `go.NativeAnyMap` for
+native Go `map[string]any` data, which the `list --format` template port
+(beadshx-m08.26) needs. BeadsHX Go output is byte-identical to the previous
+lock.
 
 Reviewed current authority:
 
