@@ -8070,6 +8070,9 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-where" exact "$schema_sql" where
 	compare_real_database_sql "schema-$schema_case-ignored-count" exact "$schema_sql" --readonly count
 	compare_real_database_sql "schema-$schema_case-ignored-stale" exact "$schema_sql" --readonly stale --days 1
+	# Upstream checks once, at the store open of the pre-run, however many reads the command makes
+	# after it, such as the parent of each ready issue.
+	compare_real_database_sql "schema-$schema_case-ignored-ready" exact "$schema_sql" --readonly ready
 	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 	compare_real_database_sql "schema-$schema_case-flag-ignored-dep-list" exact "$schema_sql" \
 		--readonly --ignore-schema-skew dep list "$real_database_issue_id"

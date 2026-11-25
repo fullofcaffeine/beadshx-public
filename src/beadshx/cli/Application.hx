@@ -4788,6 +4788,10 @@ final class Application {
 		Upstream displayReadyList (cmd/bd/ready.go:416-433): each issue as
 		formatPrettyIssueWithContext prints it, with its parent epic's title in
 		the muted style, then the footer.
+
+		Upstream buildParentEpicMap (cmd/bd/ready.go:362-413) reads each parent
+		with GetIssue and skips one that it cannot read. The issue summary is that
+		read: Haxe-owned SQL in an embedded workspace, so it opens no second store.
 	**/
 	function renderReadyPretty(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool, styles:TerminalStyles):String {
 		final parentTitles = new Map<String, String>();
@@ -4795,10 +4799,10 @@ final class Application {
 			if (issue.parent == "" || parentTitles.exists(issue.parent))
 				continue;
 			var title = "";
-			switch query.issueDetails(location.path, issue.parent, {includeDependents: false, includeComments: false, briefDependencies: true}, global) {
-				case Success(DetailsFound(parent)) if (parent.issueType == "epic"):
-					title = parent.title;
-				case Failure(_) | Success(DetailsMissing) | Success(DetailsFound(_)):
+			switch query.issueSummary(location.path, location.databaseName, issue.parent, global) {
+				case Success(IssueFound({issueType: Epic, title: epicTitle})):
+					title = epicTitle;
+				case Failure(_) | Success(IssueMissing) | Success(IssueFound(_)):
 			}
 			parentTitles.set(issue.parent, title);
 		}
