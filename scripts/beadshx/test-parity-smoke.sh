@@ -2759,6 +2759,94 @@ legacy_config_with_removed_backend() {
 real_database_setup=legacy_config_with_removed_backend
 compare_real_database legacy-config-removed-backend-list exact list
 real_database_setup=""
+# LoadForDiscovery reads the legacy config.json as the workspace's config, so in shared-server mode its
+# embedded dolt_mode gives the notice, and version prints it as upstream does.
+real_database_setup=use_legacy_config
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database legacy-config-shared-server-version stderr-only version
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+use_legacy_config_with_broken_yaml() {
+	use_legacy_config "$1"
+	printf '[a, b\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=use_legacy_config_with_broken_yaml
+compare_real_database legacy-config-broken-yaml-version stderr-only version
+real_database_setup=""
+# Without a database path, upstream's where rewrites the file only in its body, after both setups and the
+# lookups before FindDatabasePath; a command that opens a store rewrites it after its first setup. The
+# refusals follow the warnings and the notice that upstream prints before.
+legacy_yaml_failure="error reading config file: While parsing config: yaml: line 72: did not find expected ',' or ']'"
+candidate_only_setup=use_legacy_config_with_broken_yaml
+expect_candidate_failure legacy-config-broken-yaml-where-unported "" \
+	"Warning: failed to initialize config: $legacy_yaml_failure"$'\n'"Warning: failed to reinitialize config for selected beads dir: $legacy_yaml_failure"$'\n'"Warning: failed to reinitialize config for selected beads dir: $legacy_yaml_failure"$'\n'"Error: $(legacy_config_refusal where)" "" \
+	where
+expect_candidate_failure legacy-config-broken-yaml-count-unported "" \
+	"Warning: failed to initialize config: $legacy_yaml_failure"$'\n'"Warning: failed to reinitialize config for selected beads dir: $legacy_yaml_failure"$'\n'"Error: $(legacy_config_refusal count)" "" \
+	count
+candidate_only_setup=use_legacy_config
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+expect_candidate_failure legacy-config-shared-server-where-unported "" \
+	"$shared_server_notice"$'\n'"Error: $(legacy_config_refusal where)" "" where
+expect_candidate_failure legacy-config-shared-server-count-json-unported \
+	"{\"error\":\"$(legacy_config_refusal count)\",\"schema_version\":1}" "$shared_server_notice" "" count --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A redirect from a legacy-only workspace to a missing target warns at each of upstream's lookups up to the
+# rewrite, once each.
+use_legacy_config_with_broken_redirect() {
+	use_legacy_config "$1"
+	printf 'missing/.beads\n' >"$1/work/.beads/redirect"
+}
+legacy_missing_warning='Warning: redirect target does not exist or is not a directory: <work>/missing/.beads'
+candidate_only_setup=use_legacy_config_with_broken_redirect
+expect_candidate_failure legacy-config-broken-redirect-count-unported "" \
+	"$(printf '%s\n' "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning")"$'\n'"Error: $(legacy_config_refusal count)" "" \
+	count
+expect_candidate_failure legacy-config-broken-redirect-where-unported "" \
+	"$(printf '%s\n' "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning" "$legacy_missing_warning")"$'\n'"Error: $(legacy_config_refusal where)" "" \
+	where
+# A BEADS_DB or BD_DB path that names a legacy-only workspace, and a db setting that does, make upstream
+# rewrite the file while it derives the workspace from the path; this build refuses before.
+move_legacy_workspace_to_db() {
+	mkdir "$1/work/db"
+	mv -f "$1/work/.beads" "$1/work/db/.beads"
+	mv -f "$1/work/db/.beads/metadata.json" "$1/work/db/.beads/config.json"
+}
+candidate_only_setup=move_legacy_workspace_to_db
+real_database_extra_env=(BEADS_DB=db/.beads)
+expect_candidate_failure legacy-config-beads-db-count-unported "" \
+	"Error: count is not available yet when BEADS_DB names this path in this build" "" count
+expect_candidate_failure legacy-config-beads-db-where-unported "" \
+	"Error: where is not available yet when BEADS_DB names this path in this build" "" where
+real_database_extra_env=(BD_DB=db/.beads/embeddeddolt)
+expect_candidate_failure legacy-config-bd-db-where-unported "" \
+	"Error: where is not available yet when BD_DB names this path in this build" "" where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+legacy_workspace_with_setting() {
+	mkdir "$1/work/other"
+	copy_fixture_tree "$1/work/.beads" "$1/work/other/.beads"
+	mv -f "$1/work/other/.beads/metadata.json" "$1/work/other/.beads/config.json"
+	printf 'db: other/.beads/beads.db\n' >>"$1/work/.beads/config.yaml"
+}
+candidate_only_setup=legacy_workspace_with_setting
+expect_candidate_failure legacy-config-db-setting-where-unported "" "Error: $(legacy_config_refusal where)" "" where
+expect_candidate_failure legacy-config-db-setting-count-unported "" \
+	"Error: count is not available yet when the db setting names a database in this build" "" count
+candidate_only_setup=""
+# Upstream's legacy-workspace guard runs after one setup, before the rewrite of the legacy config.json. So a
+# legacy-only workspace that it refuses stops there, where too, after the warnings and the notice of that setup.
+legacy_config_with_legacy_dolt_directory_and_broken_yaml() {
+	legacy_config_with_legacy_dolt_directory "$1"
+	printf '[a, b\n' >>"$1/work/.beads/config.yaml"
+}
+real_database_setup=legacy_config_with_legacy_dolt_directory_and_broken_yaml
+compare_real_database legacy-config-legacy-dolt-broken-yaml-where exact where
+compare_real_database legacy-config-legacy-dolt-broken-yaml-count exact count
+real_database_setup=legacy_config_with_removed_backend
+real_database_extra_env=(BEADS_DOLT_SHARED_SERVER=1)
+compare_real_database legacy-config-removed-backend-shared-server-where exact where
+compare_real_database legacy-config-removed-backend-shared-server-count-json exact count --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=""
 duplicate_dolt_database() {
 	jq -c . "$1/work/.beads/metadata.json" |
 		sed 's/"dolt_database":"test"/"dolt_database":"other","dolt_database":"test"/' >"$1/metadata.json"
@@ -3512,6 +3600,38 @@ expect_candidate_failure chain-first-target-notice-shared-server-count-unported 
 	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$shared_server_notice"$'\n''Error: count is not available yet in shared-server mode in this build' "" \
 	count
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
+# When the second target is legacy-only, upstream's FindDatabasePath rewrites its config.json as metadata.json:
+# a command that opens a store after its first setup, where in its body. This build refuses there instead.
+redirect_chain_to_legacy_workspace() {
+	redirect_chain_to_workspace "$1"
+	mv -f "$1/work/final/.beads/metadata.json" "$1/work/final/.beads/config.json"
+}
+candidate_only_setup=redirect_chain_to_legacy_workspace
+expect_candidate_failure chain-legacy-second-target-count-unported "" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"Error: $(legacy_config_refusal count)" "" count
+expect_candidate_failure chain-legacy-second-target-list-json-unported \
+	"{\"error\":\"$(legacy_config_refusal list)\",\"schema_version\":1}" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning" "" list --json
+expect_candidate_failure chain-legacy-second-target-where-unported "" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"Error: $(legacy_config_refusal where)" "" where
+expect_candidate_failure chain-legacy-second-target-change-directory-count-unported "" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"Error: $(legacy_config_refusal count)" "" -C . count
+candidate_only_setup=""
+# Upstream's guard reads the first target before FindDatabasePath follows its redirect, so a legacy Dolt first
+# target refuses before the rewrite of the second. With -C, the first setup and the guard already take the second
+# target, which the guard accepts, so this build refuses the rewrite there.
+redirect_chain_to_legacy_workspace_from_legacy_dolt() {
+	redirect_chain_to_legacy_workspace "$1"
+	mv -f "$1/work/sub/.beads/embeddeddolt" "$1/work/sub/.beads/dolt"
+}
+real_database_setup=redirect_chain_to_legacy_workspace_from_legacy_dolt
+compare_real_database chain-legacy-dolt-first-target-count exact count
+compare_real_database chain-legacy-dolt-first-target-where exact where
+real_database_setup=""
+candidate_only_setup=redirect_chain_to_legacy_workspace_from_legacy_dolt
+expect_candidate_failure chain-legacy-dolt-first-target-change-directory-count-unported "" \
+	"$chain_warning"$'\n'"$chain_warning"$'\n'"$chain_warning"$'\n'"Error: $(legacy_config_refusal count)" "" -C . count
 candidate_only_setup=""
 # The second setup loads the second target's .env file for each variable that is not set yet, after the
 # first target's. A command that opens a store then reads its JSON switch again (refreshBoundCommandConfig),

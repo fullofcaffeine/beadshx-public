@@ -160,14 +160,16 @@ function readMetadataFields(beadsDir:String):WorkspaceMetadataFields {
 }
 
 /**
-	The decoded fields of the legacy config.json for which readMetadataFields
-	gives MetadataFieldsLegacyOnly, as LoadForDiscovery's config holds them, or
-	null when the file no longer reads or decodes.
+	The decoded fields of a legacy-only workspace's config.json (see
+	MetadataFieldsLegacyOnly), which upstream's LoadForDiscovery reads as its
+	config without the rewrite, for checks such as the legacy-workspace guard
+	and the shared-server notice. Null when the workspace is not legacy-only,
+	or when the file no longer reads or decodes.
 **/
 function readLegacyConfigFields(beadsDir:String):Null<Map<String, String>> {
-	final raw = try File.getContent(Path.join([beadsDir, "config.json"])) catch (_:haxe.Exception) null;
-	if (raw == null)
+	if (FileSystem.exists(Path.join([beadsDir, "metadata.json"])))
 		return null;
+	final raw = try File.getContent(Path.join([beadsDir, "config.json"])) catch (_:haxe.Exception) return null;
 	return switch decodeGoStruct(raw, METADATA_CONFIG) {
 		case GoJsonDecoded(fields): fields;
 		case GoJsonFailed(_) | GoJsonUnsupported: null;

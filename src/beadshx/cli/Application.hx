@@ -786,7 +786,10 @@ final class Application {
 		When only a legacy config.json exists, upstream's store open rewrites it
 		as metadata.json for `where` and every command that opens a store. This
 		read-only build refuses those commands there until migration parity
-		(M12); `version` and help pages run as upstream does.
+		(M12); `version` and help pages run as upstream does. A command that
+		opens a store refuses after its first setup, also when the target of
+		the found workspace's own redirect is legacy-only; `where` without a
+		database path refuses in its body (see runWhere).
 
 		When the file loads, or there is none, the rest of that guard stops
 		`where` and every command that opens a store in a historical SQLite
@@ -825,12 +828,25 @@ final class Application {
 		};
 		if (!opensStore)
 			boundWorkspace = location;
+		// A command that opens a store binds the target of the found workspace's own redirect (see
+		// discoverStoreWorkspace), whose legacy config.json upstream's FindDatabasePath rewrites too.
+		var checked = location;
+		if (opensStore
+			&& legacyOnly(WorkspaceEnvironment.storeChainTarget({directory: invocation.directory, databasePath: invocation.databasePath}, location)))
+			switch discoverStoreWorkspace(invocation) {
+				case Found(target):
+					checked = target;
+				case NotFound | InvalidSelection(_):
+			}
+		// Upstream's first setup and the guard after it take the found workspace, or with -C that target (see loadStoreConfig).
+		final found = checked.foundPath;
+		final selected = found != null && invocation.directory == "" ? found : checked.path;
 		final path = commandPath(invocation.command);
 		var error = "";
 		var refusal = "";
 		var upgradeRefusal:Null<String> = null;
-		final sharedServer = () -> LayeredConfig.forWorkspace(location.path).sharedServerMode();
-		switch readMetadataFields(location.path) {
+		final sharedServer = () -> LayeredConfig.forWorkspace(selected).sharedServerMode();
+		switch readMetadataFields(selected) {
 			case MetadataFieldsUndecodable(text):
 				error = text;
 				if (databasePathSelects(invocation, location, opensStore))
@@ -838,17 +854,21 @@ final class Application {
 			case MetadataFieldsUnsupported:
 				refusal = '${path} is not available yet when .beads/metadata.json does not decode in this build';
 			case MetadataFieldsLegacyOnly if (stops):
-				final legacyFields = readLegacyConfigFields(location.path);
+				final legacyFields = readLegacyConfigFields(selected);
 				if (legacyFields != null)
-					upgradeRefusal = LegacyUpgradeGuard.refusal(location.path, legacyFields, sharedServer);
-				if (upgradeRefusal == null)
-					refusal = '${path} is not available yet when the workspace has only a legacy config.json in this build';
+					upgradeRefusal = LegacyUpgradeGuard.refusal(selected, legacyFields, sharedServer);
+				// A database path makes upstream rewrite the file before its setups; otherwise `where` rewrites it in its body (see runWhere).
+				if (upgradeRefusal == null && (opensStore || databasePathSelects(invocation, location, false)))
+					refusal = legacyOnlyRefusal(path);
 			case MetadataFieldsLegacyOnly:
 			case MetadataFields(fields):
-				upgradeRefusal = stops ? LegacyUpgradeGuard.refusal(location.path, fields, sharedServer) : null;
+				upgradeRefusal = stops ? LegacyUpgradeGuard.refusal(selected, fields, sharedServer) : null;
 			case MetadataAbsent:
-				upgradeRefusal = stops ? LegacyUpgradeGuard.refusal(location.path, null, sharedServer) : null;
+				upgradeRefusal = stops ? LegacyUpgradeGuard.refusal(selected, null, sharedServer) : null;
 		}
+		// After that guard, FindDatabasePath follows the found workspace's redirect and rewrites the target's legacy config.json.
+		if (error == "" && refusal == "" && upgradeRefusal == null && checked.path != selected && legacyOnly(checked.path))
+			refusal = legacyOnlyRefusal(path);
 		if (error == "" && refusal == "" && upgradeRefusal == null) {
 			if (!opensStore)
 				prepareNoStoreWorkspace(invocation, noStoreInitializations(invocation));
@@ -856,7 +876,7 @@ final class Application {
 		}
 		// One setup runs before the load error or the legacy-workspace guard stops the command, so `where` does not set up again.
 		if (opensStore)
-			loadStoreConfig(invocation, location, 1, false);
+			loadStoreConfig(invocation, checked, 1, false);
 		else
 			prepareNoStoreWorkspace(invocation, 1);
 		if (upgradeRefusal != null) {
@@ -869,11 +889,21 @@ final class Application {
 				return null;
 			return runModeAwareFailure(invocation.output, refusal);
 		}
-		output.writeStderr(metadataLoadWarning(location.path, error));
+		output.writeStderr(metadataLoadWarning(selected, error));
 		if (!stops)
 			return null;
 		output.writeStderr(metadataLoadFailure(error));
 		return 1;
+	}
+
+	/** This build's refusal of `path` in a legacy-only workspace, whose config.json upstream rewrites as metadata.json. */
+	static function legacyOnlyRefusal(path:String):String {
+		return '${path} is not available yet when the workspace has only a legacy config.json in this build';
+	}
+
+	/** Whether `beadsDir` is a legacy-only workspace: no metadata.json, and a config.json that decodes. */
+	static function legacyOnly(beadsDir:Null<String>):Bool {
+		return beadsDir != null && readMetadataFields(beadsDir).match(MetadataFieldsLegacyOnly);
 	}
 
 	/**
@@ -901,12 +931,13 @@ final class Application {
 	function warnSharedServerMismatch(beadsDir:String, config:LayeredConfig):Void {
 		if (sharedServerNoticeEmitted)
 			return;
-		switch readMetadataFields(beadsDir) {
-			case MetadataFields(fields) if (pinsEmbeddedMode(fields)):
-			case MetadataFields(_) | MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
-				return;
-		}
-		if (!config.sharedServerMode())
+		final fields = switch readMetadataFields(beadsDir) {
+			case MetadataFields(fields): fields;
+			// LoadForDiscovery reads a legacy-only workspace's config.json as its config.
+			case MetadataFieldsLegacyOnly: readLegacyConfigFields(beadsDir);
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported: null;
+		};
+		if (fields == null || !pinsEmbeddedMode(fields) || !config.sharedServerMode())
 			return;
 		sharedServerNoticeEmitted = true;
 		output.writeStderr(SHARED_SERVER_EMBEDDED_NOTICE);
@@ -1280,6 +1311,9 @@ final class Application {
 			case Found(location):
 				// Then it looks for the database (FindDatabasePath, :79).
 				lookups.findDatabasePath();
+				// There configfile.Load rewrites a legacy config.json as metadata.json.
+				if (legacyOnly(location.path))
+					return runModeAwareFailure(invocation.output, legacyOnlyRefusal(commandPath(invocation.command)));
 				final prefix = wherePrefix(location);
 				final bound = whereBeadsDir;
 				final redirectedFrom = RedirectSource.whereOrigin(bound != null ? bound : location.path, location.path);

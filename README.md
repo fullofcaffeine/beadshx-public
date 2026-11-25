@@ -225,7 +225,9 @@ migration is required ...` and exit with code 1, also with `--json`.
   `.beads/dolt` and no version from 1.0 or later.
 
 A `backend` other than `dolt` in `.beads/metadata.json` stops these commands
-with upstream's error for a removed or an unknown backend.
+with upstream's error for a removed or an unknown backend. Like upstream, the
+guard also reads a legacy `.beads/config.json`, so these errors come before
+the refusal of a legacy-only workspace (see the limits below).
 
 A data directory that `BEADS_DOLT_DATA_DIR` or `dolt_data_dir` names lets
 upstream find the database when `.beads/embeddeddolt` is missing, and `where`
@@ -554,11 +556,19 @@ Limits:
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
-  only a legacy config.json in this build`, also when `-C`, a `--db` path or a
-  redirect selects the workspace. Upstream rewrites the file as
-  `.beads/metadata.json` and runs them. `bdhx` leaves the file in place.
-  `version`, help pages and unknown commands run as upstream does. With a
-  `--db` path, upstream also rewrites the file for `version` and
+  only a legacy config.json in this build`, also when `-C`, a `--db` path,
+  the `db` setting or a redirect selects the workspace, and when such a
+  workspace is the second target of a redirect chain. Upstream rewrites the
+  file as `.beads/metadata.json` and runs them. `bdhx` leaves the file in
+  place. It stops where upstream rewrites the file: a command that reads the
+  database after its first setup, and `where`, without a database path, after
+  both setups and the lookups before its database lookup. So the warnings
+  before the error are the ones that upstream prints before the rewrite. A
+  `BEADS_DB` or `BD_DB` path that names such a workspace reports that the
+  command is not available yet when that variable names this path. Like
+  upstream, the shared-server notice takes the `dolt_mode` of the legacy
+  file. `version`, help pages and unknown commands run as upstream does. With
+  a `--db` path, upstream also rewrites the file for `version` and
   `bd help <command>`; `bdhx` prints the same output and writes nothing.
   Migration parity (M12) removes this limit.
 - In an embedded workspace, every command that reads the database reports
@@ -673,8 +683,9 @@ Limits:
   `failed to open database: ` prefix.
 - `bdhx` runs upstream's legacy-workspace guard for the workspace that it
   selects first. Upstream also runs it for the second target of a redirect
-  chain and, when it finds no workspace, for the `.beads` directories above
-  the current directory.
+  chain, with `-C` in place of the first target, and, when it finds no
+  workspace, for the `.beads` directories above the current directory.
+  `bdhx` checks a second target only when it is legacy-only (see above).
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
 - `ready --explain` and `graph check` find cycles with upstream's walk, which
