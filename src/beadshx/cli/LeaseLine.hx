@@ -13,7 +13,7 @@ import beadshx.store.IssueLease;
 	names another node. How: `measure` gives the seconds from now to an RFC 3339
 	instant, positive in the future, or null when the instant does not parse.
 	`localNode` reads this node's `node_id`, only for a lease that names its
-	node. Upstream prints the line muted, and this build prints no colors.
+	node. The line is plain text: like upstream, show mutes all of it.
 **/
 function leaseLine(status:String, lease:IssueLease, localNode:() -> String, measure:String->Null<Float>):Null<String> {
 	if (status != "in_progress" || lease.leaseExpiresAt == "")

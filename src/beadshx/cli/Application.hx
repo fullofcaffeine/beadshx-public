@@ -5731,7 +5731,7 @@ final class Application {
 		rendered += dates.join(" · ") + "\n";
 		final lease = leaseLine(issue.status, issue.longFields, localNode, LeaseClock.secondsFromNow);
 		if (lease != null)
-			rendered += lease + "\n";
+			rendered += styles.renderMuted(lease) + "\n";
 		final closeReason = issue.status == "closed" ? renderCloseReason(issue.closeReason, agentMode) : NoCloseReason;
 		switch closeReason {
 			case CloseReasonLine(line):

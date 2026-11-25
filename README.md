@@ -129,6 +129,12 @@ does not fit goes into a `CLOSE REASON` section after the metadata lines.
 When stderr is a terminal and the limit hides more issues, `list` and `query`
 print upstream's hint about `--limit` on stderr.
 
+Like upstream, `show` prints a `Lease:` line for an in-progress issue that
+holds a lease. The line tells when the lease expires and when the last
+heartbeat came. When this node has a `node_id`, the line also names the
+replica that granted the lease, if that is another node. When colors are on,
+the full line is muted.
+
 Like upstream, a command that reads the database uses `BEADS_DB` only when no
 `--db`, `-C` or `BEADS_DIR` is set and no workspace is found from the current
 directory. These commands ignore `BD_DB`. For `where`, `version` and help

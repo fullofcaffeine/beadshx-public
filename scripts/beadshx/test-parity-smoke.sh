@@ -5228,6 +5228,12 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_extra_config='node_id: " node-a "'
 compare_real_database_sql lease-show-config-replica exact "$lease_days_sql" show "$real_database_child_id"
 real_database_extra_config=""
+# With colors on, upstream mutes the whole Lease line (show_format.go:147), the granting replica too.
+real_database_extra_env=(NO_COLOR= CLICOLOR_FORCE=1 BD_NODE_ID=node-a)
+compare_real_database_sql lease-show-color exact "$lease_days_sql" show "$real_database_child_id"
+real_database_extra_env=(NO_COLOR= CLICOLOR_FORCE=1)
+compare_real_database_sql lease-show-color-long exact "$lease_hours_sql" show "$real_database_child_id" --long
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # A lease row on an issue that is not in progress shows in the JSON fields, but not as a Lease line.
 lease_open_sql="INSERT INTO labels (issue_id, label) VALUES ('$real_database_bug_id', 'leased')"$'\n'"INSERT INTO leases (issue_id, holder, granted_at, lease_expires_at, heartbeat_at, granted_node) VALUES ('$real_database_bug_id', 'fixture', '2026-11-01 10:00:00', '$(lease_time 108000)', '2026-11-01 10:00:00', '')"
 compare_real_database_sql lease-open-show exact "$lease_open_sql" show "$real_database_bug_id"
