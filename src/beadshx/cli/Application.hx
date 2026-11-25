@@ -3305,7 +3305,7 @@ final class Application {
 					case ListFailure(message): runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
-						final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
+						final explanation = switch readyExplainBlocked(invocation, location, query) {
 							case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
 								ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
 									ReadyExplain.cyclesFromEdges(candidates.items));
@@ -3326,6 +3326,18 @@ final class Application {
 						0;
 				}
 		};
+	}
+
+	/**
+		Upstream's GetBlockedIssues list, which only an embedded workspace reads with
+		Haxe-owned SQL. The embedded readers route on the `embeddeddolt` directory,
+		which a server-mode workspace can keep from before; it must not answer for
+		that workspace, so a server-mode or proxied workspace has no route here.
+	**/
+	function readyExplainBlocked(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):StoreResult<Array<BlockedIssue>> {
+		if (location.proxiedServer || opensServerStore(location))
+			return Failure(BLOCKED_ROUTE_UNAVAILABLE);
+		return query.blockedIssues(location.path, location.databaseName, "", invocation.global);
 	}
 
 	static function readyExplainRequest():beadshx.store.ReadyRequest {
