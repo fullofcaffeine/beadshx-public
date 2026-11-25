@@ -79,6 +79,17 @@ as upstream's `gotenv`: `KEY=value` or `KEY: value` lines, an optional
 `export`, `#` comments, single or double quotes and `$VAR` expansion. If one
 line is not valid, `bdhx` ignores the full file, and prints no warning.
 
+Like upstream, `bdhx` follows a `.beads/redirect` file each time that one of
+upstream's steps looks up the workspace, and it prints upstream's warnings at
+each of these lookups. The warnings are for a target that does not exist, for
+a redirect chain, and, when `BD_DEBUG_ROUTING` is set, the routing lines. The
+warning for a target without a database prints once for each directory. So a
+broken redirect prints its warning as many times as upstream does, for
+example 9 times for `where` and 11 times for `count`. These lookups do not
+include the Git worktree and jj workspace fallbacks of upstream. When `bdhx`
+finds a usage error that upstream finds only in its pre-run or command body,
+it prints no redirect warning before the error.
+
 Like upstream, `bdhx` has an agent mode for output that AI agents read.
 `BD_AGENT_MODE=1` or any `CLAUDE_CODE` value that is not empty turns it on,
 also from the `.beads/.env` file. In agent mode, the flat `list` view
@@ -405,6 +416,14 @@ Limits:
   `types --sections` prints its fixed list in every mode.
 - `label list-all` reports that it is not available yet in a proxied
   workspace.
+- Upstream also trusts the macOS Shared folder when it decides whether to
+  read a workspace's redirect after a command. `bdhx` does not, so for a
+  workspace in that folder it prints the redirect warning two times fewer than
+  upstream.
+- When the target of a redirect has its own redirect to another workspace,
+  upstream warns that it ignores that chain. But its later lookups follow the
+  second redirect, so upstream's `where` and `info` name the database of that
+  other workspace. `bdhx` names the database of the first target.
 - `snapshot` reads embedded workspaces only. In a server-mode, shared-server
   or proxied workspace and with `--global`, it reports that it is not
   available yet, before it opens anything.

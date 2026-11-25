@@ -3257,6 +3257,96 @@ compare_real_database redirect-source-no-git-target-directory-dep-tree exact --r
 real_database_directory=""
 real_database_setup=""
 real_database_read_only=""
+# Upstream follows a redirect at each of its workspace lookups, and FollowRedirect warns on every call: for a
+# target that does not exist, for a redirect chain, and with BD_DEBUG_ROUTING for each redirect it follows.
+# How often depends on the command and its selection: a broken redirect warns 9 times for `where` and 11 times
+# for `count`, and twice more when the workspace is inside upstream's safe boundary, where its post-run
+# GetRepoContext also runs GetRedirectInfo. A redirecting directory that names a database keeps it, and the
+# later lookups skip its redirect.
+redirect_to_missing_target() {
+	printf 'missing/.beads\n' >"$1/work/.beads/redirect"
+}
+redirect_to_sub() {
+	mkdir "$1/work/sub"
+	mv -f "$1/work/.beads" "$1/work/sub/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'sub/.beads\n' >"$1/work/.beads/redirect"
+}
+redirect_chain_to_missing_target() {
+	redirect_to_sub "$1"
+	printf 'missing/.beads\n' >"$1/work/sub/.beads/redirect"
+}
+redirect_to_directory_without_database() {
+	mkdir -p "$1/work/empty/.beads"
+	printf 'empty/.beads\n' >"$1/work/.beads/redirect"
+}
+redirect_only_to_missing_target() {
+	rm -rf "$1/work/.beads"
+	mkdir -m 700 "$1/work/.beads"
+	printf 'missing/.beads\n' >"$1/work/.beads/redirect"
+}
+real_database_setup=redirect_to_missing_target
+compare_real_database broken-redirect-where exact where
+compare_real_database broken-redirect-list exact list
+compare_real_database broken-redirect-show exact show "$real_database_issue_id"
+compare_real_database broken-redirect-count exact count
+compare_real_database broken-redirect-info exact info
+compare_real_database broken-redirect-config-get exact config get issue_prefix
+compare_real_database broken-redirect-version stderr-only version
+compare_real_database broken-redirect-db-flag-count exact --db .beads/embeddeddolt count
+real_database_extra_env=('BEADS_DB=<work>/.beads/embeddeddolt')
+compare_real_database broken-redirect-beads-db-count exact count
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+compare_real_database broken-redirect-change-directory-where exact -C . where
+compare_real_database broken-redirect-show-json exact show "$real_database_issue_id" --json
+compare_real_database broken-redirect-help-command exact help count
+# A strict read-only run skips the version tracking and post-run lookups. The read-only check gives each side
+# its own TMPDIR, which leaves the workspace outside upstream's safe boundary on macOS, so the post-run
+# GetRepoContext there skips its GetRedirectInfo.
+real_database_read_only=1
+compare_real_database broken-redirect-readonly-flag-count exact --readonly count
+compare_real_database broken-redirect-readonly-where exact where
+real_database_read_only=""
+real_database_setup=redirect_chain_to_missing_target
+compare_real_database chained-redirect-where exact where
+compare_real_database chained-redirect-list exact list
+compare_real_database chained-redirect-show exact show "$real_database_issue_id"
+compare_real_database chained-redirect-count exact count
+compare_real_database chained-redirect-info exact info
+compare_real_database chained-redirect-config-get exact config get issue_prefix
+compare_real_database chained-redirect-version stderr-only version
+compare_real_database chained-redirect-db-flag-count exact --db sub/.beads/embeddeddolt count
+real_database_extra_env=('BEADS_DB=<work>/sub/.beads/embeddeddolt')
+compare_real_database chained-redirect-beads-db-count exact count
+real_database_extra_env=(BD_DEBUG_ROUTING=1)
+real_database_setup=redirect_to_sub
+compare_real_database routed-redirect-where exact where
+compare_real_database routed-redirect-list exact list
+compare_real_database routed-redirect-show exact show "$real_database_issue_id"
+compare_real_database routed-redirect-count exact count
+compare_real_database routed-redirect-info exact info
+compare_real_database routed-redirect-config-get exact config get issue_prefix
+compare_real_database routed-redirect-version stderr-only version
+compare_real_database routed-redirect-db-flag-count exact --db sub/.beads/embeddeddolt count
+real_database_extra_env=(BD_DEBUG_ROUTING=1 'BEADS_DB=<work>/sub/.beads/embeddeddolt')
+compare_real_database routed-redirect-beads-db-count exact count
+real_database_extra_env=(BD_DEBUG_ROUTING=1)
+real_database_setup=redirect_chain_to_missing_target
+compare_real_database routed-chained-redirect-count exact count
+real_database_setup=redirect_with_existing_source_database
+compare_real_database routed-redirect-source-database-count exact count
+compare_real_database routed-redirect-source-database-where exact where
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# A target without project files warns once for each redirecting directory.
+real_database_setup=redirect_to_directory_without_database
+compare_real_database redirect-without-database-count exact count
+compare_real_database redirect-without-database-where exact where
+# A .beads directory that only redirects to a missing target selects no workspace; each lookup still warns.
+real_database_setup=redirect_only_to_missing_target
+compare_real_database redirect-only-broken-count exact count
+compare_real_database redirect-only-broken-where exact where
+compare_real_database redirect-only-broken-version stderr-only version
+real_database_setup=""
 # Without metadata.json upstream warns and then creates `beads` when the embedded store lacks it, also
 # when BEADS_DOLT_SERVER_DATABASE names the fixture's database, which upstream ignores there. This build
 # prints the same warning and then refuses before it opens anything.

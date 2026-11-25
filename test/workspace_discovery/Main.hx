@@ -15,6 +15,9 @@ private typedef DiscoveryCase = {
 	/** The selected workspace's `.beads/.env`, or null for none. */
 	final dotenv:Null<String>;
 
+	/** The current workspace's `.beads/redirect`, or null for none. */
+	final ?redirect:String;
+
 	final discoveries:Int;
 }
 
@@ -38,7 +41,6 @@ final class CountingDiscovery implements WorkspacePort {
 		final selected = Sys.getEnv("BEADS_DIR");
 		return Found({
 			path: selected == null || selected == "" ? defaultWorkspace : selected,
-			redirectedFrom: "",
 			yamlPrefix: "test",
 			databasePath: "",
 			databaseName: "",
@@ -106,9 +108,10 @@ final class UnstyledText implements TextStyle {
 /**
 	Each command asks the native workspace discovery once, and once more only
 	when its `.beads/.env` changes the environment or --db selects another
-	workspace than the current directory's. The cases run the production
-	object graph of one process, with a counting discovery in place of the
-	native one.
+	workspace than the current directory's. A redirect adds none: upstream's
+	repeated lookups that follow it run in Haxe (RedirectLookups). The cases
+	run the production object graph of one process, with a counting discovery
+	in place of the native one.
 **/
 @:goNative
 class Main {
@@ -151,6 +154,21 @@ class Main {
 				dotenv: null,
 				discoveries: 1
 			},
+			// Upstream follows a broken redirect at each of its lookups, which read files and ask no discovery.
+			{
+				name: "broken redirect count",
+				arguments: ["count"],
+				dotenv: null,
+				redirect: "missing/.beads\n",
+				discoveries: 1
+			},
+			{
+				name: "broken redirect where",
+				arguments: ["where"],
+				dotenv: null,
+				redirect: "missing/.beads\n",
+				discoveries: 1
+			},
 			{
 				name: "-C where",
 				arguments: ["-C", '$root/work', "where"],
@@ -186,8 +204,13 @@ class Main {
 					FileSystem.deleteFile('$workspace/.env');
 			} else
 				File.saveContent('$workspace/.env', testCase.dotenv);
+			final redirect = testCase.redirect;
+			if (redirect != null)
+				File.saveContent('$workspace/redirect', redirect);
 			final discovery = new CountingDiscovery(workspace);
 			commandApplication(discovery, new DiscardedOutput()).run(testCase.arguments);
+			if (FileSystem.exists('$workspace/redirect'))
+				FileSystem.deleteFile('$workspace/redirect');
 			if (discovery.calls != testCase.discoveries)
 				failures.push('${testCase.name}: ${discovery.calls} native discoveries, expected ${testCase.discoveries}');
 			Sys.putEnv("BD_ROUTING_PROBE", null);

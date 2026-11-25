@@ -8,6 +8,7 @@ import beadshx.relation.DependencyTree.TreeDirection;
 import beadshx.relation.DependencyTree.TreeNode;
 import beadshx.relation.DependencyTree.parseTreeDirection;
 import beadshx.relation.DependencyRead.compareUtf8;
+import beadshx.cli.JsonSettingPort.WorkspaceSelection;
 import beadshx.cli.ListFormatView.renderListDigraph;
 import beadshx.cli.ListFormatView.renderListDot;
 import beadshx.store.IssueListFormat.selectIssueListFormat;
@@ -144,6 +145,7 @@ import beadshx.store.SqlBlockedReader.BlockedIssue;
 import beadshx.identity.ActorPort;
 import beadshx.git.GitHistoryPort;
 import beadshx.cli.InfoChanges.VersionChange;
+import beadshx.workspace.RedirectLookups;
 import beadshx.workspace.RedirectSource;
 import beadshx.workspace.RedirectSource.RedirectSourceLookup;
 import beadshx.workspace.WorkspaceDiscovery;
@@ -416,6 +418,16 @@ final class Application {
 	final store:ReadonlyStorePort;
 	final profiler:ProfilePort;
 	final watch:WatchPort;
+
+	/** Upstream's workspace lookups that follow a redirect, with their warnings; shared with the parser's `.env` step. */
+	final lookups:RedirectLookups;
+
+	/**
+		The workspace that the command bound, which upstream's post-run reads
+		to decide its auto-backup lookup (see postRunLookups); null for none.
+	**/
+	var boundWorkspace:Null<WorkspaceLocation> = null;
+
 	var jsonDeprecationEmitted = false;
 	var sharedServerNoticeEmitted = false;
 
@@ -442,7 +454,8 @@ final class Application {
 	var uncheckedStore:Null<UncheckedStore> = null;
 
 	public function new(parser:Parser, output:OutputPort, actor:ActorPort, gitHistory:GitHistoryPort, workspace:WorkspacePort, store:ReadonlyStorePort,
-			profiler:ProfilePort, watch:WatchPort) {
+			profiler:ProfilePort, watch:WatchPort, ?lookups:RedirectLookups) {
+		this.lookups = lookups != null ? lookups : new RedirectLookups();
 		this.parser = parser;
 		this.output = new SchemaSkewWarningOutput(output);
 		this.actor = actor;
@@ -464,7 +477,15 @@ final class Application {
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
 			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
-		return switch parser.parse(args) {
+		final parsed = parser.parse(args);
+		// The parser's -C and .env steps ran upstream's first lookups; upstream prints them only when its pre-run runs.
+		switch parsed {
+			case Parsed(invocation) if (runsPreRun(invocation)):
+				lookups.release(text -> output.writeStderr(text));
+			case Parsed(_) | UsageFailure(_) | GroupUsageFailure(_, _) | OutputFailure(_, _) | ExactFailure(_, _) | UnknownCommand(_):
+				lookups.discard();
+		}
+		return switch parsed {
 			case UsageFailure(message):
 				output.writeStderr('Error: ${message}\n');
 				1;
@@ -487,9 +508,69 @@ final class Application {
 				final exitCode = SchemaSkewBoundary.runCommand(() -> runInvocation(invocation), refusal -> runSchemaSkewRefusal(invocation.output, refusal));
 				// A command that wrote nothing after its schema check still prints the escape-hatch warning.
 				output.flushHeldWarning();
+				if (exitCode == 0 && runsPreRun(invocation))
+					postRunLookups(invocation);
 				if (exitCode == 0 && !invocation.showHelp)
 					profiler.finish(invocation.memProfilePath);
 				exitCode;
+		};
+	}
+
+	/**
+		Whether upstream's root pre-run runs for the command, and so its
+		workspace lookups: cobra shows help for --help and for the label,
+		config and events groups without it. `bd help` is a command of its own,
+		whose pre-run runs.
+	**/
+	static function runsPreRun(invocation:Invocation):Bool {
+		if (invocation.helpCommand)
+			return true;
+		return !invocation.showHelp && switch invocation.command {
+			case Label | Events | Config: false;
+			case _: true;
+		};
+	}
+
+	/**
+		Upstream's PersistentPostRun lookups after a command that succeeded
+		(cmd/bd/main.go:1755-1876). Strict read-only mode runs no maintenance.
+		Under a proxied server only the events-journal prune looks up the
+		workspace (:1771). Otherwise the auto-backup check (:1834,
+		maybeAutoBackup) asks GetRepoContext, through primeHasGitRemote
+		(cmd/bd/prime.go:347), unless BD_GIT_HOOK is 1, backup.enabled is set
+		or the command uses a SQL server (backup_auto.go:40); then the prune
+		finds the workspace again (:1875).
+	**/
+	function postRunLookups(invocation:Invocation):Void {
+		if (lookups.followsNothing())
+			return;
+		final location = boundWorkspace;
+		final config = location != null ? LayeredConfig.forWorkspace(location.path) : LayeredConfig.atStartup();
+		if (strictReadonly(invocation, config))
+			return;
+		final proxied = location != null && location.proxiedServer;
+		if (!proxied
+			&& environmentValue("BD_GIT_HOOK") != "1"
+			&& config.source("backup.enabled") == DefaultSource
+			&& !config.sharedServerMode()
+			&& (location == null || !opensServerStore(location)))
+			lookups.getRepoContext();
+		if (invocation.helpCommand || prunesEventsJournal(invocation.command))
+			lookups.findBeadsDir();
+	}
+
+	/**
+		Upstream shouldAutoPruneEventsJournal (cmd/bd/events_journal.go:145-156)
+		for a command that may run maintenance: not one of upstream's read-only
+		commands by cobra's leaf name (readOnlyCommands, cmd/bd/main.go:155-172),
+		and not under `bd events`.
+	**/
+	static function prunesEventsJournal(command:Command):Bool {
+		return switch command {
+			case List | Ready | Show | Count | Search | Query | Graph | Blocked | Comments | Ping | DepList | ConfigList | ConfigShow | LabelList |
+				EventsTail | EventsExport | Events: false;
+			case RootHelp | Version | Where | Info | Status | Stale | Orphans | Children | DepCycles | DepTree | GraphCheck | History | Types | Statuses |
+				Config | ConfigGet | ConfigValidate | ConfigDrift | Label | LabelListAll | Snapshot: true;
 		};
 	}
 
@@ -719,6 +800,8 @@ final class Application {
 				return null;
 			case InvalidSelection(_): return null;
 		};
+		if (!opensStore)
+			boundWorkspace = location;
 		final path = commandPath(invocation.command);
 		var error = "";
 		var refusal = "";
@@ -738,7 +821,7 @@ final class Application {
 		}
 		// The setup stops at this file, before the notice and before `where` sets up again.
 		if (opensStore)
-			loadStoreConfig(invocation, location, 1);
+			loadStoreConfig(invocation, location, 1, false);
 		else
 			prepareNoStoreWorkspace(invocation, 1);
 		if (refusal != "") {
@@ -785,16 +868,23 @@ final class Application {
 		or config.local.yaml, or the user config.yaml. Each run then prints the
 		permissions warning for its name of the directory (see
 		warnBeadsDirPermissions), and the first run the shared-server notice.
+		Before the reload each run binds BEADS_DIR to that directory and
+		follows its redirect (RedirectLookups.prepareSelectedContext).
+		`afterFirstSetup` runs what upstream runs after the first setup.
 		Returns the config, which keeps what loaded before the failure.
 	**/
-	function loadSelectedConfig(beadsDir:String, setups:Array<String>):LayeredConfig {
+	function loadSelectedConfig(beadsDir:String, setups:Array<String>, ?afterFirstSetup:() -> Void):LayeredConfig {
 		final config = LayeredConfig.forWorkspace(beadsDir);
 		for (index => setup in setups) {
+			lookups.prepareSelectedContext(setup);
 			if (config.failure != null)
 				output.writeStderr('Warning: failed to reinitialize config for selected beads dir: ${config.failure}\n');
 			warnBeadsDirPermissions(setup);
-			if (index == 0)
+			if (index == 0) {
 				warnSharedServerMismatch(beadsDir, config);
+				if (afterFirstSetup != null)
+					afterFirstSetup();
+			}
 		}
 		return config;
 	}
@@ -816,14 +906,24 @@ final class Application {
 		storeInitializations). The first setup names the directory as upstream
 		selects it (see WorkspaceEnvironment.storeSetupDirectory). The second
 		comes after upstream binds the database (see boundSetupDirectory).
+
+		Without a --db path upstream first looks up the redirecting workspace
+		(GetRedirectInfo and preserveRedirectSourceDatabase, cmd/bd/main.go:1210)
+		and the workspace itself (FindBeadsDir, :1214), and after the first
+		setup it looks for the database (FindDatabasePath, :1250) when it
+		`bindsDatabase`; a metadata.json that does not load stops it before.
 	**/
-	function loadStoreConfig(invocation:Invocation, location:WorkspaceLocation, initializations:Int):LayeredConfig {
+	function loadStoreConfig(invocation:Invocation, location:WorkspaceLocation, initializations:Int, bindsDatabase:Bool):LayeredConfig {
 		final setups = [
 			WorkspaceEnvironment.storeSetupDirectory(invocation.databaseVariable, location.path)
 		];
 		if (initializations > 1)
 			setups.push(boundSetupDirectory(location));
-		return loadSelectedConfig(location.path, setups);
+		if (databaseFlagSelectsPath(invocation))
+			return loadSelectedConfig(location.path, setups);
+		lookups.preserveSourceDatabase(lookups.getRedirectInfo());
+		lookups.findBeadsDir();
+		return loadSelectedConfig(location.path, setups, bindsDatabase ? lookups.findDatabasePath : null);
 	}
 
 	/**
@@ -856,16 +956,42 @@ final class Application {
 		native discovery that this costs.
 	**/
 	function prepareNoStoreWorkspace(invocation:Invocation, initializations:Int):Void {
+		// Upstream selectedNoDBBeadsDir looks the directory up first (cmd/bd/main.go:1156), and `where` again before its second setup (where.go:50).
+		noStoreLookups(invocation);
 		final beadsDir = noStoreBeadsDir(invocation);
-		if (beadsDir == "")
+		if (beadsDir == "") {
+			// Without a directory BEADS_DIR stays unset: loadEnvironment and loadServerModeFromConfig look again (:1160-1161, :419, :493), and so does the pre-run (:1170).
+			if (!lookups.beadsDirSet()) {
+				lookups.findBeadsDir();
+				lookups.findBeadsDir();
+			}
+			lookups.findBeadsDir();
+			if (initializations > 1)
+				noStoreLookups(invocation);
 			return;
+		}
 		final setups = [beadsDir];
 		if (initializations > 1) {
 			final again = databaseSettingSelects(invocation) ? WorkspaceEnvironment.findWithBeadsDir(workspace, beadsDir) : beadsDir;
 			if (again != "")
 				setups.push(again);
 		}
-		loadSelectedConfig(beadsDir, setups);
+		loadSelectedConfig(beadsDir, setups, initializations > 1 ? () -> noStoreLookups(invocation) : null);
+	}
+
+	/**
+		The lookups of upstream selectedNoDBBeadsDir (cmd/bd/main.go:509-539):
+		none when a --db, BEADS_DB or BD_DB path selects the directory, which
+		resolveCommandBeadsDir derives from the path; else FindBeadsDir, through
+		BEADS_DIR once a setup or -C set it (:529), and otherwise only when no
+		`db` setting selects the directory (:538).
+	**/
+	function noStoreLookups(invocation:Invocation):Void {
+		final selection:WorkspaceSelection = {directory: invocation.directory, databasePath: invocation.databasePath};
+		if (WorkspaceEnvironment.noStorePathSelects(selection))
+			return;
+		if (lookups.beadsDirSet() || !WorkspaceEnvironment.databaseSettingSelects(selection))
+			lookups.findBeadsDir();
 	}
 
 	/** `where` sets up its directory in the pre-run and again in its command body; `version` and help pages only in the pre-run. */
@@ -1022,6 +1148,8 @@ final class Application {
 				case Found(_) | NotFound:
 			}
 		}
+		// Upstream's resolveBranch asks GetRepoContext for the branch (cmd/bd/version.go:41, :123).
+		lookups.getRepoContext();
 		switch invocation.output {
 			case Human:
 				output.writeStdout(identity + "\n");
@@ -1043,15 +1171,22 @@ final class Application {
 	}
 
 	function runWhere(invocation:Invocation):Int {
+		// Upstream's where looks its directory up again (resolveWhereBeadsDir, where.go:54).
+		noStoreLookups(invocation);
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case Found(location):
+				// Then it looks for the database (FindDatabasePath, :79).
+				lookups.findDatabasePath();
 				final prefix = wherePrefix(location);
+				final redirectedFrom = RedirectSource.whereOrigin(location.path);
 				switch invocation.output {
-					case Human: output.writeStdout(renderWhereHuman(location, prefix));
-					case Json: writeJsonStdout(renderWhereJson(location, prefix));
+					case Human: output.writeStdout(renderWhereHuman(location, prefix, redirectedFrom));
+					case Json: writeJsonStdout(renderWhereJson(location, prefix, redirectedFrom));
 				}
 				0;
 			case NotFound:
+				// resolveWhereBeadsDir falls back to FindBeadsDir (where.go:123).
+				lookups.findBeadsDir();
 				final hint = workspaceDiagHint(false, LayeredConfig.atStartup().sharedServerMode());
 				switch invocation.output {
 					case Human:
@@ -1151,8 +1286,7 @@ final class Application {
 					case PlainFailure(message): runStoreFailure(message);
 					case ModeAwareFailure(message): runModeAwareFailure(invocation.output, message);
 					case Accepted:
-						if (!findsDatabase(invocation,
-							location)) runWorkspaceDatabaseNotFound(location); else switch store.ping(location.path, invocation.global) {
+						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch pingStore(location, invocation.global) {
 							case Failure(message): runStoreFailure(message);
 							case Success(snapshot):
 								renderPing(invocation.output, snapshot);
@@ -1160,6 +1294,13 @@ final class Application {
 						}
 				}
 		};
+	}
+
+	/** Upstream ping's body finds the workspace (cmd/bd/ping.go:48) before it pings the store; under a proxied server it pings the server instead. */
+	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingSnapshot> {
+		if (!location.proxiedServer)
+			lookups.findBeadsDir();
+		return store.ping(location.path, global);
 	}
 
 	function runStatus(invocation:Invocation):Int {
@@ -2463,6 +2604,8 @@ final class Application {
 				return runModeAwareFailure(invocation.output, "config show is not available yet for a workspace without a database in this build");
 			if (userConfigYamlPresent())
 				return runModeAwareFailure(invocation.output, "config show is not available yet when a user config.yaml exists in this build");
+			// Upstream's collectMetadataEntries finds the workspace for its metadata.json rows (cmd/bd/config_show.go:237).
+			lookups.findBeadsDir();
 			final metadataEntries = location == null ? [] : readWorkspaceMetadata(location.path);
 			// Upstream gathers the rows in this order before its sort, which leaves rows with one key in either order.
 			final entries = layeredEntries(config.allKeys(), config.facts, environmentValue("BEADS_ACTOR")).concat(metadataEntries).concat(databaseEntries);
@@ -2491,6 +2634,10 @@ final class Application {
 		if (invocation.global)
 			return runModeAwareFailure(invocation.output, CONFIG_ROUTE_UNAVAILABLE);
 		return runWithLayeredConfig(invocation, true, false, (config, location, _) -> {
+			// Upstream finds the workspace (resolvedConfigRepoRoot, cmd/bd/config.go:787), then doctor's findConfigPath resolves its repository's .beads (doctor/config_values.go:96).
+			final found = lookups.findBeadsDir();
+			if (found != "")
+				lookups.resolveBeadsDirForRepo(Path.directory(found));
 			if (location == null) {
 				final message = "no active beads workspace found";
 				final hint = workspaceDiagHint(true, config.sharedServerMode());
@@ -2549,6 +2696,9 @@ final class Application {
 			return runModeAwareFailure(invocation.output, CONFIG_ROUTE_UNAVAILABLE);
 		return runWithLayeredConfig(invocation, true, false, (config, location, _) -> {
 			final items = gitHooksDrift();
+			// Upstream's remote and server checks each find the workspace (cmd/bd/config_drift.go:159, :255).
+			lookups.findBeadsDir();
+			lookups.findBeadsDir();
 			if (location == null) {
 				items.push(plainItem("remote", DriftSkipped, "No active beads workspace found"));
 				items.push(plainItem("server", DriftSkipped, "No active beads workspace found"));
@@ -2715,31 +2865,36 @@ final class Application {
 		final startup = LayeredConfig.atStartup();
 		return switch workspace.discover(invocation.directory, invocation.databasePath) {
 			case InvalidSelection(message): runStoreFailure(message);
-			case NotFound: storeFree ? action(startup, null, null) : runDatabaseNotFound(startup.sharedServerMode());
+			case NotFound:
+				storeLookupsWithoutWorkspace();
+				storeFree ? action(startup, null, null) : runDatabaseNotFound(startup.sharedServerMode());
 			case Found(location):
+				boundWorkspace = location;
 				// Upstream warns about a missing metadata.json after its config warnings and before its database selection checks.
 				final defaultDirectory = missingMetadataDirectory(invocation, location);
 				// Without a database upstream stops before those checks.
 				final selection = findsDatabase(invocation, location) ? validateDatabaseSelection(invocation, location) : Accepted;
 				switch selection {
 					case PlainFailure(message):
-						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
 						final gateRefusal = holdWorkspaceGates(invocation, location, config);
 						if (gateRefusal != null)
 							return runModeAwareFailure(invocation.output, gateRefusal);
+						trackVersionLookup(invocation, location, config);
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runStoreFailure(message);
 					case ModeAwareFailure(message):
-						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+						final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
 						final gateRefusal = holdWorkspaceGates(invocation, location, config);
 						if (gateRefusal != null)
 							return runModeAwareFailure(invocation.output, gateRefusal);
+						trackVersionLookup(invocation, location, config);
 						warnStoreConfiguration(location, defaultDirectory, invocation.global);
 						runModeAwareFailure(invocation.output, message);
 					case Accepted:
 						final reachesServer = reachesSharedServer(invocation, location);
 						if (!findsDatabase(invocation, location) || (runsWithoutDatabase != null && runsWithoutDatabase(location))) {
-							final config = loadStoreConfig(invocation, location, 1);
+							final config = loadStoreConfig(invocation, location, 1, true);
 							final gateRefusal = holdWorkspaceGates(invocation, location, config);
 							if (gateRefusal != null)
 								return runModeAwareFailure(invocation.output, gateRefusal);
@@ -2748,10 +2903,11 @@ final class Application {
 								return runModeAwareFailure(invocation.output, refusal);
 							storeFree ? action(config, location, null) : runDatabaseNotFound(config.sharedServerMode());
 						} else {
-							final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+							final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
 							final gateRefusal = holdWorkspaceGates(invocation, location, config);
 							if (gateRefusal != null)
 								return runModeAwareFailure(invocation.output, gateRefusal);
+							trackVersionLookup(invocation, location, config);
 							// Upstream warns about a missing metadata.json before the store open that a refusal stands for.
 							warnMissingMetadata(defaultDirectory);
 							final refusal = preflight({config: config, location: location, reachesSharedServer: reachesServer});
@@ -2767,6 +2923,8 @@ final class Application {
 							switch openIssueQuery(invocation, location) {
 								case Failure(message): runStoreFailure(message);
 								case Success(query):
+									// Upstream's warnMultipleDatabases follows the store open (cmd/bd/main.go:1688).
+									lookups.findAllDatabases();
 									final probe = readsTable ? Success("") : query.configValue(location.path, selectedDatabaseName(invocation, location), "",
 										invocation.global);
 									closeIssueQuery(query, switch probe {
@@ -5289,7 +5447,18 @@ final class Application {
 				output.writeStdout("\n" + terminalStyles().renderMuted(StringTools.rpad("", "─", 60)) + "\n\n");
 			output.writeStdout(rendered);
 		}
+		recordLastTouched();
 		return found.length == 0 ? 1 : 0;
+	}
+
+	/**
+		Upstream show's SetLastTouchedID after its text output, also when it
+		found no issue (cmd/bd/show.go:267, :273), and after JSON output: it
+		finds the workspace (last_touched.go:69). The record itself is a write,
+		which this build leaves out.
+	**/
+	function recordLastTouched():Void {
+		lookups.findBeadsDir();
 	}
 
 	function runShowShort(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
@@ -5317,7 +5486,9 @@ final class Application {
 		}
 		if (found.length == 0) {
 			return switch invocation.output {
-				case Human: 1;
+				case Human:
+					recordLastTouched();
+					1;
 				case Json: runModeAwareFailure(invocation.output, "no issues found matching the provided IDs");
 			};
 		}
@@ -5325,6 +5496,7 @@ final class Application {
 			case Human:
 				for (summary in found)
 					output.writeStdout(renderIssueShort(summary, terminalStyles()) + "\n");
+				recordLastTouched();
 				0;
 			case Json:
 				// Upstream checks --short before its JSON branch. Preserve the
@@ -5370,7 +5542,10 @@ final class Application {
 		}
 		if (found.length == 0)
 			return runModeAwareFailure(invocation.output, "no issues found matching the provided IDs");
-		return writeRenderedJsonStdout(renderShowJson(found));
+		final result = writeRenderedJsonStdout(renderShowJson(found));
+		if (result == 0)
+			recordLastTouched();
+		return result;
 	}
 
 	/** Upstream utils.ResolvePartialID: the exact ID first, and the issue prefix only after a miss. */
@@ -6408,10 +6583,10 @@ final class Application {
 		return value;
 	}
 
-	function renderWhereHuman(location:WorkspaceLocation, prefix:String):String {
+	function renderWhereHuman(location:WorkspaceLocation, prefix:String, redirectedFrom:String):String {
 		var rendered = location.path + "\n";
-		if (location.redirectedFrom != "")
-			rendered += '  (via redirect from ${location.redirectedFrom})\n';
+		if (redirectedFrom != "")
+			rendered += '  (via redirect from ${redirectedFrom})\n';
 		if (prefix != "")
 			rendered += '  prefix: ${prefix}\n';
 		if (location.databasePath != "")
@@ -6419,15 +6594,15 @@ final class Application {
 		return rendered;
 	}
 
-	function renderWhereJson(location:WorkspaceLocation, prefix:String):String {
+	function renderWhereJson(location:WorkspaceLocation, prefix:String, redirectedFrom:String):String {
 		final lines = ["{"];
 		if (location.databasePath != "")
 			lines.push('  "database_path": ${Json.stringify(location.databasePath)},');
 		lines.push('  "path": ${Json.stringify(location.path)},');
 		if (prefix != "")
 			lines.push('  "prefix": ${Json.stringify(prefix)},');
-		if (location.redirectedFrom != "")
-			lines.push('  "redirected_from": ${Json.stringify(location.redirectedFrom)},');
+		if (redirectedFrom != "")
+			lines.push('  "redirected_from": ${Json.stringify(redirectedFrom)},');
 		lines.push('  "schema_version": 1');
 		lines.push("}");
 		return lines.join("\n") + "\n";
@@ -6513,7 +6688,19 @@ final class Application {
 
 	/** runDatabaseNotFound without a workspace: upstream then uses a SQL server only in shared-server mode, from the process-start config. */
 	function runDatabaseNotFoundWithoutWorkspace():Int {
+		storeLookupsWithoutWorkspace();
 		return runDatabaseNotFound(LayeredConfig.atStartup().sharedServerMode());
+	}
+
+	/**
+		The lookups of upstream's pre-run for a command that opens a store when
+		it finds no workspace: GetRedirectInfo with preserveRedirectSourceDatabase
+		(cmd/bd/main.go:1210), FindBeadsDir (:1214) and FindDatabasePath (:1250).
+	**/
+	function storeLookupsWithoutWorkspace():Void {
+		lookups.preserveSourceDatabase(lookups.getRedirectInfo());
+		lookups.findBeadsDir();
+		lookups.findDatabasePath();
 	}
 
 	/**
@@ -6633,10 +6820,32 @@ final class Application {
 		and the command reports the missing database (see findsDatabase).
 	**/
 	function validateStoreSelection(invocation:Invocation, location:WorkspaceLocation):DatabaseSelectionValidation {
-		final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location));
+		boundWorkspace = location;
+		final config = loadStoreConfig(invocation, location, storeInitializations(invocation, location), true);
 		final gateRefusal = holdWorkspaceGates(invocation, location, config);
 		if (gateRefusal != null)
 			return ModeAwareFailure(gateRefusal);
+		trackVersionLookup(invocation, location, config);
+		final selection = validateSelectedStore(invocation, location, config);
+		// Upstream's warnMultipleDatabases looks for the workspaces above the current directory once the store is open (:1688).
+		if (selection.match(Accepted) && findsDatabase(invocation, location))
+			lookups.findAllDatabases();
+		return selection;
+	}
+
+	/**
+		Upstream's trackBdVersion finds the workspace once more after the
+		workspace gates (cmd/bd/main.go:1391), when the pre-run found a
+		database and strict read-only mode is off; `config` is the one loaded
+		for the workspace.
+	**/
+	function trackVersionLookup(invocation:Invocation, location:WorkspaceLocation, config:LayeredConfig):Void {
+		if (findsDatabase(invocation, location) && !strictReadonly(invocation, config))
+			lookups.findBeadsDir();
+	}
+
+	/** validateStoreSelection's checks after the workspace gates, with `config` loaded for the workspace. */
+	function validateSelectedStore(invocation:Invocation, location:WorkspaceLocation, config:LayeredConfig):DatabaseSelectionValidation {
 		final defaultDirectory = missingMetadataDirectory(invocation, location);
 		if (config.sharedServerMode() && reachesSharedServer(invocation, location)) {
 			warnMissingMetadata(defaultDirectory);

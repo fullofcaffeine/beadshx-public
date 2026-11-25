@@ -10,6 +10,7 @@ import beadshx.nativeextern.os.OsPkg;
 import beadshx.nativeextern.strings.StringsPkg;
 import beadshx.store.CustomConfig.goTrimSpace;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
+import beadshx.workspace.RedirectLookups;
 import beadshx.workspace.WorkspaceDiscovery;
 import beadshx.workspace.WorkspacePort;
 import sys.FileSystem;
@@ -42,15 +43,22 @@ final class WorkspaceEnvironment {
 
 	/**
 		Loads the `.env` variables for one command's -C and --db selection, and
-		returns what BEADS_DB or BD_DB selects for that command.
+		returns what BEADS_DB or BD_DB selects for that command. `lookups`
+		runs upstream's workspace lookups of these steps: FindBeadsDirFrom for
+		-C (cmd/bd/main.go:808) and FindBeadsDir for the first step (:404).
 	**/
-	public static function load(workspace:WorkspacePort, selection:WorkspaceSelection, use:DatabaseVariableUse):DatabaseVariableSelection {
+	public static function load(workspace:WorkspacePort, selection:WorkspaceSelection, use:DatabaseVariableUse,
+			lookups:Null<RedirectLookups>):DatabaseVariableSelection {
 		var found:Null<WorkspaceDiscovery> = null;
+		if (lookups != null && goTrimSpace(selection.directory) != "")
+			lookups.changeDirectory(selection.directory);
 		// -C sets BEADS_DIR before upstream's first step, which then does nothing.
 		if (goTrimSpace(selection.directory) == ""
 			&& environmentValue("BEADS_DIR") == ""
 			&& environmentValue("BEADS_DB") == ""
 			&& environmentValue("BD_DB") == "") {
+			if (lookups != null)
+				lookups.findBeadsDir();
 			final discovered = workspace.discover("", "");
 			var changed = false;
 			switch discovered {
@@ -183,6 +191,16 @@ final class WorkspaceEnvironment {
 				return value;
 		}
 		return databaseSettingSelects(selection) ? LayeredConfig.atStartup().getString("db") : "";
+	}
+
+	/**
+		Whether a --db path, BEADS_DB or BD_DB gives upstream's
+		selectedNoDBBeadsDir its directory (see noStoreDatabasePath), so that
+		it does not look the workspace up.
+	**/
+	public static function noStorePathSelects(selection:WorkspaceSelection):Bool {
+		final flag = selection.databasePath;
+		return (flag != "" && !namesDatabase(flag)) || environmentValue("BEADS_DB") != "" || environmentValue("BD_DB") != "";
 	}
 
 	/**

@@ -19,7 +19,6 @@ import (
 // Location is the active workspace identity used by read-only commands.
 type Location struct {
 	path            string
-	redirectedFrom  string
 	prefix          string
 	databasePath    string
 	databaseName    string
@@ -30,7 +29,6 @@ type Location struct {
 }
 
 func (v Location) Path() string              { return v.path }
-func (v Location) RedirectedFrom() string    { return v.redirectedFrom }
 func (v Location) Prefix() string            { return v.prefix }
 func (v Location) DatabasePath() string      { return v.databasePath }
 func (v Location) DatabaseName() string      { return v.databaseName }
@@ -66,7 +64,6 @@ func discoverLocation(path string) *Location {
 	listLimitSet := config.GetValueSource("list.limit") != config.SourceDefault
 	return &Location{
 		path:            path,
-		redirectedFrom:  findOriginalBeadsDir(path),
 		prefix:          prefix,
 		databasePath:    databasePath,
 		databaseMissing: databaseMissing,
@@ -216,37 +213,6 @@ func resolveDatabaseBeadsDir(database, selectedBeadsDir string) string {
 		}
 	}
 	return ""
-}
-
-func findOriginalBeadsDir(resolved string) string {
-	if environmentPath := os.Getenv("BEADS_DIR"); environmentPath != "" {
-		environmentPath = utils.CanonicalizePath(environmentPath)
-		if environmentPath != resolved && hasRedirect(environmentPath) {
-			return environmentPath
-		}
-	}
-
-	current, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	if canonical, err := filepath.EvalSymlinks(current); err == nil {
-		current = canonical
-	}
-	for {
-		candidate := filepath.Join(current, ".beads")
-		if information, err := os.Stat(candidate); err == nil && information.IsDir() {
-			if candidate != resolved && hasRedirect(candidate) {
-				return candidate
-			}
-			return ""
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return ""
-		}
-		current = parent
-	}
 }
 
 func hasRedirect(beadsDir string) bool {

@@ -3,7 +3,6 @@ package beadshx.workspace;
 /** Concrete paths and identity reported for one discovered Beads workspace. */
 typedef WorkspaceLocation = {
 	final path:String;
-	final redirectedFrom:String;
 
 	/**
 		The workspace config.yaml's `issue-prefix`, or else its `issue_prefix`,

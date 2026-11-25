@@ -34,9 +34,6 @@ func TestDiscoverFromSelectsNestedProjectWithoutChangingCWD(t *testing.T) {
 	if location.Path() != wantPath {
 		t.Fatalf("Path() = %q, want %q", location.Path(), wantPath)
 	}
-	if location.RedirectedFrom() != "" {
-		t.Fatalf("RedirectedFrom() = %q, want empty explicit selection", location.RedirectedFrom())
-	}
 	if got := os.Getenv("BEADS_DIR"); got != originalSelection {
 		t.Fatalf("BEADS_DIR after discovery = %q, want restored %q", got, originalSelection)
 	}

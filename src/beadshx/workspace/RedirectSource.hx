@@ -25,8 +25,20 @@ enum RedirectSourceLookup {
 	RedirectUnknown;
 }
 
+/** What a `.beads/redirect` file names, as upstream FollowRedirect reads it. */
+enum RedirectTarget {
+	/** No readable redirect file, or one that names nothing. */
+	NoTarget;
+
+	/** The target, absolute and with its symbolic links resolved when they resolve. */
+	Target(path:String);
+
+	/** A target in a detached commit worktree (`/refs/commits/`), for which upstream may take a branch worktree. */
+	DetachedTarget;
+}
+
 /** Upstream gitContext: the repository of the current directory. */
-private typedef GitRepository = {
+typedef GitRepository = {
 	final root:String;
 	final commonDirectory:String;
 	final worktree:Bool;
@@ -43,7 +55,7 @@ private typedef GitRepository = {
 	fallbacks and the first `.beads` directory above the current directory.
 	What: that directory when it holds a redirect that upstream follows.
 	How: a port of GetRedirectInfo, checkRedirectInDir, findLocalBeadsDir and
-	FollowRedirect, without their warnings, which discovery prints. Paths keep
+	FollowRedirect, without their warnings, which RedirectLookups prints. Paths keep
 	the case that the file system gives them: upstream's case lookup on macOS
 	changes only how a path is written.
 **/
@@ -78,6 +90,38 @@ final class RedirectSource {
 		Sys.putEnv("BEADS_DOLT_SERVER_DATABASE", database);
 	}
 
+	/**
+		Upstream where's findOriginalBeadsDir (cmd/bd/where.go:146-190), with
+		BEADS_DIR bound to `beadsDir`, the workspace that `where` reports, and
+		where's comparison with that workspace (:69-72): the `.beads` directory
+		that redirected to it, or "".
+
+		Why: the pre-run binds BEADS_DIR to the redirect target, so for a target
+		that has a redirect of its own, a chain that upstream does not follow,
+		BEADS_DIR names that target and `where` reports no origin.
+		What: BEADS_DIR's directory when it has a redirect file, else the first
+		`.beads` directory above the current directory when that one has one;
+		"" when that directory is `beadsDir` itself. How: it only reads.
+	**/
+	public static function whereOrigin(beadsDir:String):String {
+		final bound = canonicalizePath(beadsDir);
+		if (ConfigProbes.statSucceeds(FilepathPkg.join(bound, "redirect")))
+			return bound == beadsDir ? "" : bound;
+		final directory = FilepathPkg.clean(Sys.getCwd());
+		final resolved = FilepathPkg.evalSymlinks(directory);
+		var current = resolved.value2 == null ? resolved.value1 : directory;
+		while (current != "/" && current != ".") {
+			final candidate = FilepathPkg.join(current, ".beads");
+			if (isDirectory(candidate))
+				return candidate != beadsDir && ConfigProbes.statSucceeds(FilepathPkg.join(candidate, "redirect")) ? candidate : "";
+			final parent = FilepathPkg.dir(current);
+			if (parent == current)
+				break;
+			current = parent;
+		}
+		return "";
+	}
+
 	/** Upstream findLocalBeadsDir, then checkRedirectInDir on the directory it finds. */
 	static function localRedirect(beadsDirVariable:String, repository:Null<GitRepository>):RedirectSourceLookup {
 		if (beadsDirVariable != "") {
@@ -87,28 +131,40 @@ final class RedirectSource {
 			// Upstream may take a branch worktree's .beads instead, which this build does not model; it refuses only when this one redirects.
 			return ConfigProbes.statSucceeds(FilepathPkg.join(canonicalizePath(beadsDirVariable), "redirect")) ? RedirectUnknown : NotRedirected;
 		}
+		final local = localBeadsDir(repository);
+		return local == "" ? NotRedirected : checkRedirect(local);
+	}
+
+	/**
+		Upstream findLocalBeadsDir without BEADS_DIR: in a linked worktree its
+		own `.beads` when that redirects or holds project files, else the
+		`.beads` beside the main repository's Git directory; then the first
+		`.beads` directory above the current directory, as os.Getwd names it.
+		"" for none.
+	**/
+	public static function localBeadsDir(repository:Null<GitRepository>):String {
 		if (repository != null && repository.worktree) {
 			final worktreeBeads = FilepathPkg.join(repository.root, ".beads");
 			if (ConfigProbes.statSucceeds(FilepathPkg.join(worktreeBeads, "redirect"))
 				|| (isDirectory(worktreeBeads) && hasBeadsProjectFiles(worktreeBeads)))
-				return checkRedirect(worktreeBeads);
+				return worktreeBeads;
 			// GetWorktreeFallbackBeadsDir: the .beads directory beside the main repository's Git directory.
 			final common = canonicalizePath(repository.commonDirectory);
 			final fallback = FilepathPkg.base(common) == ".git" ? FilepathPkg.join(FilepathPkg.dir(common), ".beads") : FilepathPkg.join(common, ".beads");
 			if (isDirectory(fallback))
-				return checkRedirect(fallback);
+				return fallback;
 		}
 		var current = FilepathPkg.clean(Sys.getCwd());
 		while (current != "/" && current != ".") {
 			final candidate = FilepathPkg.join(current, ".beads");
 			if (isDirectory(candidate))
-				return checkRedirect(candidate);
+				return candidate;
 			final parent = FilepathPkg.dir(current);
 			if (parent == current)
 				break;
 			current = parent;
 		}
-		return NotRedirected;
+		return "";
 	}
 
 	/** Upstream checkRedirectInDir: a redirect file whose target FollowRedirect accepts. */
@@ -126,9 +182,22 @@ final class RedirectSource {
 		project files. Null when the target is in a detached commit worktree.
 	**/
 	static function followRedirect(beadsDir:String):Null<String> {
+		return switch redirectTarget(beadsDir) {
+			case NoTarget: beadsDir;
+			case DetachedTarget: null;
+			case Target(target): isDirectory(target) && hasBeadsProjectFiles(target) ? target : beadsDir;
+		};
+	}
+
+	/**
+		The target of `beadsDir`'s redirect file, as upstream FollowRedirect
+		reads it: the first line that is not empty or a comment, relative to
+		the directory above `beadsDir`, made canonical.
+	**/
+	public static function redirectTarget(beadsDir:String):RedirectTarget {
 		final content:Null<String> = try File.getContent(FilepathPkg.join(beadsDir, "redirect")) catch (_:haxe.Exception) null;
 		if (content == null)
-			return beadsDir;
+			return NoTarget;
 		var target = "";
 		for (line in goTrimSpace(content).split("\n")) {
 			final trimmed = goTrimSpace(line);
@@ -138,17 +207,15 @@ final class RedirectSource {
 			}
 		}
 		if (target == "")
-			return beadsDir;
+			return NoTarget;
 		if (!FilepathPkg.isAbs(target))
 			target = FilepathPkg.join(FilepathPkg.dir(beadsDir), target);
 		final canonical = canonicalBeadsDir(target);
-		if (canonical == null)
-			return null;
-		return isDirectory(canonical) && hasBeadsProjectFiles(canonical) ? canonical : beadsDir;
+		return canonical == null ? DetachedTarget : Target(canonical);
 	}
 
 	/** Upstream canonicalizeBeadsDirPath, or null where its detached-worktree preference could apply. */
-	static function canonicalBeadsDir(path:String):Null<String> {
+	public static function canonicalBeadsDir(path:String):Null<String> {
 		final canonical = canonicalizePath(path);
 		if (FilepathPkg.base(canonical) == ".beads" && FilepathPkg.dir(canonical).indexOf("/refs/commits/") >= 0)
 			return null;
@@ -156,14 +223,14 @@ final class RedirectSource {
 	}
 
 	/** Upstream utils.CanonicalizePath: the absolute path with its symbolic links resolved when they resolve. */
-	static function canonicalizePath(path:String):String {
+	public static function canonicalizePath(path:String):String {
 		final absolute = FilepathPkg.isAbs(path) ? FilepathPkg.clean(path) : FilepathPkg.join(Sys.getCwd(), path);
 		final resolved = FilepathPkg.evalSymlinks(absolute);
 		return resolved.value2 == null ? resolved.value1 : absolute;
 	}
 
 	/** Upstream hasBeadsProjectFiles. */
-	static function hasBeadsProjectFiles(beadsDir:String):Bool {
+	public static function hasBeadsProjectFiles(beadsDir:String):Bool {
 		if (ConfigProbes.statSucceeds(FilepathPkg.join(beadsDir, "metadata.json"))
 			|| ConfigProbes.statSucceeds(FilepathPkg.join(beadsDir, "config.yaml"))
 			|| isDirectory(FilepathPkg.join(beadsDir, "dolt"))
@@ -176,12 +243,13 @@ final class RedirectSource {
 		return false;
 	}
 
-	static function isDirectory(path:String):Bool {
+	/** os.Stat names a directory, following a symbolic link. */
+	public static function isDirectory(path:String):Bool {
 		return ConfigProbes.statPath(path).match(StatDirectory);
 	}
 
 	/** Upstream initGitContext's `git rev-parse` in the current directory, or null outside a repository. */
-	static function gitRepository():Null<GitRepository> {
+	public static function gitRepository():Null<GitRepository> {
 		final result = ExecPkg.command("git", "rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel").output();
 		if (result.value2 != null)
 			return null;
