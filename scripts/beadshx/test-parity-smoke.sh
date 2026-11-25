@@ -343,6 +343,8 @@ compare_no_workspace where_json where --json
 compare_no_workspace info info
 compare_no_workspace info_json info --json
 compare_no_workspace info_whats_new_json info --whats-new --json
+compare_no_workspace info_thanks info --thanks
+compare_no_workspace info_thanks_json info --thanks --json
 compare_no_workspace ping ping
 compare_no_workspace ping_json ping --json
 compare_no_workspace status status
@@ -889,6 +891,8 @@ done
 compare_store_failure missing-embedded info-whats-new info --whats-new
 compare_store_failure missing-embedded info-whats-new-json info --whats-new --json
 compare_store_failure missing-embedded info-whats-new-global info --whats-new --global
+compare_store_failure missing-embedded info-thanks info --thanks
+compare_store_failure unavailable-server info-thanks-json info --thanks --json
 compare_store_failure unavailable-server info info
 # Upstream opens the store in its root pre-run, before any command body runs. A closed server
 # fails there with plain "Error: failed to open database: ...", without the command's context
@@ -1254,6 +1258,77 @@ candidate_only_setup=""
 candidate_only_exit=1
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
+# Upstream's thanks page (cmd/bd/thanks.go) sorts its contributor map by commit count with an unstable
+# sort, so contributors with the same count print in a random order. This reads a page's names in their
+# order, requires each contributor once with the counts never rising, and requires the rows and wrapped
+# lines that upstream's layout gives for that order. It then prints the page with the names in one order:
+# by count, then as upstream's source lists them.
+thanks_page_python='
+import re
+import sys
+
+source, page = sys.argv[1], sys.argv[2]
+table = re.findall(r"^\t\"([^\"]+)\":\s+(\d+),$", open(source, encoding="utf-8").read(), re.M)
+commits = {name: int(count) for name, count in table}
+rank = {name: index for index, (name, _) in enumerate(table)}
+lines = open(page, encoding="utf-8").read().split("\n")
+sgr = re.compile(r"\x1b\[[0-9;]*m")
+plain = [sgr.sub("", line) for line in lines]
+featured_at = plain.index("  Featured Contributors")
+additional_at = plain.index("  Additional Contributors")
+rows = slice(featured_at + 2, additional_at - 1)
+wrapped = slice(additional_at + 2, len(lines) - 2)
+if plain[additional_at - 1] != "" or plain[len(lines) - 2:] != ["", ""]:
+    sys.exit("the page does not end as upstream'"'"'s does")
+
+
+def full_name(shown):
+    if shown in commits:
+        return shown
+    cut = [name for name in commits if len(name.encode()) > 20 and name.encode()[:17].decode() + "..." == shown]
+    if len(cut) != 1:
+        sys.exit("unknown contributor: " + repr(shown))
+    return cut[0]
+
+
+def style_of(line):
+    codes = sgr.findall(line)
+    return (codes[0], codes[1]) if codes else ("", "")
+
+
+order = [full_name(shown) for row in plain[rows] for shown in re.split(r" {2,}", row[2:].rstrip(" "))]
+order += [full_name(shown) for shown in "".join(line[2:] for line in plain[wrapped]).split(", ")]
+if sorted(order) != sorted(commits):
+    sys.exit("the page does not name each contributor once")
+if any(commits[left] < commits[right] for left, right in zip(order, order[1:])):
+    sys.exit("the page does not sort the contributors by commit count")
+name_open, name_close = style_of(lines[rows][0])
+dim_open, dim_close = style_of(lines[wrapped][0])
+
+
+def render(names):
+    featured, rest = names[:20], names[20:]
+    width = min(max(len(name.encode()) for name in featured), 20) + 2
+    cells = [name if len(name.encode()) <= 20 else name.encode()[:17].decode() + "..." for name in featured]
+    columns = ["  " + "".join(name_open + cell + " " * (width - len(cell)) + name_close for cell in cells[at:at + 4])
+               for at in range(0, len(cells), 4)]
+    out, line, length = [], "  ", 2
+    for index, name in enumerate(rest):
+        entry = name + (", " if index < len(rest) - 1 else "")
+        if length + len(entry.encode()) > width * 4 + 4 and length > 2:
+            out.append(line)
+            line, length = "  ", 2
+        line += dim_open + entry + dim_close
+        length += len(entry.encode())
+    return columns, out + [line]
+
+
+if render(order) != (lines[rows], lines[wrapped]):
+    sys.exit("the rows differ from upstream'"'"'s layout for the same order")
+columns, rest = render(sorted(order, key=lambda name: (-commits[name], rank[name])))
+sys.stdout.write("\n".join(lines[:rows.start] + columns + lines[rows.stop:wrapped.start] + rest + lines[wrapped.stop:]))
+'
+
 compare_real_database() {
 	local name="$1"
 	printf 'parity [%ss]: START database/%s\n' "$SECONDS" "$name"
@@ -1450,6 +1525,22 @@ compare_real_database() {
 		done
 		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
 			printf '%s stdout differs from upstream after sorting tied rows\n' "$name" >&2
+			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+			return 1
+		fi
+		;;
+	thanks-page)
+		for side in oracle candidate; do
+			if ! python3 -I -c "$thanks_page_python" "$repository_root/cmd/bd/thanks.go" "$case_root/$side.stdout" \
+				>"$case_root/$side.normalized" 2>"$case_root/$side.thanks-error"; then
+				printf '%s %s stdout is not a thanks page in upstream'"'"'s layout: %s\n' \
+					"$name" "$side" "$(cat "$case_root/$side.thanks-error")" >&2
+				cat "$case_root/$side.stdout" >&2
+				return 1
+			fi
+		done
+		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+			printf '%s stdout differs from upstream after ordering the tied contributors\n' "$name" >&2
 			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
 			return 1
 		fi
@@ -1667,6 +1758,23 @@ compare_real_database_import() {
 }
 
 compare_real_database info-schema-json exact info --schema --json
+# info --thanks prints upstream's thank-you page once the pre-run has opened the store. Upstream checks it
+# before --whats-new and prints the page in every output mode. Its text styles take internal/ui's colors
+# when the process starts, so --no-color, which the pre-run reads later, leaves them on; the box style
+# reads them when it renders, so --no-color turns off the color of the border.
+compare_real_database info-thanks thanks-page info --thanks
+compare_real_database info-thanks-json thanks-page info --thanks --json
+compare_real_database info-thanks-whats-new thanks-page info --whats-new --thanks extra
+compare_real_database info-thanks-true thanks-page info --thanks=true
+compare_real_database info-thanks-false-schema-json exact info --thanks=false --schema=1 --json
+compare_real_database info-whats-new-false-json exact info --whats-new=false --json
+compare_real_database info-thanks-bad-value exact info --thanks=maybe
+compare_real_database list-thanks-unknown exact list --thanks
+compare_real_database list-schema-value-unknown exact list --schema=true
+real_database_extra_env=(NO_COLOR= CLICOLOR_FORCE=1)
+compare_real_database info-thanks-color thanks-page info --thanks
+compare_real_database info-thanks-color-no-color-flag thanks-page --no-color info --thanks
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database status-json exact status --json
 # The fixture has the custom type gate. Upstream fills an empty custom_types table from types.custom
 # when it opens the store and then reads the table by name, so the config value prints each name
@@ -8053,10 +8161,15 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database_sql schema-ahead-info-whats-new exact "$schema_ahead_sql" info --whats-new
 compare_real_database_sql schema-ahead-info-whats-new-json exact "$schema_ahead_sql" info --whats-new --json
 compare_real_database_sql schema-behind-readonly-info-whats-new exact "$schema_behind_sql" --readonly info --whats-new
+compare_real_database_sql schema-ahead-info-thanks exact "$schema_ahead_sql" info --thanks
+compare_real_database_sql schema-ahead-info-thanks-json exact "$schema_ahead_sql" info --thanks --json
+compare_real_database_sql schema-behind-readonly-info-thanks exact "$schema_behind_sql" --readonly info --thanks
+compare_real_database_sql schema-broken-info-thanks exact "$schema_broken_sql" info --thanks
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database_sql schema-ahead-ignored-info-whats-new exact "$schema_ahead_sql" --readonly info --whats-new
 compare_real_database_sql schema-behind-ignored-info-whats-new-json exact "$schema_behind_sql" \
 	--readonly info --whats-new --json
+compare_real_database_sql schema-ahead-ignored-info-thanks thanks-page "$schema_ahead_sql" --readonly info --thanks
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	schema_case=ahead

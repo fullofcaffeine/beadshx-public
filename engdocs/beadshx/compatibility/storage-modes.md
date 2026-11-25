@@ -102,7 +102,8 @@ strict read-only mode, and `embeddeddolt: creating data directory: mkdir
 In an embedded workspace, every command that reads the database first
 compares the highest version in the `schema_migrations` table with the
 schema version of upstream v1.2.1, v65, as upstream does. `info --whats-new`
-reads nothing, but upstream opens the store first, so it checks too. Errors
+and `info --thanks` read nothing, but upstream opens the store first, so they
+check too. Errors
 from the flag parser still come first, and this check comes before the other
 checks of the command's arguments.
 

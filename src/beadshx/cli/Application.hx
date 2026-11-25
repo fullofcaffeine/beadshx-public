@@ -487,6 +487,14 @@ final class Application {
 	**/
 	var colors = false;
 
+	/**
+		`colors` as `run` decided it, before --no-color. Upstream's cmd/bd
+		package builds some styles from internal/ui's colors when the process
+		starts, such as the thanks page's text styles, and --no-color does not
+		change them.
+	**/
+	var startupColors = false;
+
 	/** The styles for `colors`, built when a view first renders with them; see `terminalStyles`. */
 	var builtStyles:Null<TerminalStyles> = null;
 
@@ -529,6 +537,7 @@ final class Application {
 	**/
 	public function run(args:Array<String>):Int {
 		colors = shouldUseColor(environmentValue, output.isStdoutTerminal());
+		startupColors = colors;
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
 			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
@@ -1592,7 +1601,7 @@ final class Application {
 					case Accepted:
 						if (!findsDatabase(invocation, location)) {
 							runWorkspaceDatabaseNotFound(location);
-						} else if (invocation.infoWhatsNew) {
+						} else if (invocation.infoThanks || invocation.infoWhatsNew) {
 							// Upstream's pre-run opens the store first; the checks above and the schema check stand for an embedded open.
 							final opensStore = invocation.global || opensServerStore(location);
 							if (!opensStore && !location.proxiedServer)
@@ -1601,6 +1610,10 @@ final class Application {
 							finishStoreOpen(opened.match(Success(_)));
 							switch opened {
 								case Failure(message): runStoreFailure(message);
+								case Success(_) if (invocation.infoThanks):
+									// Upstream checks --thanks first and prints the page in every output mode.
+									output.writeStdout(ThanksPage.render(output.textStyle, startupColors, colors, startupColors && output.hasDarkBackground()));
+									0;
 								case Success(_):
 									renderWhatsNew(invocation.output);
 									0;
@@ -8178,7 +8191,8 @@ final class Application {
 				basicCommandHelp("Check that BeadsHX can open and query the active database.", "ping", "");
 			case Info:
 				basicCommandHelp("Show information about the active database.", "info",
-					"      --schema      Include schema information in output\n" + "      --whats-new   Show agent-relevant changes from recent versions\n");
+					"      --schema      Include schema information in output\n" + "      --thanks      Show thank you page for contributors\n" +
+					"      --whats-new   Show agent-relevant changes from recent versions\n");
 			case Status:
 				"Show a summary of issue counts and ready work.\n\n"
 				+ "Usage:\n  bdhx status [flags]\n\nAliases:\n  status, stats\n\nFlags:\n"

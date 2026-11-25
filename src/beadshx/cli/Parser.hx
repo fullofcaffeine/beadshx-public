@@ -201,6 +201,7 @@ final class Parser {
 		var showHelp = false;
 		var infoSchema = false;
 		var infoWhatsNew = false;
+		var infoThanks = false;
 		var statusSkipBlocked = false;
 		var statusAssigned = false;
 		// Each flag in argument order, which the pflag pass checks once the command is known.
@@ -938,6 +939,25 @@ final class Parser {
 					readonly = value;
 				continue;
 			}
+			if (StringTools.startsWith(argument, "--schema=")
+				|| StringTools.startsWith(argument, "--whats-new=")
+				|| StringTools.startsWith(argument, "--thanks=")) {
+				final flag = argument.substr(0, argument.indexOf("="));
+				useCommandFlag(flag);
+				final value = booleanValue(flag, argument.substr(argument.indexOf("=") + 1));
+				if (value == null)
+					continue;
+				final enabled:Bool = value;
+				switch flag {
+					case "--schema":
+						infoSchema = enabled;
+					case "--whats-new":
+						infoWhatsNew = enabled;
+					case _:
+						infoThanks = enabled;
+				}
+				continue;
+			}
 			if (StringTools.startsWith(argument, "--no-color=")) {
 				final value = booleanValue("--no-color", argument.substr(11));
 				if (value != null)
@@ -1032,6 +1052,9 @@ final class Parser {
 				case "--whats-new":
 					useCommandFlag(argument);
 					infoWhatsNew = true;
+				case "--thanks":
+					useCommandFlag(argument);
+					infoThanks = true;
 				case "--actor":
 					expectedValue = Actor;
 				case "-C":
@@ -1683,6 +1706,7 @@ final class Parser {
 				helpCommand: false,
 				infoSchema: infoSchema,
 				infoWhatsNew: infoWhatsNew,
+				infoThanks: infoThanks,
 				statusSkipBlocked: statusSkipBlocked,
 				statusAssigned: statusAssigned,
 				countRequest: makeCountRequest(""),
@@ -2097,6 +2121,7 @@ final class Parser {
 				helpCommand: helpCommand,
 				infoSchema: infoSchema,
 				infoWhatsNew: infoWhatsNew,
+				infoThanks: infoThanks,
 				statusSkipBlocked: statusSkipBlocked,
 				statusAssigned: statusAssigned,
 				countRequest: makeCountRequest(countIdFilter),
@@ -2616,7 +2641,7 @@ final class Parser {
 			case "--no-blocked" | "--assigned" | "--no-activity": name != "status" && name != "stats";
 			// The root's own --version, which its commands do not inherit.
 			case "--version" | "-V": name != "";
-			case "--schema" | "--whats-new": name != "info";
+			case "--schema" | "--whats-new" | "--thanks": name != "info";
 			case "--watch" | "-w": name != "show" && name != "view" && name != "list";
 			case "--short" | "--current" | "--thread" | "--refs" | "--children" | "--include-dependents" | "--include-comments" | "--brief-deps":
 				name != "show" && name != "view";

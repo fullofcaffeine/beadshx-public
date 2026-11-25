@@ -47,6 +47,43 @@ enum StyleForeground {
 	HexForeground(hex:String);
 }
 
+/** Upstream internal/ui's five core colors, `ui.ColorPass` to `ui.ColorAccent`. */
+enum CoreColor {
+	PassColor;
+	WarnColor;
+	FailColor;
+	MutedColor;
+	AccentColor;
+}
+
+/**
+	The foreground that `Foreground(ui.Color<color>)` sets.
+
+	Why: some upstream styles, such as the ones in cmd/bd/thanks.go, take a
+	core color instead of a ui style. What: the Ayu color for the terminal
+	background when colors are on (initColors, styles.go:139-145), and
+	`lipgloss.NoColor{}` when they are off.
+**/
+function coreForeground(color:CoreColor, colors:Bool, isDark:Bool):StyleForeground {
+	if (!colors)
+		return DefaultForeground;
+	final light = switch color {
+		case PassColor: "#86b300";
+		case WarnColor: "#f2ae49";
+		case FailColor: "#f07171";
+		case MutedColor: "#828c99";
+		case AccentColor: "#399ee6";
+	};
+	final dark = switch color {
+		case PassColor: "#c2d94c";
+		case WarnColor: "#ffb454";
+		case FailColor: "#f07178";
+		case MutedColor: "#6c7680";
+		case AccentColor: "#59c2ff";
+	};
+	return HexForeground(isDark ? dark : light);
+}
+
 /** One upstream ui style: `lipgloss.NewStyle()` with an optional foreground and bold. */
 typedef StyleSpec = {
 	final foreground:StyleForeground;
@@ -124,11 +161,14 @@ final class TerminalStyles {
 			return colors ? style({foreground: HexForeground(isDark ? dark : light), bold: bold}) : empty;
 		}
 		final noColor = colors ? style({foreground: DefaultForeground, bold: false}) : empty;
-		pass = hex("#86b300", "#c2d94c");
-		warn = hex("#f2ae49", "#ffb454");
-		fail = hex("#f07171", "#f07178");
-		muted = hex("#828c99", "#6c7680");
-		accent = hex("#399ee6", "#59c2ff");
+		function core(color:CoreColor):TextStyle {
+			return colors ? style({foreground: coreForeground(color, true, isDark), bold: false}) : empty;
+		}
+		pass = core(PassColor);
+		warn = core(WarnColor);
+		fail = core(FailColor);
+		muted = core(MutedColor);
+		accent = core(AccentColor);
 		id = noColor;
 		statusOpen = noColor;
 		statusInProgress = hex("#f2ae49", "#ffb454");

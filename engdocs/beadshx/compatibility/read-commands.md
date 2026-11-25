@@ -83,6 +83,20 @@ error on a later issue, and the `--limit` hint, as upstream does. Other
 templates need upstream's Go types (see
 [Limits](limits.md#commands-and-output)).
 
+## info
+
+Like upstream, `info` takes `--schema`, `--whats-new` and `--thanks`, also
+with a bool value such as `--thanks=false`. `--whats-new` and `--thanks` read
+nothing, but upstream opens the store first, so `bdhx` checks the workspace
+and the schema version first too, and stops where upstream stops.
+
+`--thanks` prints upstream's thank-you page for the contributors to beads, also
+with `--whats-new` or `--json`. Upstream builds the text styles of this page
+when the process starts, so `--no-color` turns off only the color of the box
+border; `NO_COLOR` and `CLICOLOR=0` turn off all colors. Upstream lists the
+contributors with the same number of commits in a random order; `bdhx` lists
+them in the order of upstream's source.
+
 ## show
 
 Like upstream, `show` prints the close reason on one metadata line when it

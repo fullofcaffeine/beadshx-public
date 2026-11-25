@@ -83,7 +83,8 @@ directory up, comes after the store opens. So like upstream, `bdhx` prints
 the warnings of that lookup only when the store opens. A server-mode store
 that does not open, for example because its server cannot be reached, prints
 none of them. A proxied-server workspace never makes that check. Like
-upstream, `info --whats-new` also opens a server-mode store first.
+upstream, `info --whats-new` and `info --thanks` also open a server-mode
+store first.
 
 Like upstream, `bdhx` opens the database that the redirecting workspace names
 in its `dolt_database`, instead of the target's. Without a `--db` path, that

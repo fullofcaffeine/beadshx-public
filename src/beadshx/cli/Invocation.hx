@@ -54,6 +54,10 @@ typedef Invocation = {
 
 	final infoSchema:Bool;
 	final infoWhatsNew:Bool;
+
+	/** info --thanks, which upstream checks before --whats-new. */
+	final infoThanks:Bool;
+
 	final statusSkipBlocked:Bool;
 	final statusAssigned:Bool;
 	final countRequest:CountRequest;
