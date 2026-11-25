@@ -3422,8 +3422,9 @@ final class Application {
 		GetBlockedIssues, whose failure stops the command, and DetectCycles, whose
 		failure upstream only logs. Its blocked list comes from the stored
 		`is_blocked` flag and its cycles from the blocking edges of both dependency
-		tables, which only the embedded route reads with Haxe-owned SQL; elsewhere
-		the candidates' blocking edges stand in for both.
+		tables, which only an embedded workspace reads with Haxe-owned SQL; in a
+		server-mode or proxied workspace, also one that keeps an embeddeddolt
+		directory from before, the candidates' blocking edges stand in for both.
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		return switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
@@ -3434,7 +3435,7 @@ final class Application {
 					case ListFailure(message): runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
-						final explanation = switch readyExplainBlocked(invocation, location, query) {
+						final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
 							case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
 								ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
 									ReadyExplain.cyclesFromEdges(candidates.items));
@@ -3455,18 +3456,6 @@ final class Application {
 						0;
 				}
 		};
-	}
-
-	/**
-		Upstream's GetBlockedIssues list, which only an embedded workspace reads with
-		Haxe-owned SQL. The embedded readers route on the `embeddeddolt` directory,
-		which a server-mode workspace can keep from before; it must not answer for
-		that workspace, so a server-mode or proxied workspace has no route here.
-	**/
-	function readyExplainBlocked(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):StoreResult<Array<BlockedIssue>> {
-		if (location.proxiedServer || opensServerStore(location))
-			return Failure(BLOCKED_ROUTE_UNAVAILABLE);
-		return query.blockedIssues(location.path, location.databaseName, "", invocation.global);
 	}
 
 	static function readyExplainRequest():beadshx.store.ReadyRequest {

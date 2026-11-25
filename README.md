@@ -464,7 +464,10 @@ Limits:
   `config list`, `config show`, `config validate` and `config drift` read
   embedded workspaces only. In a server-mode or proxied workspace they report
   that they are not available yet. If the server cannot be reached, they print
-  the same store error as upstream.
+  the same store error as upstream. This is also true for a server-mode
+  workspace that still has a `.beads/embeddeddolt` directory from before. Like
+  upstream, `bdhx` does not read that directory, and its other commands read
+  the workspace through the server.
   `types --sections` prints its fixed list in every mode.
 - In a server-mode or proxied workspace, `ready --explain` cannot read the
   stored `is_blocked` flag or the full dependency tables yet. Its blocked list

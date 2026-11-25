@@ -1025,6 +1025,14 @@ compare_store_failure stale-embedded-server count-by-conflict count --by-status 
 compare_store_failure stale-embedded-server search-no-query search
 compare_store_failure stale-embedded-server search-bad-created-after-json search parity --created-after bogus --json
 compare_store_failure stale-embedded-server query-negative-offset query status=open --offset -1
+# The Haxe-owned embedded readers do not answer for such a workspace either: upstream reads it through
+# its server, so blocked, dep cycles and graph check stop at the same store-open error. With a server
+# that answers, bdhx reports that these views are not available yet instead of reading the directory.
+compare_store_failure stale-embedded-server blocked blocked
+compare_store_failure stale-embedded-server blocked-json blocked --json
+compare_store_failure stale-embedded-server dep-cycles dep cycles
+compare_store_failure stale-embedded-server graph-check-json graph check --json
+compare_store_failure stale-embedded-server ready-explain ready --explain
 
 real_database_seed="$test_root/real-database-seed"
 printf 'parity [%ss]: START database fixture setup\n' "$SECONDS"

@@ -77,7 +77,21 @@ final STATUSES_ROUTE_UNAVAILABLE = "statuses is not available yet for server-mod
 final class GoReadonlyStore implements ReadonlyStorePort {
 	static inline final GO_RFC3339_NANO = "2006-01-02T15:04:05.999999999Z07:00";
 
-	public function new() {}
+	/**
+		Whether reads may take the Haxe-owned SQL route into `.beads/embeddeddolt`.
+		The query session of a server-mode workspace may not: upstream reads that
+		workspace through its server, and the directory can be left from before.
+	**/
+	final embeddedReads:Bool;
+
+	public function new(embeddedReads = true) {
+		this.embeddedReads = embeddedReads;
+	}
+
+	/** Whether this read goes to the workspace's embedded database. */
+	function embeddedRoute(beadsDir:String, global:Bool):Bool {
+		return embeddedReads && !global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]));
+	}
 
 	/**
 		Opens the store for one command, as upstream's root pre-run does before any command body
@@ -85,9 +99,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		in every output mode, without command context. Direct reads open their own store later, so a
 		workspace without an embedded database proves its server open here first: a closed server
 		then fails with the plain message before the command resolves an ID or reads. A server
-		workspace with a leftover embeddeddolt directory does too. Embedded reads and `--global` keep
-		their own errors. Upstream checks `--global` before it opens a proxied server, and the
-		application refuses shared-server mode before this, so a proxied `--global` fails that check.
+		workspace with a leftover embeddeddolt directory does too, and its query session never reads
+		that directory. Embedded reads and `--global` keep their own errors. Upstream checks
+		`--global` before it opens a proxied server, and the application refuses shared-server mode
+		before this, so a proxied `--global` fails that check.
 	**/
 	public function openIssueQuery(beadsDir:String, serverStore:Bool, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort> {
 		if (global)
@@ -100,7 +115,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 						return Failure(message);
 					case Success(_):
 				}
-			return Success(this);
+			return Success(serverStore ? new GoReadonlyStore(false) : this);
 		}
 		final result = NativeReadonlyFacade.openProxiedQuerySession(beadsDir, databaseName);
 		if (result.isErr())
@@ -120,7 +135,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan, global:Bool):StoreResult<Array<RelatedIssue>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.relatedIssues(beadsDir, databaseName, plan);
 			if (embedded != null)
 				return embedded;
@@ -129,7 +144,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.issueComments(beadsDir, databaseName, issueId);
 			if (embedded != null)
 				return embedded;
@@ -138,7 +153,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueHistory(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueHistory.IssueHistoryEntry>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.issueHistory(beadsDir, databaseName, issueId);
 			if (embedded != null)
 				return embedded;
@@ -147,7 +162,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int, global:Bool):StoreResult<Array<IssueHistory.IssueEvent>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.issueEvents(beadsDir, databaseName, issueId, limit);
 			if (embedded != null)
 				return embedded;
@@ -157,7 +172,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public function eventsJournal(beadsDir:String, databaseName:String, since:haxe.Int64, limit:haxe.Int64,
 			global:Bool):StoreResult<EventsJournal.EventsJournalRead> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.eventsJournal(beadsDir, databaseName, since, limit);
 			if (embedded != null)
 				return embedded;
@@ -166,7 +181,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function blockedIssues(beadsDir:String, databaseName:String, parentId:String, global:Bool):StoreResult<Array<SqlBlockedReader.BlockedIssue>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.blockedIssues(beadsDir, databaseName, parentId);
 			if (embedded != null)
 				return embedded;
@@ -175,7 +190,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function dependencyCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.dependencyCycles(beadsDir, databaseName);
 			if (embedded != null)
 				return embedded;
@@ -185,7 +200,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 
 	public function dependencyTree(beadsDir:String, databaseName:String, request:beadshx.relation.DependencyTree.DependencyTreeRequest,
 			global:Bool):StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.dependencyTree(beadsDir, databaseName, request);
 			if (embedded != null)
 				return embedded;
@@ -194,7 +209,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function graphCycles(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<Array<String>>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.graphCycles(beadsDir, databaseName);
 			if (embedded != null)
 				return embedded;
@@ -203,7 +218,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function graphSubgraph(beadsDir:String, databaseName:String, rootId:String, global:Bool):StoreResult<SqlGraphReader.GraphSubgraph> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.graphSubgraph(beadsDir, databaseName, rootId);
 			if (embedded != null)
 				return embedded;
@@ -212,7 +227,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function graphAll(beadsDir:String, databaseName:String, maxRows:Int, global:Bool):StoreResult<SqlGraphReader.AllGraphLoad> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.graphAll(beadsDir, databaseName, maxRows);
 			if (embedded != null)
 				return embedded;
@@ -221,7 +236,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function customTypes(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomTypes> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.customTypes(beadsDir, databaseName);
 			if (embedded != null)
 				return embedded;
@@ -230,7 +245,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function customStatuses(beadsDir:String, databaseName:String, global:Bool):StoreResult<CustomConfig.DatabaseCustomStatuses> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.customStatuses(beadsDir, databaseName);
 			if (embedded != null)
 				return embedded;
@@ -239,7 +254,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function configValue(beadsDir:String, databaseName:String, key:String, global:Bool):StoreResult<String> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.configValue(beadsDir, databaseName, key);
 			if (embedded != null)
 				return embedded;
@@ -248,7 +263,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function configSettings(beadsDir:String, databaseName:String, global:Bool):StoreResult<Array<beadshx.config.ConfigKeys.ConfigSetting>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.configSettings(beadsDir, databaseName);
 			if (embedded != null)
 				return embedded;
@@ -282,7 +297,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			case DependencyPlanInvalid(message): return DependencyEdgeFailure(message);
 			case DependencyPlanReady(value): value;
 		};
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.dependencyEdges(beadsDir, databaseName, plan);
 			if (embedded != null)
 				return embedded;
@@ -1145,7 +1160,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueSummary(beadsDir:String, databaseName:String, id:String, global:Bool):StoreResult<IssueLookup> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.issueSummary(beadsDir, databaseName, id);
 			if (embedded != null)
 				return embedded;
@@ -1170,7 +1185,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest, global:Bool):StoreResult<IssueDetailsLookup> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.issueDetails(beadsDir, id, request);
 			if (embedded != null)
 				return embedded;
@@ -1349,7 +1364,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.assignedIssueId(beadsDir, databaseName, actor, issueStatusWireValue(status));
 			if (embedded != null)
 				return embedded;
@@ -1363,7 +1378,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>> {
-		if (!global && sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))) {
+		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.searchIssueIds(beadsDir, databaseName, query);
 			if (embedded != null)
 				return embedded;
