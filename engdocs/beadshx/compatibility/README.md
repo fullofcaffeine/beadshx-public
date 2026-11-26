@@ -71,11 +71,24 @@ lock values. `logical-state rules` gives the reason for each rule.
 [scripts/beadshx/test-logical-state.sh](../../../scripts/beadshx/test-logical-state.sh)
 tests that the comparison finds the differences that the output hides.
 
-Some output differs by design, and the suite normalizes it: workspace paths,
-durations, times in log lines, and the development identity of `bdhx`. Where
-upstream prints in a random order, the suite compares the stable part. Cases
-where `bdhx` refuses on purpose run as candidate-only cases: they check the
-exact refusal of `bdhx`, and that it wrote nothing.
+Some output differs between two correct runs. Before it compares the output,
+the suite rewrites only these declared values, with
+[scripts/beadshx/output-normalizers](../../../scripts/beadshx/output-normalizers/main.go):
+the temporary paths of each side, the times and durations that a run prints,
+the order of output that upstream builds from a Go map, and the name and
+version that each build prints for itself. Each normalizer has a name, and
+it declares the values that it rewrites, why they change from run to run,
+and which comparisons can use it. `output-normalizers rules` prints these
+declarations. A normalizer rewrites nothing else. For example, `work-path`
+replaces only the exact path of that side's work directory, never a longer
+path or the other side's path. Each comparison names its normalizers, and
+each case writes them to the `normalizers` file of its evidence. The tests
+of each normalizer show that it rewrites its declared value, that it keeps
+values that only look like it, and that a difference outside the declared
+value still fails the comparison.
+
+Cases where `bdhx` refuses on purpose run as candidate-only cases: they check
+the exact refusal of `bdhx`, and that it wrote nothing.
 
 Server-mode and proxied workspaces need a running Dolt server, which the
 parity suite does not start.
