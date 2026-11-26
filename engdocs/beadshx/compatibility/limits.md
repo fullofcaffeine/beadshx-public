@@ -47,6 +47,12 @@ exists.
   an automatic backup to `.beads/backup` after a command: the first time, and
   then at most every 15 minutes when the data changed. `bdhx` never writes a
   backup.
+- Without strict read-only mode, upstream's ready reads (`ready`, also
+  `--json`, and `list --ready`) first return every issue and wisp whose dated
+  defer has passed to `open`, record a `status_changed` event by
+  `bd-defer-wake`, and commit `bd: wake N expired defer(s)` when an issue
+  woke. Then they read. `bdhx` never writes, so such an issue stays deferred
+  and is missing from its ready list, where upstream lists it.
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
