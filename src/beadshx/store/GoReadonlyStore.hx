@@ -1367,6 +1367,11 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	public function issueDependents(beadsDir:String, id:String, global:Bool):StoreResult<Array<IssueDependency>> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.issueDependents(beadsDir, id);
+			if (embedded != null)
+				return embedded;
+		}
 		return projectIssueDependentsResult(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readIssueDependents(beadsDir, id, global)));
 	}
 

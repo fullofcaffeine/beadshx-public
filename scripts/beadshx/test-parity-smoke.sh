@@ -8215,11 +8215,28 @@ expect_candidate_failure schema-behind-show-json-refused "" "$schema_behind_refu
 	show "$real_database_issue_id" --json
 expect_candidate_failure schema-behind-list-refused "" "$schema_behind_refusal" "$schema_behind_sql" list
 
-# show records the issue in .beads/last-touched, so it compares without the read-only check. It reads
-# through this build's embedded session and then the native facade, and still warns once.
+# show records the issue in .beads/last-touched, so it compares without the read-only check. Upstream
+# checks once, at the store open of the pre-run, however many issues show reads after it: each issue of
+# show with more than one ID, each message of a --thread, and the dependents of each issue of --refs
+# and --children.
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database_sql schema-ahead-ignored-show exact "$schema_ahead_sql" show "$real_database_issue_id"
 compare_real_database_sql schema-behind-ignored-readonly-show-json exact "$schema_behind_sql" --readonly show "$real_database_issue_id" --json
+for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
+	schema_case=ahead
+	[[ "$schema_sql" == "$schema_behind_sql" ]] && schema_case=behind
+	compare_real_database_sql "schema-$schema_case-ignored-show-several" exact "$schema_sql" \
+		--readonly show "$real_database_epic_id" "$real_database_child_id"
+	compare_real_database_sql "schema-$schema_case-ignored-show-several-json" exact "$schema_sql" \
+		--readonly show "$real_database_epic_id" "$real_database_child_id" "$real_database_issue_id" --include-dependents --json
+	compare_real_database_sql "schema-$schema_case-ignored-show-thread" exact "$schema_sql" --readonly show test-msg-leaf --thread
+	compare_real_database_sql "schema-$schema_case-ignored-show-thread-json" exact "$schema_sql" \
+		--readonly show test-msg-leaf --thread --json
+	compare_real_database_sql "schema-$schema_case-ignored-show-refs" exact "$schema_sql" \
+		--readonly show --refs "$real_database_child_id" "$real_database_epic_id"
+	compare_real_database_sql "schema-$schema_case-ignored-show-children" exact "$schema_sql" \
+		--readonly show --children "$real_database_epic_id" "$real_database_child_id"
+done
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
 # A server-mode workspace checks the schema only through its server, which does not answer here. An
@@ -8341,6 +8358,8 @@ compare_real_database gate-blocked exact blocked
 compare_real_database gate-graph exact graph "$real_database_issue_id"
 compare_real_database gate-dep-list exact dep list "$real_database_issue_id"
 compare_real_database gate-label-list exact label list "$real_database_bug_id"
+# An issue with dependencies too: its detail read is Haxe-owned in an embedded workspace.
+compare_real_database gate-label-list-related exact label list "$real_database_issue_id"
 compare_real_database gate-events-tail exact events tail
 compare_real_database gate-events-export exact events export
 compare_real_database gate-config-list exact config list
@@ -8374,14 +8393,18 @@ compare_real_database gate-below-floor-types-json exact types --json
 real_database_setup=gate_remote_behind
 compare_real_database gate-remote-behind-types exact types
 real_database_read_only=""
-# show records the issue in .beads/last-touched, so it compares without the read-only check.
+# show records the issue in .beads/last-touched, so it compares without the read-only check. It reads an
+# issue with dependencies, and the dependents of --refs and --children, as upstream does too.
 real_database_setup=gate_without_cached_ref
 compare_real_database gate-show exact show "$real_database_bug_id"
+compare_real_database gate-show-related exact show "$real_database_issue_id"
+compare_real_database gate-show-related-json exact show "$real_database_epic_id" --json --include-dependents
+compare_real_database gate-show-refs exact show --refs "$real_database_child_id"
+compare_real_database gate-show-children exact show --children "$real_database_epic_id"
 real_database_setup=""
 
 # The reads that go through the native facade open the store with upstream's strict read-only open,
-# which cannot read a database behind the binary. They print upstream's warning, then refuse. show and
-# label list read an issue with dependencies through it too.
+# which cannot read a database behind the binary. They print upstream's warning, then refuse.
 gate_read_warning=$(
 	cat <<'EOF'
 Warning: refusing to auto-apply 1 pending schema migration to a remote-backed database (v64 -> v65): migrating clones independently forks the schema (#4259)
@@ -8405,8 +8428,6 @@ expect_candidate_failure gate-ready-refused "" "$(gate_read_refusal ready)" "" r
 expect_candidate_failure gate-search-refused "" "$(gate_read_refusal search)" "" search parity
 expect_candidate_failure gate-query-refused "" "$(gate_read_refusal query)" "" query status=open
 expect_candidate_failure gate-ping-refused "" "$(gate_read_refusal ping)" "" ping
-expect_candidate_failure gate-show-related-refused "" "$(gate_read_refusal show)" "" show "$real_database_issue_id"
-expect_candidate_failure gate-label-list-related-refused "" "$(gate_read_refusal "label list")" "" label list "$real_database_issue_id"
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 expect_candidate_failure gate-ignored-list-refused "" "$(gate_read_refusal list)" "" list
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)

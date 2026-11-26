@@ -1,6 +1,6 @@
 import beadshx.store.EmbeddedCgoStore;
 import beadshx.store.EmbeddedStoreAccess;
-import beadshx.store.EmbeddedScalarIssueDetailsReader;
+import beadshx.store.EmbeddedIssueDetailsReader;
 import beadshx.store.GoReadonlyStore;
 import beadshx.store.IssueDetails;
 import beadshx.store.IssueDetailsRequest;
@@ -17,11 +17,10 @@ class Main {
 				case Success(DetailsMissing): failure("missing");
 				case Success(DetailsFound(details)): encode(details);
 			};
-		return switch new EmbeddedScalarIssueDetailsReader(beadsDir).read(id, request) {
-			case EmbeddedScalarDetailsFailure(message): failure(message);
-			case EmbeddedScalarDetailsMissing: failure("missing");
-			case EmbeddedScalarDetailsRequireRelations: failure("requires relations");
-			case EmbeddedScalarDetailsFound(details): encode(details);
+		return switch new EmbeddedIssueDetailsReader(beadsDir).read(id, request) {
+			case Failure(message): failure(message);
+			case Success(DetailsMissing): failure("missing");
+			case Success(DetailsFound(details)): encode(details);
 		};
 	}
 

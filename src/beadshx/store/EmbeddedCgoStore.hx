@@ -137,12 +137,11 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 	}
 
 	public function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
-		return switch new EmbeddedScalarIssueDetailsReader(beadsDir).read(id, request) {
-			case EmbeddedScalarDetailsFailure(message): Failure(message);
-			case EmbeddedScalarDetailsMissing: Success(DetailsMissing);
-			case EmbeddedScalarDetailsFound(details): Success(DetailsFound(details));
-			case EmbeddedScalarDetailsRequireRelations: null;
-		};
+		return new EmbeddedIssueDetailsReader(beadsDir).read(id, request);
+	}
+
+	public function issueDependents(beadsDir:String, id:String):Null<StoreResult<Array<RelatedIssue>>> {
+		return new EmbeddedIssueDetailsReader(beadsDir).readDependents(id);
 	}
 
 	public function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:String):Null<StoreResult<String>> {

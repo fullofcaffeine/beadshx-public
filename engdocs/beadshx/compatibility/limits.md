@@ -34,13 +34,12 @@ exists.
   instead when `HEAD` is an ancestor of a cached remote at v65 and the working
   set is clean: upstream then fast-forwards to the remote.
 - At a gate stop, upstream's reads `list`, `count`, `ready`, `search`,
-  `query` and `ping`, and `show` and `label list` for an issue with
-  dependencies, print the gate's warning and read the database as it is. In
-  `bdhx` they read through the native facade, whose strict read-only open
-  cannot read a database behind the binary, so they print the same warning
-  and then stop with `Error: <command> is not available yet on a database
-  behind the binary in this build`, also with `BD_IGNORE_SCHEMA_SKEW=1`
-  (beadshx-m08.67).
+  `query` and `ping` print the gate's warning and read the database as it
+  is. In `bdhx` they read through the native facade, whose strict read-only
+  open cannot read a database behind the binary, so they print the same
+  warning and then stop with `Error: <command> is not available yet on a
+  database behind the binary in this build`, also with
+  `BD_IGNORE_SCHEMA_SKEW=1` (beadshx-m08.67).
 - Upstream `show` records the issue that it showed in `.beads/last-touched`.
   `bdhx` reads that file, for `show` without an ID, but never writes it
   (beadshx-m08.27).
@@ -246,11 +245,8 @@ exists.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once prints the
   warning once for each open. Upstream prints it once. In an embedded
-  workspace, these commands can print it more than once: `show --thread`,
-  once more for each message of the thread; `show` with more than one issue
-  ID, once more for each issue with dependencies after the first; and
-  `list --watch` and `show --watch`, once more at each refresh
-  (beadshx-m08.65).
+  workspace, `list --watch` still does this: it prints the warning once more
+  at each refresh (beadshx-m08.65, beadshx-m08.71 for `--ready`).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,

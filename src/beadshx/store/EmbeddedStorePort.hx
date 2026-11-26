@@ -15,6 +15,10 @@ interface EmbeddedStorePort {
 	function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult>;
 	function issueSummary(beadsDir:String, databaseName:String, id:String):Null<StoreResult<IssueLookup>>;
 	function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>>;
+
+	/** Every issue that depends on `id`, with its whole record, as `show --refs` and `--children` read them. */
+	function issueDependents(beadsDir:String, id:String):Null<StoreResult<Array<RelatedIssue>>>;
+
 	function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:String):Null<StoreResult<String>>;
 	function searchIssueIds(beadsDir:String, databaseName:String, query:String):Null<StoreResult<Array<String>>>;
 	function issueComments(beadsDir:String, databaseName:String, issueId:String):Null<StoreResult<Array<IssueComment>>>;

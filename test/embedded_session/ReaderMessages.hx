@@ -9,11 +9,11 @@ import beadshx.store.EmbeddedDependencyReader;
 import beadshx.store.EmbeddedEventsJournalReader;
 import beadshx.store.EmbeddedGraphReader;
 import beadshx.store.EmbeddedHistoryReader;
+import beadshx.store.EmbeddedIssueDetailsReader;
 import beadshx.store.EmbeddedIssueIdSearch;
 import beadshx.store.EmbeddedIssueListReader;
 import beadshx.store.EmbeddedIssueSummaryReader;
 import beadshx.store.EmbeddedRelationReader;
-import beadshx.store.EmbeddedScalarIssueDetailsReader;
 import beadshx.store.EmbeddedStaleReader;
 import beadshx.store.EmbeddedTreeReader;
 import beadshx.store.IssueListRequests;
@@ -80,16 +80,15 @@ class ReaderMessages {
 			case EmbeddedIssueSummaryFailure(message): Failure(message);
 			case EmbeddedIssueSummaryMissing | EmbeddedIssueSummaryFound(_): Success(true);
 		});
-		// This reader always opens the workspace's configured database.
-		if (databaseName == "")
-			add("details", switch new EmbeddedScalarIssueDetailsReader(beadsDir).read(issueId, {
+		// These reads always open the workspace's configured database.
+		if (databaseName == "") {
+			add("details", done(new EmbeddedIssueDetailsReader(beadsDir).read(issueId, {
 				includeDependents: false,
 				includeComments: true,
 				briefDependencies: false
-			}) {
-				case EmbeddedScalarDetailsFailure(message): Failure(message);
-				case EmbeddedScalarDetailsMissing | EmbeddedScalarDetailsFound(_) | EmbeddedScalarDetailsRequireRelations: Success(true);
-			});
+			})));
+			add("dependents", done(new EmbeddedIssueDetailsReader(beadsDir).readDependents(issueId)));
+		}
 		return lines;
 	}
 

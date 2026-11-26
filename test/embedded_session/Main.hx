@@ -254,7 +254,8 @@ class Main {
 			"id-search:issue-ID",
 			"dependencies:dependency",
 			"summary:issue",
-			"details:detail"
+			"details:detail",
+			"dependents:relation"
 		];
 		final missingDatabase = "Error 1049: database not found: absent_db";
 		final noDatabase = [

@@ -117,6 +117,10 @@ final class EmbeddedStoreAccess {
 		return implementation.issueDetails(beadsDir, id, request);
 	}
 
+	public static function issueDependents(beadsDir:String, id:String):Null<StoreResult<Array<RelatedIssue>>> {
+		return implementation.issueDependents(beadsDir, id);
+	}
+
 	public static function taskSnapshot(beadsDir:String, databaseName:String):Null<StoreResult<String>> {
 		return implementation.taskSnapshot(beadsDir, databaseName);
 	}
@@ -226,6 +230,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest):Null<StoreResult<IssueDetailsLookup>> {
+		return null;
+	}
+
+	public function issueDependents(beadsDir:String, id:String):Null<StoreResult<Array<RelatedIssue>>> {
 		return null;
 	}
 

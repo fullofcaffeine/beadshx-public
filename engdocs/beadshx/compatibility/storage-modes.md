@@ -130,8 +130,9 @@ before the other checks of the command's arguments.
 `BD_IGNORE_SCHEMA_SKEW=1` or `--ignore-schema-skew` prints upstream's warning
 instead, and the command reads the database. Like upstream, the command
 prints the warning once, also when it reads the database more than once, as
-`children`, `ready --gated` and `ready --explain` do. A few commands still
-print it again (see [Limits](limits.md#commands-and-output)). `where`
+`children`, `ready --gated`, `ready --explain`, `show` with more than one
+issue ID, `show --thread`, `--refs` and `--children` do. A few commands
+still print it again (see [Limits](limits.md#commands-and-output)). `where`
 prints no stored prefix when the check stops, as upstream does. `version`
 does not check.
 

@@ -86,7 +86,17 @@ func TestScalarLabelAssembly(t *testing.T) {
 					} else {
 						expectLabels(m, "success")
 					}
-					m.ExpectQuery("SELECT 'dependencies', COUNT").WillReturnRows(sqlmock.NewRows([]string{"kind", "count"}))
+					// The edges and counts of an issue without dependencies or dependents.
+					m.ExpectQuery("SELECT .* AS depends_on_id, type FROM dependencies WHERE issue_id = ").WillReturnRows(sqlmock.NewRows([]string{"depends_on_id", "type"}))
+					m.ExpectQuery("SELECT .* AS depends_on_id, type FROM wisp_dependencies WHERE issue_id = ").WillReturnRows(sqlmock.NewRows([]string{"depends_on_id", "type"}))
+					for _, count := range []string{
+						"SELECT count\\(\\*\\) FROM dependencies WHERE COALESCE",
+						"SELECT count\\(\\*\\) FROM wisp_dependencies WHERE COALESCE",
+						"SELECT count\\(\\*\\) FROM dependencies WHERE issue_id = ",
+						"SELECT count\\(\\*\\) FROM wisp_dependencies WHERE issue_id = ",
+					} {
+						m.ExpectQuery(count).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+					}
 					m.ExpectQuery("SELECT count\\(\\*\\) FROM comments WHERE issue_id = ").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
 				}
 				m.ExpectRollback()

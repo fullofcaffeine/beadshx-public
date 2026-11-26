@@ -111,6 +111,10 @@ heartbeat came. When this node has a `node_id`, the line also names the
 replica that granted the lease, if that is another node. When colors are on,
 the full line is muted.
 
+In an embedded workspace, `show` reads each issue with its dependencies,
+dependents and comments in authored Haxe, also for `--thread`, `--refs`,
+`--children` and `--watch`.
+
 ## query
 
 Like upstream, `query` orders an expression that the database can answer
