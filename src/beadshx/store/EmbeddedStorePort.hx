@@ -30,6 +30,11 @@ interface EmbeddedStorePort {
 	function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int,
 		layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult>;
 	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult>;
+
+	/** The total, and the buckets of a grouping, that `bd count` prints. */
+	function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
+		layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<CountResult>>;
+
 	function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>>;
 	function dependencyTree(beadsDir:String, databaseName:String,
 		request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>>;

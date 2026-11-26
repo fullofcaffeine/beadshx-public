@@ -130,8 +130,9 @@ before the other checks of the command's arguments.
 `BD_IGNORE_SCHEMA_SKEW=1` or `--ignore-schema-skew` prints upstream's warning
 instead, and the command reads the database. Like upstream, the command
 prints the warning once, also when it reads the database more than once, as
-`children`, `ready --gated`, `ready --explain`, `show` with more than one
-issue ID, `show --thread`, `--refs` and `--children` do. `list --watch`,
+`children`, `ready --gated`, `ready --explain`, `count` with a `--by-*`
+flag, `show` with more than one issue ID, `show --thread`, `--refs` and
+`--children` do. `list --watch`,
 also with `--ready`, and `show --watch` print it once for the whole watch,
 not again at each refresh. A server-mode workspace can still print it again
 (see [Limits](limits.md#server-mode-proxied-and-shared-server-workspaces)).
@@ -161,10 +162,12 @@ applies only when the database has a Dolt remote and a recorded version.
 - At a stop, the commands that upstream counts as reads by their command name
   (`readOnlyCommands`) print upstream's warning, `Warning: refusing to ...
   Read-only command: continuing on schema vN without migrating ...`, and read
-  the database as it is. In `bdhx` these are `list`, `ready`, `comments`,
-  `blocked`, `graph`, `show`, `events tail`, `events export`, `dep list`,
-  `label list`, `config list` and `config show`. The other reads print the
-  warning and refuse (see [Limits](limits.md#writes-and-migration)).
+  the database as it is. In `bdhx` these are `list`, `ready`, `show`,
+  `count`, `comments`, `blocked`, `graph`, `events tail`, `events export`,
+  `dep list`, `label list`, `config list` and `config show`. `search`,
+  `query` and `ping`, and a `list --format` template that needs upstream's
+  Go types, print the warning and refuse (see
+  [Limits](limits.md#writes-and-migration)).
 - Every other command, such as `types`, `dep tree`, `info` or `status`, stops
   with the gate's message on stderr, or with its JSON error on stderr under
   JSON output (also with `BD_JSON_ENVELOPE=1`), and exit code 1.

@@ -33,13 +33,14 @@ exists.
   remote is at the same version, v43 or later. The error says `fast-forward`
   instead when `HEAD` is an ancestor of a cached remote at v65 and the working
   set is clean: upstream then fast-forwards to the remote.
-- At a gate stop, upstream's reads `count`, `search`, `query` and `ping`
-  print the gate's warning and read the database as it is. In `bdhx` they
-  read through the native facade, whose strict read-only
-  open cannot read a database behind the binary, so they print the same
-  warning and then stop with `Error: <command> is not available yet on a
-  database behind the binary in this build`, also with
-  `BD_IGNORE_SCHEMA_SKEW=1` (beadshx-m08.67).
+- At a gate stop, upstream's `search`, `query`, `ping` and `list` print the
+  gate's warning and read the database as it is, `list` also with a
+  `--format` template. In `bdhx`, `search`, `query`, `ping` and a template
+  that needs upstream's Go types (see below) read through a Go facade, whose
+  strict read-only open cannot read a database behind the binary. So they
+  print the same warning and then stop with `Error: <command> is not
+  available yet on a database behind the binary in this build`, also with
+  `BD_IGNORE_SCHEMA_SKEW=1` (beadshx-m08.67, beadshx-m08.26).
 - Upstream `show` records the issue that it showed in `.beads/last-touched`.
   `bdhx` reads that file, for `show` without an ID, but never writes it
   (beadshx-m08.27).
@@ -209,6 +210,13 @@ exists.
   the embedded database, unless it is in strict read-only mode. Every command
   that reads the database then reports that it is not available yet for an
   embedded workspace without `.beads/embeddeddolt`.
+- Dolt prints `level=warning msg="skipping in-progress database directory"`
+  each time the store opens, for each unfinished database directory beside
+  the database. Upstream opens the store in its pre-run and again for each
+  store call. `count` and `ping` open it as often as upstream, so they print
+  these lines as often. `list`, `ready`, `search` and `label list-all` open
+  it fewer times, and `query` opens it more times, so they print a different
+  number of these lines (beadshx-m08.73).
 
 ## Commands and output
 
@@ -245,9 +253,9 @@ exists.
 - With `BD_DEBUG` set, upstream prints its debug lines on stderr, and `bdhx`
   does not. A read that still goes through upstream's code in a native facade
   prints that code's `Debug: loaded config from ...` line, for example
-  `count` or any read of a server-mode workspace. An embedded `list`,
-  `children` or `ready` prints none, unless it runs a `list --format`
-  template in the Go facade (see the next item).
+  `search`, `info`, `status` or any read of a server-mode workspace. An
+  embedded `list`, `children`, `ready` or `count` prints none, unless it
+  runs a `list --format` template in the Go facade (see the next item).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,

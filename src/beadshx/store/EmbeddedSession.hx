@@ -355,6 +355,25 @@ final class EmbeddedSession {
 	}
 
 	/**
+		Upstream's pre-run store open, before the command body makes its own
+		store calls, each of which opens the store again (`withConn`).
+
+		Why: Dolt opens its engine at each store open, and warns at each open
+		about every unfinished database directory beside the database. So the
+		number of these warnings follows the number of opens.
+		What: the first open of `beadsDir` in the process checks the schema,
+		as `open` does. A store that does not open is left to the command's
+		first read, which opens it again and reports the error in its words.
+	**/
+	public static function openForCommand(beadsDir:String, selectedDatabase:String):Void {
+		switch open(beadsDir, selectedDatabase) {
+			case EmbeddedSessionOpened(session):
+				session.close();
+			case EmbeddedSessionUnavailable(_, _, _):
+		}
+	}
+
+	/**
 		Opens a session, runs `body` in one read transaction and closes the
 		session, like upstream `withConn(ctx, false, fn)`. The session is closed
 		on every path. If the body throws, the transaction is rolled back and

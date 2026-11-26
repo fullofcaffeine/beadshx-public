@@ -3785,7 +3785,8 @@ final class Application {
 								final deferredExit = runDeferredChecks(invocation);
 								final result = if (deferredExit != null) {
 									deferredExit;
-								} else switch query.issueCount(location.path, invocation.countRequest, invocation.countGroup, invocation.global) {
+								} else switch query.issueCount(location.path, location.databaseName, invocation.countRequest, invocation.countGroup,
+									invocation.global) {
 									case Failure(message): runStoreFailure(message);
 									case Success(count): renderCount(invocation, count);
 								};

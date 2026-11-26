@@ -59,7 +59,7 @@ typedef IssueFilterClauses = {
 	final arguments:Array<Dynamic>;
 }
 
-/** Upstream types.IssueFilter, as far as workapi.BuildListFilter fills it for a list request. */
+/** Upstream types.IssueFilter, as far as workapi.BuildListFilter fills it for a list request, and BuildCountFilter for a count. */
 @:goNative
 final class IssueSearchFilter {
 	public var limit = 0;
@@ -162,17 +162,25 @@ final class SqlIssueFilter {
 		var customTypes = effectiveCustomTypes(SqlCustomConfigReader.readCustomTypes(context, transaction), layers.customTypes);
 		if (customTypes.length == 0)
 			customTypes = layers.customTypes;
+		return {customStatuses: statuses, customTypes: customTypes, infraTypes: loadInfraTypes(context, transaction, layers)};
+	}
+
+	/** Upstream GetInfraTypes (ResolveInfraTypesInTx): the database's types.infra list, else the layered one, else the defaults. */
+	public static function loadInfraTypes(context:Context, transaction:Tx, layers:IssueListConfigLayers):Array<String> {
 		var infraTypes = new Array<String>();
 		switch SqlCustomConfigReader.readSetting(context, transaction, "types.infra") {
 			case Success(value):
 				infraTypes = commaSeparated(value);
 			case Failure(_):
 		}
-		if (infraTypes.length == 0)
-			infraTypes = layers.infraTypes;
-		if (infraTypes.length == 0)
-			infraTypes = DEFAULT_INFRA_TYPES;
-		return {customStatuses: statuses, customTypes: customTypes, infraTypes: infraTypes};
+		return fallbackInfraTypes(infraTypes, layers);
+	}
+
+	/** The infra types after the database's list: the layered list when it is empty, else the defaults. */
+	public static function fallbackInfraTypes(stored:Array<String>, layers:IssueListConfigLayers):Array<String> {
+		if (stored.length > 0)
+			return stored;
+		return layers.infraTypes.length > 0 ? layers.infraTypes : DEFAULT_INFRA_TYPES;
 	}
 
 	/**
@@ -548,7 +556,7 @@ final class SqlIssueFilter {
 	}
 
 	/** The canonical RFC3339Nano bounds as upstream formats them for SQL: time.RFC3339 in their own offset. */
-	static function filterTimes(filters:Array<IssueListTimeFilter>):StoreResult<Array<IssueFilterTime>> {
+	public static function filterTimes(filters:Array<IssueListTimeFilter>):StoreResult<Array<IssueFilterTime>> {
 		final bounds = new Map<String, String>();
 		for (filter in filters) {
 			final entry = switch filter {

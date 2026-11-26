@@ -16,12 +16,8 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 	public function new() {}
 
 	public function checkSchema(beadsDir:String, databaseName:String):Void {
-		switch EmbeddedSession.open(beadsDir, databaseName) {
-			case EmbeddedSessionOpened(session):
-				session.close();
-			// The command's own read reports a store that does not open.
-			case EmbeddedSessionUnavailable(_, _, _):
-		}
+		// The command's own read reports a store that does not open.
+		EmbeddedSession.openForCommand(beadsDir, databaseName);
 	}
 
 	public function remoteMigrateGate(beadsDir:String, databaseName:String, currentVersion:Int):Null<RemoteMigrateGate.RemoteGateOutcome> {
@@ -70,6 +66,11 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 
 	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
 		return EmbeddedReadyReader.read(beadsDir, databaseName, request);
+	}
+
+	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<CountResult>> {
+		return EmbeddedCountReader.read(beadsDir, databaseName, request, group, layers);
 	}
 
 	public function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {

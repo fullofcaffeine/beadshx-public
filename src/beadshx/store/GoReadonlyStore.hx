@@ -300,7 +300,13 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return Failure(ISSUE_TOTAL_ROUTE_UNAVAILABLE);
 	}
 
-	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
+	/** An embedded workspace counts with Haxe-owned SQL (EmbeddedCountReader); the native facade serves the other routes. */
+	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.issueCount(beadsDir, databaseName, request, group, listConfigLayers(beadsDir));
+			if (embedded != null)
+				return embedded;
+		}
 		return projectCountOutcome(facadeOpened(beadsDir, global,
 			() -> NativeReadonlyFacade.readCountOutcome(beadsDir, countOptions(request), countGroupWireValue(group), global)));
 	}
@@ -809,12 +815,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_): true;
 		};
 		if (haxeRead && embeddedRoute(beadsDir, global)) {
-			final config = LayeredConfig.forWorkspace(beadsDir);
-			final embedded = EmbeddedStoreAccess.issueList(beadsDir, databaseName, request, effectiveLimit, {
-				customTypes: config.list("types.custom"),
-				customStatuses: config.list("status.custom"),
-				infraTypes: config.list("types.infra")
-			});
+			final embedded = EmbeddedStoreAccess.issueList(beadsDir, databaseName, request, effectiveLimit, listConfigLayers(beadsDir));
 			if (embedded != null)
 				return embedded;
 		}
@@ -840,6 +841,16 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		if (outcome.failed())
 			return ListFailure(facadeMessage(outcome.message()));
 		return ListSuccess({items: [], hasMore: false, formatted: outcome.value()});
+	}
+
+	/** The list settings of the workspace's layered config.yaml files and BD_ variables. */
+	static function listConfigLayers(beadsDir:String):SqlIssueFilter.IssueListConfigLayers {
+		final config = LayeredConfig.forWorkspace(beadsDir);
+		return {
+			customTypes: config.list("types.custom"),
+			customStatuses: config.list("status.custom"),
+			infraTypes: config.list("types.infra")
+		};
 	}
 
 	public function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
@@ -1667,7 +1678,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		};
 	}
 
-	public function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
+	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult> {
 		return GoReadonlyStore.projectCountOutcome(native.readCountOutcome(GoReadonlyStore.countOptions(request), GoReadonlyStore.countGroupWireValue(group)));
 	}
 

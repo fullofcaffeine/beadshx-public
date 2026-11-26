@@ -7,7 +7,13 @@ interface IssueQueryPort extends QueryTimePort {
 	function relatedIssues(beadsDir:String, databaseName:String, plan:beadshx.relation.RelationRead.RelationReadPlan,
 		global:Bool):StoreResult<Array<beadshx.relation.RelatedIssue>>;
 	function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult;
-	function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult>;
+
+	/**
+		The total, and the buckets of a grouping, of `bd count`. An embedded
+		workspace counts with Haxe-owned SQL; a server-mode or proxied
+		workspace through the native facade.
+	**/
+	function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult>;
 
 	/**
 		The ready work of `bd ready` and the first read of ready --gated, --mol

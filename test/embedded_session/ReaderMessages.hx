@@ -3,6 +3,7 @@ import beadshx.relation.RelationRead.prepareRelationRead;
 import beadshx.store.EmbeddedAssignedIssueReader;
 import beadshx.store.EmbeddedBlockedReader;
 import beadshx.store.EmbeddedCommentReader;
+import beadshx.store.EmbeddedCountReader;
 import beadshx.store.EmbeddedCustomConfigReader;
 import beadshx.store.EmbeddedCycleReader;
 import beadshx.store.EmbeddedDependencyReader;
@@ -74,6 +75,26 @@ class ReaderMessages {
 			case ReadyFailure(message): Failure(message);
 			case ReadyRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
 		});
+		add("count", done(EmbeddedCountReader.read(beadsDir, databaseName, {
+			status: "",
+			issueType: "",
+			assignee: "",
+			priority: IntAbsent,
+			priorityMin: IntAbsent,
+			priorityMax: IntAbsent,
+			labels: [],
+			labelsAny: [],
+			titleSearch: "",
+			idFilter: "",
+			titleContains: "",
+			descriptionContains: "",
+			notesContains: "",
+			timeFilters: [],
+			emptyDescription: false,
+			noAssignee: false,
+			noLabels: false,
+			includeInfra: false
+		}, ByStatus, {customTypes: [], customStatuses: [], infraTypes: []})));
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));
