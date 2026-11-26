@@ -1,3 +1,4 @@
+import beadshx.cli.ThanksPage;
 import beadshx.cli.TerminalStyles;
 import beadshx.cli.TerminalStyles.StyleSpec;
 import beadshx.cli.TerminalStyles.TextStyle;
@@ -13,8 +14,9 @@ import beadshx.cli.MarkdownRendering.unescapeAngleBrackets;
 	render helpers (styles.go:286-599), by hand. A marker style stands in for
 	lipgloss: it prints the spec it was built from. Parity covers the real
 	escape sequences, and the pipe cases; a terminal on stdout cannot reach it.
-	Also pins the hyperlink decision (terminal.go:66-131) and the text steps
-	around glamour in upstream's Markdown renderer (internal/uimd).
+	Also pins the hyperlink decision (terminal.go:66-131), the text steps
+	around glamour in upstream's Markdown renderer (internal/uimd), and the
+	writes of the thanks page (cmd/bd/thanks.go:131-253).
 **/
 final class Main {
 	static var failures = 0;
@@ -26,6 +28,7 @@ final class Main {
 		lightContracts();
 		hyperlinkContracts();
 		markdownTextContracts();
+		thanksPageContracts();
 		if (failures > 0) {
 			Sys.println('terminal styles Haxe contracts: ${failures} failure(s)');
 			Sys.exit(1);
@@ -234,6 +237,55 @@ final class Main {
 		equal(styles.command.render("c"), "<#5c6166>c");
 	}
 
+	/**
+		Upstream prints the thanks page with one fmt call for each piece, and
+		each call is one write to stdout. A terminal turns each line feed into
+		CR LF, and on macOS a write that fills the terminal's 1024-byte output
+		queue right at a line feed sends that CR twice. So the page makes the
+		same writes in the same order as upstream (beadshx-m06.6), and writes
+		the leading line feed before it sorts or renders anything, as upstream
+		does, so that a terminal reader can take it before the box comes.
+	**/
+	static function thanksPageContracts():Void {
+		final events:Array<String> = [];
+		final pieces:Array<String> = [];
+		function style(spec:StyleSpec):TextStyle {
+			events.push("style");
+			return new LoggedStyle(marker(spec), events);
+		}
+		ThanksPage.print(piece -> {
+			events.push("write");
+			pieces.push(piece);
+		}, style, true, true, false);
+		equal(events[0], "write");
+		equal(pieces[0], "\n");
+		// N: a line feed (fmt.Println()); B: the box and its line feed; S: a section heading and its line
+		// feed; I: the indent of a row or a wrapped line (fmt.Print); T: one name cell or list entry.
+		final rows = [for (_ in 0...5) "ITTTTN"].join("");
+		final wrapped = [for (count in [6, 7, 6, 6, 5, 6, 3]) [for (_ in 0...count) "T"].join("")].join("NI");
+		final shape = [for (piece in pieces) thanksPiece(piece)].join("");
+		equal(shape, "NBNSN" + rows + "NSNI" + wrapped + "NN");
+		if (shape.length != 92)
+			return;
+		equal(pieces[1].split("\n").length, 8);
+		equal(StringTools.endsWith(pieces[1], "╝\n"), true);
+		equal(pieces[6], "<#86b300>Steve Yegge           ");
+		equal(pieces[pieces.length - 3], "<#828c99>Zachary Rosen");
+	}
+
+	/** The kind of one write of the thanks page; see `thanksPageContracts`. */
+	static function thanksPiece(piece:String):String {
+		if (piece == "\n")
+			return "N";
+		if (piece == "  ")
+			return "I";
+		if (piece.indexOf("╔") >= 0)
+			return "B";
+		if (StringTools.endsWith(piece, " Contributors\n"))
+			return "S";
+		return piece.indexOf("\n") < 0 ? "T" : "?";
+	}
+
 	/** Builds a style that prints its spec before the text: `-` for no foreground, `default` for NoColor{}. */
 	static function marker(spec:StyleSpec):TextStyle {
 		final foreground = switch spec.foreground {
@@ -256,6 +308,22 @@ final class Main {
 			failures++;
 			Sys.println('expected ${expected}, got ${actual}');
 		}
+	}
+}
+
+/** A style that logs each render to `events` and renders as `style` does. */
+private final class LoggedStyle implements TextStyle {
+	final style:TextStyle;
+	final events:Array<String>;
+
+	public function new(style:TextStyle, events:Array<String>) {
+		this.style = style;
+		this.events = events;
+	}
+
+	public function render(text:String):String {
+		events.push("render");
+		return style.render(text);
 	}
 }
 

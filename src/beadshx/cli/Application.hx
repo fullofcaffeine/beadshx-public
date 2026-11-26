@@ -1660,7 +1660,7 @@ final class Application {
 								case Failure(message): runStoreFailure(message);
 								case Success(_) if (invocation.infoThanks):
 									// Upstream checks --thanks first and prints the page in every output mode.
-									output.writeStdout(ThanksPage.render(output.textStyle, startupColors, colors, darkBackground));
+									ThanksPage.print(output.writeStdout, output.textStyle, startupColors, colors, darkBackground);
 									0;
 								case Success(_):
 									renderWhatsNew(invocation.output);

@@ -22,11 +22,19 @@ typedef ThanksContributor = {
 	contributor map by commit count with an unstable sort, so contributors
 	with the same count come out in a random order in each run; this page
 	keeps the order of upstream's source for them.
-	How: upstream builds its text styles from internal/ui's core colors once,
-	when the process starts, so `--no-color` does not change them; it builds
-	the box style when it renders, after `--no-color`. So the caller passes
-	both color choices. Widths count bytes where upstream uses `len`, and
-	runes where it pads with `%-*s`.
+	How: each upstream `fmt.Print` or `fmt.Println` call is one write to
+	stdout, and the page makes the same writes in the same order. A terminal
+	turns each line feed into CR LF, and when a write fills a macOS
+	terminal's 1024-byte output queue with that CR, the terminal sends the CR
+	again before the LF. Upstream writes the leading line feed before it
+	sorts or renders anything, so a terminal reader takes it before the box
+	comes, and the box starts in an empty queue; one write of the whole page
+	put a second CR on line 7 (beadshx-m06.6). Upstream builds its text
+	styles from internal/ui's core colors once, when the process starts, so
+	`--no-color` does not change them; it builds the box style when it
+	renders, after `--no-color`. So the caller passes both color choices.
+	Widths count bytes where upstream uses `len`, and runes where it pads
+	with `%-*s`.
 **/
 final class ThanksPage {
 	/** Upstream `topN`: the contributors that the page features in columns. */
@@ -105,12 +113,14 @@ final class ThanksPage {
 	];
 
 	/**
-		The page, from upstream `printThanksPage`. `style` builds a native
-		style. `startColors` is internal/ui's color choice when the process
-		started, `colors` the choice after `--no-color`, and `isDark` the
-		terminal background.
+		Upstream `printThanksPage`: passes each piece of the page to `write`,
+		one for each of upstream's fmt calls. `style` builds a native style.
+		`startColors` is internal/ui's color choice when the process started,
+		`colors` the choice after `--no-color`, and `isDark` the terminal
+		background.
 	**/
-	public static function render(style:StyleSpec->TextStyle, startColors:Bool, colors:Bool, isDark:Bool):String {
+	public static function print(write:String->Void, style:StyleSpec->TextStyle, startColors:Bool, colors:Bool, isDark:Bool):Void {
+		write("\n");
 		function styled(color:CoreColor, bold:Bool):TextStyle {
 			return style({foreground: coreForeground(color, startColors, isDark), bold: bold});
 		}
@@ -126,23 +136,22 @@ final class ThanksPage {
 		final additional = names.slice(featuredCount);
 		// Upstream adds 4 for the indent.
 		final contentWidth = columnsWidth(featured) + 4;
-		final page = new StringBuf();
-		page.add("\n");
-		page.add(box(contentWidth - 4, border, [
+		write(box(contentWidth - 4, border, [
 			{text: "THANK YOU!", style: title},
 			{text: "", style: null},
 			{text: "To all the humans who contributed to beads", style: subtitle}
 		]));
-		page.add("\n");
-		page.add(section.render(INDENT + "Featured Contributors") + "\n\n");
-		page.add(columns(featured, name));
+		write("\n");
+		write(section.render(INDENT + "Featured Contributors") + "\n");
+		write("\n");
+		columns(write, featured, name);
 		if (additional.length > 0) {
-			page.add("\n");
-			page.add(section.render(INDENT + "Additional Contributors") + "\n\n");
-			page.add(wrappedList(additional, contentWidth, dim));
+			write("\n");
+			write(section.render(INDENT + "Additional Contributors") + "\n");
+			write("\n");
+			wrappedList(write, additional, contentWidth, dim);
 		}
-		page.add("\n");
-		return page.toString();
+		write("\n");
 	}
 
 	/** Upstream `getContributorsSorted`: the names by commit count, highest first; a stable sort keeps the source order of ties. */
@@ -161,10 +170,10 @@ final class ThanksPage {
 	}
 
 	/**
-		Upstream `thanksBoxStyle(width).Render(header)`: a double border,
-		padding of one line and four columns, the lines centered, `width`
-		columns wide with the border. Lipgloss puts the odd column of a gap
-		on the right.
+		Upstream `thanksBoxStyle(width).Render(header)` and the line feed that
+		`fmt.Println` adds: a double border, padding of one line and four
+		columns, the lines centered, `width` columns wide with the border.
+		Lipgloss puts the odd column of a gap on the right.
 	**/
 	static function box(width:Int, border:TextStyle, lines:Array<{text:String, style:Null<TextStyle>}>):String {
 		final inner = width - 2;
@@ -190,46 +199,51 @@ final class ThanksPage {
 		return names.length == 0 ? 0 : (widestName(names) + 2) * COLUMNS;
 	}
 
-	/** Upstream `printThanksColumns`: the names in rows, left to right, each padded to the column width. */
-	static function columns(names:Array<String>, style:TextStyle):String {
+	/**
+		Upstream `printThanksColumns`: the names in rows, left to right, each
+		padded to the column width. Each row's indent, each cell and each
+		row's line feed is one write.
+	**/
+	static function columns(write:String->Void, names:Array<String>, style:TextStyle):Void {
 		if (names.length == 0)
-			return "";
+			return;
 		final columnWidth = widestName(names) + 2;
-		final rendered = new StringBuf();
 		var index = 0;
 		while (index < names.length) {
-			rendered.add(INDENT);
+			write(INDENT);
 			var column = 0;
 			while (column < COLUMNS && index + column < names.length) {
 				var cell = names[index + column];
 				if (byteLength(cell) > MAX_NAME_WIDTH)
 					cell = Bytes.ofString(cell).sub(0, MAX_NAME_WIDTH - 3).toString() + "...";
-				rendered.add(style.render(cell + spaces(columnWidth - runeCount(cell))));
+				write(style.render(cell + spaces(columnWidth - runeCount(cell))));
 				column++;
 			}
-			rendered.add("\n");
+			write("\n");
 			index += COLUMNS;
 		}
-		return rendered.toString();
 	}
 
-	/** Upstream `printThanksWrappedList` without a label: the names joined by `, `, wrapped before a name that would pass `maxWidth` bytes. */
-	static function wrappedList(names:Array<String>, maxWidth:Int, style:TextStyle):String {
-		final rendered = new StringBuf();
-		rendered.add(INDENT);
+	/**
+		Upstream `printThanksWrappedList` without a label: the names joined by
+		`, `, wrapped before a name that would pass `maxWidth` bytes. Each
+		indent, each entry and each line feed is one write.
+	**/
+	static function wrappedList(write:String->Void, names:Array<String>, maxWidth:Int, style:TextStyle):Void {
+		write(INDENT);
 		var lineLength = INDENT.length;
 		for (index in 0...names.length) {
 			final entry = names[index] + (index == names.length - 1 ? "" : ", ");
 			final entryLength = byteLength(entry);
 			if (lineLength + entryLength > maxWidth && lineLength > INDENT.length) {
-				rendered.add("\n" + INDENT);
+				write("\n");
+				write(INDENT);
 				lineLength = INDENT.length;
 			}
-			rendered.add(style.render(entry));
+			write(style.render(entry));
 			lineLength += entryLength;
 		}
-		rendered.add("\n");
-		return rendered.toString();
+		write("\n");
 	}
 
 	/** The widest name in bytes, at most `MAX_NAME_WIDTH`. */
