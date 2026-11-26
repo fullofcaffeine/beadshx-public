@@ -5,6 +5,7 @@ package beadshx.nativeextern.time;
 @:go.package("time")
 @:go.name("Time")
 @:go.struct
+@:goNative
 extern class Time {
 	/** Allocate an addressable zero time for standard-library scan destinations. */
 	public function new();
@@ -33,7 +34,9 @@ extern class Time {
 	/** Go's default text for a time, which `fmt` prints: `2006-01-02 15:04:05.999999999 -0700 MST`. */
 	@:go.name("String") public function stringValue():String;
 
-	@:go.name("Unix") public function unix():Int;
+	/** Seconds since the Unix epoch; Go returns int64, so the value stays a native int64. */
+	@:go.name("Unix") public function unix():go.NativeInt64;
+
 	@:go.valueReturn
 	@:go.name("UTC") public function utc():Time;
 	@:go.name("Year") public function year():Int;

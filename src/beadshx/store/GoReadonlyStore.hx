@@ -20,6 +20,7 @@ import beadshx.nativeextern.issueops.EdgeReader;
 import beadshx.nativeextern.issueops.IssuePage;
 import beadshx.nativeextern.issueops.ListRequest;
 import beadshx.nativeextern.issueops.Reader;
+import beadshx.nativeextern.strconv.StrconvPkg;
 import beadshx.nativeextern.time.Time;
 import beadshx.nativeextern.time.TimePkg;
 import beadshx.nativeextern.timeparsing.TimeparsingPkg;
@@ -493,7 +494,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			return null;
 		return {
 			canonical: native.format(GO_RFC3339_NANO),
-			epochSeconds: Std.string(native.unix()),
+			epochSeconds: StrconvPkg.formatInt(native.unix(), 10),
 			nanosecond: native.nanosecond(),
 			year: native.year(),
 			month: month,
