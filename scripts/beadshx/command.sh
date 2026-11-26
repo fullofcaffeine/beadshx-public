@@ -72,6 +72,7 @@ run_command() {
 			"$repository_root/scripts/beadshx/test-storage-relation-tracer.sh" "${BEADSHX_CANDIDATE_BIN:-$repository_root/build/bin/bdhx}" &&
 			"$repository_root/scripts/beadshx/test-snapshot.sh" "${BEADSHX_CANDIDATE_BIN:-$repository_root/build/bin/bdhx}" &&
 			"$repository_root/scripts/beadshx/check-compatibility-manifest.sh" &&
+			"$repository_root/scripts/beadshx/test-logical-state.sh" &&
 			(cd "$repository_root" && go test -tags gms_pure_go \
 				./internal/beadshx/... ./generated/go/bdhx)
 		;;
