@@ -74,7 +74,7 @@ run_command() {
 			"$repository_root/scripts/beadshx/check-compatibility-manifest.sh" &&
 			"$repository_root/scripts/beadshx/test-logical-state.sh" &&
 			(cd "$repository_root" && go test -tags gms_pure_go \
-				./internal/beadshx/... ./generated/go/bdhx)
+				./internal/beadshx/... ./generated/go/bdhx ./scripts/beadshx/output-normalizers)
 		;;
 	generated) "$repository_root/scripts/beadshx/test-generated-governance.sh" ;;
 	identity) "$repository_root/scripts/beadshx/test-release-identity.sh" ;;
