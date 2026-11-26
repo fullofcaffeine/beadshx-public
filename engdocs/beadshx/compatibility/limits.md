@@ -342,10 +342,6 @@ exists. Each item has a difference record in the
   one.
 - Where upstream output order is random (Go map order), the parity tests
   compare the stable part, and `bdhx` prints one fixed order.
-- On a terminal, `bdhx info --thanks` writes one more carriage return than
-  upstream, at the end of the last line inside the box. The parity check of
-  the thanks page drops a carriage return before a line feed, as its earlier
-  check did, so it does not show this difference (beadshx-m06.6).
 - `ready --explain` and `graph check` find cycles with upstream's walk, which
   starts at the issues in a random order. So upstream can start a cycle of
   two or more issues at any one of them, and can list two or more cycles in

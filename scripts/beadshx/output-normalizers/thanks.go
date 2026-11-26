@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"maps"
 	"regexp"
 	"slices"
@@ -28,11 +27,8 @@ type thanksPage struct {
 // applyThanksContributorOrder checks that the page lists every contributor of
 // upstream's table once, by commit count, in upstream's layout for that
 // order (cmd/bd/thanks.go:131-253), and lays the names out again in one order:
-// by count, then in the table's order. It also drops a "\r" right before a
-// "\n", as the former Python check did by reading the page as text: bdhx
-// writes one on a terminal (beadshx-m06.6).
+// by count, then in the table's order.
 func applyThanksContributorOrder(input []byte, options Options) ([]byte, error) {
-	input = bytes.ReplaceAll(input, []byte("\r\n"), []byte("\n"))
 	page := thanksPage{commits: map[string]int{}, rank: map[string]int{}}
 	for index, match := range thanksContributor.FindAllStringSubmatch(string(options.ThanksSource), -1) {
 		count, err := strconv.Atoi(match[2])

@@ -22586,25 +22586,6 @@
       }
     },
     {
-      "id": "diff:thanks-terminal-carriage-return",
-      "summary": "On a terminal, bdhx info --thanks writes one more carriage return than upstream in the thanks box.",
-      "category": "output",
-      "disposition": "untriaged",
-      "trackingTask": "beadshx-m06.6",
-      "affects": [
-        "cmd:bd/info"
-      ],
-      "profiles": [
-        "prof:portable-nocgo",
-        "prof:release-cgo"
-      ],
-      "source": {
-        "evidence": "ev:limits",
-        "section": "Commands and output",
-        "quote": "On a terminal, `bdhx info --thanks` writes one more carriage return than"
-      }
-    },
-    {
       "id": "diff:usage-error-no-redirect-warning",
       "summary": "A usage error that upstream finds later prints no redirect warning first.",
       "category": "output",

@@ -216,9 +216,7 @@ var declaredNormalizers = []Normalizer{
 	{
 		Name: "thanks-contributor-order",
 		Fields: "the order of the contributors that have the same commit count on the thanks page: the rows " +
-			"under \"Featured Contributors\" and the wrapped lines under \"Additional Contributors\"; and a " +
-			"\"\\r\" right before a \"\\n\", which the former Python check of the page dropped by reading it " +
-			"as text (bdhx writes one on a terminal: beadshx-m06.6, after which this part goes)",
+			"under \"Featured Contributors\" and the wrapped lines under \"Additional Contributors\"",
 		Reason: "The thanks page sorts upstream's contributor map by commit count with an unstable sort " +
 			"(cmd/bd/thanks.go:117-122), so contributors with the same count print in a random order. The page " +
 			"must name each contributor of --thanks-source once, with the counts never rising, in the rows and " +

@@ -489,14 +489,15 @@ func normalizerTests(t *testing.T) map[string]normalizerTest {
 			same: []samePair{
 				{left: thanks(pages["plain-a"]), right: thanks(pages["plain-b"])},
 				{left: thanks(pages["color-a"]), right: thanks(pages["color-b"])},
-				// bdhx writes a stray carriage return on line 7 on a terminal (beadshx-m06.6).
-				{left: thanks(pages["color-a"]), right: thanks(withCarriageReturn(pages["color-b"], 6))},
 			},
 			kept: []side{thanks(mustNormalize(t, pages["plain-a"], "thanks-contributor-order", Options{ThanksSource: source}))},
 			differ: [][2]side{
 				{thanks(pages["plain-a"]), thanks(strings.Replace(pages["plain-b"], "THANK YOU!", "THANK YOU?", 1))},
 				{thanks(pages["plain-a"]), thanks(pages["color-b"])},
 				{thanks(pages["plain-a"]), thanks(strings.Replace(pages["plain-b"], "THANK YOU!", "THANK\rYOU!", 1))},
+				// A carriage return before a line feed stays, such as the one that bdhx wrote on line 7
+				// on a terminal before beadshx-m06.6; pty-transcript undoes the terminal's own.
+				{thanks(pages["color-a"]), thanks(withCarriageReturn(pages["color-b"], 6))},
 			},
 			rejected: []side{
 				thanks(strings.Replace(pages["plain-a"], "Steve Yegge  ", "Someone Else ", 1)),

@@ -183,7 +183,7 @@ visibly non-green.
 | fix_planned | 17 |
 | decision_pending | 2 |
 | waived | 2 |
-| untriaged | 28 |
+| untriaged | 27 |
 
 | Difference | Disposition | Task or waiver | Category | Commands | Summary |
 | --- | --- | --- | --- | ---: | --- |
@@ -233,7 +233,6 @@ visibly non-green.
 | `diff:show-last-touched-not-written` | fix_planned | beadshx-m08.27 | persistent-state | 1 | show reads .beads/last-touched but never writes it. |
 | `diff:snapshot-extension` | waived | waiver:snapshot-extension | behavior | 1 | bdhx adds the hidden snapshot command, which upstream reports as an unknown command. |
 | `diff:stale-json-server-labels` | fix_planned | beadshx-m08.46 | output | 1 | In a server-mode or proxied workspace, stale --json records have no labels field. |
-| `diff:thanks-terminal-carriage-return` | untriaged | beadshx-m06.6 | output | 1 | On a terminal, bdhx info --thanks writes one more carriage return than upstream in the thanks box. |
 | `diff:usage-error-no-redirect-warning` | untriaged | none | output | 37 | A usage error that upstream finds later prints no redirect warning first. |
 | `diff:write-subcommands-refused` | fix_planned | beadshx-m09 | behavior | 9 | The write subcommands of ported groups report that they are not available yet, and dep asks for a read subcommand; writes come with M09. |
 
@@ -444,7 +443,7 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/human/respond` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/human/stats` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/import` | no | haxe | not_started | D1 | unknown | unknown | 0 |
-| `cmd:bd/info` | no | go_facade | partial | D0 | unknown | pass, sampled (86 scenarios) | 24 |
+| `cmd:bd/info` | no | go_facade | partial | D0 | unknown | pass, sampled (86 scenarios) | 23 |
 | `cmd:bd/init` | no | haxe | not_started | D1 | unknown | unknown | 0 |
 | `cmd:bd/init-safety` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/jira` | no | haxe | not_started | D2 | unknown | unknown | 0 |
