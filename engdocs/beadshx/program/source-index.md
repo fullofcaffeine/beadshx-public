@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `bfbe12e8c7bc8d7ab14138768631bcc1782741c3`.
+Required BeadsHX compiler revision: `ac8ee843546bb9ca08dfa72db3bbaafb33ae8371`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -206,6 +206,16 @@ list once, the native authority gate first asks whether a type can reach a
 gofmt run. Together they cut about 11 s of wall time from the BeadsHX
 bootstrap compile.
 BeadsHX Go output is byte-identical to the previous lock.
+
+Compiler tasks haxe_go-a406 and haxe_go-mezg make the native gate report every
+reachable `go.*` type and stop blaming callers for `go.*` siblings of a go-free
+static. haxe_go-f4zg and haxe_go-7wd8 keep main-class statics and locals clear
+of imported Go package names and Go predeclared identifiers. haxe_go-997c
+recovers a cast value once, haxe_go-kux0 makes a failed checked cast throw
+Haxe's catchable class cast error, and haxe_go-37b9 adds
+`go.NativeAny.ofValue` for Go value externs. BeadsHX Go output changes only by
+one redundant recovery fewer in the staged `haxe.Exception` and `CallStack`
+code and by `X_local` renames of locals.
 
 Reviewed current authority:
 
