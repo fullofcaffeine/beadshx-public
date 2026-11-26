@@ -11,7 +11,10 @@ candidate="${2:-$repository_root/build/bin/bdhx}"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-parity-smoke.XXXXXX")"
 # Writes rows that bd refuses to create (such as dependency cycles) into marked fixtures.
 fixture_sql="$test_root/bin/fixture-sql"
-(cd "$repository_root" && go build -tags gms_pure_go -o "$fixture_sql" ./scripts/beadshx/fixture-sql)
+# Exports and compares the logical Dolt state of a database case: see real_database_logical_state.
+logical_state="$test_root/bin/logical-state"
+(cd "$repository_root" && go build -mod=readonly -tags gms_pure_go -o "$test_root/bin/" \
+	./scripts/beadshx/fixture-sql ./scripts/beadshx/logical-state)
 cleanup() {
 	local status=$?
 	while IFS= read -r pid_file; do
@@ -1249,6 +1252,13 @@ real_database_beads_mode=700
 # When set, a database case also requires the upstream command to leave its task state unchanged,
 # and gives each side an empty TMPDIR that must stay empty.
 real_database_read_only=""
+# When set, a database case also compares the logical Dolt state of both sides after the run, with
+# scripts/beadshx/logical-state: every table row for row, the schema objects, and the revision state
+# (commit graph, messages, changed tables, branches and working set). "unchanged" requires each side's
+# state to equal the fixture's state before the run exactly, with no normalization rule. "equal"
+# requires the two sides' states to be equal under the declared write rules, and then lets the
+# candidate change its fixture: see check_logical_state.
+real_database_logical_state=""
 real_database_case_count=0
 real_database_out_of_memory_count=0
 candidate_only_case_count=0
@@ -1329,6 +1339,52 @@ columns, rest = render(sorted(order, key=lambda name: (-commits[name], rank[name
 sys.stdout.write("\n".join(lines[:rows.start] + columns + lines[rows.stop:wrapped.start] + rest + lines[wrapped.stop:]))
 '
 
+# The rules of an "equal" logical state comparison: commit hashes as their place in the history, the
+# times that the runs stamp, row ids that upstream derives from those times, and random lock values
+# as kept or fresh against the state before the run. `logical-state rules` gives each reason.
+logical_state_write_rules=commit-hash,run-time,derived-row-id,random-token
+
+# Usage: check_logical_state NAME CASE-ROOT SINCE UNTIL
+# Compares the logical state of both sides of a database case after its run, in the
+# real_database_logical_state mode. CASE-ROOT holds before.state.json, the state before the run;
+# SINCE and UNTIL are the whole UTC seconds in which the two runs started and ended.
+check_logical_state() {
+	local name="$1" case_root="$2" since="$3" until="$4" side status
+	for side in oracle candidate; do
+		"$logical_state" export "$case_root/$side-state/work" >"$case_root/$side.state.json" || return 2
+	done
+	case "$real_database_logical_state" in
+	unchanged)
+		for side in oracle candidate; do
+			status=0
+			"$logical_state" compare "$case_root/before.state.json" "$case_root/$side.state.json" \
+				>"$case_root/$side.state.report" || status=$?
+			if [[ "$status" -ne 0 ]]; then
+				printf '%s %s command changed the logical database state (left: before, right: after the run)\n' \
+					"$name" "$side" >&2
+				cat "$case_root/$side.state.report" >&2
+				return 1
+			fi
+		done
+		;;
+	equal)
+		status=0
+		"$logical_state" compare --rules "$logical_state_write_rules" --since "$since" --until "$until" \
+			--baseline "$case_root/before.state.json" "$case_root/oracle.state.json" "$case_root/candidate.state.json" \
+			>"$case_root/state.report" || status=$?
+		if [[ "$status" -ne 0 ]]; then
+			printf '%s logical database state differs from upstream (left: upstream, right: candidate)\n' "$name" >&2
+			cat "$case_root/state.report" >&2
+			return 1
+		fi
+		;;
+	*)
+		printf 'unknown logical state mode: %s\n' "$real_database_logical_state" >&2
+		return 2
+		;;
+	esac
+}
+
 compare_real_database() {
 	local name="$1"
 	printf 'parity [%ss]: START database/%s\n' "$SECONDS" "$name"
@@ -1373,6 +1429,11 @@ compare_real_database() {
 			"$real_database_setup" "$state_root"
 		fi
 	done
+	if [[ -n "$real_database_logical_state" ]]; then
+		# Export the state before the run from a copy, so that the export cannot touch either side.
+		copy_fixture_tree "$oracle_root/work" "$case_root/before-work"
+		"$logical_state" export "$case_root/before-work" >"$case_root/before.state.json"
+	fi
 	candidate_before="$(fingerprint_tree "$candidate_root")"
 	local oracle_before="" oracle_temporary=(BEADSHX_PARITY_TMP=inherited) candidate_temporary=(BEADSHX_PARITY_TMP=inherited)
 	if [[ -n "$real_database_read_only" ]]; then
@@ -1392,6 +1453,8 @@ compare_real_database() {
 	local oracle_extra_env=("${real_database_extra_env[@]//<work>/$oracle_work}")
 	local candidate_extra_env=("${real_database_extra_env[@]//<work>/$candidate_work}")
 
+	local state_since state_until
+	state_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	set +e
 	(
 		cd "$oracle_root/work${real_database_directory:+/$real_database_directory}"
@@ -1413,6 +1476,7 @@ compare_real_database() {
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
+	state_until="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	candidate_after="$(fingerprint_tree "$candidate_root")"
 	set -e
 	if [[ -n "$real_database_read_only" ]]; then
@@ -1464,9 +1528,13 @@ compare_real_database() {
 		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
 		return 1
 	fi
-	if [[ "$candidate_before" != "$candidate_after" ]]; then
+	# An "equal" logical state comparison replaces the byte check: a write changes the fixture.
+	if [[ "$candidate_before" != "$candidate_after" && "$real_database_logical_state" != equal ]]; then
 		printf '%s candidate command changed the read-only fixture\n' "$name" >&2
 		return 1
+	fi
+	if [[ -n "$real_database_logical_state" ]]; then
+		check_logical_state "$name" "$case_root" "$state_since" "$state_until" || return 1
 	fi
 	case "$comparison" in
 	exact | exact-home)
@@ -1679,6 +1747,18 @@ compare_real_database_sql() {
 	real_database_extra_sql=""
 }
 
+# Usage: compare_real_database_state NAME STATE-MODE COMPARISON ARGUMENT...
+# A database case that also compares the logical state in STATE-MODE: see real_database_logical_state.
+compare_real_database_state() {
+	local name="$1"
+	local mode="$2"
+	local comparison="$3"
+	shift 3
+	real_database_logical_state="$mode"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_logical_state=""
+}
+
 # Runs only the candidate, for a view this build does not port yet: it must exit 1 with this
 # exact output (stdout compared as compact JSON when given), leave the fixture and its HOME
 # unchanged, and write nothing to its own empty TMPDIR.
@@ -1761,6 +1841,20 @@ compare_real_database_import() {
 	real_database_extra_import=""
 }
 
+# Logical database state (BHX-M06-07). Besides the output, each case exports both sides' Dolt state
+# after the run and requires it to equal the fixture's state before the run: every table row for row
+# and the revision state commit for commit, with no normalization rule. Most cases check only the
+# candidate's bytes, so this also shows that the upstream read wrote nothing to its database. Upstream
+# show changes the bytes of its fixture (it writes .beads/last-touched), but not its database state.
+compare_real_database_state state-unchanged-list-json unchanged exact list --json
+compare_real_database_state state-unchanged-show-json unchanged exact show "$real_database_issue_id" --json
+compare_real_database_state state-unchanged-comments unchanged exact comments "$real_database_issue_id"
+compare_real_database_state state-unchanged-dep-list unchanged exact dep list "$real_database_issue_id"
+compare_real_database_state state-unchanged-label-list-all unchanged exact label list-all
+compare_real_database_state state-unchanged-count-json unchanged exact count --json
+compare_real_database_state state-unchanged-search-json unchanged exact search parity --json
+# The write mode, which the write commands use, also passes for a read: both sides keep the state.
+compare_real_database_state state-equal-show equal exact show "$real_database_issue_id"
 compare_real_database info-schema-json exact info --schema --json
 # info --thanks prints upstream's thank-you page once the pre-run has opened the store. Upstream checks it
 # before --whats-new and prints the page in every output mode. Its text styles take internal/ui's colors

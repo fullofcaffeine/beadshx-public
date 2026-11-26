@@ -57,6 +57,20 @@ changed no file in the workspace. Run it with `npm run test:parity` (or
 `make beadshx-parity`). The cases are in
 [scripts/beadshx/test-parity-smoke.sh](../../../scripts/beadshx/test-parity-smoke.sh).
 
+Some cases also compare the logical database state. After both runs, the
+suite exports the Dolt database of each side with
+[scripts/beadshx/logical-state](../../../scripts/beadshx/logical-state/main.go):
+every table row for row, the views, and the revision state (the commit graph,
+the message and changed tables of each commit, the branches and the working
+set). A byte check cannot compare two databases that both changed, because
+Dolt writes different bytes for equal data. In a read case, each side must
+keep the state from before the run exactly. A write case compares the two
+sides with declared rules. These rules remove only what the moment of a run
+decides, such as commit hashes, the times that the runs stamp, and random
+lock values. `logical-state rules` gives the reason for each rule.
+[scripts/beadshx/test-logical-state.sh](../../../scripts/beadshx/test-logical-state.sh)
+tests that the comparison finds the differences that the output hides.
+
 Some output differs by design, and the suite normalizes it: workspace paths,
 durations, times in log lines, and the development identity of `bdhx`. Where
 upstream prints in a random order, the suite compares the stable part. Cases
