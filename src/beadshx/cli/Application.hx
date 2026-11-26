@@ -3902,7 +3902,7 @@ final class Application {
 	}
 
 	function runReadyList(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, invocation.readyRequest, invocation.global) {
+		return switch query.issueReady(location.path, location.databaseName, invocation.readyRequest, invocation.global) {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready): renderReady(invocation, location.proxiedServer, ready, query, location);
@@ -3910,7 +3910,7 @@ final class Application {
 	}
 
 	function runReadyGated(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
+		return switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), invocation.global) {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready):
@@ -3940,7 +3940,7 @@ final class Application {
 		blocking edges stand in for the blocked list and the cycles.
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		final ready = switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
+		final ready = switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), invocation.global) {
 			case ReadyFailure(message): return runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(value): value;

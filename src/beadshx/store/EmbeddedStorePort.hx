@@ -29,6 +29,7 @@ interface EmbeddedStorePort {
 	function staleIssues(beadsDir:String, databaseName:String, request:StaleRequest):Null<StoreResult<Array<StaleIssue>>>;
 	function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int,
 		layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult>;
+	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult>;
 	function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>>;
 	function dependencyTree(beadsDir:String, databaseName:String,
 		request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>>;

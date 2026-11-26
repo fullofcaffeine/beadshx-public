@@ -18,19 +18,19 @@ import beadshx.store.SqlIssueRow.SqlIssueFields;
 import beadshx.store.SqlRelationReader.relatedIssueFromSql;
 
 /** A failed search step: upstream's error text, or its defensive row cap. */
-private enum IssueSearchFailure {
+enum IssueSearchFailure {
 	SearchFailed(message:String, error:Null<go.NativeError>);
 	SearchRowCap(found:Int, source:String, cap:Int);
 }
 
 /** One table's rows, or why the table could not be searched. */
-private enum IssueSearchRows {
+enum IssueSearchRows {
 	SearchRows(items:Array<IssueListItem>);
 	SearchStopped(failure:IssueSearchFailure);
 }
 
 /** An optional table probe: present, missing, or failed with upstream's error. */
-private enum TableProbe {
+enum TableProbe {
 	TableHasRows;
 	TableEmpty;
 	TableMissing;
@@ -39,14 +39,15 @@ private enum TableProbe {
 
 /**
 	Reads one list page as upstream's store-backed issueops.Reader.List does
-	(internal/workapi/storereader/reader.go), for a request that is not --ready.
+	(internal/workapi/storereader/reader.go).
 
 	What: the list configuration and filter (SqlIssueFilter), then
 	issueops.SearchIssuesWithCountsInTx (internal/storage/issueops/search_counts.go):
 	the counts query over issues and, unless the filter skips them, wisps, with a
 	wisp winning over an issue with the same ID; its sort, limit and row cap; and
-	the page epilogue workapi.FinishPageAt. It adds no blocking annotations: a
-	request for them reads through the native facade (see GoReadonlyStore).
+	the page epilogue workapi.FinishPageAt. A --ready page reads the ready query
+	of the same filter instead (SqlReadyWorkReader). It adds no blocking
+	annotations: EmbeddedIssueListReader reads them after the page.
 	How: one read transaction that the caller owns.
 **/
 @:goNative
@@ -97,7 +98,9 @@ final class SqlIssueListReader {
 				filter.maxRows = GoInt.add(filter.maxRows, 1);
 			filter.limit = GoInt.add(filter.limit, 1);
 		}
-		final items = switch searchWithCounts(context, transaction, filter) {
+		final searched = request.ready ? SqlReadyWorkReader.readReadyWork(context, transaction,
+			SqlReadyWorkReader.fromListFilter(filter)) : searchWithCounts(context, transaction, filter);
+		final items = switch searched {
 			case SearchRows(value): value;
 			case SearchStopped(SearchFailed(message, _)): return ListFailure(message);
 			case SearchStopped(SearchRowCap(found, source, cap)): return ListRowLimitExceeded(found, source, cap);
@@ -177,7 +180,7 @@ final class SqlIssueListReader {
 		return finishSearch(merged, filter);
 	}
 
-	/** Upstream runFilterSearchQueryInTx and scanCountsRowsInTx for one table family. */
+	/** Upstream runFilterSearchQueryInTx for one table family. */
 	static function searchTable(context:Context, transaction:Tx, filter:IssueSearchFilter, tables:IssueFilterTables,
 			wispReverseDependencies:Bool):IssueSearchRows {
 		final where = SqlIssueFilter.buildFilterClauses(filter, tables);
@@ -185,10 +188,27 @@ final class SqlIssueListReader {
 		final idSort = filter.sortBy == "id";
 		final bound = effectiveSearchLimit(filter.limit, filter.maxRows);
 		final limitSql = bound > 0 && !idSort ? 'LIMIT $bound' : "";
-		final query = countsQuery(tables, whereSql, orderBy(filter.sortBy, filter.sortDesc), limitSql, wispReverseDependencies, filter);
-		final queried = transaction.queryNativeContext(context, query, ...where.arguments);
+		final query = countsQuery(tables, [], whereSql, orderBy(filter.sortBy, filter.sortDesc), limitSql, wispReverseDependencies, filter.skipLabels,
+			filter.skipCounts);
+		final items = switch scanCountsRows(context, transaction, tables.main, query, where.arguments, filter.lite) {
+			case SearchRows(value): value;
+			case stopped: return stopped;
+		};
+		if (idSort) {
+			// goSideSortAndTrim: byte order by ID, then the bound the query could not apply.
+			items.sort((left, right) -> filter.sortDesc ? compareUtf8(right.id, left.id) : compareUtf8(left.id, right.id));
+			if (bound > 0 && items.length > bound)
+				return SearchRows(items.slice(0, bound));
+		}
+		return SearchRows(items);
+	}
+
+	/** Upstream scanCountsRowsInTx: run a counts query and keep the first row of each ID. */
+	public static function scanCountsRows(context:Context, transaction:Tx, mainTable:String, query:String, arguments:Array<Dynamic>,
+			lite:Bool):IssueSearchRows {
+		final queried = transaction.queryNativeContext(context, query, ...arguments);
 		if (queried.error != null)
-			return failed('search count ${tables.main}: ${queried.error.text()}', queried.error);
+			return failed('search count $mainTable: ${queried.error.text()}', queried.error);
 		final rows = queried.rows;
 		final items = new Array<IssueListItem>();
 		final seen = new Map<String, Bool>();
@@ -216,7 +236,7 @@ final class SqlIssueListReader {
 					rows.closeNative();
 					return failed('scan issue with counts: $message', null);
 			};
-			final item = switch listItem(fields, filter.lite, labelsJson, dependencyCount.get(), dependentCount.get(), commentCount.get(), parentId,
+			final item = switch listItem(fields, lite, labelsJson, dependencyCount.get(), dependentCount.get(), commentCount.get(), parentId,
 				dependenciesJson) {
 				case Failure(message):
 					rows.closeNative();
@@ -231,30 +251,35 @@ final class SqlIssueListReader {
 		final rowError = rows.errNative();
 		rows.closeNative();
 		if (rowError != null)
-			return failed('search count ${tables.main}: rows: ${rowError.text()}', rowError);
-		if (idSort) {
-			// goSideSortAndTrim: byte order by ID, then the bound the query could not apply.
-			items.sort((left, right) -> filter.sortDesc ? compareUtf8(right.id, left.id) : compareUtf8(left.id, right.id));
-			if (bound > 0 && items.length > bound)
-				return SearchRows(items.slice(0, bound));
-		}
+			return failed('search count $mainTable: rows: ${rowError.text()}', rowError);
 		return SearchRows(items);
 	}
 
-	/** Upstream sqlbuild.SearchCountsSQL in its predicate form. */
-	static function countsQuery(tables:IssueFilterTables, whereSql:String, orderSql:String, limitSql:String, wispReverseDependencies:Bool,
-			filter:IssueSearchFilter):String {
+	/**
+		Upstream sqlbuild.SearchCountsSQL. Without `ids` it is the predicate form:
+		`whereSql` narrows the driver before the joins, and `orderSql` and
+		`limitSql` follow them. With `ids` it is the by-IDs form: the driver and
+		each aggregate read only those IDs, whose arguments countsArguments gives.
+	**/
+	public static function countsQuery(tables:IssueFilterTables, ids:Array<String>, whereSql:String, orderSql:String, limitSql:String,
+			wispReverseDependencies:Bool, skipLabels:Bool, skipCounts:Bool):String {
 		final target = SqlIssueFilter.DEPENDENCY_TARGET;
-		var reverseBlockers = 'SELECT $target AS dep_id FROM dependencies WHERE type = \'blocks\'';
+		final byIds = ids.length > 0;
+		final inSql = [for (_ in ids) "?"].join(",");
+		final idWhere = byIds ? 'WHERE issue_id IN ($inSql)' : "";
+		final idAnd = byIds ? ' AND issue_id IN ($inSql)' : "";
+		final targetAnd = byIds ? ' AND $target IN ($inSql)' : "";
+		var reverseBlockers = 'SELECT $target AS dep_id FROM dependencies WHERE type = \'blocks\'$targetAnd';
 		if (wispReverseDependencies)
-			reverseBlockers += ' UNION ALL SELECT $target AS dep_id FROM wisp_dependencies WHERE type = \'blocks\'';
-		final labelsSelect = filter.skipLabels ? "NULL AS labels_json" : "l.labels_json AS labels_json";
-		final labelsJoin = filter.skipLabels ? "" : ' LEFT JOIN (SELECT issue_id, JSON_ARRAYAGG(label) AS labels_json FROM ${tables.labels} GROUP BY issue_id) l ON l.issue_id = i.id';
-		final countsSelect = filter.skipCounts ? "0 AS dep_count, 0 AS rdep_count, 0 AS comment_count" : "COALESCE(dc.cnt, 0) AS dep_count, COALESCE(rc.cnt, 0) AS rdep_count, COALESCE(cc.cnt, 0) AS comment_count";
-		final countsJoins = filter.skipCounts ? "" : ' LEFT JOIN (SELECT issue_id, COUNT(*) AS cnt FROM ${tables.dependencies} WHERE type = \'blocks\' GROUP BY issue_id) dc ON dc.issue_id = i.id'
+			reverseBlockers += ' UNION ALL SELECT $target AS dep_id FROM wisp_dependencies WHERE type = \'blocks\'$targetAnd';
+		final labelsSelect = skipLabels ? "NULL AS labels_json" : "l.labels_json AS labels_json";
+		final labelsJoin = skipLabels ? "" : ' LEFT JOIN (SELECT issue_id, JSON_ARRAYAGG(label) AS labels_json FROM ${tables.labels} $idWhere GROUP BY issue_id) l ON l.issue_id = i.id';
+		final countsSelect = skipCounts ? "0 AS dep_count, 0 AS rdep_count, 0 AS comment_count" : "COALESCE(dc.cnt, 0) AS dep_count, COALESCE(rc.cnt, 0) AS rdep_count, COALESCE(cc.cnt, 0) AS comment_count";
+		final countsJoins = skipCounts ? "" : ' LEFT JOIN (SELECT issue_id, COUNT(*) AS cnt FROM ${tables.dependencies} WHERE type = \'blocks\'$idAnd GROUP BY issue_id) dc ON dc.issue_id = i.id'
 			+ ' LEFT JOIN (SELECT dep_id, COUNT(*) AS cnt FROM ($reverseBlockers) all_blockers GROUP BY dep_id) rc ON rc.dep_id = i.id'
-			+ ' LEFT JOIN (SELECT issue_id, COUNT(*) AS cnt FROM ${tables.comments} GROUP BY issue_id) cc ON cc.issue_id = i.id';
-		final driver = whereSql == "" ? '${tables.main} i' : '(SELECT i.* FROM ${tables.main} i $whereSql) i';
+			+ ' LEFT JOIN (SELECT issue_id, COUNT(*) AS cnt FROM ${tables.comments} $idWhere GROUP BY issue_id) cc ON cc.issue_id = i.id';
+		final driver = byIds || whereSql == "" ? '${tables.main} i' : '(SELECT i.* FROM ${tables.main} i $whereSql) i';
+		final outer = byIds ? 'WHERE i.id IN ($inSql)' : '$orderSql $limitSql';
 		final dependencyJson = "JSON_OBJECT('issue_id', issue_id, 'depends_on_id', "
 			+ target
 			+ ", 'type', type,"
@@ -263,9 +288,24 @@ final class SqlIssueListReader {
 		return 'SELECT $ISSUE_COLUMNS, $labelsSelect, $countsSelect, pc.parent_id AS parent_id, d.deps_json AS deps_json'
 			+ ' FROM $driver LEFT JOIN leases ON leases.issue_id = i.id$labelsJoin$countsJoins'
 			+
-			' LEFT JOIN (SELECT issue_id, MIN($target) AS parent_id FROM ${tables.dependencies} WHERE type = \'parent-child\' GROUP BY issue_id) pc ON pc.issue_id = i.id'
-			+ ' LEFT JOIN (SELECT issue_id, JSON_ARRAYAGG($dependencyJson) AS deps_json FROM ${tables.dependencies} GROUP BY issue_id) d ON d.issue_id = i.id'
-			+ ' $orderSql $limitSql';
+			' LEFT JOIN (SELECT issue_id, MIN($target) AS parent_id FROM ${tables.dependencies} WHERE type = \'parent-child\'$idAnd GROUP BY issue_id) pc ON pc.issue_id = i.id'
+			+
+			' LEFT JOIN (SELECT issue_id, JSON_ARRAYAGG($dependencyJson) AS deps_json FROM ${tables.dependencies} $idWhere GROUP BY issue_id) d ON d.issue_id = i.id'
+			+ ' $outer';
+	}
+
+	/** The arguments of a by-IDs counts query: the IDs once for each place that reads them, in placeholder order. */
+	public static function countsArguments(ids:Array<String>, wispReverseDependencies:Bool, skipLabels:Bool, skipCounts:Bool):Array<Dynamic> {
+		var places = 3; // the parent, the dependency JSON and the driver
+		if (!skipLabels)
+			places++;
+		if (!skipCounts)
+			places += wispReverseDependencies ? 4 : 3;
+		final arguments = new Array<Dynamic>();
+		for (_ in 0...places)
+			for (id in ids)
+				arguments.push(id);
+		return arguments;
 	}
 
 	/** Upstream ScanReadyWorkRowWithCounts after the issue columns, and the facade's list-item projection. */
@@ -404,7 +444,7 @@ final class SqlIssueListReader {
 	}
 
 	/** Upstream EffectiveSearchLimit: a row cap asks for one row past it. */
-	static function effectiveSearchLimit(limit:Int, maxRows:Int):Int {
+	public static function effectiveSearchLimit(limit:Int, maxRows:Int):Int {
 		if (maxRows > 0 && (limit == 0 || limit > maxRows))
 			return GoInt.add(maxRows, 1);
 		return limit;
@@ -502,11 +542,11 @@ final class SqlIssueListReader {
 		Two RFC3339Nano times in time order: each in UTC with all nine fraction
 		digits, which orders as text for the years 1 to 9999 that Go formats.
 	**/
-	static function compareTimes(left:String, right:String):Int {
+	public static function compareTimes(left:String, right:String):Int {
 		return compareUtf8(sortableTime(left), sortableTime(right));
 	}
 
-	static function sortableTime(value:String):String {
+	public static function sortableTime(value:String):String {
 		final parsed = TimePkg.parse(GO_RFC3339_NANO, value);
 		return parsed.value2 != null ? value : parsed.value1.utc().format(SORTABLE_TIME);
 	}
@@ -523,7 +563,7 @@ final class SqlIssueListReader {
 	}
 
 	/** Upstream wispsTableEmptyOrMissingInTx and optionalTableExistsInTx, which share one probe. */
-	static function probeTable(context:Context, transaction:Tx, table:String):TableProbe {
+	public static function probeTable(context:Context, transaction:Tx, table:String):TableProbe {
 		final probe = transaction.queryNativeContext(context, 'SELECT 1 FROM $table LIMIT 1');
 		if (probe.error != null)
 			return isTableNotExist(probe.error) ? TableMissing : TableProbeFailed(probe.error);

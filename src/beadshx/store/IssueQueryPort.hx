@@ -8,7 +8,16 @@ interface IssueQueryPort extends QueryTimePort {
 		global:Bool):StoreResult<Array<beadshx.relation.RelatedIssue>>;
 	function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult;
 	function issueCount(beadsDir:String, request:CountRequest, group:CountGroup, global:Bool):StoreResult<CountResult>;
-	function issueReady(beadsDir:String, request:ReadyRequest, global:Bool):ReadyLoadResult;
+
+	/**
+		The ready work of `bd ready` and the first read of ready --gated, --mol
+		and --explain, with the total of a full page and, for an empty one,
+		whether any issue is open. An embedded workspace reads it with
+		Haxe-owned SQL; a server-mode or proxied workspace through the native
+		facade.
+	**/
+	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult;
+
 	function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult;
 
 	/** The stale issues, as `bd stale` lists them, stalest first. */

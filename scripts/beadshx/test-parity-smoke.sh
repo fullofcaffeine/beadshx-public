@@ -4753,6 +4753,19 @@ compare_real_database ready-json exact ready --json
 compare_real_database ready-limit-human exact ready --limit 2
 compare_real_database ready-limit-json exact ready --limit 2 --json
 compare_real_database ready-limit-attached-json exact ready -n1 --json
+# The filters of the ready query: the descendants of --parent, labels, assignee, the deferred and
+# excluded types, metadata, an unbounded page, which reads the counts query in its predicate form, and
+# the brief rows.
+compare_real_database ready-parent-json exact ready --parent "$real_database_epic_id" --json
+compare_real_database ready-label-json exact ready --label smoke --json
+compare_real_database ready-label-any-exclude-json exact ready --label-any parity,alpha --exclude-label beta --json
+compare_real_database ready-label-pattern-json exact ready --label-pattern 'sm*' --json
+compare_real_database ready-label-regex-json exact ready --label-regex '^al' --json
+compare_real_database ready-assignee-json exact ready --assignee fixture --json
+compare_real_database ready-include-deferred-exclude-type-json exact ready --include-deferred --exclude-type bug,epic --json
+compare_real_database ready-metadata-json exact ready --has-metadata-key team --metadata-field team=port --json
+compare_real_database ready-unbounded-json exact ready --limit 0 --sort oldest --json
+compare_real_database ready-brief-json exact ready --brief --sort priority -n 3 --json
 compare_real_database list-limit-binary-json exact list --all -n 0b1 --json
 compare_real_database ready-molecule-human exact ready --mol "$real_database_molecule_id"
 compare_real_database ready-molecule-json molecule-ready-json ready --mol "$real_database_molecule_id" --json
@@ -5000,6 +5013,14 @@ compare_real_database list-limit-human exact list -n 2
 compare_real_database_config list-config-limit-json exact $'list:\n  limit: 2' list --json
 compare_real_database list-ready-human exact list --ready
 compare_real_database list-ready-json exact list --ready --json
+# --ready reads open issues whatever --status says, keeps pinned issues out, and refuses the list
+# flags that the ready query cannot carry, in upstream's order.
+compare_real_database list-ready-status-json exact list --ready --status closed --json
+compare_real_database list-ready-status-all-json exact list --ready --status all --json
+compare_real_database list-ready-sort-id-limit exact list --ready --sort id -n 2 --flat
+compare_real_database list-ready-parent-brief-json exact list --ready --parent "$real_database_epic_id" --brief --json
+compare_real_database list-ready-unsupported exact list --ready --title x --priority-min 1
+compare_real_database list-ready-unsupported-json exact list --ready --priority-max 3 --created-after 2020-01-01 --no-labels --json
 compare_real_database list-priority-min-json exact list --priority-min P1 --json
 compare_real_database list-priority-max-json exact list --priority-max 1 --json
 compare_real_database list-no-assignee-json exact list --no-assignee --json
@@ -8333,6 +8354,10 @@ candidate_only_exit=0
 expect_candidate_failure embedded-list-flat-without-native-open \
 	$'○ test-abcd22 [P2] [task] - Ambiguous abbreviation issue (blocks: test-abcd11)\n● test-abcd11 [P2] [task] - Unique abbreviation issue (blocked by: test-abcd22)' \
 	"" "" --readonly list --flat --id test-abcd11,test-abcd22
+# So does ready, also for an empty page, which then reads whether any issue is open, and a list --ready page.
+expect_candidate_failure embedded-ready-empty-without-native-open \
+	$'\n✨ No ready work found (all issues have blocking dependencies)' "" "" --readonly ready --assignee nobody
+expect_candidate_failure embedded-list-ready-without-native-open "[]" "" "" --readonly list --ready --assignee nobody --json
 candidate_only_exit=1
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
@@ -8493,9 +8518,11 @@ real_database_read_only=""
 # show records the issue in .beads/last-touched, so it compares without the read-only check. It reads an
 # issue with dependencies, and the dependents of --refs and --children, as upstream does too.
 real_database_setup=gate_without_cached_ref
-# An embedded list reads with Haxe-owned SQL too, so it warns and reads on as upstream does, also with the
-# escape hatch.
+# An embedded list and ready read with Haxe-owned SQL too, so they warn and read on as upstream does,
+# also with the escape hatch.
 compare_real_database gate-list exact list
+compare_real_database gate-ready exact ready
+compare_real_database gate-ready-json exact ready --json
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database gate-ignored-list exact list
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
@@ -8526,7 +8553,6 @@ gate_read_refusal() { printf '%s\nError: %s is not available yet on a database b
 candidate_only_setup=gate_without_cached_ref
 expect_candidate_failure gate-count-json-refused \
 	'{"error":"count is not available yet on a database behind the binary in this build","schema_version":1}' "$gate_read_warning" "" count --json
-expect_candidate_failure gate-ready-refused "" "$(gate_read_refusal ready)" "" ready
 expect_candidate_failure gate-search-refused "" "$(gate_read_refusal search)" "" search parity
 expect_candidate_failure gate-query-refused "" "$(gate_read_refusal query)" "" query status=open
 expect_candidate_failure gate-ping-refused "" "$(gate_read_refusal ping)" "" ping
@@ -8745,6 +8771,7 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	watch_extra_sql="$schema_sql"$'\n'"$dependency_row ('fixture-watch-1', '$real_database_content_id', '$real_database_issue_id', 'related', '2026-08-21 10:00:00', 'fixture')"
 	compare_watch_refresh "show-schema-$schema_case-ignored" update --readonly show "$real_database_content_id" --watch
 	compare_watch_refresh "list-schema-$schema_case-ignored" update --readonly list --watch --limit 0
+	compare_watch_refresh "list-schema-$schema_case-ignored-ready" update --readonly list --watch --ready
 	watch_extra_sql="$schema_sql"$'\n'"$dependency_row ('fixture-watch-1', '$real_database_content_id', '$real_database_epic_id', 'parent-child', '2026-08-21 10:00:00', 'fixture')"
 	compare_watch_refresh "list-schema-$schema_case-ignored-parent" update --readonly list --watch --parent "$real_database_epic_id"
 done

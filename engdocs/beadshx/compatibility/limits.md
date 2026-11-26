@@ -33,9 +33,9 @@ exists.
   remote is at the same version, v43 or later. The error says `fast-forward`
   instead when `HEAD` is an ancestor of a cached remote at v65 and the working
   set is clean: upstream then fast-forwards to the remote.
-- At a gate stop, upstream's reads `count`, `ready`, `search`, `query` and
-  `ping` print the gate's warning and read the database as it is. In
-  `bdhx` they read through the native facade, whose strict read-only
+- At a gate stop, upstream's reads `count`, `search`, `query` and `ping`
+  print the gate's warning and read the database as it is. In `bdhx` they
+  read through the native facade, whose strict read-only
   open cannot read a database behind the binary, so they print the same
   warning and then stop with `Error: <command> is not available yet on a
   database behind the binary in this build`, also with
@@ -242,18 +242,12 @@ exists.
   `ready` and `children` report that they are not available yet for
   server-mode workspaces, because `bdhx` cannot count the issues for
   upstream's note there.
-- With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
-  binary, a command that opens the native store more than once prints the
-  warning once for each open. Upstream prints it once. In an embedded
-  workspace, only `list --watch --ready` still does this: it prints the
-  warning once more at each refresh, because `bdhx` reads a `--ready` list
-  in the native store (beadshx-m08.71).
 - With `BD_DEBUG` set, upstream prints its debug lines on stderr, and `bdhx`
   does not. A read that still goes through upstream's code in a native facade
   prints that code's `Debug: loaded config from ...` line, for example
-  `count` or any read of a server-mode workspace. An embedded `list` or
-  `children` prints none, unless it is `list --ready` or runs a
-  `list --format` template in the Go facade (see the next item).
+  `count` or any read of a server-mode workspace. An embedded `list`,
+  `children` or `ready` prints none, unless it runs a `list --format`
+  template in the Go facade (see the next item).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,
@@ -266,6 +260,11 @@ exists.
   issues before it (beadshx-m08.26).
 - `bdhx` refuses `ready --claim`, so it never prints upstream's colored
   claim lines.
+- `bdhx` reads the human `ready` output with the same query as
+  `ready --json`. Upstream's human route reads wisps with another query.
+  So with `--include-ephemeral`, upstream can list a wisp that
+  `--label-pattern` or `--label-regex` does not match, where `bdhx` leaves
+  it out (beadshx-m08.70).
 - `events tail --follow` and `events prune` report that they are not
   available yet.
 - `config get` of a user-global key (`metrics.*`, `node_id`) and

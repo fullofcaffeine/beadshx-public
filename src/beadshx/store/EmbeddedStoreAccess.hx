@@ -68,6 +68,10 @@ final class EmbeddedStoreAccess {
 		return implementation.issueList(beadsDir, databaseName, request, limit, layers);
 	}
 
+	public static function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
+		return implementation.issueReady(beadsDir, databaseName, request);
+	}
+
 	public static function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {
 		return implementation.dependencyCycles(beadsDir, databaseName);
 	}
@@ -181,6 +185,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 
 	public function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int,
 			layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult> {
+		return null;
+	}
+
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
 		return null;
 	}
 

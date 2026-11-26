@@ -13,6 +13,7 @@ import beadshx.store.EmbeddedIssueDetailsReader;
 import beadshx.store.EmbeddedIssueIdSearch;
 import beadshx.store.EmbeddedIssueListReader;
 import beadshx.store.EmbeddedIssueSummaryReader;
+import beadshx.store.EmbeddedReadyReader;
 import beadshx.store.EmbeddedRelationReader;
 import beadshx.store.EmbeddedStaleReader;
 import beadshx.store.EmbeddedTreeReader;
@@ -45,6 +46,34 @@ class ReaderMessages {
 				case ListFailure(message): Failure(message);
 				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
 			});
+		add("ready", switch EmbeddedReadyReader.read(beadsDir, databaseName, {
+			issueType: "",
+			assignee: "",
+			unassigned: false,
+			labels: [],
+			labelsAny: [],
+			excludeLabels: [],
+			labelPattern: "",
+			labelRegex: "",
+			priority: IntAbsent,
+			parentId: "",
+			moleculeType: "",
+			includeDeferred: false,
+			includeEphemeral: false,
+			excludeTypes: [],
+			metadataFields: [],
+			hasMetadataKey: "",
+			sort: Hybrid,
+			limit: IntAbsent,
+			offset: IntAbsent,
+			brief: false,
+			maxRows: IntAbsent,
+			maxRowsSource: ""
+		}) {
+			case ReadySuccess(_): Success(true);
+			case ReadyFailure(message): Failure(message);
+			case ReadyRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
+		});
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

@@ -305,7 +305,13 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			() -> NativeReadonlyFacade.readCountOutcome(beadsDir, countOptions(request), countGroupWireValue(group), global)));
 	}
 
-	public function issueReady(beadsDir:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+	/** An embedded workspace reads ready work with Haxe-owned SQL (EmbeddedReadyReader); the native facade serves the other routes. */
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.issueReady(beadsDir, databaseName, request);
+			if (embedded != null)
+				return embedded;
+		}
 		return projectReadyOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readReadyOutcome(beadsDir, readyOptions(request), global)));
 	}
 
@@ -791,14 +797,14 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	/**
-		The embedded route reads the page, and its blocking annotations, with
-		Haxe-owned SQL (EmbeddedIssueListReader), with the list settings of the
-		workspace's layered config.yaml files. A --ready page and a Go template
-		that needs upstream's Go types still read through the native facade, as
-		does every page of a server-mode or `--global` read.
+		The embedded route reads the page, also a --ready page, and its blocking
+		annotations with Haxe-owned SQL (EmbeddedIssueListReader), with the list
+		settings of the workspace's layered config.yaml files. A Go template that
+		needs upstream's Go types still reads through the native facade, as does
+		every page of a server-mode or `--global` read.
 	**/
 	public function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
-		final haxeRead = !request.ready && switch selectIssueListFormat(request.format) {
+		final haxeRead = switch selectIssueListFormat(request.format) {
 			case NativeTemplate(_): false;
 			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_): true;
 		};
@@ -1665,7 +1671,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return GoReadonlyStore.projectCountOutcome(native.readCountOutcome(GoReadonlyStore.countOptions(request), GoReadonlyStore.countGroupWireValue(group)));
 	}
 
-	public function issueReady(beadsDir:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
 		return GoReadonlyStore.projectReadyOutcome(native.readReadyOutcome(GoReadonlyStore.readyOptions(request)));
 	}
 

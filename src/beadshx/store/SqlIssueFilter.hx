@@ -59,10 +59,7 @@ typedef IssueFilterClauses = {
 	final arguments:Array<Dynamic>;
 }
 
-/**
-	Upstream types.IssueFilter, as far as workapi.BuildListFilter fills it for a
-	list request that is not --ready.
-**/
+/** Upstream types.IssueFilter, as far as workapi.BuildListFilter fills it for a list request. */
 @:goNative
 final class IssueSearchFilter {
 	public var limit = 0;
@@ -179,10 +176,17 @@ final class SqlIssueFilter {
 	}
 
 	/**
-		Upstream BuildListFilter for a request that is not --ready, with the
-		limit that the list read runs under. A --watch or tree caller passes 0.
+		Upstream BuildListFilter, with the limit that the list read runs under. A
+		--watch or tree caller passes 0. A --ready request first passes upstream's
+		ValidateReadyFlagScope, and then selects open issues, whatever the status
+		flag says (see SqlReadyWorkReader.fromListFilter for what its query reads).
 	**/
 	public static function buildListFilter(request:IssueListRequest, limit:Int, config:IssueListConfig):StoreResult<IssueSearchFilter> {
+		if (request.ready) {
+			final refused = readyFlagScopeError(request);
+			if (refused != null)
+				return Failure(refused);
+		}
 		final filter = new IssueSearchFilter();
 		// SQLLimit: --sort id fetches every row and trims after the natural order.
 		filter.limit = request.sortBy == "id" ? 0 : limit;
@@ -198,12 +202,14 @@ final class SqlIssueFilter {
 		final statusParts = request.status == "" ? [] : [for (part in request.status.split(",")) goTrimSpace(part)];
 		final statusAll = statusParts.length == 1 && statusParts[0] == "all";
 		final customStatusNames = [for (status in config.customStatuses) status.name];
-		if (statusParts.length > 0 && !statusAll) {
+		if (request.ready)
+			filter.status = "open";
+		else if (statusParts.length > 0 && !statusAll) {
 			final applied = applyStatusParts(filter, statusParts, customStatusNames);
 			if (applied != null)
 				return Failure(applied);
 		}
-		if (statusParts.length == 0 && !request.all && !request.pinned) {
+		if (statusParts.length == 0 && !request.all && !request.ready && !request.pinned) {
 			filter.excludeStatus = ["closed", "pinned"];
 			for (status in config.customStatuses)
 				if (status.category == "done" || status.category == "frozen")
@@ -255,7 +261,7 @@ final class SqlIssueFilter {
 
 		if (request.pinned)
 			filter.pinned = FlagTrue;
-		else if (request.noPinned || (!statusSelectsPinned(statusParts) && !request.all))
+		else if (request.noPinned || (!statusSelectsPinned(statusParts, !request.ready) && !request.all))
 			filter.pinned = FlagFalse;
 
 		final infraRequested = config.infraTypes.indexOf(request.issueType) >= 0;
@@ -289,13 +295,65 @@ final class SqlIssueFilter {
 		filter.overdue = request.overdue;
 		filter.metadataFields = request.metadataFields;
 		filter.hasMetadataKey = request.hasMetadataKey;
-		// Upstream ValidateMetadataFilters: the key filter first, then the field keys in byte order.
-		if (request.hasMetadataKey != "" && !validMetadataKey(request.hasMetadataKey))
-			return Failure('invalid metadata key filter: ${metadataKeyError(request.hasMetadataKey)}');
-		for (field in sortedMetadataFields(request.metadataFields))
-			if (!validMetadataKey(field.key))
-				return Failure('invalid metadata field key: ${metadataKeyError(field.key)}');
+		final metadataError = metadataFilterError(request.metadataFields, request.hasMetadataKey);
+		if (metadataError != null)
+			return Failure(metadataError);
 		return Success(filter);
+	}
+
+	/** Upstream ValidateMetadataFilters: the key filter first, then the field keys in byte order; null when they are valid. */
+	public static function metadataFilterError(fields:Array<IssueListMetadataFilter>, hasKey:String):Null<String> {
+		if (hasKey != "" && !validMetadataKey(hasKey))
+			return 'invalid metadata key filter: ${metadataKeyError(hasKey)}';
+		for (field in sortedMetadataFields(fields))
+			if (!validMetadataKey(field.key))
+				return 'invalid metadata field key: ${metadataKeyError(field.key)}';
+		return null;
+	}
+
+	/**
+		Upstream issueops.ValidateReadyFlagScope: the list flags that the ready
+		query cannot carry, named in upstream's order; null when none is set.
+	**/
+	static function readyFlagScopeError(request:IssueListRequest):Null<String> {
+		final named = new Array<String>();
+		function check(set:Bool, name:String, flag:String):Void {
+			if (set)
+				named.push('$name ($flag)');
+		}
+		function time(name:String, flag:String, matches:IssueListTimeFilter->Bool):Void {
+			check(Lambda.exists(request.timeFilters, matches), name, flag);
+		}
+		check(request.idFilter != "", "IDFilter", "--id");
+		check(request.titleSearch != "", "TitleSearch", "--title");
+		check(request.specPrefix != "", "SpecPrefix", "--spec");
+		check(request.titleContains != "", "TitleContains", "--title-contains");
+		check(request.descriptionContains != "", "DescContains", "--desc-contains");
+		check(request.notesContains != "", "NotesContains", "--notes-contains");
+		check(request.externalContains != "", "ExternalContains", "--external-contains");
+		check(request.externalRef != "", "ExternalRef", "--external-ref");
+		time("CreatedAfter", "--created-after", filter -> filter.match(CreatedAfter(_)));
+		time("CreatedBefore", "--created-before", filter -> filter.match(CreatedBefore(_)));
+		time("UpdatedAfter", "--updated-after", filter -> filter.match(UpdatedAfter(_)));
+		time("UpdatedBefore", "--updated-before", filter -> filter.match(UpdatedBefore(_)));
+		time("ClosedAfter", "--closed-after", filter -> filter.match(ClosedAfter(_)));
+		time("ClosedBefore", "--closed-before", filter -> filter.match(ClosedBefore(_)));
+		time("DeferAfter", "--defer-after", filter -> filter.match(DeferAfter(_)));
+		time("DeferBefore", "--defer-before", filter -> filter.match(DeferBefore(_)));
+		time("DueAfter", "--due-after", filter -> filter.match(DueAfter(_)));
+		time("DueBefore", "--due-before", filter -> filter.match(DueBefore(_)));
+		check(request.deferred, "DeferredFlag", "--deferred");
+		check(request.overdue, "OverdueFlag", "--overdue");
+		check(request.emptyDescription, "EmptyDesc", "--empty-description");
+		check(request.noLabels, "NoLabels", "--no-labels");
+		check(request.noParent, "NoParent", "--no-parent");
+		check(request.pinned, "PinnedFlag", "--pinned");
+		check(request.priorityMin.match(IntPresent(_)), "PriorityMin", "--priority-min");
+		check(request.priorityMax.match(IntPresent(_)), "PriorityMax", "--priority-max");
+		if (named.length == 0)
+			return null;
+		return 'validation failed: --ready cannot filter on ${named.join(", ")}; the blocker-aware ready query carries only part of the list vocabulary, '
+			+ "so answering would return every ready issue rather than the ones asked for — drop --ready, or drop what it cannot carry";
 	}
 
 	/** Upstream BuildIssueFilterClauses for a search without query text. */
@@ -476,11 +534,13 @@ final class SqlIssueFilter {
 		return null;
 	}
 
-	/** Upstream statusSelectsPinned, outside --ready: pinned, hooked or all. */
-	static function statusSelectsPinned(parts:Array<String>):Bool {
+	/** Upstream statusSelectsPinned: pinned or hooked, or all when the status flag applies (not under --ready). */
+	static function statusSelectsPinned(parts:Array<String>, allApplies:Bool):Bool {
 		for (part in parts)
 			switch part {
-				case "pinned" | "hooked" | "all":
+				case "pinned" | "hooked":
+					return true;
+				case "all" if (allApplies):
 					return true;
 				case _:
 			}
@@ -532,7 +592,7 @@ final class SqlIssueFilter {
 	}
 
 	/** The metadata predicates of a Go map: each key once, the last value kept, in byte order. */
-	static function sortedMetadataFields(fields:Array<IssueListMetadataFilter>):Array<IssueListMetadataFilter> {
+	public static function sortedMetadataFields(fields:Array<IssueListMetadataFilter>):Array<IssueListMetadataFilter> {
 		final values = new Map<String, String>();
 		final keys = new Array<String>();
 		for (field in fields) {
@@ -563,13 +623,13 @@ final class SqlIssueFilter {
 	}
 
 	/** Upstream storage.JSONMetadataPath: the key quoted, with `\` and `"` escaped. */
-	static function metadataPath(key:String):String {
+	public static function metadataPath(key:String):String {
 		final escaped = StringTools.replace(StringTools.replace(key, "\\", "\\\\"), "\"", "\\\"");
 		return "$.\"" + escaped + "\"";
 	}
 
 	/** Upstream globToLikePattern: `*` and `?` become `%` and `_`; `%`, `_` and `|` are escaped with `|`. */
-	static function globToLikePattern(pattern:String):String {
+	public static function globToLikePattern(pattern:String):String {
 		final converted = new StringBuf();
 		for (index in 0...pattern.length) {
 			final character = pattern.charAt(index);
@@ -588,7 +648,7 @@ final class SqlIssueFilter {
 	}
 
 	/** Upstream utils.NormalizeLabels: trimmed, empty entries dropped, each kept at its first position. */
-	static function normalizedEntries(entries:Array<String>):Array<String> {
+	public static function normalizedEntries(entries:Array<String>):Array<String> {
 		final seen = new Map<String, Bool>();
 		final normalized = new Array<String>();
 		for (entry in entries) {
@@ -607,7 +667,7 @@ final class SqlIssueFilter {
 	}
 
 	/** Upstream utils.NormalizeIssueType: a known alias, compared in lower case, becomes its type. */
-	static function normalizeIssueType(value:String):String {
+	public static function normalizeIssueType(value:String):String {
 		return switch value.toLowerCase() {
 			case "mr": "merge-request";
 			case "feat" | "enhancement": "feature";
