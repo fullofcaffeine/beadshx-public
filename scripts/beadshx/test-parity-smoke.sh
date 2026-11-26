@@ -8467,6 +8467,17 @@ compare_real_database_sql read-failure-envelope-count-json exact "$read_failure_
 compare_real_database_sql read-failure-envelope-ping-json ping-failure-json "$read_failure_assignee_sql" ping --json
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 real_database_read_only=""
+# Upstream's text views of show read the labels, the dependencies, the dependents and the comments with
+# store calls of their own and ignore a failure of each (cmd/bd/show.go:200-235, show_thread.go:136-162);
+# IssueReader.Get behind show --json stops the command at its first failure (show.go:159-168). Without
+# the type column, every read of dependencies and dependents fails.
+read_failure_dependency_type_sql="ALTER TABLE dependencies DROP COLUMN type"
+compare_real_database_sql read-failure-show exact "$read_failure_dependency_type_sql" show "$real_database_issue_id"
+compare_real_database_sql read-failure-show-epic exact "$read_failure_dependency_type_sql" show "$real_database_epic_id"
+compare_real_database_sql read-failure-show-thread exact "$read_failure_dependency_type_sql" show test-msg-leaf --thread
+compare_real_database_sql read-failure-show-thread-json exact "$read_failure_dependency_type_sql" show test-msg-leaf --thread --json
+compare_real_database_sql read-failure-show-dependents-json exact "$read_failure_dependency_type_sql" \
+	show "$real_database_issue_id" "$real_database_bug_id" --include-dependents --json
 
 # An embedded list reads its page, and the blocking notes of the flat view, with Haxe-owned SQL, so it
 # never opens the native store. That open would run upstream's config package, which logs its load of

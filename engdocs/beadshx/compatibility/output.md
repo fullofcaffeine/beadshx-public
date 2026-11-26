@@ -54,6 +54,12 @@ the error where upstream does:
   has upstream's words.
 - `config get` also fails when the rows do not close after it read the
   value, as Go's `Row.Scan` does.
+- The text views of `show` (also `--watch` and `--thread`) print an issue
+  without the parts whose read failed, such as its dependents or its
+  comments, as upstream does. `show --json` stops at the first issue whose
+  details it cannot read and prints only the error.
+- `graph` leaves out an `external:<project>:<id>` dependency when the read
+  of the issue that `<id>` names fails, as upstream does.
 
 A store that does not open fails before the command reads, also under
 `--global` outside shared-server mode: `bdhx` then prints `Error: ` and the

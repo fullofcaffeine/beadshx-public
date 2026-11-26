@@ -50,6 +50,17 @@ function externalTarget(dependsOnId:String):Null<String> {
 }
 
 /**
+	The lookup of an external row's `<id>` that resolved to `resolvedId` in this
+	database, as upstream resolveAndGetFromStore ends it (cmd/bd/routed.go:98-118):
+	it reads the issue (GetIssue) at once, and a failed read fails the lookup, so
+	the graph loaders leave the row out (cmd/bd/graph.go:441-455, :520-531), also
+	when a later row could have pointed to that issue.
+**/
+function readResolvedTarget(resolvedId:String, read:String->Bool):ExternalTargetLookup {
+	return read(resolvedId) ? ExternalTargetFound(resolvedId) : ExternalTargetMissing;
+}
+
+/**
 	Keeps the dependency rows of a loaded graph like the loops of upstream
 	loadGraphSubgraph and loadAllGraphSubgraphs (cmd/bd/graph.go:431-466, :509-544).
 

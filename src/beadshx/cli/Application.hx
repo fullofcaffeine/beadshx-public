@@ -21,6 +21,7 @@ import beadshx.relation.GraphLayout.computeGraphLayout;
 import beadshx.relation.GraphExternal.ExternalTargetLookup;
 import beadshx.relation.GraphExternal.GraphRowSelection;
 import beadshx.relation.GraphExternal.GRAPH_EXTERNAL_UNAVAILABLE;
+import beadshx.relation.GraphExternal.readResolvedTarget;
 import beadshx.relation.GraphExternal.selectGraphRows;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.workspace.PrefixRoutes.prefixRouteLeaves;
@@ -2490,17 +2491,28 @@ final class Application {
 		not hold that ID yet.
 		What: the lookup first resolves the ID in this database as a partial ID
 		(see lookupIssueSummary). An error other than "not found", such as an
-		ambiguous ID, leaves the row out. A miss tries the routes.jsonl prefix
-		routes (see prefixRouteLeaves) and then contributor auto-routing, which
-		first asks for the user's role (see warnUnconfiguredRole and autoRoute).
-		When either would open another repository, this fails with
-		GRAPH_EXTERNAL_UNAVAILABLE; else the row is left out.
-		How: each ID resolves once in this database; the routes run for each miss,
-		as upstream's warnings repeat. The added issues are read like GetIssue.
+		ambiguous ID, leaves the row out. A found ID's issue is read at once, like
+		GetIssue, and a failed read leaves the row out too (readResolvedTarget). A
+		miss tries the routes.jsonl prefix routes (see prefixRouteLeaves) and then
+		contributor auto-routing, which first asks for the user's role (see
+		warnUnconfiguredRole and autoRoute). When either would open another
+		repository, this fails with GRAPH_EXTERNAL_UNAVAILABLE; else the row is
+		left out.
+		How: each ID resolves once in this database, and each resolved ID is read
+		once; the routes run for each miss, as upstream's warnings repeat.
 	**/
 	function keepGraphRows(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, issues:Array<RelatedIssue>,
 			rows:Array<GraphDependency>):StoreResult<KeptGraph> {
 		final resolved = new Map<String, StoreResult<IssueLookup>>();
+		final read = new Map<String, Null<RelatedIssue>>();
+		function readTarget(id:String):Bool {
+			if (!read.exists(id))
+				read.set(id, switch query.graphIssues(location.path, location.databaseName, [id], invocation.global) {
+					case Success(issues) if (issues.length == 1): issues[0];
+					case Success(_) | Failure(_): null;
+				});
+			return read.get(id) != null;
+		}
 		var autoRouted:Null<Bool> = null;
 		function lookup(target:String):ExternalTargetLookup {
 			var found = resolved.get(target);
@@ -2510,7 +2522,7 @@ final class Application {
 			}
 			switch found {
 				case Success(IssueFound(summary)):
-					return ExternalTargetFound(summary.id);
+					return readResolvedTarget(summary.id, readTarget);
 				case Failure(_):
 					return ExternalTargetMissing;
 				case Success(IssueMissing):
@@ -2531,20 +2543,7 @@ final class Application {
 					for (row in kept)
 						withTarget(rows[row.index], row.dependsOnId)
 				];
-				if (addedIds.length == 0) {
-					Success({issues: issues, rows: keptRows});
-				} else {
-					final distinct = new Array<String>();
-					for (id in addedIds)
-						if (!distinct.contains(id))
-							distinct.push(id);
-					switch query.graphIssues(location.path, location.databaseName, distinct, invocation.global) {
-						case Failure(message): Failure(message);
-						case Success(read):
-							final byId = [for (issue in read) issue.id => issue];
-							Success({issues: issues.concat([for (id in addedIds) byId.get(id)]), rows: keptRows});
-					}
-				}
+				Success({issues: issues.concat([for (id in addedIds) read.get(id)]), rows: keptRows});
 		};
 	}
 
@@ -5816,10 +5815,12 @@ final class Application {
 			case ReadHere(Failure(message)): ReadHere(Failure(message));
 			case ReadHere(Success(IssueMissing)): ReadHere(Failure('no issue found matching "${id}"'));
 			case ReadHere(Success(IssueFound(summary))):
+				// displayShowIssueReturn ignores a failed read of each part, as show's text view does (cmd/bd/show_display.go:117-141).
 				ReadHere(query.issueDetails(location.path, summary.id, {
 					includeDependents: true,
 					includeComments: includeComments,
-					briefDependencies: false
+					briefDependencies: false,
+					bestEffortRelations: true
 				}, global));
 		};
 	}
@@ -5853,10 +5854,12 @@ final class Application {
 			case ReadHere(Success(IssueFound(summary))):
 				canonicalId = summary.id;
 		}
+		// findRepliesTo and findReplies give no parent and no replies when their read fails (cmd/bd/show_thread.go:136-162).
 		final detailRequest:IssueDetailsRequest = {
 			includeDependents: true,
 			includeComments: false,
-			briefDependencies: false
+			briefDependencies: false,
+			bestEffortRelations: true
 		};
 		var root:Null<IssueDetails> = null;
 		switch query.issueDetails(location.path, canonicalId, detailRequest, invocation.global) {
@@ -6184,10 +6187,13 @@ final class Application {
 		}
 		if (ids.length == 0)
 			return runModeAwareFailure(invocation.output, "at least one issue ID is required (use positional args, --id flag, or --current)");
+		// Upstream's text view reads the labels, dependencies, dependents and comments with store calls of their own and
+		// ignores a failure of each (cmd/bd/show.go:200-235).
 		final request:IssueDetailsRequest = {
 			includeDependents: true,
 			includeComments: true,
-			briefDependencies: false
+			briefDependencies: false,
+			bestEffortRelations: true
 		};
 		final found = new Array<IssueDetails>();
 		for (id in ids) {
@@ -6307,7 +6313,8 @@ final class Application {
 					output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
 				case ReadHere(Success(IssueFound(summary))):
 					switch query.issueDetails(location.path, summary.id, request, invocation.global) {
-						case Failure(message): output.writeStderr('Error fetching ${id}: ${message}\n');
+						// Upstream's IssueReader.Get stops the command (cmd/bd/show.go:164-168).
+						case Failure(message): return runModeAwareFailure(invocation.output, message);
 						case Success(DetailsMissing): output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
 						case Success(DetailsFound(details)): found.push(details);
 					}
