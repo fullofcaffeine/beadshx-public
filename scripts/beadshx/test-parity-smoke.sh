@@ -8232,9 +8232,11 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-show-thread" exact "$schema_sql" --readonly show test-msg-leaf --thread
 	compare_real_database_sql "schema-$schema_case-ignored-show-thread-json" exact "$schema_sql" \
 		--readonly show test-msg-leaf --thread --json
-	compare_real_database_sql "schema-$schema_case-ignored-show-refs" exact "$schema_sql" \
+	# Upstream prints the --refs and --children blocks of two IDs from a Go map
+	# (cmd/bd/show_refs.go:54), so compare their lines as a multiset; stderr stays exact.
+	compare_real_database_sql "schema-$schema_case-ignored-show-refs" show-grouped-multi "$schema_sql" \
 		--readonly show --refs "$real_database_child_id" "$real_database_epic_id"
-	compare_real_database_sql "schema-$schema_case-ignored-show-children" exact "$schema_sql" \
+	compare_real_database_sql "schema-$schema_case-ignored-show-children" show-grouped-multi "$schema_sql" \
 		--readonly show --children "$real_database_epic_id" "$real_database_child_id"
 done
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
