@@ -9,7 +9,7 @@ trap 'find "$test_root" -mindepth 1 -delete; rmdir "$test_root"' EXIT
 
 jq -e '
 	.schemaVersion == 1 and
-	.owners.compilerRevision == "ac8ee843546bb9ca08dfa72db3bbaafb33ae8371" and
+	.owners.compilerRevision == "52a26ac8cef68417c79cb44ca26b50b594563daa" and
 	(.owners.haxeSources | length) > 0 and
 	(.files | length) > 0
 ' "$fixture" >/dev/null
@@ -27,7 +27,7 @@ if BEADSHX_GENERATED_FIXTURE="$test_root/changed.json" \
 fi
 grep -Fq 'generated Go drift detected' "$test_root/stderr"
 grep -Fq 'src/beadshx/bootstrap/Main.hx' "$test_root/stderr"
-grep -Fq 'ac8ee843546bb9ca08dfa72db3bbaafb33ae8371' "$test_root/stderr"
+grep -Fq '52a26ac8cef68417c79cb44ca26b50b594563daa' "$test_root/stderr"
 
 jq '.owners.haxeSources = []' "$fixture" >"$test_root/missing-owner.json"
 if BEADSHX_GENERATED_FIXTURE="$test_root/missing-owner.json" \

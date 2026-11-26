@@ -271,7 +271,7 @@ No command uses the `development_fallback` lane.
 | `inv:daily-workflow` | beadshx-m02-09 | `compatibility/daily-workflow/profile.json` | `fd9899ff3a728682fb61855c714c1ef6978227143402f1c3d5571ad25625ba25` |
 | `inv:effect-contracts` | beadshx-m02-06 | `compatibility/effect-contracts/plan.json` | `d194a4cac587b2cfb05e15e5333fe6d8731ac318798bd53c9eb38c8a8c40d0b1` |
 | `inv:error-contracts` | beadshx-m02-03 | `compatibility/error-contracts/plan.json` | `29b6a652a0355cf119bcf461131204fe8603b9917e21c963f851bfadf78f0075` |
-| `inv:native-pressure-policy` | beadshx-m02-07 | `compatibility/native-pressure/policy.json` | `6ea82064d19b890e41caef549aac3bd7278f17173016b44d7228c5d713f9950f` |
+| `inv:native-pressure-policy` | beadshx-m02-07 | `compatibility/native-pressure/policy.json` | `1e1efb9d3d4322099816e8351f9791cea8e22596cebb96f1acd127dbd5b361d9` |
 | `inv:output-contracts` | beadshx-m02-02 | `compatibility/output-contracts/plan.json` | `776d6255ddc67cc752f4374b0b2fe449304b492028aa079c128d2496ee42f508` |
 | `inv:performance-comparison` | beadshx-m02-08 | `compatibility/performance-baseline/comparison.json` | `8d97045c3ab793df904ddbcb701b5d3f8060cad8b072c3d0a487518cd7a78500` |
 | `inv:performance-policy` | beadshx-m02-08 | `compatibility/performance-baseline/policy.json` | `f8e73e68628e56d20da2d2a434b347f839699fd716281d46e2c4a30a590a0297` |

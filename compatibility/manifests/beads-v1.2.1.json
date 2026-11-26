@@ -74,7 +74,7 @@
       "path": "compatibility/native-pressure/policy.json",
       "encoding": "json",
       "schemaVersion": 1,
-      "sha256": "6ea82064d19b890e41caef549aac3bd7278f17173016b44d7228c5d713f9950f",
+      "sha256": "1e1efb9d3d4322099816e8351f9791cea8e22596cebb96f1acd127dbd5b361d9",
       "commitPointer": "/compatibilityTarget/commit"
     },
     {

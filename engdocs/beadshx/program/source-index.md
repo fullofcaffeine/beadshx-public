@@ -42,7 +42,7 @@ Live implementation baseline: `990d78bcf7a8641ef589cd230b7d69d59beadb84`.
 The checkout was dirty before this program and must not be used directly for
 BeadsHX compiler edits.
 
-Required BeadsHX compiler revision: `ac8ee843546bb9ca08dfa72db3bbaafb33ae8371`.
+Required BeadsHX compiler revision: `52a26ac8cef68417c79cb44ca26b50b594563daa`.
 This revision includes the digest-owned existing-module transaction and
 gofmt-stable compiler output required for the Haxe-authored `bdhx` entry point,
 portable `Array.slice` lowering needed by CLI argument parsing, terminal
@@ -216,6 +216,16 @@ Haxe's catchable class cast error, and haxe_go-37b9 adds
 `go.NativeAny.ofValue` for Go value externs. BeadsHX Go output changes only by
 one redundant recovery fewer in the staged `haxe.Exception` and `CallStack`
 code and by `X_local` renames of locals.
+
+Compiler tasks haxe_go-gqhg and haxe_go-l217 escape every Go keyword in
+generated names and keep the `go.*` conversion of `Sys.args` and
+`Sys.command` out of callers. haxe_go-almk keeps locals off the Go names of
+main-class statics, haxe_go-241z tests a checked cast to an abstract against
+the type Haxe records, and haxe_go-gjqe widens Int to Float through abstracts
+and Dynamic reads. haxe_go-fzdf, haxe_go-4jle and haxe_go-15zf cut repeated
+work in Go lowering and type-usage tracking, which together make the BeadsHX
+compile about 18% faster. BeadsHX Go output changes only because `main` now
+calls `Sys_args()` instead of an inlined copy of its conversion.
 
 Reviewed current authority:
 
