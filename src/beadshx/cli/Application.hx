@@ -4919,10 +4919,14 @@ final class Application {
 
 		Only the tree view (`--tree`, `--pretty`, `--deps` or `--watch`) walks every level
 		below `--parent`. `--flat`, `--json` and `--format` read one page of direct children.
+		A `--watch` refresh (`refresh`) is a follow-up read: upstream reads it in the store
+		that its pre-run opened once.
 	**/
-	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
-		return isListHierarchy(invocation) ? loadIssueHierarchy(invocation, location, effectiveLimit,
-			query) : query.issueList(location.path, invocation.listRequest, effectiveLimit, invocation.global);
+	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort, refresh = false):IssueListResult {
+		if (isListHierarchy(invocation))
+			return loadIssueHierarchy(invocation, location, effectiveLimit, query, refresh);
+		return refresh ? query.issueListFollowUp(location.path, location.databaseName, invocation.listRequest, effectiveLimit,
+			invocation.global) : query.issueList(location.path, invocation.listRequest, effectiveLimit, invocation.global);
 	}
 
 	/** True for the `--parent` tree view; its empty result prints "Issue 'X' has no children". */
@@ -4939,11 +4943,14 @@ final class Application {
 		The storage port returns direct children only. Haxe owns parent validation,
 		cycle defense, traversal order, and the upstream-compatible error context.
 		The page read comes first, as upstream's; the parent and each level are
-		follow-up reads, which upstream makes in the store that it opened once.
+		follow-up reads, which upstream makes in the store that it opened once. So
+		is the page read of a `--watch` refresh (`refresh`).
 	**/
-	function loadIssueHierarchy(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
+	function loadIssueHierarchy(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort, refresh:Bool):IssueListResult {
 		final request = invocation.listRequest;
-		switch query.issueList(location.path, request, effectiveLimit, invocation.global) {
+		final page = refresh ? query.issueListFollowUp(location.path, location.databaseName, request, effectiveLimit,
+			invocation.global) : query.issueList(location.path, request, effectiveLimit, invocation.global);
+		switch page {
 			case ListFailure(message):
 				return ListFailure(message);
 			case ListRowLimitExceeded(found, source, cap):
@@ -5025,7 +5032,7 @@ final class Application {
 			stopped = watch.waitForStop();
 			if (stopped)
 				continue;
-			switch loadListResult(invocation, location, effectiveLimit, query) {
+			switch loadListResult(invocation, location, effectiveLimit, query, true) {
 				case ListFailure(message):
 					output.writeStderr('Error refreshing issues: ${message}\n');
 				case ListRowLimitExceeded(found, source, cap):

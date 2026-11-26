@@ -111,9 +111,13 @@ heartbeat came. When this node has a `node_id`, the line also names the
 replica that granted the lease, if that is another node. When colors are on,
 the full line is muted.
 
-In an embedded workspace, `show` reads each issue with its dependencies,
-dependents and comments in authored Haxe, also for `--thread`, `--refs`,
-`--children` and `--watch`.
+`show --watch` and `list --watch` read the database again every two seconds
+and print the view again when it changes. Like upstream, they check the
+schema version only once, when the watch starts (see
+[Storage modes](storage-modes.md#schema-version-check)). In an embedded
+workspace, `show` reads each issue with its dependencies, dependents and
+comments in authored Haxe, also for `--thread`, `--refs`, `--children` and
+`--watch`.
 
 ## query
 

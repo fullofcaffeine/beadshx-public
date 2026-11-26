@@ -8465,7 +8465,25 @@ wait_for_watch_text() {
 	return 1
 }
 
+# Waits until the file holds the line `value` at least `count` times.
+wait_for_watch_count() {
+	local file="$1"
+	local value="$2"
+	local count="$3"
+	for _ in {1..200}; do
+		if [[ "$(grep -Fc "$value" "$file" || true)" -ge "$count" ]]; then
+			return 0
+		fi
+		sleep 0.05
+	done
+	printf 'watch output did not contain %q %s times\n' "$value" "$count" >&2
+	return 1
+}
+
 watch_case_count=0
+# Statements that each side's fixture gets before its watch starts, and more environment for both sides.
+watch_extra_sql=""
+watch_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
 normalize_watch_stderr() {
 	# Poll cadence is not observable command policy. A context cancellation can
@@ -8496,6 +8514,9 @@ compare_watch_refresh() {
 		printf '{}\n' >"$state_root/user-home/.dolt/config_global.json"
 		copy_fixture_tree "$real_database_seed/work" "$state_root/work"
 		chmod 700 "$state_root/work/.beads"
+		if [[ -n "$watch_extra_sql" ]]; then
+			printf '%s\n' "$watch_extra_sql" | "$fixture_sql" "$state_root/work" >/dev/null
+		fi
 		binary="$oracle"
 		if [[ "$side" == candidate ]]; then
 			binary="$candidate"
@@ -8507,6 +8528,7 @@ compare_watch_refresh() {
 			exec env HOME="$state_root/user-home" \
 				XDG_CONFIG_HOME="$state_root/config" \
 				"${real_database_env[@]}" \
+				"${watch_extra_env[@]}" \
 				"$binary" "${command[@]}"
 		) >"$case_root/$side.stdout" 2>"$case_root/$side.stderr" &
 		watch_pid=$!
@@ -8525,6 +8547,9 @@ compare_watch_refresh() {
 			printf "UPDATE issues SET title = 'Updated watch parity issue', updated_at = '2030-01-02 03:04:05' WHERE id = '%s'\n" \
 				"$real_database_content_id" | "$fixture_sql" "$state_root/work" >/dev/null
 			wait_for_watch_text "$case_root/$side.stdout" 'Updated watch parity issue'
+			# The new view ends when the watch prints its prompt again. An interrupt before that cancels
+			# upstream's later reads of the view, such as its dependencies.
+			wait_for_watch_count "$case_root/$side.stderr" 'Watching for changes' 2
 			;;
 		row-cap)
 			(
@@ -8608,6 +8633,21 @@ compare_watch_refresh show update show "$real_database_content_id" --watch
 compare_watch_refresh list update list --watch --limit 0
 compare_watch_refresh list-cap row-cap list --watch --label alpha --limit 0 --max-rows 1
 compare_watch_refresh list-gates gate-held list --watch --limit 0
+# With BD_IGNORE_SCHEMA_SKEW=1 upstream warns once, at the store open of its pre-run, however many
+# refreshes the watch reads after it. The watched issue has a dependency, which the detail read of
+# show reads too, and is a child in the --parent tree.
+watch_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
+	schema_case=ahead
+	[[ "$schema_sql" == "$schema_behind_sql" ]] && schema_case=behind
+	watch_extra_sql="$schema_sql"$'\n'"$dependency_row ('fixture-watch-1', '$real_database_content_id', '$real_database_issue_id', 'related', '2026-08-21 10:00:00', 'fixture')"
+	compare_watch_refresh "show-schema-$schema_case-ignored" update --readonly show "$real_database_content_id" --watch
+	compare_watch_refresh "list-schema-$schema_case-ignored" update --readonly list --watch --limit 0
+	watch_extra_sql="$schema_sql"$'\n'"$dependency_row ('fixture-watch-1', '$real_database_content_id', '$real_database_epic_id', 'parent-child', '2026-08-21 10:00:00', 'fixture')"
+	compare_watch_refresh "list-schema-$schema_case-ignored-parent" update --readonly list --watch --parent "$real_database_epic_id"
+done
+watch_extra_sql=""
+watch_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
 json_deprecation='NOTE: bd --json output format will change in v2.0. Set BD_JSON_ENVELOPE=1 to opt in early. See docs/reference/json-schema.md for migration details.'
 

@@ -131,10 +131,11 @@ before the other checks of the command's arguments.
 instead, and the command reads the database. Like upstream, the command
 prints the warning once, also when it reads the database more than once, as
 `children`, `ready --gated`, `ready --explain`, `show` with more than one
-issue ID, `show --thread`, `--refs` and `--children` do. A few commands
-still print it again (see [Limits](limits.md#commands-and-output)). `where`
-prints no stored prefix when the check stops, as upstream does. `version`
-does not check.
+issue ID, `show --thread`, `--refs` and `--children` do. `list --watch` and
+`show --watch` print it once for the whole watch, not again at each refresh.
+A few commands still print it again (see
+[Limits](limits.md#commands-and-output)). `where` prints no stored prefix
+when the check stops, as upstream does. `version` does not check.
 
 ### Remote-migrate gate
 

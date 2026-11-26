@@ -245,8 +245,9 @@ exists.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once prints the
   warning once for each open. Upstream prints it once. In an embedded
-  workspace, `list --watch` still does this: it prints the warning once more
-  at each refresh (beadshx-m08.65, beadshx-m08.71 for `--ready`).
+  workspace, only `list --watch --ready` still does this: it prints the
+  warning once more at each refresh, because `bdhx` reads a `--ready` list
+  in the native store (beadshx-m08.71).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,
