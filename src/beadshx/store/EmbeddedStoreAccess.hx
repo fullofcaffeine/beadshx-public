@@ -86,6 +86,10 @@ final class EmbeddedStoreAccess {
 		return implementation.queryCandidates(beadsDir, databaseName);
 	}
 
+	public static function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+		return implementation.ping(beadsDir, databaseName);
+	}
+
 	public static function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {
 		return implementation.dependencyCycles(beadsDir, databaseName);
 	}
@@ -217,6 +221,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function queryCandidates(beadsDir:String, databaseName:String):Null<StoreResult<Array<IssueListItem>>> {
+		return null;
+	}
+
+	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
 		return null;
 	}
 

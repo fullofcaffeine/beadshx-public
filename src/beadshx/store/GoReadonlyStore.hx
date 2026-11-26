@@ -840,7 +840,17 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		});
 	}
 
-	public function ping(beadsDir:String, global:Bool):StoreResult<PingSnapshot> {
+	/**
+		A workspace that upstream opens as an embedded store (`embeddedStore`:
+		no server, not proxied) pings with authored Haxe (EmbeddedPing); the
+		native facade serves the other routes.
+	**/
+	public function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingSnapshot> {
+		if (embeddedStore && embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.ping(beadsDir, databaseName);
+			if (embedded != null)
+				return embedded;
+		}
 		final result = facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.checkPing(beadsDir, global));
 		if (result.isErr())
 			return Failure(errorMessage(result));

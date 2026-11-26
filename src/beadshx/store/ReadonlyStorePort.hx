@@ -10,7 +10,14 @@ interface ReadonlyStorePort extends IssueQueryPort {
 
 	function validate(beadsDir:String, global:Bool):StoreResult<Bool>;
 	function info(beadsDir:String, includeSchema:Bool, global:Bool):StoreResult<InfoSnapshot>;
-	function ping(beadsDir:String, global:Bool):StoreResult<PingSnapshot>;
+
+	/**
+		The timings of `bd ping`. `embeddedStore`: upstream opens the
+		workspace's embedded store (no SQL server, not proxied), which an
+		embedded workspace then pings with authored Haxe.
+	**/
+	function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingSnapshot>;
+
 	function status(beadsDir:String, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot>;
 	function lastTouchedId(beadsDir:String):String;
 

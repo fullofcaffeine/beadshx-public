@@ -42,6 +42,9 @@ interface EmbeddedStorePort {
 	/** Every issue and wisp, the candidates that `bd query` filters and pages. */
 	function queryCandidates(beadsDir:String, databaseName:String):Null<StoreResult<Array<IssueListItem>>>;
 
+	/** The timings of `bd ping`, after it opened the store and counted the issues. */
+	function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>>;
+
 	function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>>;
 	function dependencyTree(beadsDir:String, databaseName:String,
 		request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>>;

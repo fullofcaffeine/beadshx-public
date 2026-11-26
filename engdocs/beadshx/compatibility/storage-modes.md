@@ -163,10 +163,10 @@ applies only when the database has a Dolt remote and a recorded version.
   (`readOnlyCommands`) print upstream's warning, `Warning: refusing to ...
   Read-only command: continuing on schema vN without migrating ...`, and read
   the database as it is. In `bdhx` these are `list`, `ready`, `show`,
-  `count`, `search`, `query`, `comments`, `blocked`, `graph`, `events tail`,
-  `events export`, `dep list`, `label list`, `config list` and
-  `config show`. `ping`, and a `list --format` template that needs
-  upstream's Go types, print the warning and refuse (see
+  `count`, `search`, `query`, `ping`, `comments`, `blocked`, `graph`,
+  `events tail`, `events export`, `dep list`, `label list`, `config list`
+  and `config show`. A `list --format` template that needs upstream's Go
+  types prints the warning and refuses (see
   [Limits](limits.md#writes-and-migration)).
 - Every other command, such as `types`, `dep tree`, `info` or `status`, stops
   with the gate's message on stderr, or with its JSON error on stderr under

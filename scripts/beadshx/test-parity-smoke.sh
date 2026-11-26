@@ -3525,10 +3525,11 @@ real_database_setup=marked_database_beside
 compare_real_database unfinished-marked-database-beside-count exact count
 # Dolt warns at each store open: upstream's pre-run opens the store, then each store call opens it again.
 # A grouped count asks for the buckets and then the total, and --include-infra first loads the custom
-# statuses, the custom types and the infra types. query makes one store call.
+# statuses, the custom types and the infra types. query and ping make one store call.
 compare_real_database unfinished-marked-database-beside-count-by-status exact count --by-status
 compare_real_database unfinished-marked-database-beside-count-infra-json exact count --include-infra --by-type --json
 compare_real_database unfinished-marked-database-beside-query exact query status=open
+compare_real_database unfinished-marked-database-beside-ping ping-human ping
 real_database_setup=""
 # A --db path that names a .beads directory with only a redirect selects the directory above it, which
 # has no metadata.json and no store. The strict open stops at the missing store directory without a write;
@@ -8304,6 +8305,8 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 		--readonly search parity --status open
 	compare_real_database_sql "schema-$schema_case-ignored-query-predicate-json" exact "$schema_sql" \
 		--readonly query 'status=open OR priority=0' --json
+	compare_real_database_sql "schema-$schema_case-ignored-ping" ping-human "$schema_sql" --readonly ping
+	compare_real_database_sql "schema-$schema_case-ignored-ping-json" ping-json "$schema_sql" --readonly ping --json
 	compare_real_database_sql "schema-$schema_case-ignored-ready" exact "$schema_sql" --readonly ready
 	compare_real_database_sql "schema-$schema_case-ignored-children" exact "$schema_sql" \
 		--readonly children "$real_database_epic_id"
@@ -8510,7 +8513,7 @@ compare_real_database gate-events-tail exact events tail
 compare_real_database gate-events-export exact events export
 compare_real_database gate-config-list exact config list
 compare_real_database gate-config-show exact config show
-# count, search and query read an embedded workspace with Haxe-owned SQL too.
+# count, search, query and ping read an embedded workspace with Haxe-owned SQL too.
 compare_real_database gate-count exact count
 compare_real_database gate-count-json exact count --json
 compare_real_database gate-count-by-label exact count --by-label
@@ -8521,12 +8524,15 @@ compare_real_database gate-search-status exact search parity --status open --sor
 compare_real_database gate-query exact query status=open
 compare_real_database gate-query-json exact query status=open --json
 compare_real_database gate-query-predicate exact query 'status=open OR status=in_progress' --reverse
+compare_real_database gate-ping ping-human ping
+compare_real_database gate-ping-json ping-json ping --json
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database gate-ignored-comments exact comments "$real_database_issue_id"
 compare_real_database gate-ignored-count exact count
 compare_real_database gate-ignored-count-by-status-json exact count --by-status --json
 compare_real_database gate-ignored-search exact search parity --long
 compare_real_database gate-ignored-query-json exact query 'priority>=0' --all --json
+compare_real_database gate-ignored-ping ping-human ping
 # The native facade's strict open would read under the escape hatch; the gate runs before it.
 compare_real_database gate-ignored-status exact status
 compare_real_database gate-ignored-info-json exact info --json
@@ -8572,9 +8578,9 @@ compare_real_database gate-show-refs exact show --refs "$real_database_child_id"
 compare_real_database gate-show-children exact show --children "$real_database_epic_id"
 real_database_setup=""
 
-# ping, and a list --format template that needs upstream's Go types, still read through the native
-# facade, whose strict read-only open cannot read a database behind the binary. They print upstream's
-# warning, then refuse, also under the escape hatch.
+# A list --format template that needs upstream's Go types still reads through the native facade, whose
+# strict read-only open cannot read a database behind the binary. It prints upstream's warning, then
+# refuses, also under the escape hatch.
 gate_read_warning=$(
 	cat <<'EOF'
 Warning: refusing to auto-apply 1 pending schema migration to a remote-backed database (v64 -> v65): migrating clones independently forks the schema (#4259)
@@ -8592,7 +8598,6 @@ EOF
 gate_read_refusal() { printf '%s\nError: %s is not available yet on a database behind the binary in this build' "$gate_read_warning" "$1"; }
 gate_native_template='--format={{printf "%T" .Type}}'
 candidate_only_setup=gate_without_cached_ref
-expect_candidate_failure gate-ping-refused "" "$(gate_read_refusal ping)" "" ping
 expect_candidate_failure gate-list-native-template-refused "" "$(gate_read_refusal list)" "" list "$gate_native_template"
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 expect_candidate_failure gate-ignored-list-native-template-refused "" "$(gate_read_refusal list)" "" list "$gate_native_template"

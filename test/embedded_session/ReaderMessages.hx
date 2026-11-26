@@ -14,6 +14,7 @@ import beadshx.store.EmbeddedIssueDetailsReader;
 import beadshx.store.EmbeddedIssueIdSearch;
 import beadshx.store.EmbeddedIssueListReader;
 import beadshx.store.EmbeddedIssueSummaryReader;
+import beadshx.store.EmbeddedPing;
 import beadshx.store.EmbeddedReadyReader;
 import beadshx.store.EmbeddedRelationReader;
 import beadshx.store.EmbeddedStaleReader;
@@ -103,6 +104,7 @@ class ReaderMessages {
 				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
 			});
 		add("query", done(EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName)));
+		add("ping", done(EmbeddedPing.check(beadsDir, databaseName)));
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

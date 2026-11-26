@@ -1730,7 +1730,7 @@ final class Application {
 	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingSnapshot> {
 		if (!location.proxiedServer)
 			lookups.findBeadsDir();
-		final pinged = store.ping(location.path, global);
+		final pinged = store.ping(location.path, location.databaseName, !location.proxiedServer && !opensServerStore(location), global);
 		finishStoreOpen(pinged.match(Success(_)));
 		return pinged;
 	}
@@ -7489,7 +7489,8 @@ final class Application {
 					case MigratesWithoutGate:
 						output.writeStderr('Error: failed to open database: ${schemaSkewOpenError(refusal, false)}\n');
 					case GateStops(stop) if (isReadOnlyCommand(invocation.command)):
-						// Upstream warns and reads; the native facade cannot read a database behind the binary.
+						// Upstream warns and reads; the native facade cannot read a database behind the binary. Of the
+						// embedded reads, only a list --format template that needs upstream's Go types still reaches it.
 						SchemaSkewWarning.holdGateWarning(remoteGateReadOnlyWarning(stop));
 						writeCandidateRefusal(invocation,
 							'${commandPath(invocation.command)} is not available yet on a database behind the binary in this build');

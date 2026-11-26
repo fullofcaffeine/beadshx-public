@@ -33,14 +33,13 @@ exists.
   remote is at the same version, v43 or later. The error says `fast-forward`
   instead when `HEAD` is an ancestor of a cached remote at v65 and the working
   set is clean: upstream then fast-forwards to the remote.
-- At a gate stop, upstream's `ping` and `list` print the gate's warning and
-  read the database as it is, `list` also with a `--format` template. In
-  `bdhx`, `ping` and a template that needs upstream's Go types (see below)
-  read through a Go facade, whose strict read-only open cannot read a
-  database behind the binary. So they print the same warning and then stop
-  with `Error: <command> is not available yet on a database behind the
-  binary in this build`, also with `BD_IGNORE_SCHEMA_SKEW=1`
-  (beadshx-m08.67, beadshx-m08.26).
+- At a gate stop, upstream's `list` prints the gate's warning and lists the
+  database as it is, also with a `list --format` template. A template that
+  needs upstream's Go types (see below) runs in the Go facade, whose strict
+  read-only open cannot read a database behind the binary. So `bdhx` prints
+  the same warning and then stops with `Error: list is not available yet on
+  a database behind the binary in this build`, also with
+  `BD_IGNORE_SCHEMA_SKEW=1` (beadshx-m08.26).
 - Upstream `show` records the issue that it showed in `.beads/last-touched`.
   `bdhx` reads that file, for `show` without an ID, but never writes it
   (beadshx-m08.27).
@@ -253,8 +252,8 @@ exists.
 - With `BD_DEBUG` set, upstream prints its debug lines on stderr, and `bdhx`
   does not. A read that still goes through upstream's code in a native facade
   prints that code's `Debug: loaded config from ...` line, for example
-  `ping`, `info`, `status` or any read of a server-mode workspace. An
-  embedded `list`, `children`, `ready`, `count`, `search` or `query` prints
+  `info`, `status` or any read of a server-mode workspace. An embedded
+  `list`, `children`, `ready`, `count`, `search`, `query` or `ping` prints
   none, unless it runs a `list --format` template in the Go facade (see the
   next item).
 - `bdhx` renders most `list --format` Go templates itself (see

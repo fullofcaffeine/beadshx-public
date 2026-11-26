@@ -8,8 +8,8 @@ colors. For the differences that remain, see [Limits](limits.md).
 
 The command handlers are authored Haxe. Some storage reads still go through
 small typed Go facades under `internal/beadshx/`, which may only shrink. In
-an embedded workspace, `list`, `ready`, `show`, `count`, `search` and
-`query` read the database in authored Haxe, except for a `list --format`
+an embedded workspace, `list`, `ready`, `show`, `count`, `search`, `query`
+and `ping` read the database in authored Haxe, except for a `list --format`
 template that needs upstream's Go types. A server-mode or proxied-server
 workspace reads it through the facades.
 Parity tests run each command with `bdhx` and with upstream on the same
