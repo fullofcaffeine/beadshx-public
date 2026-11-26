@@ -56,6 +56,14 @@ func applyPingDuration(input []byte, _ Options) ([]byte, error) {
 	return pingDuration.ReplaceAll(input, []byte("${1}"+durationMarker+")")), nil
 }
 
+// pingFailureDuration matches pingFail's HandleError line: "Error: bd ping: ", the reason, then the
+// duration in parentheses at the end of the line.
+var pingFailureDuration = regexp.MustCompile(`(?m)^(Error: bd ping: .* \()[0-9]+ms\)$`)
+
+func applyPingFailureDuration(input []byte, _ Options) ([]byte, error) {
+	return pingFailureDuration.ReplaceAll(input, []byte("${1}"+durationMarker+")")), nil
+}
+
 func applyBuildOutput(input []byte, _ Options) ([]byte, error) {
 	if len(input) == 0 {
 		return input, nil

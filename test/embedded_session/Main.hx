@@ -277,7 +277,7 @@ class Main {
 			'count: error: count by column status: $missingDatabase',
 			'search: error: search issues with counts: wisp dependency probe: $missingDatabase',
 			'query: error: search issues with counts: wisp dependency probe: $missingDatabase',
-			'ping: error: count issues: $missingDatabase',
+			'ping: error: query failed: search issues: search issues: $missingDatabase',
 			'comments: error: get issue comments from comments: $missingDatabase',
 			'cycles: error: dependency graph: query dependencies: $missingDatabase',
 			'events: error: journal: read since 0: $missingDatabase',

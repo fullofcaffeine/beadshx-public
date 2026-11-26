@@ -205,6 +205,7 @@ import beadshx.store.IssueStatus;
 import beadshx.store.IssueSummary;
 import beadshx.store.IssueType;
 import beadshx.store.OptionalInt;
+import beadshx.store.PingOutcome;
 import beadshx.store.PingSnapshot;
 import beadshx.store.ReadonlyStorePort;
 import beadshx.store.StatusSnapshot;
@@ -1725,7 +1726,8 @@ final class Application {
 					case Accepted:
 						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch pingStore(location, invocation.global) {
 							case Failure(message): runStoreFailure(message);
-							case Success(snapshot):
+							case Success(PingFailed(reason, totalMs)): runPingFailure(invocation.output, reason, totalMs);
+							case Success(PingAnswered(snapshot)):
 								renderPing(invocation.output, snapshot);
 								0;
 						}
@@ -1734,7 +1736,7 @@ final class Application {
 	}
 
 	/** Upstream ping's body finds the workspace (cmd/bd/ping.go:48) before it pings the store; under a proxied server it pings the server instead. */
-	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingSnapshot> {
+	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingOutcome> {
 		if (!location.proxiedServer)
 			lookups.findBeadsDir();
 		final pinged = store.ping(location.path, location.databaseName, !location.proxiedServer && !opensServerStore(location), global);
@@ -3835,7 +3837,8 @@ final class Application {
 									deferredExit;
 								} else switch query.issueCount(location.path, location.databaseName, invocation.countRequest, invocation.countGroup,
 									invocation.global) {
-									case Failure(message): runStoreFailure(message);
+									// Upstream executeCount: HandleErrorRespectJSON (cmd/bd/count.go:179, :192).
+									case Failure(message): runModeAwareFailure(invocation.output, message);
 									case Success(count): renderCount(invocation, count);
 								};
 								closeIssueQuery(query, result);
@@ -3955,7 +3958,8 @@ final class Application {
 	function runReadyList(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final read = invocation.output == Json ? ReadyQuery.ReadyWorkWithCounts : ReadyQuery.ReadyWork;
 		return switch query.issueReady(location.path, location.databaseName, invocation.readyRequest, read, invocation.global) {
-			case ReadyFailure(message): runStoreFailure(message);
+			// Upstream: HandleErrorRespectJSON (cmd/bd/ready.go:186, :225).
+			case ReadyFailure(message): runModeAwareFailure(invocation.output, message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready): renderReady(invocation, location.proxiedServer, ready, query, location);
 		};
@@ -3963,11 +3967,11 @@ final class Application {
 
 	function runReadyGated(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		return switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWorkWithCounts, invocation.global) {
-			case ReadyFailure(message): runStoreFailure(message);
+			case ReadyFailure(message): runModeAwareFailure(invocation.output, message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready):
 				switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
-					case ListFailure(message): runStoreFailure(message);
+					case ListFailure(message): runModeAwareFailure(invocation.output, message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
 						final molecules = GatedReady.discover(ready.page.items, candidates.items);
@@ -3993,14 +3997,14 @@ final class Application {
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		final ready = switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWorkWithCounts, invocation.global) {
-			case ReadyFailure(message): return runStoreFailure(message);
+			case ReadyFailure(message): return runModeAwareFailure(invocation.output, message);
 			case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(value): value;
 		};
 		final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
 			case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
 				switch query.issueList(location.path, location.databaseName, IssueListRequests.readyExplainCandidates(), 0, invocation.global) {
-					case ListFailure(message): return runStoreFailure(message);
+					case ListFailure(message): return runModeAwareFailure(invocation.output, message);
 					case ListRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
 						ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
@@ -4059,7 +4063,7 @@ final class Application {
 			case Success(IssueMissing): runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
 			case Success(IssueFound(root)):
 				switch loadMoleculeItems(location, root.id, query, invocation.global) {
-					case ListFailure(message): runStoreFailure('loading molecule: ${message}');
+					case ListFailure(message): runModeAwareFailure(invocation.output, 'loading molecule: ${message}');
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(page):
 						final steps = new Array<MoleculeStep>();
@@ -4239,7 +4243,8 @@ final class Application {
 			case PredicateQuery(filter, _, _): {filter: filter, fetch: CompleteCandidates};
 		};
 		return switch query.issueQuery(location.path, location.databaseName, storageRequest, invocation.global) {
-			case QueryRowsFailure(message): runStoreFailure(message);
+			// Upstream runQuery: HandleErrorRespectJSON (cmd/bd/query.go:195).
+			case QueryRowsFailure(message): runModeAwareFailure(invocation.output, message);
 			case QueryRows(source):
 				switch finishQueryPage(plan, source) {
 					case Failure(message): runStoreFailure(message);
@@ -4369,7 +4374,8 @@ final class Application {
 									runModeAwareFailure(invocation.output,
 										'invalid status \'${invocation.staleRequest.status}\'. Valid values: open, in_progress, blocked, deferred');
 								} else switch query.issueStale(location.path, location.databaseName, invocation.staleRequest, invocation.global) {
-									case Failure(message): runStoreFailure(message);
+									// Upstream: HandleErrorRespectJSON (cmd/bd/stale.go:53).
+									case Failure(message): runModeAwareFailure(invocation.output, message);
 									case Success(issues): renderStale(invocation, issues);
 								};
 								closeIssueQuery(query, result);
@@ -8239,6 +8245,22 @@ final class Application {
 	}
 
 	static final schemaTables = ["issues", "dependencies", "labels", "config", "metadata"];
+
+	/**
+		Upstream pingFail (cmd/bd/ping.go:88-101): under --json the reason, the
+		status and the time as a JSON object on stdout (SilentExit), otherwise
+		HandleError's line with the time after the reason.
+	**/
+	function runPingFailure(mode:OutputMode, reason:String, totalMs:Int):Int {
+		checkSchemaBeforeFailure();
+		switch mode {
+			case Human:
+				output.writeStderr('Error: bd ping: ${reason} (${totalMs}ms)\n');
+			case Json:
+				writeJsonStdout('{\n  "error": ${Json.stringify(reason)},\n  "schema_version": 1,\n  "status": "error",\n  "total_ms": ${totalMs}\n}\n');
+		}
+		return 1;
+	}
 
 	function renderPing(mode:OutputMode, snapshot:PingSnapshot):Void {
 		switch mode {

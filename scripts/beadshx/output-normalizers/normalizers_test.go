@@ -109,6 +109,16 @@ func pingJSON(query, resolve, store, total, status string) string {
 		"\",\n  \"store_ms\": " + store + ",\n  \"total_ms\": " + total + "\n}\n"
 }
 
+func pingFailureJSON(reason, total string) string {
+	return "{\n  \"error\": \"" + reason + "\",\n  \"schema_version\": 1,\n  \"status\": \"error\",\n  \"total_ms\": " +
+		total + "\n}\n"
+}
+
+func pingFailureEnvelope(reason, total string) string {
+	return "{\n  \"data\": {\n    \"error\": \"" + reason + "\",\n    \"status\": \"error\",\n    \"total_ms\": " +
+		total + "\n  },\n  \"schema_version\": 1\n}\n"
+}
+
 func moleculeJSON(group, canParallel, blocks, labels string) string {
 	return "{\n  \"molecule_id\": \"test-m\",\n  \"parallel_groups\": {\n    \"group-1\": [" + group + "]\n  },\n" +
 		"  \"steps\": [\n    {\n      \"issue\": {\"id\": \"test-m.1\", \"labels\": [" + labels + "]},\n" +
@@ -279,6 +289,71 @@ func normalizerTests(t *testing.T) map[string]normalizerTest {
 				plain("{\n  \"query_ms\": 1,\n  \"status\": \"ok\",\n  \"store_ms\": 2,\n  \"total_ms\": 3\n}\n"),
 				plain("{\"query_ms\": 1, \"query_ms\": 1, \"resolve_ms\": 0, \"store_ms\": 2, \"total_ms\": 3}\n"),
 				plain("[1, 0, 2, 3]\n"),
+				plain("not json\n"),
+			},
+		},
+		"ping-failure-duration": {
+			same: []samePair{
+				{
+					left:  plain("Error: bd ping: query failed: search issues: boom (41ms)\n"),
+					right: plain("Error: bd ping: query failed: search issues: boom (3ms)\n"),
+					want:  "Error: bd ping: query failed: search issues: boom (<duration>)\n",
+				},
+				{left: plain("Error: bd ping: store is closed (0ms)\n"), right: plain("Error: bd ping: store is closed (1250ms)\n")},
+			},
+			kept: []side{
+				plain("✓ bd ping: ok (12ms)\n"),
+				plain("Error: bd ping: query failed (12s)\n"),
+				plain("Error: bd ping: query failed (12ms) later\n"),
+				plain("Warning: bd ping: query failed (12ms)\n"),
+				plain(" Error: bd ping: query failed (12ms)\n"),
+				plain("Error: query failed: column \"x\" (12ms)\n"),
+			},
+			touched: []touchedCase{{
+				in:   plain("Error: bd ping: query failed: a (7ms) b (9ms)\nquery took 12ms\n"),
+				want: "Error: bd ping: query failed: a (7ms) b (<duration>)\nquery took 12ms\n",
+			}},
+			differ: [][2]side{
+				{plain("Error: bd ping: query failed: a (1ms)\n"), plain("Error: bd ping: query failed: b (1ms)\n")},
+				{plain("Error: bd ping: query failed: a (1ms)\n"), plain("Error: bd ping: query failed: a (1ms)\nextra\n")},
+				{plain("Error: bd ping: query failed: a (1ms)\n"), plain("Error: query failed: a (1ms)\n")},
+			},
+		},
+		"ping-failure-time": {
+			same: []samePair{
+				{
+					left:  plain(pingFailureJSON("query failed: boom", "41")),
+					right: plain(pingFailureJSON("query failed: boom", "3")),
+					want:  pingFailureJSON("query failed: boom", `"<ms>"`),
+				},
+				{
+					left:  plain(pingFailureEnvelope("query failed: boom", "0")),
+					right: plain(pingFailureEnvelope("query failed: boom", "12")),
+					want:  pingFailureEnvelope("query failed: boom", `"<ms>"`),
+				},
+			},
+			touched: []touchedCase{{
+				in: plain("{\"detail\": {\"total_ms\": 9}, \"error\": \"x\", \"latency_ms\": 4, \"status\": \"error\", " +
+					"\"total_ms\": 3}\n"),
+				want: "{\"detail\": {\"total_ms\": 9}, \"error\": \"x\", \"latency_ms\": 4, \"status\": \"error\", " +
+					"\"total_ms\": \"<ms>\"}\n",
+			}},
+			differ: [][2]side{
+				{plain(pingFailureJSON("query failed: a", "1")), plain(pingFailureJSON("query failed: b", "1"))},
+				{plain(pingFailureJSON("query failed: a", "1")), plain(pingFailureEnvelope("query failed: a", "1"))},
+				{plain(pingFailureJSON("<a>", "1")), plain(pingFailureJSON(`\u003ca\u003e`, "1"))},
+				{
+					plain(pingFailureJSON("query failed: a", "1")),
+					plain("{\n  \"error\": \"query failed: a\",\n  \"schema_version\": 1,\n  \"status\": \"ok\",\n  \"total_ms\": 1\n}\n"),
+				},
+			},
+			rejected: []side{
+				plain(pingFailureJSON("query failed: a", "-1")),
+				plain(pingFailureJSON("query failed: a", `"1"`)),
+				plain("{\n  \"error\": \"query failed: a\",\n  \"status\": \"error\"\n}\n"),
+				plain("{\"total_ms\": 1, \"total_ms\": 2}\n"),
+				plain("{\"data\": {\"error\": \"x\"}, \"schema_version\": 1}\n"),
+				plain("[1]\n"),
 				plain("not json\n"),
 			},
 		},

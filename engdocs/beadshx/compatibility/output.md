@@ -37,6 +37,28 @@ An empty result prints `[]`, also for `stale`, `ready --explain` and its
 `ready` and `blocked` lists. `count` with a `--by-*` flag keeps its grouped
 form when no issue matches: `Total: 0`, or `{"groups": [], ...}` in JSON.
 
+## Read errors
+
+When a read of the database fails after the store opened, `bdhx` reports
+the error where upstream does:
+
+- `count`, `stale`, `query` and `ready` (also `--explain`, `--gated` and
+  `--mol`) print upstream's JSON object with the error on stdout under
+  `--json`. Without `--json`, they print `Error: ` and the error on stderr.
+- `list` and `search` print `Error: ` and the error on stderr, also under
+  `--json`.
+- `ping` gives the reason `query failed: ` and the error. It prints
+  `Error: bd ping: <reason> (<time>ms)` on stderr, or under `--json` a JSON
+  object with `error`, `status` (`error`) and `total_ms` on stdout. Like
+  upstream, its query is `SearchIssues` with a limit of one, so the error
+  has upstream's words.
+- `config get` also fails when the rows do not close after it read the
+  value, as Go's `Row.Scan` does.
+
+A store that does not open fails before the command reads, also under
+`--global` outside shared-server mode: `bdhx` then prints `Error: ` and the
+error on stderr, as upstream's pre-run does.
+
 ## Agent mode
 
 Like upstream, `bdhx` has an agent mode for output that AI agents read.

@@ -121,6 +121,25 @@ var declaredNormalizers = []Normalizer{
 		apply:  applyPingTimings,
 	},
 	{
+		Name: "ping-failure-duration",
+		Fields: "the milliseconds N in a line that starts with \"Error: bd ping: \" and ends with \" (Nms)\", " +
+			"after the reason",
+		Reason: "A failed ping prints the wall time that its own run took to the failure after its reason " +
+			"(pingFail, cmd/bd/ping.go:88-101: HandleError(\"bd ping: %s (%dms)\", reason, totalMs)).",
+		Scope: "stderr of ping-failure database cases",
+		apply: applyPingFailureDuration,
+	},
+	{
+		Name: "ping-failure-time",
+		Fields: "the value of the total_ms member of the JSON object of a failed ping: the top-level object, or " +
+			"the object of its data member under BD_JSON_ENVELOPE=1; the member must be there once, as a number " +
+			"that is not negative",
+		Reason: "ping --json prints the wall time that its own run took to the failure in pingFail's object " +
+			"(cmd/bd/ping.go:88-97: status, error and total_ms).",
+		Scope: "stdout of ping-failure-json database cases",
+		apply: applyPingFailureTime,
+	},
+	{
 		Name:   "build-output",
 		Fields: "a whole stdout that is not empty; an empty stdout stays empty",
 		Reason: "version, --version and the root help print the build's own name, version, commit and command " +

@@ -46,7 +46,7 @@ interface EmbeddedStorePort {
 	function queryCandidates(beadsDir:String, databaseName:String):Null<StoreResult<Array<IssueListItem>>>;
 
 	/** The timings of `bd ping`, after it opened the store and counted the issues. */
-	function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>>;
+	function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>>;
 
 	function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>>;
 	function dependencyTree(beadsDir:String, databaseName:String,

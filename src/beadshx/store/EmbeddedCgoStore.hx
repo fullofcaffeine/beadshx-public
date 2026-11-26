@@ -87,7 +87,7 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName);
 	}
 
-	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>> {
 		return EmbeddedPing.check(beadsDir, databaseName);
 	}
 

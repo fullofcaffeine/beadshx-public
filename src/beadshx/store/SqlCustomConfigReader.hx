@@ -101,8 +101,13 @@ final class SqlCustomConfigReader {
 		}
 		final value = go.NativePointer.of("");
 		final scanError = rows.scan(value);
-		rows.close();
-		return scanError == null ? Success(value.get()) : Failure('get config ${key}: ${scanError.toString()}');
+		if (scanError != null) {
+			rows.close();
+			return Failure('get config ${key}: ${scanError.toString()}');
+		}
+		// Go's Row.Scan returns the error of closing the rows after a successful scan.
+		final closeError = rows.close();
+		return closeError == null ? Success(value.get()) : Failure('get config ${key}: ${closeError.toString()}');
 	}
 
 	/** Upstream GetAllConfigInTx for `bd config list`: every row, in the order the table gives them. */

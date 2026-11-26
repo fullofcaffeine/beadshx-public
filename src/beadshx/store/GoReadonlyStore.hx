@@ -86,6 +86,8 @@ final ISSUE_TOTAL_ROUTE_UNAVAILABLE = "issue statistics are not available yet fo
 **/
 @:goNative
 final class GoReadonlyStore implements ReadonlyStorePort {
+	static inline final GLOBAL_MODE_ERROR = "--global requires shared-server mode (set BEADS_DOLT_SHARED_SERVER=1 or dolt.shared-server: true in config.yaml)";
+
 	static inline final GO_RFC3339_NANO = "2006-01-02T15:04:05.999999999Z07:00";
 
 	/**
@@ -116,9 +118,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		before this, so a proxied `--global` fails that check.
 	**/
 	public function openIssueQuery(beadsDir:String, serverStore:Bool, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort> {
-		if (global)
-			if (proxiedServer)
-				return Failure("--global requires shared-server mode (set BEADS_DOLT_SHARED_SERVER=1 or dolt.shared-server: true in config.yaml)");
+		// Upstream's pre-run refuses --global outside shared-server mode before it opens a store (cmd/bd/main.go:1518-1521),
+		// so the error is a plain open error, not one of a store call that the command reports in its own way.
+		if (global && (proxiedServer || !LayeredConfig.forWorkspace(beadsDir).sharedServerMode()))
+			return Failure(GLOBAL_MODE_ERROR);
 		if (!proxiedServer) {
 			if (!global && (serverStore || !sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))))
 				switch validate(beadsDir, false) {
@@ -855,7 +858,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		no server, not proxied) pings with authored Haxe (EmbeddedPing); the
 		native facade serves the other routes.
 	**/
-	public function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingSnapshot> {
+	public function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingOutcome> {
 		if (embeddedStore && embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.ping(beadsDir, databaseName);
 			if (embedded != null)
@@ -865,12 +868,12 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		if (result.isErr())
 			return Failure(errorMessage(result));
 		final native = result.unwrap();
-		return Success({
+		return Success(PingAnswered({
 			resolveMs: native.resolveMs(),
 			storeMs: native.storeMs(),
 			queryMs: native.queryMs(),
 			totalMs: native.totalMs()
-		});
+		}));
 	}
 
 	public function status(beadsDir:String, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot> {

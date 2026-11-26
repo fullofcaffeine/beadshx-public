@@ -90,7 +90,7 @@ final class EmbeddedStoreAccess {
 		return implementation.queryCandidates(beadsDir, databaseName);
 	}
 
-	public static function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+	public static function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>> {
 		return implementation.ping(beadsDir, databaseName);
 	}
 
@@ -230,7 +230,7 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 		return null;
 	}
 
-	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>> {
 		return null;
 	}
 

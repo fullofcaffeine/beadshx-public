@@ -379,8 +379,13 @@ final class SqlIssueFilter {
 			+ "so answering would return every ready issue rather than the ones asked for — drop --ready, or drop what it cannot carry";
 	}
 
-	/** Upstream BuildIssueFilterClauses: the query text first (`queryText`), then the filter. */
-	public static function buildFilterClauses(filter:IssueSearchFilter, tables:IssueFilterTables):IssueFilterClauses {
+	/**
+		Upstream sqlbuild.BuildIssueFilterClauses: the query text first
+		(`queryText`), then the filter. Without `labelSets`, the
+		filter's label and any-label sets add no clause: BuildLabelDrivenSearch
+		clears them, because they become joins (SqlIssueSearch).
+	**/
+	public static function buildFilterClauses(filter:IssueSearchFilter, tables:IssueFilterTables, labelSets:Bool = true):IssueFilterClauses {
 		final clauses = new Array<String>();
 		final arguments = new Array<Dynamic>();
 		if (filter.queryText != "") {
@@ -471,11 +476,12 @@ final class SqlIssueFilter {
 			clauses.push("wisp_type = ?");
 			arguments.push(filter.wispType);
 		}
-		for (label in filter.labels) {
-			clauses.push('id IN (SELECT issue_id FROM ${tables.labels} WHERE label = ?)');
-			arguments.push(label);
-		}
-		if (filter.labelsAny.length > 0) {
+		if (labelSets)
+			for (label in filter.labels) {
+				clauses.push('id IN (SELECT issue_id FROM ${tables.labels} WHERE label = ?)');
+				arguments.push(label);
+			}
+		if (labelSets && filter.labelsAny.length > 0) {
 			for (label in filter.labelsAny)
 				arguments.push(label);
 			clauses.push('id IN (SELECT issue_id FROM ${tables.labels} WHERE label IN (${[for (_ in filter.labelsAny) "?"].join(", ")}))');

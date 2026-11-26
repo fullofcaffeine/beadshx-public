@@ -21,6 +21,7 @@ import beadshx.store.EmbeddedStaleReader;
 import beadshx.store.EmbeddedTreeReader;
 import beadshx.store.IssueListRequests;
 import beadshx.store.IssueListResult;
+import beadshx.store.PingOutcome;
 import beadshx.store.ReadyQuery;
 import beadshx.store.StoreResult;
 
@@ -111,7 +112,12 @@ class ReaderMessages {
 				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
 			});
 		add("query", done(EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName)));
-		add("ping", done(EmbeddedPing.check(beadsDir, databaseName)));
+		// Upstream pingFail's reason for a failed search; a store that does not open fails as before.
+		add("ping", switch EmbeddedPing.check(beadsDir, databaseName) {
+			case Success(PingAnswered(_)): Success(true);
+			case Success(PingFailed(reason, _)): Failure(reason);
+			case Failure(message): Failure(message);
+		});
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

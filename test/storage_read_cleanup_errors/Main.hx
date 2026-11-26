@@ -1,3 +1,4 @@
+import SqlTestValues.DriverValue;
 import haxe.Int64;
 import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.context.ContextPkg;
@@ -19,6 +20,7 @@ import beadshx.store.EventsJournal.EventsJournalRead;
 import beadshx.store.EventsJournal.EventsJournalWindow;
 import beadshx.store.IssueListResult;
 import beadshx.store.ReadyLoadResult;
+import beadshx.store.SqlCustomConfigReader;
 import beadshx.store.SqlGraphReader.AllGraphLoad;
 import beadshx.store.SqlReadyWorkReader.ReadyWorkFilter;
 import beadshx.store.StoreResult;
@@ -26,6 +28,7 @@ import beadshx.store.StoreResult;
 @:go.import("github.com/DATA-DOG/go-sqlmock") @:go.package("sqlmock")
 extern class CleanupMocks {
 	@:go.name("New") @:go.tupleReturn public static function create():CleanupMockConnection;
+	@:go.name("NewRows") public static function rows(columns:go.NativeStringSlice):CleanupMockRows;
 }
 
 class CleanupMockConnection {
@@ -57,6 +60,14 @@ extern class CleanupExpectedBegin {
 @:go.import("github.com/DATA-DOG/go-sqlmock") @:go.package("sqlmock") @:go.name("ExpectedQuery")
 extern class CleanupExpectedQuery {
 	@:go.name("WillReturnError") public function fail(error:go.NativeError):CleanupExpectedQuery;
+	@:go.name("WillReturnRows") public function rows(rows:haxe.Rest<CleanupMockRows>):CleanupExpectedQuery;
+}
+
+@:go.import("github.com/DATA-DOG/go-sqlmock") @:go.package("sqlmock") @:go.name("Rows")
+extern class CleanupMockRows {
+	@:go.name("AddRow") public function addRow(values:haxe.Rest<DriverValue>):CleanupMockRows;
+	@:go.name("RowError") public function rowError(row:Int, error:go.NativeError):CleanupMockRows;
+	@:go.name("CloseError") public function closeError(error:go.NativeError):CleanupMockRows;
 }
 
 @:go.import("github.com/DATA-DOG/go-sqlmock") @:go.package("sqlmock") @:go.name("ExpectedRollback")
@@ -118,6 +129,7 @@ class Main {
 					record(() -> checkSummary(name, readFailed, observed.cleanup, expected));
 				}
 		record(checkBeginFailure);
+		record(checkConfigGetRowsClose);
 		record(() -> checkPerCallReaders(observe(false, true, false).cleanup));
 		if (mismatches.length > 0) {
 			for (failure in mismatches)
@@ -344,5 +356,74 @@ class Main {
 		if (ran)
 			throw "begin failure: the body ran";
 		requireResult("begin failure", EmbeddedReadWording.forNoun("relation", false).joinedResult(read), "begin embedded relation transaction: begin failed");
+	}
+
+	/**
+		Upstream GetConfigInTx (internal/storage/issueops/config_metadata.go)
+		reads `bd config get` through `QueryRowContext(...).Scan`. Go's Row.Scan
+		returns the error of closing the rows after a successful scan, and the
+		error of the rows when there is no row, which is the error of the close
+		that the last `Next` made. GetConfigInTx wraps each error in
+		`get config <key>: `.
+	**/
+	static function checkConfigGetRowsClose():Void {
+		final closeFailure = "close rows failed";
+		final rowFailure = "row failed";
+		final columns = go.NativeStringSlice.fromArray(["value"]);
+		for (entry in [
+			{
+				name: "a row whose close fails",
+				rows: () -> CleanupMocks.rows(columns).addRow(...SqlTestValues.fromStrings(["test"])).closeError(CleanupErrors.create(closeFailure)),
+				expected: Failure('get config issue_prefix: $closeFailure')
+			},
+			{
+				name: "a row",
+				rows: () -> CleanupMocks.rows(columns).addRow(...SqlTestValues.fromStrings(["test"])),
+				expected: Success("test")
+			},
+			{
+				name: "no row and a failed close",
+				rows: () -> CleanupMocks.rows(columns).closeError(CleanupErrors.create(closeFailure)),
+				expected: Failure('get config issue_prefix: $closeFailure')
+			},
+			{
+				name: "no row",
+				rows: () -> CleanupMocks.rows(columns),
+				expected: Success("")
+			},
+			{
+				name: "a failed row",
+				rows: () -> CleanupMocks.rows(columns).addRow(...SqlTestValues.fromStrings(["test"])).rowError(0, CleanupErrors.create(rowFailure)),
+				expected: Failure('get config issue_prefix: $rowFailure')
+			}
+		])
+			record(() -> {
+				final opened = CleanupMocks.create();
+				if (opened.error != null)
+					throw opened.error.text();
+				opened.mock.expectBegin();
+				opened.mock.expectQuery("SELECT value FROM config").rows(entry.rows());
+				opened.mock.expectRollback();
+				opened.mock.expectClose();
+				final session = new EmbeddedSession(null, opened.database, ContextPkg.background());
+				final read = session.read((context, transaction) -> SqlCustomConfigReader.readSetting(context, transaction, "issue_prefix"));
+				final closeError = opened.database.close();
+				if (closeError != null)
+					throw closeError.toString();
+				final verification = opened.mock.verify();
+				if (verification != null)
+					throw verification.text();
+				final actual = switch read {
+					case EmbeddedReadFinished(value, []): value;
+					case other: throw 'config get with ${entry.name}: unexpected read $other';
+				};
+				final same = switch [actual, entry.expected] {
+					case [Success(left), Success(right)]: left == right;
+					case [Failure(left), Failure(right)]: left == right;
+					case _: false;
+				};
+				if (!same)
+					throw 'config get with ${entry.name}: expected ${entry.expected}, received $actual';
+			});
 	}
 }

@@ -158,6 +158,31 @@ func sortArray(data []byte, array *jsonNode) []spanEdit {
 	return permute(data, array.children, order)
 }
 
+// applyPingFailureTime rewrites the total_ms of pingFail's object, at the top level or in the data
+// member of the JSON envelope.
+func applyPingFailureTime(input []byte, _ Options) ([]byte, error) {
+	root, err := parseJSONSpans(input)
+	if err != nil {
+		return nil, err
+	}
+	if root.kind != '{' {
+		return nil, rejectf("the output is not a JSON object")
+	}
+	object := root
+	if root.count("data") == 1 && root.member("data").kind == '{' {
+		object = root.member("data")
+	}
+	if count := object.count("total_ms"); count != 1 {
+		return nil, rejectf("the object holds total_ms %d times, not once", count)
+	}
+	node := object.member("total_ms")
+	number, err := strconv.ParseFloat(string(input[node.start:node.end]), 64)
+	if node.kind != 0 || err != nil || number < 0 {
+		return nil, rejectf("total_ms is %s, not a number that is not negative", input[node.start:node.end])
+	}
+	return applyEdits(input, []spanEdit{{start: node.start, end: node.end, text: []byte(millisMarker)}}), nil
+}
+
 func applyPingTimings(input []byte, _ Options) ([]byte, error) {
 	root, err := parseJSONSpans(input)
 	if err != nil {

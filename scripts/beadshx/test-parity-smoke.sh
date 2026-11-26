@@ -1492,11 +1492,15 @@ compare_real_database() {
 	local oracle_values=(--work "$oracle_work" --work "$oracle_work_logical")
 	local candidate_values=(--work "$candidate_work" --work "$candidate_work_logical")
 	# A metadata.json load warning names each side's own workspace. Dolt's logrus warnings carry the time
-	# of each side's own run.
-	record_normalizers "$case_root" stderr work-path,log-time
-	normalize_output "$name" "$case_root/oracle.stderr" "$case_root/oracle.stderr.normalized" work-path,log-time \
+	# of each side's own run. A failed ping prints the duration of its own run (cmd/bd/ping.go:100).
+	local stderr_rules=work-path,log-time
+	case "$comparison" in
+	ping-failure) stderr_rules=work-path,log-time,ping-failure-duration ;;
+	esac
+	record_normalizers "$case_root" stderr "$stderr_rules"
+	normalize_output "$name" "$case_root/oracle.stderr" "$case_root/oracle.stderr.normalized" "$stderr_rules" \
 		"${oracle_values[@]}" || return 1
-	normalize_output "$name" "$case_root/candidate.stderr" "$case_root/candidate.stderr.normalized" work-path,log-time \
+	normalize_output "$name" "$case_root/candidate.stderr" "$case_root/candidate.stderr.normalized" "$stderr_rules" \
 		"${candidate_values[@]}" || return 1
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
@@ -1544,6 +1548,9 @@ compare_real_database() {
 		;;
 	ping-human) stdout_rules=ping-duration ;;
 	ping-json) stdout_rules=ping-timings ;;
+	# A failed ping prints nothing on stdout, and its duration on stderr (see stderr_rules above).
+	ping-failure) stdout_rules=work-path ;;
+	ping-failure-json) stdout_rules=ping-failure-time ;;
 	molecule-ready-json) stdout_rules=molecule-parallel-order ;;
 	graph-open-json) stdout_rules=graph-depends-on-order ;;
 	graph-html) stdout_rules=graph-html-node-order ;;
@@ -1783,9 +1790,9 @@ compare_real_database_sql types-config-human exact "$types_config_sql" types
 types_config_json_sql="DELETE FROM custom_types
 UPDATE config SET value = '[\"x\", \" y \", \"\", null, \"x\"]' WHERE \`key\` = 'types.custom'"
 compare_real_database_sql types-config-json exact "$types_config_json_sql" types --json
-# Server-mode, proxied and --global workspaces have no Haxe-owned route yet.
-expect_candidate_failure types-global-unported "" \
-	"Error: types is not available yet for server-mode or proxied workspaces in this build" "" types --global
+# Server-mode, proxied and --global workspaces have no Haxe-owned route yet. Outside shared-server mode,
+# upstream's pre-run refuses --global before it opens a store (cmd/bd/main.go:1518-1521), and so does bdhx.
+compare_real_database types-global-unported exact types --global
 # The fixture has no custom statuses. Upstream fills an empty custom_statuses table from a valid
 # status.custom like custom_types, so those statuses print by name; an invalid value prints none.
 compare_real_database statuses-human exact statuses
@@ -1802,9 +1809,7 @@ compare_real_database_sql statuses-config-human exact "$status_config_sql" statu
 compare_real_database_sql statuses-config-json exact "$status_config_sql" statuses --json
 compare_real_database_sql statuses-config-invalid-human exact "DELETE FROM config WHERE \`key\` = 'status.custom'
 INSERT INTO config (\`key\`, value) VALUES ('status.custom', 'good:active,Bad')" statuses
-expect_candidate_failure statuses-global-json-unported \
-	'{"error":"statuses is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	statuses --global --json
+compare_real_database statuses-global-json-unported exact statuses --global --json
 # types.custom and status.custom also come from the layered config.yaml and BD_TYPES_CUSTOM or
 # BD_STATUS_CUSTOM, through upstream's getConfigList: Viper's string list (a YAML sequence, or a
 # scalar split at white space), each entry split again at commas. A set variable, even a blank
@@ -2725,15 +2730,11 @@ for config_subcommand in set set-many unset apply; do
 	expect_candidate_failure "config-$config_subcommand-unported" "" \
 		"Error: config $config_subcommand is not available yet in this build" "" config "$config_subcommand" export.auto true
 done
-expect_candidate_failure config-list-global-unported "" \
-	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config list --global
-expect_candidate_failure config-get-global-json-unported \
-	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	config get export.auto --global --json
-expect_candidate_failure config-show-global-unported "" \
-	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config show --global
-expect_candidate_failure config-show-global-json-unported \
-	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+# Outside shared-server mode, upstream's pre-run refuses --global before it opens a store, and so does bdhx.
+compare_real_database config-list-global-unported exact config list --global
+compare_real_database config-get-global-json-unported exact config get export.auto --global --json
+compare_real_database config-show-global-unported exact config show --global
+compare_real_database config-show-global-json-unported exact \
 	config show --global --json
 # Upstream config show creates the embedded database when the workspace has none.
 candidate_only_setup=remove_embedded_database
@@ -6877,13 +6878,10 @@ UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$r
 compare_real_database_sql history-wisp-null-time-human exact "$history_wisp_null_sql" history test-cwisp --events
 compare_real_database_sql history-wisp-null-time-json exact "$history_wisp_null_sql" history test-cwisp --events --json
 real_database_extra_import=""
-# Upstream reads proxied workspaces through the server; --global always selects a server database.
-expect_candidate_failure history-global-unported "" \
-	"Error: history is not available yet for server-mode or proxied workspaces in this build" "" \
-	history "$real_database_issue_id" --global
-expect_candidate_failure history-global-json-unported \
-	'{"error":"history is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	history "$real_database_issue_id" --events --global --json
+# Upstream reads proxied workspaces through the server; --global always selects a server database. Outside
+# shared-server mode, upstream's pre-run refuses --global before it opens a store, and so does bdhx.
+compare_real_database history-global-unported exact history "$real_database_issue_id" --global
+compare_real_database history-global-json-unported exact history "$real_database_issue_id" --events --global --json
 # bd events tail and export print bd_events_journal rows after --since as JSON lines, oldest first, cut by a
 # SQL LIMIT. The stored payloads are compacted and HTML-escaped, never re-encoded. A read whose rows do not
 # continue the checkpoint fails with the retained window. Reads never prune (the events family is exempt).
@@ -7015,12 +7013,9 @@ expect_candidate_failure events-tail-follow-unported "" "Error: events tail --fo
 	events tail --follow
 expect_candidate_failure events-prune-unported "" "Error: events prune is not available yet in this build" "" \
 	events prune --before 3
-expect_candidate_failure events-tail-global-unported "" \
-	"Error: events tail is not available yet for server-mode or proxied workspaces in this build" "" \
-	events tail --global
-expect_candidate_failure events-export-global-json-unported \
-	'{"error":"events export is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	events export --global --json
+# Outside shared-server mode, upstream's pre-run refuses --global before it opens a store, and so does bdhx.
+compare_real_database events-tail-global-unported exact events tail --global
+compare_real_database events-export-global-json-unported exact events export --global --json
 
 # The global JSON switch. Without --json or the root --format, upstream reads the `json` setting of
 # the layered config (BD_JSON, then config.local.yaml, config.yaml and the user config.yaml) once
@@ -8447,6 +8442,31 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 		--readonly show --children "$real_database_epic_id" "$real_database_child_id"
 done
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+
+# A store read that fails after the store opened (beadshx-8prp). Without the column that upstream's query
+# names, Dolt refuses that query, and each command reports the error in upstream's route: count, stale,
+# query and ready through HandleErrorRespectJSON, a JSON object on stdout under --json, and ping through
+# pingFail, with the reason "query failed: " and its duration (cmd/bd/ping.go:63-99). Ping reads
+# SearchIssues with a limit of one: an ID scan, then the rows of those IDs ("search issues (hydrate)").
+read_failure_assignee_sql="ALTER TABLE issues DROP COLUMN assignee"
+read_failure_status_sql="ALTER TABLE issues DROP COLUMN status"
+real_database_read_only=1
+compare_real_database_sql read-failure-count exact "$read_failure_assignee_sql" count --assignee fixture
+compare_real_database_sql read-failure-count-json exact "$read_failure_assignee_sql" count --assignee fixture --json
+compare_real_database_sql read-failure-count-by-status-json exact "$read_failure_status_sql" count --by-status --json
+compare_real_database_sql read-failure-stale exact "$read_failure_assignee_sql" stale
+compare_real_database_sql read-failure-stale-json exact "$read_failure_assignee_sql" stale --json
+compare_real_database_sql read-failure-query exact "$read_failure_assignee_sql" query status=open
+compare_real_database_sql read-failure-query-json exact "$read_failure_assignee_sql" query status=open --json
+compare_real_database_sql read-failure-ready exact "$read_failure_assignee_sql" ready
+compare_real_database_sql read-failure-ready-json exact "$read_failure_assignee_sql" ready --json
+compare_real_database_sql read-failure-ping ping-failure "$read_failure_assignee_sql" ping
+compare_real_database_sql read-failure-ping-json ping-failure-json "$read_failure_assignee_sql" ping --json
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database_sql read-failure-envelope-count-json exact "$read_failure_assignee_sql" count --assignee fixture --json
+compare_real_database_sql read-failure-envelope-ping-json ping-failure-json "$read_failure_assignee_sql" ping --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_read_only=""
 
 # An embedded list reads its page, and the blocking notes of the flat view, with Haxe-owned SQL, so it
 # never opens the native store. That open would run upstream's config package, which logs its load of

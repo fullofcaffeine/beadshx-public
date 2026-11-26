@@ -1,4 +1,5 @@
 -cp src
+-cp test/sql_fixture
 -cp test/storage_read_cleanup_errors
 -lib reflaxe.go
 -D go_output=generated/go/bdhx
