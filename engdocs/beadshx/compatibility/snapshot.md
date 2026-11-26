@@ -35,6 +35,12 @@ or `bdhx` version. Errors go to stderr and exit with code 1, also with
 `snapshot` reads embedded workspaces only (see
 [Known limits](limits.md#server-mode-proxied-and-shared-server-workspaces)).
 
+`snapshot` opens the database like a plain upstream command. So on a
+database behind the binary it stops with upstream's read-only error, and
+when the workspace has a Dolt remote it stops with upstream's
+remote-migrate gate message instead (see
+[Storage modes](storage-modes.md)).
+
 ## Use
 
 Choose the file yourself, for example in a git-ignored build directory such
