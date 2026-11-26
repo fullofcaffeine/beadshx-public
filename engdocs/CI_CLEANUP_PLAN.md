@@ -652,7 +652,9 @@ uv build
 
 `pyproject.toml` gives each test a 120-second timeout through pytest-timeout,
 which `uv.lock` pins. A hanging test then fails under its own name and does not
-use up the job's deadline.
+use up the job's deadline. The integration fixtures run `bd init` once per
+session in a marked template workspace. Each test gets its own copy of that
+workspace, an APFS clone on macOS.
 
 ### npm Package
 

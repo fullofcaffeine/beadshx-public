@@ -3,13 +3,86 @@
 This module provides safety checks to prevent test pollution in production databases (bd-2c5a).
 """
 
-import asyncio
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+DISPOSABLE_MARKER = ".beadshx-disposable-fixture"
+
+
+def _routes_bd(name: str) -> bool:
+    """Tell whether an inherited variable could route bd to another database, home, or repository."""
+    return name.startswith(("BEADS_", "BD_", "GIT_")) or name == "GT_ROOT"
+
+
+def _isolation_env(root: Path, bd_executable: str) -> dict[str, str]:
+    """Return the variables that keep bd's database, home, and config under root.
+
+    Like scripts/ci/lib/test-env.sh, this prevents inherited configuration from
+    redirecting a real integration command to a maintainer's database or home.
+    The telemetry and event-flush switches match scripts/beadshx/test-parity-smoke.sh.
+    BEADS_NO_AUTO_FLUSH stays unset: bd ignores it, and the MCP server would pass
+    it on as --no-auto-flush, which bd no longer accepts.
+    """
+    return {
+        "HOME": str(root / "home"),
+        "USERPROFILE": str(root / "home"),
+        "XDG_CONFIG_HOME": str(root / "xdg-config"),
+        "DOLT_ROOT_PATH": str(root / "dolt-root"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": str(root / "gitconfig"),
+        "BEADS_TEST_MODE": "1",
+        "BEADS_TEST_IGNORE_REPO_CONFIG": "1",
+        "BEADS_TELEMETRY_DISABLED": "1",
+        "BD_NON_INTERACTIVE": "1",
+        "BD_DISABLE_METRICS": "1",
+        "BD_DISABLE_EVENT_FLUSH": "1",
+        "BEADS_PATH": bd_executable,
+    }
+
+
+def _make_marked_workspace(root: Path) -> Path:
+    """Create root/workspace with the disposable-fixture marker, and its own home and config beside it."""
+    workspace = root / "workspace"
+    workspace.mkdir()
+    (workspace / DISPOSABLE_MARKER).touch()
+    for name in ("home", "xdg-config", "dolt-root"):
+        (root / name).mkdir()
+    (root / "gitconfig").touch()
+    return workspace
+
+
+def init_marked_workspace(workspace: Path, env: dict[str, str], bd_executable: str) -> None:
+    """Run bd init in a marked workspace only, without hooks or agent setup."""
+    if not (workspace / DISPOSABLE_MARKER).is_file():
+        pytest.fail("Refusing to initialize an unmarked integration workspace")
+    result = subprocess.run(
+        [bd_executable, "init", "--prefix", "test", "--non-interactive", "--skip-agents", "--skip-hooks"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        cwd=workspace,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.fail(f"Failed to initialize test database: {result.stderr}")
+
+
+def clone_tree(source: Path, destination: Path) -> None:
+    """Copy the contents of source into the existing destination directory.
+
+    On macOS, cp -c clones the files on APFS (and copies them elsewhere), like
+    copy_fixture_tree in scripts/beadshx/test-parity-smoke.sh.
+    """
+    if sys.platform == "darwin":
+        subprocess.run(["/bin/cp", "-cR", f"{source}/", str(destination)], check=True)
+    else:
+        shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True)
 
 
 @pytest.fixture(scope="session")
@@ -34,60 +107,36 @@ def bd_init_isolation_flags_supported(bd_executable):
 
 @pytest.fixture
 def temp_workspace(tmp_path: Path, monkeypatch, bd_executable) -> Path:
-    """Mark a disposable workspace and keep its database, home, and config local.
-
-    Like scripts/ci/lib/test-env.sh, this prevents inherited configuration from
-    redirecting a real integration command to a maintainer's database or home.
-    """
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    (workspace / ".beadshx-disposable-fixture").touch()
-    for name in ("home", "xdg-config", "dolt-root"):
-        (tmp_path / name).mkdir()
-    git_config = tmp_path / "gitconfig"
-    git_config.touch()
-
+    """Mark a disposable workspace and keep its database, home, and config local."""
+    workspace = _make_marked_workspace(tmp_path)
     for name in tuple(os.environ):
-        if name.startswith(("BEADS_", "BD_", "GIT_")) or name == "GT_ROOT":
+        if _routes_bd(name):
             monkeypatch.delenv(name)
-    for name, value in {
-        "HOME": str(tmp_path / "home"),
-        "USERPROFILE": str(tmp_path / "home"),
-        "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
-        "DOLT_ROOT_PATH": str(tmp_path / "dolt-root"),
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": str(git_config),
-        "BEADS_TEST_MODE": "1",
-        "BEADS_TEST_IGNORE_REPO_CONFIG": "1",
-        "BD_NON_INTERACTIVE": "1",
-        "BD_DISABLE_METRICS": "1",
-        "BEADS_PATH": bd_executable,
-    }.items():
+    for name, value in _isolation_env(tmp_path, bd_executable).items():
         monkeypatch.setenv(name, value)
     return workspace
 
 
+@pytest.fixture(scope="session")
+def workspace_template(tmp_path_factory, bd_executable, bd_init_isolation_flags_supported) -> Path:
+    """Initialize one marked workspace per session, for initialized_workspace to copy.
+
+    bd init takes 4-9 s on a loaded macOS host; a copy takes a fraction of a second.
+    """
+    root = tmp_path_factory.mktemp("workspace-template")
+    workspace = _make_marked_workspace(root)
+    env = {name: value for name, value in os.environ.items() if not _routes_bd(name)}
+    env.update(_isolation_env(root, bd_executable))
+    init_marked_workspace(workspace, env, bd_executable)
+    return workspace
+
+
 @pytest.fixture
-async def initialized_workspace(temp_workspace: Path, bd_executable, bd_init_isolation_flags_supported) -> Path:
-    """Initialize only a marked workspace, without hooks or agent setup."""
-    if not (temp_workspace / ".beadshx-disposable-fixture").is_file():
-        pytest.fail("Refusing to initialize an unmarked integration workspace")
-    process = await asyncio.create_subprocess_exec(
-        bd_executable,
-        "init",
-        "--prefix",
-        "test",
-        "--non-interactive",
-        "--skip-agents",
-        "--skip-hooks",
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=temp_workspace,
-    )
-    _stdout, stderr = await process.communicate()
-    if process.returncode != 0:
-        pytest.fail(f"Failed to initialize test database: {stderr.decode()}")
+def initialized_workspace(temp_workspace: Path, workspace_template: Path) -> Path:
+    """Give a marked workspace its own copy of the session's initialized database."""
+    if not (temp_workspace / DISPOSABLE_MARKER).is_file():
+        pytest.fail("Refusing to copy a database into an unmarked integration workspace")
+    clone_tree(workspace_template, temp_workspace)
     return temp_workspace
 
 
