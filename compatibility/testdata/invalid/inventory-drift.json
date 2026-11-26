@@ -1,0 +1,9 @@
+{
+  "description": "Add a command to the pinned inventory without adding it to the manifest.",
+  "filter": ".",
+  "inventoryFilter": ".snapshots |= map(.commands += [{\"id\": \"cmd:bd/fake-drift\", \"parentId\": \"cmd:bd\", \"name\": \"fake-drift\", \"aliases\": [], \"hidden\": false, \"runnable\": true}])",
+  "expect": [
+    "inventory command missing from manifest: cmd:bd/fake-drift",
+    "stale source inventory: inv:command-tree compatibility/upstream-v1.2.1-command-inventory.json.gz has sha256"
+  ]
+}

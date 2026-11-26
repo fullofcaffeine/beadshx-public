@@ -32,3 +32,54 @@ Inspect it with:
 ```bash
 gzip -dc compatibility/upstream-v1.2.1-command-inventory.json.gz | jq .
 ```
+
+## Compatibility manifest
+
+`manifests/beads-v1.2.1.json` is the authored compatibility contract for the
+pinned target (BHX-M02-10). It has one record for every command of the
+inventory above, with its aliases, hidden status, command profiles and
+activations. Each record also gives the operation profile (M02-04) and the
+workflow tier (M02-09) of the command. It keeps independent axes: ownership
+lane, implementation state, requirement state, and verification for each
+command profile. The `differences` and `waivers` registries link each known
+difference in `engdocs/beadshx/compatibility/limits.md` and each approved
+exception in `engdocs/beadshx/program/exceptions.md`. The other registries
+point at the M02 inventories by ID.
+
+- `schema/manifest.schema.json` is the JSON Schema (draft 2020-12) for record
+  shapes and closed vocabularies.
+- `generated/beads-v1.2.1.md` is the report, generated from the manifest.
+  Never edit it by hand.
+- `testdata/invalid/` holds the negative fixtures. Each one is a `jq` filter
+  over the manifest (or over the command inventory) and the errors that the
+  gate must print.
+
+Run the gate with:
+
+```sh
+scripts/beadshx/check-compatibility-manifest.sh
+```
+
+It validates the schema with the `santhosh-tekuri/jsonschema` module that
+`go.sum` already pins. Then it checks what a schema cannot: unique and sorted
+IDs, references to the right record kinds, the exact command-profile set of
+the inventory, the source-inventory digests, the parity scenarios that each
+pass cites, and the waiver and coverage rules. Last, it compares the report
+bytes. It prints every offending ID and runs every fixture.
+
+Some rules keep the totals honest:
+
+- `pending` means not inventoried yet. `none` needs negative evidence. An
+  empty list is never allowed.
+- A sampled pass covers only the parity scenarios that it lists, on that
+  command profile only.
+- Only a difference that an approved waiver covers can be green. A pending
+  waiver, a development fallback, and the D0 tier never count as full
+  coverage.
+
+When a manifest input changes, update the manifest in the same commit. Look
+at the records that use the input and record its new SHA-256. Then run the
+gate with `--write-report` and commit the report. This also applies to
+`native-pressure/policy.json`, which records the compiler commit and so
+changes when the haxe.go lock advances. If a parity case that the manifest
+cites changes its name, the gate fails until the manifest cites the new name.

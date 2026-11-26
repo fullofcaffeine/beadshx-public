@@ -1,0 +1,7 @@
+{
+  "description": "Record a digest that no longer matches the evidence file.",
+  "filter": "(.evidence[] | select(.id == \"ev:exceptions\") | .sha256) = \"0000000000000000000000000000000000000000000000000000000000000000\"",
+  "expect": [
+    "stale evidence: ev:exceptions engdocs/beadshx/program/exceptions.md has sha256"
+  ]
+}

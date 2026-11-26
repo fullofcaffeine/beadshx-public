@@ -1,0 +1,7 @@
+{
+  "description": "Point a command at an operation that no registry records.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/list\") | .operation) = \"op:no-such-profile\"",
+  "expect": [
+    "dangling reference: cmd:bd/list operation -> op:no-such-profile"
+  ]
+}

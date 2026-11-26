@@ -1,0 +1,7 @@
+{
+  "description": "Drop the verification record of one command profile.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/list\") | .verification) |= map(select(.profile != \"prof:portable-nocgo\"))",
+  "expect": [
+    "missing verification: cmd:bd/list@portable-nocgo"
+  ]
+}

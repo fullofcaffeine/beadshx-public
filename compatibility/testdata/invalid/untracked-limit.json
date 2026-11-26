@@ -1,0 +1,7 @@
+{
+  "description": "Drop the difference that tracks a task named in limits.md.",
+  "filter": "del(.differences[] | select(.trackingTask == \"beadshx-m08.27\"))",
+  "expect": [
+    "untracked difference: engdocs/beadshx/compatibility/limits.md names beadshx-m08.27"
+  ]
+}

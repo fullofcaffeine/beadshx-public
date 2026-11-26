@@ -1,0 +1,7 @@
+{
+  "description": "Record an old digest for an M02 source inventory.",
+  "filter": "(.sourceInventories[] | select(.id == \"inv:storage-contracts\") | .sha256) = \"1111111111111111111111111111111111111111111111111111111111111111\"",
+  "expect": [
+    "stale source inventory: inv:storage-contracts compatibility/storage-contracts/plan.json has sha256"
+  ]
+}

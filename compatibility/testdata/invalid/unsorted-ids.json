@@ -1,0 +1,7 @@
+{
+  "description": "Put two commands out of order.",
+  "filter": ".commands |= (.[1:2] + .[0:1] + .[2:])",
+  "expect": [
+    "unsorted IDs in commands"
+  ]
+}

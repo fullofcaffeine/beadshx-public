@@ -1,0 +1,7 @@
+{
+  "description": "Delete one inventory command from the manifest.",
+  "filter": "del(.commands[] | select(.id == \"cmd:bd/list\"))",
+  "expect": [
+    "inventory command missing from manifest: cmd:bd/list"
+  ]
+}

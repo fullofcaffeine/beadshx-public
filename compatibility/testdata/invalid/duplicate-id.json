@@ -1,0 +1,8 @@
+{
+  "description": "Record the same difference twice.",
+  "filter": ".differences = (.differences + [.differences[0]] | sort_by(.id))",
+  "expect": [
+    "duplicate ID in differences: diff:",
+    "duplicate ID: diff:"
+  ]
+}

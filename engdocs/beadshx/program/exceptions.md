@@ -21,8 +21,9 @@ recovery requirements.
 
 ## Recorded exceptions
 
-Until the generated compatibility manifest exists (BHX-M02-10), each approved
-exception is recorded here.
+The compatibility manifest (`compatibility/manifests/beads-v1.2.1.json`,
+BHX-M02-10) records each approved exception below as a waiver. These records
+remain the approval source that the waivers cite.
 
 ### Legacy-only workspaces refuse store commands
 

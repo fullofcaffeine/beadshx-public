@@ -1,0 +1,8 @@
+{
+  "description": "Change the manifest without regenerating the report.",
+  "filter": "(.differences[] | select(.id == \"diff:no-tips\") | .summary) = \"A changed summary that the committed report does not show.\"",
+  "expect": [
+    "generated report differs from the manifest: compatibility/generated/beads-v1.2.1.md"
+  ],
+  "checkReport": true
+}
