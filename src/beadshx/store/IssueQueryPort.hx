@@ -25,10 +25,11 @@ interface IssueQueryPort extends QueryTimePort {
 		The ready work of `bd ready` and the first read of ready --gated, --mol
 		and --explain, with the total of a full page and, for an empty one,
 		whether any issue is open. An embedded workspace reads it with
-		Haxe-owned SQL; a server-mode or proxied workspace through the native
-		facade.
+		Haxe-owned SQL, with the read that `query` names; a server-mode or
+		proxied workspace through the native facade, which reads the counted
+		query for both.
 	**/
-	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult;
+	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult;
 
 	/**
 		The issues of `bd search`, and of `label list-all` with no query text,

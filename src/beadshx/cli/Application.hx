@@ -191,6 +191,7 @@ import beadshx.store.IssueLookup;
 import beadshx.store.IssueQueryPort;
 import beadshx.store.CountResult;
 import beadshx.store.ReadyLoadResult;
+import beadshx.store.ReadyQuery;
 import beadshx.store.ReadyResult;
 import beadshx.store.ReadyTotal;
 import beadshx.store.IssueListDependency;
@@ -3903,7 +3904,8 @@ final class Application {
 	}
 
 	function runReadyList(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, location.databaseName, invocation.readyRequest, invocation.global) {
+		final read = invocation.output == Json ? ReadyQuery.ReadyWorkWithCounts : ReadyQuery.ReadyWork;
+		return switch query.issueReady(location.path, location.databaseName, invocation.readyRequest, read, invocation.global) {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready): renderReady(invocation, location.proxiedServer, ready, query, location);
@@ -3911,7 +3913,7 @@ final class Application {
 	}
 
 	function runReadyGated(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), invocation.global) {
+		return switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWorkWithCounts, invocation.global) {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready):
@@ -3941,7 +3943,7 @@ final class Application {
 		blocking edges stand in for the blocked list and the cycles.
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		final ready = switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), invocation.global) {
+		final ready = switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWorkWithCounts, invocation.global) {
 			case ReadyFailure(message): return runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(value): value;
@@ -4791,7 +4793,7 @@ final class Application {
 		if (invocation.readyPlain || !invocation.readyPretty) {
 			output.writeStdout(renderReadyPlain(result.page, styles));
 		} else {
-			output.writeStdout(renderReadyPretty(result.page, query, location, invocation.global, styles));
+			output.writeStdout(renderReadyPretty(result.page, result.parentEpicTitles, query, location, invocation.global, styles));
 		}
 		if (result.truncated) {
 			if (proxied) {
@@ -4850,11 +4852,32 @@ final class Application {
 		formatPrettyIssueWithContext prints it, with its parent epic's title in
 		the muted style, then the footer.
 
-		Upstream buildParentEpicMap (cmd/bd/ready.go:362-413) reads each parent
-		with GetIssue and skips one that it cannot read. The issue summary is that
-		read: Haxe-owned SQL in an embedded workspace, so it opens no second store.
+		Upstream buildParentEpicMap (cmd/bd/ready.go:362-413) reads each issue's
+		dependency rows, then each parent with GetIssue, and skips a parent that
+		it cannot read. An embedded read makes those reads and brings the titles
+		(`epicTitles`). Otherwise each parent that a row names is looked up here,
+		with the issue summary.
 	**/
-	function renderReadyPretty(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool, styles:TerminalStyles):String {
+	function renderReadyPretty(page:IssueListPage, epicTitles:Null<Map<String, String>>, query:IssueQueryPort, location:WorkspaceLocation, global:Bool,
+			styles:TerminalStyles):String {
+		final titles = epicTitles != null ? epicTitles : lookUpParentEpicTitles(page, query, location, global);
+		var rendered = "";
+		for (issue in page.items) {
+			var line = renderPrettyIssue(issue, styles);
+			final parentTitle = titles.get(issue.id);
+			if (parentTitle != null && parentTitle != "")
+				line += " " + styles.renderMuted('← ${parentTitle}');
+			rendered += line + "\n";
+		}
+		rendered += "\n" + StringTools.rpad("", "-", 80) + "\n";
+		rendered += 'Ready: ${page.items.length} issues with no active blockers\n\n';
+		rendered += "Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n";
+		rendered += "Priority: P0–P4 (label only; not a status icon)\n";
+		return rendered;
+	}
+
+	/** The parent epic title of each issue whose row names a parent, each parent looked up once. */
+	static function lookUpParentEpicTitles(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool):Map<String, String> {
 		final parentTitles = new Map<String, String>();
 		for (issue in page.items) {
 			if (issue.parent == "" || parentTitles.exists(issue.parent))
@@ -4867,19 +4890,13 @@ final class Application {
 			}
 			parentTitles.set(issue.parent, title);
 		}
-		var rendered = "";
+		final titles = new Map<String, String>();
 		for (issue in page.items) {
-			var line = renderPrettyIssue(issue, styles);
-			final parentTitle = issue.parent == "" ? null : parentTitles.get(issue.parent);
-			if (parentTitle != null && parentTitle != "")
-				line += " " + styles.renderMuted('← ${parentTitle}');
-			rendered += line + "\n";
+			final title = issue.parent == "" ? null : parentTitles.get(issue.parent);
+			if (title != null && title != "")
+				titles.set(issue.id, title);
 		}
-		rendered += "\n" + StringTools.rpad("", "-", 80) + "\n";
-		rendered += 'Ready: ${page.items.length} issues with no active blockers\n\n';
-		rendered += "Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n";
-		rendered += "Priority: P0–P4 (label only; not a status icon)\n";
-		return rendered;
+		return titles;
 	}
 
 	/**

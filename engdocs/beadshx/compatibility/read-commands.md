@@ -135,6 +135,28 @@ the `--sort` order applies. Other expressions, such as
 `status=open OR status=blocked`, keep the priority order, and `--reverse`
 without `--sort` does not change it.
 
+## ready views
+
+Like upstream, `ready --json` and the human `ready` view read ready work with
+two different queries. `--json` reads each issue and wisp with its counts.
+The human view, plain or `--pretty`, reads the issue records first. It then
+searches the wisps separately, with only part of the filter:
+
+- `--label` and `--label-any` apply, and `--mol-type` applies to the wisps
+  only. `--label-pattern` and `--label-regex` do not apply to the wisps.
+- A wisp that is deferred into the future, marked blocked or pinned is left
+  out. With `--parent`, only the wisps below that issue stay.
+- With `--limit N`, the wisps are read in pages of at least 100, until `N`
+  wisps are ready. The issues and wisps are then sorted together and cut
+  to `N`. `--max-rows` counts the result.
+
+For the parent epic titles, the human view then reads the dependency rows of
+the listed issues and each parent, also in the plain view, which prints no
+titles. When an issue has more than one parent, the last `parent-child` row
+in `depends_on_id` order gives the title. An embedded workspace reads both
+views in authored Haxe. For a server-mode or proxied workspace, see
+[Limits](limits.md#commands-and-output).
+
 ## ready --explain
 
 Like upstream, `ready --explain` takes its blocked list from the stored

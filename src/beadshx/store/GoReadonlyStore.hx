@@ -311,10 +311,14 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			() -> NativeReadonlyFacade.readCountOutcome(beadsDir, countOptions(request), countGroupWireValue(group), global)));
 	}
 
-	/** An embedded workspace reads ready work with Haxe-owned SQL (EmbeddedReadyReader); the native facade serves the other routes. */
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+	/**
+		An embedded workspace reads ready work with Haxe-owned SQL
+		(EmbeddedReadyReader), with the read that `query` names; the native
+		facade serves the other routes with the counted read.
+	**/
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult {
 		if (embeddedRoute(beadsDir, global)) {
-			final embedded = EmbeddedStoreAccess.issueReady(beadsDir, databaseName, request);
+			final embedded = EmbeddedStoreAccess.issueReady(beadsDir, databaseName, request, query);
 			if (embedded != null)
 				return embedded;
 		}
@@ -1770,7 +1774,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return GoReadonlyStore.projectCountOutcome(native.readCountOutcome(GoReadonlyStore.countOptions(request), GoReadonlyStore.countGroupWireValue(group)));
 	}
 
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult {
 		return GoReadonlyStore.projectReadyOutcome(native.readReadyOutcome(GoReadonlyStore.readyOptions(request)));
 	}
 

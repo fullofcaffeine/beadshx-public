@@ -64,8 +64,8 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedIssueListReader.read(beadsDir, databaseName, request, limit, layers);
 	}
 
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
-		return EmbeddedReadyReader.read(beadsDir, databaseName, request);
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):Null<ReadyLoadResult> {
+		return EmbeddedReadyReader.read(beadsDir, databaseName, request, query);
 	}
 
 	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,

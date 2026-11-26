@@ -5000,6 +5000,65 @@ compare_real_database ready-claim-explain-readonly exact --readonly ready --clai
 compare_real_database ready-claim-assignee-readonly exact --readonly ready --claim --assignee fixture
 compare_real_database ready-claim-mol-type-readonly exact --readonly ready --claim --mol-type bogus
 compare_real_database ready-claim-sort-readonly exact --readonly ready --claim --sort bogus
+# The human ready view reads the bare GetReadyWork (cmd/bd/ready.go:220), not the counted query of
+# --json: wisps come from their own search, which leaves out --label-pattern and --label-regex but
+# applies --mol-type, joins the label tables for --label and --label-any, and then drops wisps that
+# are deferred, blocked or pinned in Go; a page of --limit N reads wisps in pages of max(N, 100).
+# The view then reads each issue's dependency rows and each parent, for the parent epic titles.
+ready_wisp_records="$(jq -nc --arg epic "$real_database_epic_id" --arg bug "$real_database_bug_id" \
+	--arg gated "$real_database_gated_molecule_id" '
+	def wisp($id; $title; $priority): {id: $id, title: $title, status: "open", priority: $priority, issue_type: "task",
+		created_at: "2026-08-20T10:00:00Z", updated_at: "2026-08-21T13:00:00Z", ephemeral: true};
+	wisp("test-rw-plain"; "Ready wisp without labels"; 2),
+	(wisp("test-rw-label"; "Ready wisp with a zz label"; 1) + {labels: ["zz-top"], assignee: "fixture", estimated_minutes: 15,
+		created_at: "2026-08-20T09:00:00Z"}),
+	(wisp("test-rw-swarm"; "Ready swarm wisp"; 3) + {mol_type: "swarm", created_at: "2026-08-20T11:00:00Z"}),
+	(wisp("test-rw-child"; "Ready wisp under the epic"; 2) + {created_at: "2026-08-20T12:00:00Z",
+		dependencies: [{issue_id: "test-rw-child", depends_on_id: $epic, type: "parent-child",
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}),
+	(wisp("test-rw-deferred"; "Deferred wisp"; 0) + {defer_until: "2099-01-01T00:00:00Z"}),
+	(wisp("test-rw-pinned"; "Pinned wisp"; 0) + {pinned: true}),
+	(wisp("test-rw-blocked"; "Blocked wisp"; 0) + {dependencies: [{issue_id: "test-rw-blocked", depends_on_id: $bug,
+		type: "blocks", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}),
+	(wisp("test-rw-durable"; "Durable wisp"; 1) + {created_at: "2026-08-20T08:00:00Z"}),
+	(wisp("test-rw-heartbeat"; "Heartbeat wisp"; 2) + {wisp_type: "heartbeat", created_at: "2026-08-20T13:00:00Z"}),
+	# An issue under two epics: the view titles it with its last parent-child row, in depends_on_id order.
+	(wisp("test-rw-two-parents"; "Issue under two epics"; 3) + {ephemeral: false, created_at: "2026-08-20T14:00:00Z",
+		dependencies: [($epic, $gated) | {issue_id: "test-rw-two-parents", depends_on_id: ., type: "parent-child",
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]})')"
+real_database_extra_import="$ready_wisp_records"
+# Import marks the wisp that an open issue blocks. A wisp kept without being ephemeral stays in the wisps
+# table; Dolt ignores the wisp tables, so the title change gives fixture-sql's commit something to record.
+real_database_extra_sql="UPDATE wisps SET ephemeral = 0, updated_at = updated_at WHERE id = 'test-rw-durable'
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database ready-wisps-label-pattern exact ready --include-ephemeral --label-pattern 'zz*'
+compare_real_database ready-wisps-label-pattern-plain exact ready --include-ephemeral --label-pattern 'zz*' --plain
+compare_real_database ready-wisps-label-pattern-json exact ready --include-ephemeral --label-pattern 'zz*' --json
+compare_real_database ready-wisps-label-regex-plain exact ready --include-ephemeral --label-regex '^zz' --plain
+compare_real_database ready-wisps-label exact ready --include-ephemeral --label zz-top
+compare_real_database ready-wisps-label-any-plain exact ready --include-ephemeral --label-any zz-top,parity --plain
+compare_real_database ready-wisps-exclude-label-plain exact ready --include-ephemeral --exclude-label zz-top --plain
+compare_real_database ready-wisps-mol-type exact ready --include-ephemeral --mol-type swarm
+compare_real_database ready-wisps-mol-type-plain exact ready --include-ephemeral --mol-type swarm --plain
+compare_real_database ready-wisps-include-deferred-plain exact ready --include-ephemeral --include-deferred --plain
+compare_real_database ready-wisps-without-ephemeral-plain exact ready --plain
+compare_real_database ready-wisps-pretty exact ready --include-ephemeral
+compare_real_database ready-wisps-parent exact ready --include-ephemeral --parent "$real_database_epic_id"
+compare_real_database ready-wisps-unassigned-plain exact ready --include-ephemeral --unassigned --plain
+compare_real_database ready-wisps-assignee-plain exact ready --include-ephemeral --assignee fixture --plain
+compare_real_database ready-wisps-type-priority-plain exact ready --include-ephemeral --type task --priority 2 --plain
+compare_real_database ready-wisps-sort-oldest-plain exact ready --include-ephemeral --sort oldest --plain
+compare_real_database ready-wisps-sort-priority exact ready --include-ephemeral --sort priority
+compare_real_database ready-wisps-limit-plain exact ready --include-ephemeral --limit 3 --plain
+compare_real_database ready-wisps-limit-pattern exact ready --include-ephemeral --label-pattern 'zz*' --limit 2
+compare_real_database ready-wisps-unlimited-plain exact ready --include-ephemeral --limit 0 --plain
+compare_real_database ready-wisps-unlimited-pattern-plain exact ready --include-ephemeral --label-pattern 'zz*' --limit 0 --plain
+compare_real_database ready-wisps-max-rows exact ready --include-ephemeral --max-rows 2 --limit 0
+compare_real_database ready-wisps-max-rows-pattern exact ready --include-ephemeral --label-pattern 'zz*' --max-rows 2
+compare_real_database ready-wisps-max-rows-enough-plain exact ready --include-ephemeral --max-rows 40 --limit 0 --plain
+compare_real_database_env ready-wisps-max-rows-env exact BEADS_MAX_ROWS=2 ready --include-ephemeral --label-regex '^zz'
+real_database_extra_import=""
+real_database_extra_sql=""
 compare_real_database list-human exact list
 compare_real_database list-json exact list --json
 compare_real_database list-positional exact list parity

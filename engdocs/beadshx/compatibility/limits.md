@@ -268,11 +268,17 @@ exists.
   issues before it (beadshx-m08.26).
 - `bdhx` refuses `ready --claim`, so it never prints upstream's colored
   claim lines.
-- `bdhx` reads the human `ready` output with the same query as
-  `ready --json`. Upstream's human route reads wisps with another query.
-  So with `--include-ephemeral`, upstream can list a wisp that
-  `--label-pattern` or `--label-regex` does not match, where `bdhx` leaves
-  it out (beadshx-m08.70).
+- In a server-mode or proxied workspace, `bdhx` reads the human `ready`
+  view through the native facade, with the query of `ready --json`.
+  Upstream's human view reads wisps with another query (see
+  [Read commands](read-commands.md#ready-views)). So with
+  `--include-ephemeral`, upstream can list a wisp that `--label-pattern` or
+  `--label-regex` does not match, where `bdhx` leaves it out. The facade may
+  only shrink, so this waits for Haxe-owned server reads (beadshx-m08.70).
+- `list --watch --ready` reads the query of `list --ready --json` in every
+  workspace. Upstream's watch reads the query of the human `ready` view,
+  which applies `--mol-type` and `--wisp-type` to the wisps and leaves out
+  `--label-pattern` and `--label-regex` for them.
 - `events tail --follow` and `events prune` report that they are not
   available yet.
 - `config get` of a user-global key (`metrics.*`, `node_id`) and
