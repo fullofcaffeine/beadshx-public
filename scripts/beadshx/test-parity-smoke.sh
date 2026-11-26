@@ -13,8 +13,10 @@ test_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-parity-smoke.XXXXXX")"
 fixture_sql="$test_root/bin/fixture-sql"
 # Exports and compares the logical Dolt state of a database case: see real_database_logical_state.
 logical_state="$test_root/bin/logical-state"
+# Rewrites the declared volatile values of one side's output: see normalize_output.
+output_normalizers="$test_root/bin/output-normalizers"
 (cd "$repository_root" && go build -mod=readonly -tags gms_pure_go -o "$test_root/bin/" \
-	./scripts/beadshx/fixture-sql ./scripts/beadshx/logical-state)
+	./scripts/beadshx/fixture-sql ./scripts/beadshx/logical-state ./scripts/beadshx/output-normalizers)
 cleanup() {
 	local status=$?
 	while IFS= read -r pid_file; do
@@ -74,10 +76,42 @@ no_workspace_root_usage=""
 # When set, each side of a no-workspace case must print its own root help: see compare_root_help.
 no_workspace_root_help=""
 
-# Keeps the first line of a root flag error and replaces the root usage after it with one marker
-# line. Any other text stays, so a missing usage or a second error line differs.
-normalize_root_usage() {
-	awk 'NR == 1 { print; next } NR == 2 && $0 == "Usage:" { print "<root usage>"; exit } { print }' "$1"
+# Usage: normalize_output NAME INPUT OUTPUT RULES [OPTION...]
+# Writes one side's output with the values that the named normalizers declare rewritten, and nothing
+# else. RULES is a comma-separated list, possibly empty, which copies the output exactly. Each
+# comparison names its own normalizers; `output-normalizers rules` gives the fields, reason and scope
+# of each one, and scripts/beadshx/output-normalizers tests that none hides a difference outside its
+# fields. A normalizer that does not find its declared value in the declared form fails the case.
+normalize_output() {
+	local name="$1" input="$2" output="$3" rules="$4"
+	shift 4
+	if ! "$output_normalizers" apply --rules "$rules" "$@" "$input" >"$output"; then
+		printf '%s: the %s normalizers did not accept %s\n' "$name" "$rules" "$input" >&2
+		cat "$input" >&2
+		return 1
+	fi
+}
+
+# Usage: is_build_output_command ARGUMENT...
+# Succeeds when the arguments, after leading -C DIRECTORY and --db PATH pairs, are those of a command
+# that prints only the build's own name, version, commit or command list: version, version --json,
+# --version, --help, or none (the root help). Only such a case may compare its stdout with the
+# build-output normalizer.
+is_build_output_command() {
+	while [[ $# -ge 2 && ("$1" == -C || "$1" == --db) ]]; do
+		shift 2
+	done
+	case "$*" in
+	'' | version | 'version --json' | --version | --help) return 0 ;;
+	esac
+	return 1
+}
+
+# Usage: record_normalizers CASE-ROOT STREAM RULES
+# Adds the normalizers that a comparison applied to one stream of both sides to the case's evidence,
+# CASE-ROOT/normalizers, which the test root keeps when the suite fails.
+record_normalizers() {
+	printf '%s: %s\n' "$2" "${3:-none}" >>"$1/normalizers"
 }
 
 # Writes the case's user config.yaml under each HOME directory given.
@@ -173,6 +207,7 @@ compare_no_workspace() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
+	record_normalizers "$case_root" stdout ""
 	if [[ -n "$no_workspace_root_help" ]]; then
 		# The root help names each binary and lists its own commands, so each side's stdout must be
 		# what that side prints for --help in the same environment.
@@ -205,11 +240,15 @@ compare_no_workspace() {
 		return 1
 	fi
 	local oracle_stderr="$case_root/oracle.stderr" candidate_stderr="$case_root/candidate.stderr"
-	if [[ -n "$no_workspace_root_usage" ]]; then
+	local stderr_rules=""
+	# A root flag error ends with the root usage, which names each build and lists its own commands.
+	[[ -n "$no_workspace_root_usage" ]] && stderr_rules=root-usage
+	record_normalizers "$case_root" stderr "$stderr_rules"
+	if [[ -n "$stderr_rules" ]]; then
 		oracle_stderr="$case_root/oracle.stderr.normalized"
 		candidate_stderr="$case_root/candidate.stderr.normalized"
-		normalize_root_usage "$case_root/oracle.stderr" >"$oracle_stderr"
-		normalize_root_usage "$case_root/candidate.stderr" >"$candidate_stderr"
+		normalize_output "$name" "$case_root/oracle.stderr" "$oracle_stderr" "$stderr_rules" || return 1
+		normalize_output "$name" "$case_root/candidate.stderr" "$candidate_stderr" "$stderr_rules" || return 1
 	fi
 	if ! cmp -s "$oracle_stderr" "$candidate_stderr"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
@@ -853,18 +892,18 @@ compare_store_failure() {
 			"$scenario" "$case_name" "$oracle_exit" "$candidate_exit" >&2
 		return 1
 	fi
+	record_normalizers "$case_root" stdout ""
 	if ! cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"; then
 		printf '%s/%s stdout differs from upstream\n' "$scenario" "$case_name" >&2
 		diff -u "$case_root/oracle.stdout" "$case_root/candidate.stdout" >&2 || true
 		return 1
 	fi
 	# A warning about the permissions of the .beads directory names each side's own workspace.
-	local side side_work side_work_logical
+	local side
+	record_normalizers "$case_root" stderr work-path
 	for side in oracle candidate; do
-		side_work="$(cd "$case_root/$side/work" && pwd -P)"
-		side_work_logical="$(cd "$case_root/$side/work" && pwd -L)"
-		sed -e "s|$side_work|<work>|g" -e "s|$side_work_logical|<work>|g" \
-			"$case_root/$side.stderr" >"$case_root/$side.stderr.normalized"
+		normalize_output "$scenario/$case_name" "$case_root/$side.stderr" "$case_root/$side.stderr.normalized" work-path \
+			--work "$(cd "$case_root/$side/work" && pwd -P)" --work "$(cd "$case_root/$side/work" && pwd -L)" || return 1
 	done
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s/%s stderr differs from upstream\n' "$scenario" "$case_name" >&2
@@ -1259,6 +1298,9 @@ real_database_read_only=""
 # requires the two sides' states to be equal under the declared write rules, and then lets the
 # candidate change its fixture: see check_logical_state.
 real_database_logical_state=""
+# Normalizers that undo how a database case's stdout reached the harness, before the comparison's own:
+# pty-transcript while the cases run through the script terminal runners (write_terminal_runner).
+real_database_transport_rules=""
 real_database_case_count=0
 real_database_out_of_memory_count=0
 candidate_only_case_count=0
@@ -1267,77 +1309,6 @@ candidate_only_setup=""
 # The exit code that a candidate-only case expects: 1, for a refusal, unless a case reads normally.
 candidate_only_exit=1
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
-
-# Upstream's thanks page (cmd/bd/thanks.go) sorts its contributor map by commit count with an unstable
-# sort, so contributors with the same count print in a random order. This reads a page's names in their
-# order, requires each contributor once with the counts never rising, and requires the rows and wrapped
-# lines that upstream's layout gives for that order. It then prints the page with the names in one order:
-# by count, then as upstream's source lists them.
-thanks_page_python='
-import re
-import sys
-
-source, page = sys.argv[1], sys.argv[2]
-table = re.findall(r"^\t\"([^\"]+)\":\s+(\d+),$", open(source, encoding="utf-8").read(), re.M)
-commits = {name: int(count) for name, count in table}
-rank = {name: index for index, (name, _) in enumerate(table)}
-lines = open(page, encoding="utf-8").read().split("\n")
-sgr = re.compile(r"\x1b\[[0-9;]*m")
-plain = [sgr.sub("", line) for line in lines]
-featured_at = plain.index("  Featured Contributors")
-additional_at = plain.index("  Additional Contributors")
-rows = slice(featured_at + 2, additional_at - 1)
-wrapped = slice(additional_at + 2, len(lines) - 2)
-if plain[additional_at - 1] != "" or plain[len(lines) - 2:] != ["", ""]:
-    sys.exit("the page does not end as upstream'"'"'s does")
-
-
-def full_name(shown):
-    if shown in commits:
-        return shown
-    cut = [name for name in commits if len(name.encode()) > 20 and name.encode()[:17].decode() + "..." == shown]
-    if len(cut) != 1:
-        sys.exit("unknown contributor: " + repr(shown))
-    return cut[0]
-
-
-def style_of(line):
-    codes = sgr.findall(line)
-    return (codes[0], codes[1]) if codes else ("", "")
-
-
-order = [full_name(shown) for row in plain[rows] for shown in re.split(r" {2,}", row[2:].rstrip(" "))]
-order += [full_name(shown) for shown in "".join(line[2:] for line in plain[wrapped]).split(", ")]
-if sorted(order) != sorted(commits):
-    sys.exit("the page does not name each contributor once")
-if any(commits[left] < commits[right] for left, right in zip(order, order[1:])):
-    sys.exit("the page does not sort the contributors by commit count")
-name_open, name_close = style_of(lines[rows][0])
-dim_open, dim_close = style_of(lines[wrapped][0])
-
-
-def render(names):
-    featured, rest = names[:20], names[20:]
-    width = min(max(len(name.encode()) for name in featured), 20) + 2
-    cells = [name if len(name.encode()) <= 20 else name.encode()[:17].decode() + "..." for name in featured]
-    columns = ["  " + "".join(name_open + cell + " " * (width - len(cell)) + name_close for cell in cells[at:at + 4])
-               for at in range(0, len(cells), 4)]
-    out, line, length = [], "  ", 2
-    for index, name in enumerate(rest):
-        entry = name + (", " if index < len(rest) - 1 else "")
-        if length + len(entry.encode()) > width * 4 + 4 and length > 2:
-            out.append(line)
-            line, length = "  ", 2
-        line += dim_open + entry + dim_close
-        length += len(entry.encode())
-    return columns, out + [line]
-
-
-if render(order) != (lines[rows], lines[wrapped]):
-    sys.exit("the rows differ from upstream'"'"'s layout for the same order")
-columns, rest = render(sorted(order, key=lambda name: (-commits[name], rank[name])))
-sys.stdout.write("\n".join(lines[:rows.start] + columns + lines[rows.stop:wrapped.start] + rest + lines[wrapped.stop:]))
-'
 
 # The rules of an "equal" logical state comparison: commit hashes as their place in the history, the
 # times that the runs stamp, row ids that upstream derives from those times, and random lock values
@@ -1517,12 +1488,16 @@ compare_real_database() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
+	# Each side's own values for the normalizers that its comparison names.
+	local oracle_values=(--work "$oracle_work" --work "$oracle_work_logical")
+	local candidate_values=(--work "$candidate_work" --work "$candidate_work_logical")
 	# A metadata.json load warning names each side's own workspace. Dolt's logrus warnings carry the time
 	# of each side's own run.
-	sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" -e 's/^time="[^"]*" /time="<time>" /' \
-		"$case_root/oracle.stderr" >"$case_root/oracle.stderr.normalized"
-	sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" -e 's/^time="[^"]*" /time="<time>" /' \
-		"$case_root/candidate.stderr" >"$case_root/candidate.stderr.normalized"
+	record_normalizers "$case_root" stderr work-path,log-time
+	normalize_output "$name" "$case_root/oracle.stderr" "$case_root/oracle.stderr.normalized" work-path,log-time \
+		"${oracle_values[@]}" || return 1
+	normalize_output "$name" "$case_root/candidate.stderr" "$case_root/candidate.stderr.normalized" work-path,log-time \
+		"${candidate_values[@]}" || return 1
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
 		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
@@ -1536,148 +1511,58 @@ compare_real_database() {
 	if [[ -n "$real_database_logical_state" ]]; then
 		check_logical_state "$name" "$case_root" "$state_since" "$state_until" || return 1
 	fi
+	# Each comparison names the normalizers that rewrite its declared volatile values in stdout.
+	local stdout_rules
 	case "$comparison" in
-	exact | exact-home)
-		sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" \
-			"$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
-			"$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		if [[ "$comparison" == exact-home ]]; then
-			# The user config.yaml path names each side's own HOME, which Go prints cleaned.
-			local oracle_home candidate_home
-			oracle_home="$(cd "$oracle_root/user-home" && pwd -L)"
-			candidate_home="$(cd "$candidate_root/user-home" && pwd -L)"
-			sed -i.bak "s|$oracle_home|<home>|g" "$case_root/oracle.normalized"
-			sed -i.bak "s|$candidate_home|<home>|g" "$case_root/candidate.normalized"
-		fi
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
+	exact) stdout_rules=work-path ;;
+	# The user config.yaml path names each side's own HOME, which Go prints cleaned.
+	exact-home)
+		stdout_rules=work-path,home-path
+		oracle_values+=(--home "$(cd "$oracle_root/user-home" && pwd -L)")
+		candidate_values+=(--home "$(cd "$candidate_root/user-home" && pwd -L)")
 		;;
-	show-grouped-multi)
-		# Pinned direct mode ranges over a Go map of parent IDs, so only the
-		# block order is unstable. Compare the exact rendered line multiset.
-		LC_ALL=C sort "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		LC_ALL=C sort "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout content differs from upstream\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
-	config-validate-routing)
-		# Upstream lists the valid routing modes from a Go map, in random order; compare them as a set.
-		for side in oracle candidate; do
-			jq -Rr 'if test("routing\\.mode: .* is invalid \\(valid values: [a-z, ]*\\)") then
-				sub("\\(valid values: (?<modes>[a-z, ]*)\\)"; "(valid values: \(.modes | split(", ") | sort | join(", ")))")
-			else . end' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting the routing modes\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
-	config-show-tied-text | config-show-tied-json)
-		# config show sorts with sort.Slice, which is not stable, over rows gathered from Go maps,
-		# so the rows of one key set by two sources print in either order. The exact cases pin
-		# the order of distinct keys; here only the order of tied rows may vary.
-		for side in oracle candidate; do
-			if [[ "$comparison" == config-show-tied-json ]]; then
-				jq 'sort_by(.key, .source, .value)' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-			else
-				LC_ALL=C sort "$case_root/$side.stdout" >"$case_root/$side.normalized"
-			fi
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting tied rows\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
+	# show --children and show --refs over several issues print one block per issue in Go map order.
+	show-children-multi) stdout_rules=children-block-order ;;
+	show-refs-multi) stdout_rules=refs-block-order ;;
+	config-validate-routing) stdout_rules=routing-mode-order ;;
+	# config show prints the rows of one key that two sources set in either order.
+	config-show-tied-text) stdout_rules=config-tie-rows ;;
+	config-show-tied-json) stdout_rules=config-tie-entries ;;
 	thanks-page)
-		for side in oracle candidate; do
-			if ! python3 -I -c "$thanks_page_python" "$repository_root/cmd/bd/thanks.go" "$case_root/$side.stdout" \
-				>"$case_root/$side.normalized" 2>"$case_root/$side.thanks-error"; then
-				printf '%s %s stdout is not a thanks page in upstream'"'"'s layout: %s\n' \
-					"$name" "$side" "$(cat "$case_root/$side.thanks-error")" >&2
-				cat "$case_root/$side.stdout" >&2
-				return 1
-			fi
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after ordering the tied contributors\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
+		stdout_rules=thanks-contributor-order
+		oracle_values+=(--thanks-source "$repository_root/cmd/bd/thanks.go")
+		candidate_values+=(--thanks-source "$repository_root/cmd/bd/thanks.go")
 		;;
+	# version, --version and the root help print this build's own name, identity and commands.
 	stderr-only)
-		# The exit code and stderr compared above. stdout prints this build's own name or identity.
-		;;
-	ping-human)
-		sed -E 's/[0-9]+ms/<duration>/' "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		sed -E 's/[0-9]+ms/<duration>/' "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after normalizing the ping timing\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
+		if ! is_build_output_command "$@"; then
+			printf '%s: stderr-only compares only version, version --json, --version, --help and the root command\n' \
+				"$name" >&2
+			return 2
 		fi
+		stdout_rules=build-output
 		;;
-	ping-json)
-		for side in oracle candidate; do
-			jq -e '
-				all(.query_ms, .resolve_ms, .store_ms, .total_ms; type == "number" and . >= 0) and
-				.total_ms == (.query_ms + .resolve_ms + .store_ms)
-			' "$case_root/$side.stdout" >/dev/null
-			jq -S 'del(.query_ms, .resolve_ms, .store_ms, .total_ms)' \
-				"$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"
-		;;
-	molecule-ready-json)
-		for side in oracle candidate; do
-			jq -S '
-				(.parallel_groups[]? |= sort) |
-				(.steps[]?.parallel_info.blocked_by |= sort) |
-				(.steps[]?.parallel_info.blocks |= sort) |
-				(.steps[]?.parallel_info.can_parallel |= sort)
-			' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"
-		;;
-	graph-open-json)
-		# graph --open adds the rows it joins over left-out issues in Go map order.
-		for side in oracle candidate; do
-			jq -S '(.layout.Nodes[].DependsOn) |= (if . == null then . else sort end)' \
-				"$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting DependsOn\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
-	graph-html)
-		# graph --html lists its JSON nodes in Go map order. Each node starts with {"id":, which
-		# cannot occur inside a JSON string, so split the nodes there and sort their exact text.
-		for side in oracle candidate; do
-			jq -Rr 'if startswith("const nodes = [{\"id\":") and endswith("}];") then
-				"const nodes = [{\"id\":" + (.[21:-3] | split("},{\"id\":") | sort | join("},{\"id\":")) + "}];"
-			else . end' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting the HTML nodes\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
+	ping-human) stdout_rules=ping-duration ;;
+	ping-json) stdout_rules=ping-timings ;;
+	molecule-ready-json) stdout_rules=molecule-parallel-order ;;
+	graph-open-json) stdout_rules=graph-depends-on-order ;;
+	graph-html) stdout_rules=graph-html-node-order ;;
 	*)
 		printf 'unknown real-database comparison: %s\n' "$comparison" >&2
 		return 2
 		;;
 	esac
+	stdout_rules="${real_database_transport_rules:+$real_database_transport_rules,}$stdout_rules"
+	record_normalizers "$case_root" stdout "$stdout_rules"
+	normalize_output "$name" "$case_root/oracle.stdout" "$case_root/oracle.normalized" "$stdout_rules" \
+		"${oracle_values[@]}" || return 1
+	normalize_output "$name" "$case_root/candidate.stdout" "$case_root/candidate.normalized" "$stdout_rules" \
+		"${candidate_values[@]}" || return 1
+	if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+		printf '%s stdout differs from upstream after the %s normalizers\n' "$name" "$stdout_rules" >&2
+		diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+		return 1
+	fi
 	printf 'parity [%ss]: PASS database/%s\n' "$SECONDS" "$name"
 }
 
@@ -1811,16 +1696,18 @@ expect_candidate_failure() {
 		find "$case_root/candidate-tmp" -mindepth 1 -print >&2
 		return 1
 	fi
-	actual_stdout="$(cat "$case_root/candidate.stdout")"
-	if [[ -n "$expected_stdout" ]]; then
-		actual_stdout="$(jq -c . "$case_root/candidate.stdout" 2>/dev/null || cat "$case_root/candidate.stdout")"
-	fi
+	# The expected JSON is written on one line, so a JSON stdout is compared without its indentation.
+	local stdout_rules=""
+	[[ -n "$expected_stdout" ]] && stdout_rules=json-compact
+	record_normalizers "$case_root" stdout "$stdout_rules"
+	normalize_output "$name" "$case_root/candidate.stdout" "$case_root/candidate.normalized" "$stdout_rules" || return 1
+	actual_stdout="$(cat "$case_root/candidate.normalized")"
 	# A warning that names the workspace names it as <work>, and one that names
 	# its parent (the candidate state root) names it as <state>.
-	local candidate_state
-	candidate_state="$(cd "$state_root" && pwd -P)"
-	actual_stderr="$(sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
-		-e "s|$candidate_state|<state>|g" "$case_root/candidate.stderr")"
+	record_normalizers "$case_root" stderr work-path,state-path
+	normalize_output "$name" "$case_root/candidate.stderr" "$case_root/candidate.stderr.normalized" work-path,state-path \
+		--work "$candidate_work" --work "$candidate_work_logical" --state "$(cd "$state_root" && pwd -P)" || return 1
+	actual_stderr="$(cat "$case_root/candidate.stderr.normalized")"
 	if [[ "$candidate_exit" -ne "$candidate_only_exit" || "$actual_stdout" != "$expected_stdout" ||
 		"$actual_stderr" != "$expected_stderr" ]]; then
 		printf '%s: expected exit %s, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
@@ -5370,7 +5257,7 @@ compare_real_database_colors show-color-children-short exact CLICOLOR_FORCE=1 sh
 compare_real_database_colors show-color-children-none exact CLICOLOR_FORCE=1 show --children test-cl-p0
 compare_real_database_colors show-color-refs exact CLICOLOR_FORCE=1 show --refs test-cl
 # Upstream prints one block per issue from a Go map (cmd/bd/show_refs.go:54), so compare the lines as a multiset.
-compare_real_database_colors show-color-refs-blocker show-grouped-multi CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
+compare_real_database_colors show-color-refs-blocker show-refs-multi CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
 compare_real_database_colors show-color-thread exact CLICOLOR_FORCE=1 show --thread test-msg-reply
 compare_real_database_colors show-color-pipe exact "" show test-cl test-cl-closed
 compare_real_database_colors show-color-no-color-flag exact CLICOLOR_FORCE=1 show test-cl --no-color
@@ -6731,7 +6618,7 @@ compare_real_database show-children-short exact show "$real_database_epic_id" --
 compare_real_database show-children-json exact show "$real_database_epic_id" --children --json
 compare_real_database show-children-empty-human exact show "$real_database_bug_id" --children
 compare_real_database show-children-empty-json exact show "$real_database_bug_id" --children --json
-compare_real_database show-children-multiple show-grouped-multi show "$real_database_epic_id" "$real_database_bug_id" --children
+compare_real_database show-children-multiple show-children-multi show "$real_database_epic_id" "$real_database_bug_id" --children
 compare_real_database show-children-disabled exact show "$real_database_bug_id" --children=false
 compare_real_database_env show-children-json-envelope exact BD_JSON_ENVELOPE=1 show "$real_database_epic_id" --children --json
 compare_real_database show-refs-human exact show "$real_database_epic_id" --refs
@@ -6739,7 +6626,7 @@ compare_real_database show-refs-short-ignored exact show "$real_database_epic_id
 compare_real_database show-refs-json exact show "$real_database_epic_id" --refs --json
 compare_real_database show-refs-empty-human exact show "$real_database_bug_id" --refs
 compare_real_database show-refs-empty-json exact show "$real_database_bug_id" --refs --json
-compare_real_database show-refs-multiple show-grouped-multi show "$real_database_epic_id" "$real_database_bug_id" --refs
+compare_real_database show-refs-multiple show-refs-multi show "$real_database_epic_id" "$real_database_bug_id" --refs
 compare_real_database show-refs-disabled exact show "$real_database_bug_id" --refs=false
 compare_real_database_env show-refs-json-envelope exact BD_JSON_ENVELOPE=1 show "$real_database_epic_id" --refs --json
 # An upstream claim sets the status, the assignee and the start time, and writes a row to the
@@ -7573,10 +7460,12 @@ compare_real_database_dotenv dotenv-claude-code-empty-environment-wins exact $'C
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # On a terminal, agent mode lowers the default limit of list from 50 to 20, and every list view
 # says on stderr when a limit hid issues. These cases run each side on a pseudo-terminal through a
-# runner that prints the transcript: stdout and stderr in the order written, without carriage
-# returns and without the echo of the end of input that `script` sends. The flat list without agent
-# mode would start a pager there, so it has no case. bdhx prints the hint after a Go template that
-# it renders itself, but not after one that the native store renders (see engdocs/beadshx/compatibility/limits.md).
+# runner that prints the transcript: stdout and stderr in the order written. The comparison applies the
+# pty-transcript normalizer first (real_database_transport_rules), which removes the carriage return
+# that the terminal adds before each line feed and the echo of the end of input that `script` sends.
+# The flat list without agent mode would start a pager there, so it has no case. bdhx prints the hint
+# after a Go template that it renders itself, but not after one that the native store renders (see
+# engdocs/beadshx/compatibility/limits.md).
 # The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
 # A third argument sets the pseudo-terminal's column count (stty cols) before the binary runs;
 # without it the pseudo-terminal reports no size, so term.GetSize gives 0 columns.
@@ -7607,9 +7496,7 @@ Linux)
 	;;
 esac
 status=$?
-transcript="${transcript%x}"
-transcript="${transcript//$'^D\b\b'/}"
-printf '%s' "${transcript//$'\r'/}"
+printf '%s' "${transcript%x}"
 exit "$status"
 RUNNER
 	} >"$runner"
@@ -7631,6 +7518,7 @@ import_terminal_issue() {
 }
 oracle="$test_root/bin/terminal-oracle"
 candidate="$test_root/bin/terminal-candidate"
+real_database_transport_rules=pty-transcript
 real_database_setup=import_terminal_issue
 real_database_extra_env=(BD_AGENT_MODE=1)
 compare_real_database agent-mode-terminal-list-flat exact list --flat
@@ -7647,6 +7535,7 @@ compare_real_database terminal-list-format-dot-limit exact list --format dot --l
 compare_real_database terminal-list-format-template-limit exact list --format '{{.IssueID}} {{.DependsOnID}} {{.Type}}' --limit 15
 compare_real_database terminal-list-format-digraph-all exact list --format digraph --limit 0
 real_database_setup=""
+real_database_transport_rules=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"
 # On a 120-column terminal the wrap width is the terminal width, capped at 100 cells: a
@@ -7663,6 +7552,7 @@ import_wide_close_reason() {
 }
 oracle="$test_root/bin/terminal-wide-oracle"
 candidate="$test_root/bin/terminal-wide-candidate"
+real_database_transport_rules=pty-transcript
 real_database_setup=import_wide_close_reason
 wide_close_reason="$close_reason_long"
 compare_real_database terminal-wide-show-close-reason-long exact show test-reason
@@ -7671,6 +7561,7 @@ compare_real_database terminal-wide-show-close-reason-cap-fits exact show test-r
 wide_close_reason="$(close_reason_record "$(printf '%087d' 0 | tr 0 r)")"
 compare_real_database terminal-wide-show-close-reason-cap-long exact show test-reason
 real_database_setup=""
+real_database_transport_rules=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"
 # With colors on, upstream's internal/ui package init asks the terminal for its background once per
@@ -8549,10 +8440,10 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-show-thread-json" exact "$schema_sql" \
 		--readonly show test-msg-leaf --thread --json
 	# Upstream prints the --refs and --children blocks of two IDs from a Go map
-	# (cmd/bd/show_refs.go:54), so compare their lines as a multiset; stderr stays exact.
-	compare_real_database_sql "schema-$schema_case-ignored-show-refs" show-grouped-multi "$schema_sql" \
+	# (cmd/bd/show_refs.go:54), so only the order of the blocks may differ; stderr stays exact.
+	compare_real_database_sql "schema-$schema_case-ignored-show-refs" show-refs-multi "$schema_sql" \
 		--readonly show --refs "$real_database_child_id" "$real_database_epic_id"
-	compare_real_database_sql "schema-$schema_case-ignored-show-children" show-grouped-multi "$schema_sql" \
+	compare_real_database_sql "schema-$schema_case-ignored-show-children" show-children-multi "$schema_sql" \
 		--readonly show --children "$real_database_epic_id" "$real_database_child_id"
 done
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
@@ -8856,17 +8747,6 @@ watch_case_count=0
 watch_extra_sql=""
 watch_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
-normalize_watch_stderr() {
-	# Poll cadence is not observable command policy. A context cancellation can
-	# race with the final interrupt and is shutdown noise, not a failed refresh.
-	# Keep every other refresh failure, collapsing only immediate repeats.
-	awk '
-		$0 ~ /^Error refreshing issues: .*context canceled$/ { next }
-		$0 ~ /^Error refreshing issues:/ && $0 == previous { next }
-		{ print; previous = $0 }
-	' "$1"
-}
-
 compare_watch_refresh() {
 	local name="$1"
 	printf 'parity [%ss]: START watch/%s\n' "$SECONDS" "$name"
@@ -8974,23 +8854,25 @@ compare_watch_refresh() {
 		printf '%s-watch exit mismatch: upstream=%s candidate=%s\n' "$name" "$oracle_exit" "$candidate_exit" >&2
 		return 1
 	fi
-	if [[ "$name" == list* ]]; then
-		for implementation in oracle candidate; do
-			sed -E 's/Beads - Open & In Progress \([0-9]{2}:[0-9]{2}:[0-9]{2}\)/Beads - Open \& In Progress (<time>)/' \
-				"$case_root/$implementation.stdout" >"$case_root/$implementation.normalized"
-		done
-	else
-		cp -f "$case_root/oracle.stdout" "$case_root/oracle.normalized"
-		cp -f "$case_root/candidate.stdout" "$case_root/candidate.normalized"
-	fi
+	# The list watch prints the clock time of each refresh in its header.
+	local stdout_rules=""
+	[[ "$name" == list* ]] && stdout_rules=watch-header-time
+	record_normalizers "$case_root" stdout "$stdout_rules"
+	for implementation in oracle candidate; do
+		normalize_output "$name-watch" "$case_root/$implementation.stdout" "$case_root/$implementation.normalized" \
+			"$stdout_rules" || return 1
+	done
 	if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
 		printf '%s-watch stdout differs from upstream\n' "$name" >&2
 		diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
 		return 1
 	fi
+	# Poll cadence is not observable command policy, and a refresh that the final interrupt cancels is
+	# shutdown noise. Every other refresh failure stays, once for each run of repeats.
+	record_normalizers "$case_root" stderr watch-refresh-noise
 	for implementation in oracle candidate; do
-		normalize_watch_stderr "$case_root/$implementation.stderr" \
-			>"$case_root/$implementation.stderr.normalized"
+		normalize_output "$name-watch" "$case_root/$implementation.stderr" "$case_root/$implementation.stderr.normalized" \
+			watch-refresh-noise || return 1
 	done
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s-watch stderr differs from upstream\n' "$name" >&2
@@ -9085,8 +8967,11 @@ for implementation in oracle candidate; do
 	run_json_stderr_terminal "$implementation-json-legacy" "$binary" 0
 	jq -e '.schema_version == 1' \
 		"$test_root/$implementation-json-legacy.stdout" >/dev/null
-	note_count="$(tr -d '\r' <"$test_root/$implementation-json-legacy.terminal" | \
-		grep -Foc "$json_deprecation" || true)"
+	# The terminal adds a carriage return before each line feed of the transcript.
+	record_normalizers "$test_root/$implementation-json-legacy-root" terminal pty-transcript
+	normalize_output "$implementation-json-legacy" "$test_root/$implementation-json-legacy.terminal" \
+		"$test_root/$implementation-json-legacy.terminal.normalized" pty-transcript
+	note_count="$(grep -Foc "$json_deprecation" "$test_root/$implementation-json-legacy.terminal.normalized" || true)"
 	if [[ "$note_count" -ne 1 ]]; then
 		printf '%s emitted %s JSON terminal notices, want 1\n' \
 			"$implementation" "$note_count" >&2
@@ -9095,8 +8980,10 @@ for implementation in oracle candidate; do
 	printf 'parity [%ss]: PASS terminal/%s-json-legacy\n' "$SECONDS" "$implementation"
 
 	run_json_stderr_terminal "$implementation-json-envelope" "$binary" 1
-	if tr -d '\r' <"$test_root/$implementation-json-envelope.terminal" | \
-		grep -Fq "$json_deprecation"; then
+	record_normalizers "$test_root/$implementation-json-envelope-root" terminal pty-transcript
+	normalize_output "$implementation-json-envelope" "$test_root/$implementation-json-envelope.terminal" \
+		"$test_root/$implementation-json-envelope.terminal.normalized" pty-transcript
+	if grep -Fq "$json_deprecation" "$test_root/$implementation-json-envelope.terminal.normalized"; then
 		printf '%s emitted the legacy JSON notice with BD_JSON_ENVELOPE=1\n' \
 			"$implementation" >&2
 		exit 1
