@@ -21938,6 +21938,26 @@
       }
     },
     {
+      "id": "diff:no-custom-table-backfill",
+      "summary": "The store open does not fill empty custom_types and custom_statuses tables from the config and commit, as upstream's schema migration step does.",
+      "category": "persistent-state",
+      "disposition": "untriaged",
+      "trackingTask": "beadshx-m06.3",
+      "affects": [
+        "cmd:bd/statuses",
+        "cmd:bd/types"
+      ],
+      "profiles": [
+        "prof:portable-nocgo",
+        "prof:release-cgo"
+      ],
+      "source": {
+        "evidence": "ev:limits",
+        "section": "Writes and migration",
+        "quote": "but it never writes, so the tables stay empty"
+      }
+    },
+    {
       "id": "diff:no-defer-wake",
       "summary": "Ready reads do not wake expired defers first, so a woken issue is missing from the ready list.",
       "category": "persistent-state",
@@ -22244,6 +22264,33 @@
         "evidence": "ev:limits",
         "section": "Server-mode, proxied and shared-server workspaces",
         "quote": "`ready --explain` cannot read the stored `is_blocked` flag or the full dependency tables yet"
+      }
+    },
+    {
+      "id": "diff:release-step-error-words",
+      "summary": "Before-read failures and some failures after the read keep bdhx's own words or stop at a different step than upstream's store calls.",
+      "category": "error",
+      "disposition": "fix_planned",
+      "trackingTask": "beadshx-83m4",
+      "affects": [
+        "cmd:bd/count",
+        "cmd:bd/dep/tree",
+        "cmd:bd/graph",
+        "cmd:bd/list",
+        "cmd:bd/ready",
+        "cmd:bd/search",
+        "cmd:bd/show",
+        "cmd:bd/statuses",
+        "cmd:bd/types"
+      ],
+      "profiles": [
+        "prof:portable-nocgo",
+        "prof:release-cgo"
+      ],
+      "source": {
+        "evidence": "ev:limits",
+        "section": "Embedded store layouts",
+        "quote": "`bdhx` prints the errors as upstream does"
       }
     },
     {

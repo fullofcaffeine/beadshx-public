@@ -54,6 +54,12 @@ exists. Each item has a difference record in the
   `bd-defer-wake`, and commit `bd: wake N expired defer(s)` when an issue
   woke. Then they read. `bdhx` never writes, so such an issue stays deferred
   and is missing from its ready list, where upstream lists it.
+- Without strict read-only mode, upstream's store open runs its schema
+  migration step. That step also fills an empty `custom_types` table from
+  `types.custom` and an empty `custom_statuses` table from a valid
+  `status.custom`, and commits `schema: apply migrations`. `bdhx` reads
+  these settings the same way, so `types` and `statuses` print the same
+  output, but it never writes, so the tables stay empty (beadshx-m06.3).
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
@@ -250,7 +256,8 @@ exists. Each item has a difference record in the
   - `dep tree` prints the error where upstream prints its row limit, and
     `graph --all` prints the row limit of its `in_progress` or `blocked`
     search where upstream prints `failed to search issues: ` and the error.
-    `ready --explain` shows no cycles, where upstream keeps them.
+    `ready --explain` shows no cycles, where upstream keeps them
+    (beadshx-83m4).
 
 ## Commands and output
 
