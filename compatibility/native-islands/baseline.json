@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "root": "internal/beadshx",
-  "nonTestLines": 3078,
+  "nonTestLines": 3047,
   "imports": [
     "bytes",
     "context",
@@ -20,11 +20,9 @@
     "github.com/steveyegge/beads/internal/storage/uow",
     "github.com/steveyegge/beads/internal/timeparsing",
     "github.com/steveyegge/beads/internal/types",
-    "github.com/steveyegge/beads/internal/uimd",
     "github.com/steveyegge/beads/internal/utils",
     "github.com/steveyegge/beads/internal/workapi",
     "github.com/steveyegge/beads/issueops",
-    "golang.org/x/term",
     "os",
     "os/exec",
     "os/signal",

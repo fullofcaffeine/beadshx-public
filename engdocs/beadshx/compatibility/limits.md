@@ -260,10 +260,6 @@ exists.
   issues before it (beadshx-m08.26).
 - `bdhx` refuses `ready --claim`, so it never prints upstream's colored
   claim lines.
-- On a terminal with colors on, `bdhx` can ask the terminal for its
-  background color twice: once when it starts, in the upstream code of the
-  Markdown renderer, and once before the first colored view. Upstream asks
-  once.
 - `events tail --follow` and `events prune` report that they are not
   available yet.
 - `config get` of a user-global key (`metrics.*`, `node_id`) and

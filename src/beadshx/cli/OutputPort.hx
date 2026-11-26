@@ -33,6 +33,9 @@ interface OutputPort {
 		Whether the terminal has a dark background, as upstream's
 		`lipgloss.HasDarkBackground(os.Stdin, os.Stdout)` answers when colors are
 		on: true when stdin or stdout is no terminal or the terminal does not say.
+		Each call writes the query to the terminal again and can wait up to 2 s
+		for each stream, so a process calls it at most once, at start, as
+		upstream's internal/ui package init does.
 	**/
 	function hasDarkBackground():Bool;
 

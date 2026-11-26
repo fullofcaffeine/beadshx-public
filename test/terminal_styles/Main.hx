@@ -2,6 +2,10 @@ import beadshx.cli.TerminalStyles;
 import beadshx.cli.TerminalStyles.StyleSpec;
 import beadshx.cli.TerminalStyles.TextStyle;
 import beadshx.cli.TerminalStyles.shouldUseColor;
+import beadshx.cli.MarkdownRendering.escapeAngleBrackets;
+import beadshx.cli.MarkdownRendering.shouldUseHyperlinks;
+import beadshx.cli.MarkdownRendering.stripOsc8Hyperlinks;
+import beadshx.cli.MarkdownRendering.unescapeAngleBrackets;
 
 /**
 	Pins upstream's color decision (internal/ui/terminal.go:32-64), the style
@@ -9,6 +13,8 @@ import beadshx.cli.TerminalStyles.shouldUseColor;
 	render helpers (styles.go:286-599), by hand. A marker style stands in for
 	lipgloss: it prints the spec it was built from. Parity covers the real
 	escape sequences, and the pipe cases; a terminal on stdout cannot reach it.
+	Also pins the hyperlink decision (terminal.go:66-131) and the text steps
+	around glamour in upstream's Markdown renderer (internal/uimd).
 **/
 final class Main {
 	static var failures = 0;
@@ -18,6 +24,8 @@ final class Main {
 		plainContracts();
 		darkContracts();
 		lightContracts();
+		hyperlinkContracts();
+		markdownTextContracts();
 		if (failures > 0) {
 			Sys.println('terminal styles Haxe contracts: ${failures} failure(s)');
 			Sys.exit(1);
@@ -49,6 +57,68 @@ final class Main {
 		equal(shouldUseColor(environment(["TERM" => "dumb", "CLICOLOR_FORCE" => "1"]), false), true);
 		equal(shouldUseColor(environment(["TERM" => "xterm"]), true), true);
 		equal(shouldUseColor(environment(["TERM" => "xterm"]), false), false);
+	}
+
+	static function hyperlinkContracts():Void {
+		function decide(values:Map<String, String>, terminal:Bool):Bool {
+			return shouldUseHyperlinks(environment(values), terminal, decimal);
+		}
+		// No variable: no hyperlinks, on a terminal or a pipe.
+		equal(decide([], true), false);
+		equal(decide([], false), false);
+		// FORCE_HYPERLINK other than 0 forces them, also on a pipe; 0 and "" do not.
+		equal(decide(["FORCE_HYPERLINK" => "1"], false), true);
+		equal(decide(["FORCE_HYPERLINK" => "yes"], false), true);
+		equal(decide(["FORCE_HYPERLINK" => "0"], false), false);
+		equal(decide(["FORCE_HYPERLINK" => "0", "TERM_PROGRAM" => "vscode"], true), true);
+		// BD_GIT_HOOK=1, NO_COLOR, CLICOLOR=0 and TERM=dumb win over FORCE_HYPERLINK.
+		equal(decide(["FORCE_HYPERLINK" => "1", "BD_GIT_HOOK" => "1"], true), false);
+		equal(decide(["FORCE_HYPERLINK" => "1", "NO_COLOR" => "0"], true), false);
+		equal(decide(["FORCE_HYPERLINK" => "1", "CLICOLOR" => "0"], true), false);
+		equal(decide(["FORCE_HYPERLINK" => "1", "TERM" => "Dumb"], true), false);
+		equal(decide(["FORCE_HYPERLINK" => "1", "CLICOLOR_FORCE" => "1"], false), true);
+		// On a terminal, the listed marker variables, programs and TERM names allow them; on a pipe nothing does.
+		equal(decide(["WT_SESSION" => "x"], true), true);
+		equal(decide(["WT_SESSION" => "x"], false), false);
+		equal(decide(["KITTY_WINDOW_ID" => "1"], true), true);
+		equal(decide(["WEZTERM_EXECUTABLE" => "w"], true), true);
+		equal(decide(["KONSOLE_VERSION" => "1"], true), true);
+		equal(decide(["DOMTERM" => "1"], true), true);
+		equal(decide(["GHOSTTY_RESOURCES_DIR" => "/g"], true), true);
+		equal(decide(["TERM_PROGRAM" => "iTerm.app"], true), true);
+		equal(decide(["TERM_PROGRAM" => "Apple_Terminal"], true), true);
+		equal(decide(["TERM_PROGRAM" => "ghostty"], true), true);
+		equal(decide(["TERM_PROGRAM" => "tmux"], true), false);
+		equal(decide(["TERM" => "xterm-kitty"], true), true);
+		equal(decide(["TERM" => "foot-extra"], true), true);
+		equal(decide(["TERM" => "XTERM-GHOSTTY"], true), true);
+		equal(decide(["TERM" => "xterm-256color"], true), false);
+		// VTE_VERSION allows them from 5000, as Go's Atoi reads it.
+		equal(decide(["VTE_VERSION" => "5000"], true), true);
+		equal(decide(["VTE_VERSION" => "+6003"], true), true);
+		equal(decide(["VTE_VERSION" => "4999"], true), false);
+		equal(decide(["VTE_VERSION" => "50.0"], true), false);
+		equal(decide(["VTE_VERSION" => "6003", "TERM_PROGRAM" => "tmux"], false), false);
+	}
+
+	static function markdownTextContracts():Void {
+		// Angle brackets travel through glamour as entities and come back.
+		equal(escapeAngleBrackets("a<b> & <c>"), "a&lt;b&gt; & &lt;c&gt;");
+		equal(unescapeAngleBrackets("a&lt;b&gt; &amp;lt; &&lt;gt;"), "a<b> &amp;lt; &<gt;");
+		equal(unescapeAngleBrackets(escapeAngleBrackets("x <y\n> z")), "x <y\n> z");
+		// OSC 8 sequences end at BEL or ESC \; other escapes stay.
+		final link = "\x1b]8;id=1;https://example.com\x07docs\x1b]8;;\x07";
+		equal(stripOsc8Hyperlinks("\x1b[1mSee\x1b[m " + link + "."), "\x1b[1mSee\x1b[m docs.");
+		equal(stripOsc8Hyperlinks("\x1b]8;;https://a\x1b\\A\x1b]8;;\x1b\\"), "A");
+		equal(stripOsc8Hyperlinks("\x1b]8;;https://a\x1b[mB\x07C"), "C");
+		// A start without an end stays, with everything after it.
+		equal(stripOsc8Hyperlinks(link + " \x1b]8;;open"), "docs \x1b]8;;open");
+		equal(stripOsc8Hyperlinks("plain"), "plain");
+	}
+
+	/** Go's strconv.Atoi for the contracts: an optional sign, then decimal digits only. */
+	static function decimal(text:String):Null<Int> {
+		return ~/^[+-]?[0-9]+$/.match(text) ? Std.parseInt(StringTools.replace(text, "+", "")) : null;
 	}
 
 	static function plainContracts():Void {

@@ -502,6 +502,14 @@ final class Application {
 	**/
 	var startupColors = false;
 
+	/**
+		Whether the terminal has a dark background, as `run` asked it when the
+		process started with colors on; true when colors were off, and unused
+		then. Upstream asks once per process, in internal/ui's package init, and
+		every colored view uses that one answer.
+	**/
+	var darkBackground = true;
+
 	/** The styles for `colors`, built when a view first renders with them; see `terminalStyles`. */
 	var builtStyles:Null<TerminalStyles> = null;
 
@@ -537,14 +545,19 @@ final class Application {
 	}
 
 	/**
-		Runs one process's command. Upstream's package init loads config.yaml
-		before it parses any argument, so a file that does not parse prints its
-		warning first, once, for every command, and the command continues with
-		what loaded. That load reads the process's own directory, never -C.
+		Runs one process's command. With colors on, upstream's internal/ui
+		package init first asks the terminal for its background, before any
+		output, for every command. Upstream's cmd/bd package init then loads
+		config.yaml before it parses any argument, so a file that does not parse
+		prints its warning next, once, for every command, and the command
+		continues with what loaded. That load reads the process's own directory,
+		never -C.
 	**/
 	public function run(args:Array<String>):Int {
 		colors = shouldUseColor(environmentValue, output.isStdoutTerminal());
 		startupColors = colors;
+		if (colors)
+			darkBackground = output.hasDarkBackground();
 		final startup = LayeredConfig.atStartup();
 		if (startup.failure != null)
 			output.writeStderr('Warning: failed to initialize config: ${startup.failure}\n');
@@ -1640,7 +1653,7 @@ final class Application {
 								case Failure(message): runStoreFailure(message);
 								case Success(_) if (invocation.infoThanks):
 									// Upstream checks --thanks first and prints the page in every output mode.
-									output.writeStdout(ThanksPage.render(output.textStyle, startupColors, colors, startupColors && output.hasDarkBackground()));
+									output.writeStdout(ThanksPage.render(output.textStyle, startupColors, colors, darkBackground));
 									0;
 								case Success(_):
 									renderWhatsNew(invocation.output);
@@ -4235,15 +4248,15 @@ final class Application {
 		for the terminal's background, when `colors` is on, and empty otherwise.
 
 		Why: upstream asks the terminal for its background once, at start, and
-		only when colors are on. What: the styles, built once. How: the first
-		call asks `output` for the background when colors are on, so a command
-		that renders no styled view never asks the terminal.
+		only when colors are on. What: the styles, built once. How: they use the
+		answer that `run` got at start (`darkBackground`), so building them never
+		asks the terminal again.
 	**/
 	function terminalStyles():TerminalStyles {
 		final existing = builtStyles;
 		if (existing != null)
 			return existing;
-		final built = colors ? TerminalStyles.colored(output.hasDarkBackground(), output.textStyle) : TerminalStyles.plain(output.textStyle);
+		final built = colors ? TerminalStyles.colored(darkBackground, output.textStyle) : TerminalStyles.plain(output.textStyle);
 		builtStyles = built;
 		return built;
 	}

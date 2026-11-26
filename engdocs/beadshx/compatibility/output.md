@@ -76,3 +76,19 @@ The colors are upstream's 24-bit Ayu colors, whatever `TERM` says, and the
 it uses the dark colors. Also when colors are off, `bdhx` changes each tab to
 four spaces in the parts that upstream styles, such as the title of a closed
 issue.
+
+Like upstream, `bdhx` asks the terminal for its background once per run,
+when it starts with colors on: before any other output, for every command,
+also for one that prints no color, and also with `--no-color`. The question
+is an OSC 11 query and a DA1 request, written to stdin and, when stdin gets
+no answer, again to stdout. A terminal that does not answer makes the command
+wait up to 2 seconds for each, so about 4 seconds in all.
+
+The Markdown text of `show` (descriptions, design, notes, acceptance
+criteria, comments and long close reasons) and of `comments` goes through
+upstream's `glamour` renderer. With colors on, it uses glamour's dark style,
+which `GLAMOUR_STYLE` can change; with colors off, its plain style. The
+renderer's OSC 8 hyperlinks stay when `FORCE_HYPERLINK` is set to a value
+other than `0`, or when stdout is a terminal that upstream knows supports
+them (for example `TERM_PROGRAM=vscode` or `WT_SESSION`). `NO_COLOR`,
+`CLICOLOR=0`, `BD_GIT_HOOK=1` and `TERM=dumb` remove them.

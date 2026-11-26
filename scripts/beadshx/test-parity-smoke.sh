@@ -1551,7 +1551,11 @@ compare_real_database() {
 	ping-human)
 		sed -E 's/[0-9]+ms/<duration>/' "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
 		sed -E 's/[0-9]+ms/<duration>/' "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"
+		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+			printf '%s stdout differs from upstream after normalizing the ping timing\n' "$name" >&2
+			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+			return 1
+		fi
 		;;
 	ping-json)
 		for side in oracle candidate; do
@@ -5158,6 +5162,20 @@ compare_real_database_colors show-color-refs-blocker show-grouped-multi CLICOLOR
 compare_real_database_colors show-color-thread exact CLICOLOR_FORCE=1 show --thread test-msg-reply
 compare_real_database_colors show-color-pipe exact "" show test-cl test-cl-closed
 compare_real_database_colors show-color-no-color-flag exact CLICOLOR_FORCE=1 show test-cl --no-color
+# The Markdown renderer keeps OSC 8 hyperlinks only when upstream's ShouldUseHyperlinks allows them,
+# which it decides apart from colors: BD_GIT_HOOK=1, NO_COLOR, CLICOLOR=0 and TERM=dumb forbid them,
+# then a FORCE_HYPERLINK other than 0 forces them, and on a pipe nothing else allows them. With
+# hyperlinks and no colors, the renderer's plain style keeps its link escapes.
+color_list_extra_records='{"id":"test-cl-link","title":"Linked task","description":"See [the docs](https://example.com/docs), <https://example.org> and **bold** a<b>c.","status":"open","priority":2,"issue_type":"task","created_at":"2026-08-20T12:00:00Z","updated_at":"2026-08-21T13:00:00Z"}'
+compare_real_database_colors show-color-hyperlink-forced exact "CLICOLOR_FORCE=1 FORCE_HYPERLINK=1" show test-cl-link
+compare_real_database_colors show-hyperlink-forced-plain exact FORCE_HYPERLINK=yes show test-cl-link
+compare_real_database_colors show-color-hyperlink-zero exact "CLICOLOR_FORCE=1 FORCE_HYPERLINK=0" show test-cl-link
+compare_real_database_colors show-color-hyperlink-pipe exact "CLICOLOR_FORCE=1 TERM_PROGRAM=vscode" show test-cl-link
+compare_real_database_colors show-hyperlink-no-color exact "FORCE_HYPERLINK=1 NO_COLOR=1" show test-cl-link
+compare_real_database_colors show-hyperlink-clicolor-zero exact "FORCE_HYPERLINK=1 CLICOLOR=0" show test-cl-link
+compare_real_database_colors show-hyperlink-term-dumb exact "FORCE_HYPERLINK=1 TERM=dumb" show test-cl-link
+compare_real_database_colors show-hyperlink-git-hook exact "FORCE_HYPERLINK=1 BD_GIT_HOOK=1" show test-cl-link
+color_list_extra_records=""
 # dep list prints each related ID in its status style and an accented heading over each anchor's
 # edges; dep tree accents its heading, mutes edge types and repeated nodes, warns at the depth limit
 # and prints the root's [READY] or [BLOCKED] in bold pass or fail, also with colors off; dep cycles
@@ -7443,6 +7461,72 @@ compare_real_database terminal-wide-show-close-reason-cap-long exact show test-r
 real_database_setup=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"
+# With colors on, upstream's internal/ui package init asks the terminal for its background once per
+# process (lipgloss.HasDarkBackground), before any other output and for every command, also for one
+# that prints no color. It writes an OSC 11 query and a DA1 request to stdin, then again to stdout
+# when stdin gets no answer, and waits up to 2 s for each answer. It asks only when stdin and stdout
+# are terminals. --no-color and .beads/.env come too late to stop it. These cases run each side on a
+# pseudo-terminal through scripts/beadshx/pty_transcript.py and compare every byte written there,
+# the query bytes too. A terminal that answers none makes each side wait for both timeouts, about
+# 4 s, and gives the dark palette; one that answers light gives the light palette at once. The
+# runner kills a side that runs longer than 30 s. The environment turns colors on and hyperlinks
+# off, whatever the caller's environment is; one show case turns hyperlinks on with TERM_PROGRAM.
+write_pty_runner() {
+	local runner="$1" binary="$2" answer="$3"
+	printf '#!/usr/bin/env bash\nexec python3 -I %q --answer %q --timeout 30 -- %q "$@"\n' \
+		"$repository_root/scripts/beadshx/pty_transcript.py" "$answer" "$binary" >"$runner"
+	chmod +x "$runner"
+}
+import_terminal_link_issue() {
+	(
+		cd "$1/work"
+		printf '%s\n' '{"id":"test-link","title":"Linked parity issue","description":"See [the docs](https://example.com/docs) and **bold** <text>.","status":"open","priority":2,"issue_type":"task","created_at":"2026-08-20T10:00:00Z","updated_at":"2026-08-20T10:00:00Z"}' |
+			env HOME="$1/user-home" XDG_CONFIG_HOME="$1/config" "${real_database_env[@]}" \
+				"$pipe_oracle" import - --json >/dev/null
+	)
+}
+write_no_color_dotenv() {
+	printf 'NO_COLOR=1\n' >"$1/work/.beads/.env"
+}
+if python3 -I -c 'import os, pty; [os.close(fd) for fd in os.openpty()]' 2>/dev/null; then
+	for answer in none light; do
+		write_pty_runner "$test_root/bin/pty-$answer-oracle" "$pipe_oracle" "$answer"
+		write_pty_runner "$test_root/bin/pty-$answer-candidate" "$pipe_candidate" "$answer"
+	done
+	pty_color_env=(NO_COLOR= CLICOLOR= CLICOLOR_FORCE= BD_GIT_HOOK= TERM=xterm-256color BD_AGENT_MODE= CLAUDE_CODE=
+		GLAMOUR_STYLE= FORCE_HYPERLINK= TERM_PROGRAM= WT_SESSION= KITTY_WINDOW_ID= WEZTERM_EXECUTABLE=
+		KONSOLE_VERSION= DOMTERM= GHOSTTY_RESOURCES_DIR= VTE_VERSION=)
+	real_database_extra_env=("${pty_color_env[@]}")
+	oracle="$test_root/bin/pty-none-oracle"
+	candidate="$test_root/bin/pty-none-candidate"
+	compare_real_database terminal-color-ping ping-human ping
+	compare_real_database terminal-color-count exact count
+	oracle="$test_root/bin/pty-light-oracle"
+	candidate="$test_root/bin/pty-light-candidate"
+	compare_real_database terminal-color-light-ping ping-human ping
+	compare_real_database terminal-color-info-thanks thanks-page info --thanks
+	compare_real_database terminal-color-no-color-flag ping-human --no-color ping
+	compare_real_database terminal-color-show exact show "$real_database_content_id"
+	compare_real_database terminal-color-list exact list --limit 3
+	real_database_setup=break_workspace_config
+	compare_real_database terminal-color-config-warning exact count
+	# NO_COLOR from .beads/.env comes after the question and the styles, but the Markdown renderer,
+	# which decides each time it renders, leaves out its colors.
+	real_database_setup=write_no_color_dotenv
+	compare_real_database terminal-color-dotenv-no-color-show exact show "$real_database_content_id"
+	real_database_setup=import_terminal_link_issue
+	compare_real_database terminal-color-show-link exact show test-link
+	real_database_extra_env=("${pty_color_env[@]}" TERM_PROGRAM=vscode)
+	compare_real_database terminal-color-show-link-hyperlinks exact show test-link
+	real_database_extra_env=("${pty_color_env[@]}" TERM_PROGRAM=vscode NO_COLOR=1)
+	compare_real_database terminal-no-color-show-link-hyperlinks exact show test-link
+	real_database_setup=""
+	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+	oracle="$pipe_oracle"
+	candidate="$pipe_candidate"
+else
+	printf 'parity [%ss]: SKIP terminal color cases (python3 cannot open a pseudo-terminal)\n' "$SECONDS"
+fi
 # A .env file can choose another workspace through BEADS_DIR. These cases add a second workspace
 # at work/sub, with its own .env.
 dotenv_sub_contents=""
