@@ -4891,6 +4891,8 @@ final class Application {
 
 		The storage port returns direct children only. Haxe owns parent validation,
 		cycle defense, traversal order, and the upstream-compatible error context.
+		The page read comes first, as upstream's; the parent and each level are
+		follow-up reads, which upstream makes in the store that it opened once.
 	**/
 	function loadIssueHierarchy(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
 		final request = invocation.listRequest;
@@ -4902,7 +4904,7 @@ final class Application {
 			case ListSuccess(_):
 		}
 
-		final parent = switch query.issueList(location.path, IssueListRequests.exact(request.parentId), 0, invocation.global) {
+		final parent = switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.exact(request.parentId), 0, invocation.global) {
 			case ListFailure(message): return ListFailure('error checking parent issue: ${message}');
 			case ListRowLimitExceeded(found, source, cap): return ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(page):
@@ -4926,7 +4928,7 @@ final class Application {
 	function collectIssueDescendants(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, request:IssueListRequest, parentId:String,
 			seen:StringMap<Bool>):IssueListResult {
 		final childRequest = IssueListRequests.descendants(request, parentId);
-		return switch query.issueList(location.path, childRequest, 0, invocation.global) {
+		return switch query.issueListFollowUp(location.path, location.databaseName, childRequest, 0, invocation.global) {
 			case ListFailure(message): ListFailure(message);
 			case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(page):

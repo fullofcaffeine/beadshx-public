@@ -59,6 +59,11 @@ final class EmbeddedStoreAccess {
 		return implementation.staleIssues(beadsDir, databaseName, request);
 	}
 
+	public static function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult> {
+		return implementation.issueList(beadsDir, databaseName, request, limit, layers);
+	}
+
 	public static function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {
 		return implementation.dependencyCycles(beadsDir, databaseName);
 	}
@@ -159,6 +164,11 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function staleIssues(beadsDir:String, databaseName:String, request:StaleRequest):Null<StoreResult<Array<StaleIssue>>> {
+		return null;
+	}
+
+	public function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult> {
 		return null;
 	}
 

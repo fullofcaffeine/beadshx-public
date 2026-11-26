@@ -233,11 +233,9 @@ exists.
   upstream's note there.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once prints the
-  warning once for each open. Upstream prints it once. These commands can
-  print it more than once: `children` and `list --parent` in human output,
-  once for each list read of the tree; and `ready --gated`, `ready --mol` and
-  `ready --explain`. They stop doing so when these list reads are ported to
-  Haxe (beadshx-m08.63).
+  warning once for each open. Upstream prints it once. `ready --gated`,
+  `ready --mol` and `ready --explain` can print it more than once. They stop
+  doing so when their later reads are ported to Haxe (beadshx-m08.63).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,

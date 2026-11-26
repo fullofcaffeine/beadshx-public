@@ -391,6 +391,59 @@ enum GoJsonDecode {
 }
 
 /**
+	Go's json.Unmarshal into a slice of pointers to `type`, as upstream reads an
+	aggregate such as the counts query's deps_json.
+
+	What: one entry per array element, in order, decoded like decodeGoStruct; a
+	null element is null, as Go's nil pointer, and a null document is no
+	entries. How: the elements decode one by one from their raw text, and the
+	first error stops the decode.
+**/
+function decodeGoStructArray(raw:String, type:GoJsonStruct):StoreResult<Array<Null<Map<String, String>>>> {
+	final syntaxError = GoJsonSyntax.syntaxError(raw);
+	if (syntaxError != null)
+		return Failure(syntaxError);
+	final elements = switch new TypedJsonParser(raw, true).parse() {
+		case Parsed(ArrayValue(values)): values;
+		case Parsed(NullValue): return Success([]);
+		case Parsed(value): return Failure('json: cannot unmarshal ${goJsonKind(value)} into Go value of type []*${type.packageName}.${type.name}');
+		case Invalid: return Failure('${type.name} array contains invalid JSON');
+	};
+	final decoded = new Array<Null<Map<String, String>>>();
+	for (element in elements) {
+		final members = switch element {
+			case ObjectValue(members): members;
+			case NullValue:
+				decoded.push(null);
+				continue;
+			case value: return Failure('json: cannot unmarshal ${goJsonKind(value)} into Go value of type ${type.packageName}.${type.name}');
+		};
+		final fields = new Map<String, String>();
+		for (member in members) {
+			final field = goStructField(type.fields, member.key);
+			if (field == null)
+				continue;
+			switch [field.kind, member.value] {
+				case [_, NullValue]:
+				case [GoStringField, StringValue(text)]:
+					fields.set(field.tag, text);
+				case [GoBoolField, BooleanValue(flag)]:
+					fields.set(field.tag, flag ? "true" : "false");
+				case [GoIntField, NumberValue(token)]:
+					final integer = goInt64Text(token);
+					if (integer == null)
+						return Failure(goFieldTypeError(type, field, 'number ${token}'));
+					fields.set(field.tag, integer);
+				case [_, value]:
+					return Failure(goFieldTypeError(type, field, goJsonKind(value)));
+			}
+		}
+		decoded.push(fields);
+	}
+	return Success(decoded);
+}
+
+/**
 	Go's json.Unmarshal into a struct of string, int and bool fields.
 
 	Why: upstream reads .beads/metadata.json into configfile.Config, and any

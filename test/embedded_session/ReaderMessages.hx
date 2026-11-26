@@ -10,11 +10,14 @@ import beadshx.store.EmbeddedEventsJournalReader;
 import beadshx.store.EmbeddedGraphReader;
 import beadshx.store.EmbeddedHistoryReader;
 import beadshx.store.EmbeddedIssueIdSearch;
+import beadshx.store.EmbeddedIssueListReader;
 import beadshx.store.EmbeddedIssueSummaryReader;
 import beadshx.store.EmbeddedRelationReader;
 import beadshx.store.EmbeddedScalarIssueDetailsReader;
 import beadshx.store.EmbeddedStaleReader;
 import beadshx.store.EmbeddedTreeReader;
+import beadshx.store.IssueListRequests;
+import beadshx.store.IssueListResult;
 import beadshx.store.StoreResult;
 
 /**
@@ -35,6 +38,13 @@ class ReaderMessages {
 		add("config-list", done(EmbeddedCustomConfigReader.readSettings(beadsDir, databaseName)));
 		add("blocked", done(EmbeddedBlockedReader.read(beadsDir, databaseName, "")));
 		add("stale", done(EmbeddedStaleReader.read(beadsDir, databaseName, {days: 1, status: "", limit: 0})));
+		add("list",
+			switch EmbeddedIssueListReader.read(beadsDir, databaseName, IssueListRequests.everyIssue(), 0,
+				{customTypes: [], customStatuses: [], infraTypes: []}) {
+				case ListSuccess(_): Success(true);
+				case ListFailure(message): Failure(message);
+				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
+			});
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

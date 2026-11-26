@@ -132,6 +132,15 @@ final class SqlIssueRow {
 
 	/** Decode one native SQL row without flattening a possible driver error. */
 	public static function scanSqlIssueFieldsNative(rows:Rows, id:String):SqlIssueNativeScanResult {
+		return scanSqlIssueFieldsWithExtra(rows, id, []);
+	}
+
+	/**
+		Decode one native SQL row whose issue columns come first, as
+		`scanSqlIssueFieldsNative` does, and scan the columns after them into
+		`extra`, in order, in the same `Scan` call (upstream's compositeReadyRow).
+	**/
+	public static function scanSqlIssueFieldsWithExtra(rows:Rows, id:String, extra:Array<Dynamic>):SqlIssueNativeScanResult {
 		final rowId = go.NativePointer.of("");
 		final contentHash = new NullString();
 		final title = go.NativePointer.of("");
@@ -184,11 +193,63 @@ final class SqlIssueRow {
 		final leaseExpiresAt = new NullTime();
 		final heartbeatAt = new NullTime();
 		final leaseGrantedNode = new NullString();
-		final scanError = rows.scanNative(rowId, contentHash, title, description, design, acceptanceCriteria, notes, status, priority, issueType, assignee,
-			estimatedMinutes, createdAt, createdBy, owner, updatedAt, startedAt, closedAt, externalRef, specId, compactionLevel, compactedAt,
-			compactedAtCommit, originalSize, sourceRepo, closeReason, closedBySession, sender, ephemeral, noHistory, wispType, pinned, template, awaitType,
-			awaitId, timeoutNanos, waiters, moleculeType, eventKind, actor, target, payload, dueAt, deferUntil, workType, sourceSystem, metadata, rowLock,
-			storageClass, leaseExpiresAt, heartbeatAt, leaseGrantedNode);
+		final destinations:Array<Dynamic> = [
+			rowId,
+			contentHash,
+			title,
+			description,
+			design,
+			acceptanceCriteria,
+			notes,
+			status,
+			priority,
+			issueType,
+			assignee,
+			estimatedMinutes,
+			createdAt,
+			createdBy,
+			owner,
+			updatedAt,
+			startedAt,
+			closedAt,
+			externalRef,
+			specId,
+			compactionLevel,
+			compactedAt,
+			compactedAtCommit,
+			originalSize,
+			sourceRepo,
+			closeReason,
+			closedBySession,
+			sender,
+			ephemeral,
+			noHistory,
+			wispType,
+			pinned,
+			template,
+			awaitType,
+			awaitId,
+			timeoutNanos,
+			waiters,
+			moleculeType,
+			eventKind,
+			actor,
+			target,
+			payload,
+			dueAt,
+			deferUntil,
+			workType,
+			sourceSystem,
+			metadata,
+			rowLock,
+			storageClass,
+			leaseExpiresAt,
+			heartbeatAt,
+			leaseGrantedNode
+		];
+		for (destination in extra)
+			destinations.push(destination);
+		final scanError = rows.scanNative(...destinations);
 		if (scanError != null)
 			return SqlIssueScanFailure(scanError);
 		final timeoutValue:JsonInteger = timeoutNanos.valid ? NativeIntegers.fromInt64(timeoutNanos.value) : 0;

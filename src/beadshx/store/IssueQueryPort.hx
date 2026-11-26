@@ -16,6 +16,16 @@ interface IssueQueryPort extends QueryTimePort {
 
 	function issueOrphanCandidates(beadsDir:String, request:IssueListRequest, global:Bool):StoreResult<OrphanCandidateScan>;
 	function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult;
+
+	/**
+		A list read that follows the command's first read of the store, such as
+		the exact parent and each level of a --parent tree. Upstream reads them in
+		the store that its pre-run opened once. An embedded workspace reads them
+		with Haxe-owned SQL, whose session skips the schema check that the first
+		read made; any other workspace reads them as `issueList` does.
+	**/
+	function issueListFollowUp(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult;
+
 	function dependencyEdges(beadsDir:String, databaseName:String, ids:Array<String>, dependencyTypes:Array<String>, global:Bool):DependencyEdgeResult;
 	function issueSummary(beadsDir:String, databaseName:String, id:String, global:Bool):StoreResult<IssueLookup>;
 	function issueDetails(beadsDir:String, id:String, request:IssueDetailsRequest, global:Bool):StoreResult<IssueDetailsLookup>;
