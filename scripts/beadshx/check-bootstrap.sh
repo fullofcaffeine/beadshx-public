@@ -35,6 +35,7 @@ baseline="$(jq -er '.compatibilityTarget.commit' \
 ./scripts/beadshx/test-daily-workflow.sh --require-approved
 ./scripts/beadshx/test-native-pressure.sh
 ./scripts/beadshx/schema-migration-graph.sh check
+./scripts/beadshx/check-compatibility-manifest.sh
 ./scripts/beadshx/generate-source.sh
 ./scripts/beadshx/build-generated.sh
 ./scripts/beadshx/check-license-plan.sh

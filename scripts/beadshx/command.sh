@@ -12,7 +12,7 @@ export GOWORK=off
 export GOTOOLCHAIN="$go_toolchain"
 
 usage() {
-	printf 'usage: %s {setup|bootstrap|generate|build|oracle|inventory|inventory-check|output-contracts|error-contracts|storage-contracts|effect-contracts|daily-workflow|native-pressure|schema-migrations|test-focused|generated|identity|caf-intent|parity|test|ci-local|format|lint|package|clean}\n' "$0" >&2
+	printf 'usage: %s {setup|bootstrap|generate|build|oracle|inventory|inventory-check|output-contracts|error-contracts|storage-contracts|effect-contracts|daily-workflow|native-pressure|schema-migrations|compatibility-manifest|test-focused|generated|identity|caf-intent|parity|test|ci-local|format|lint|package|clean}\n' "$0" >&2
 }
 
 if [[ $# -ne 1 ]]; then
@@ -41,6 +41,7 @@ run_command() {
 	daily-workflow) "$repository_root/scripts/beadshx/test-daily-workflow.sh" ;;
 	native-pressure) "$repository_root/scripts/beadshx/test-native-pressure.sh" ;;
 	schema-migrations) "$repository_root/scripts/beadshx/schema-migration-graph.sh" check ;;
+	compatibility-manifest) "$repository_root/scripts/beadshx/check-compatibility-manifest.sh" ;;
 	test-focused)
 		"$repository_root/scripts/beadshx/test-data-safety.sh" &&
 			"$repository_root/scripts/beadshx/test-toolchain-locks.sh" &&
@@ -70,6 +71,7 @@ run_command() {
 			"$repository_root/scripts/beadshx/test-sql-error-contracts.sh" --workspace-discovery &&
 			"$repository_root/scripts/beadshx/test-storage-relation-tracer.sh" "${BEADSHX_CANDIDATE_BIN:-$repository_root/build/bin/bdhx}" &&
 			"$repository_root/scripts/beadshx/test-snapshot.sh" "${BEADSHX_CANDIDATE_BIN:-$repository_root/build/bin/bdhx}" &&
+			"$repository_root/scripts/beadshx/check-compatibility-manifest.sh" &&
 			(cd "$repository_root" && go test -tags gms_pure_go \
 				./internal/beadshx/... ./generated/go/bdhx)
 		;;

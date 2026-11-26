@@ -31,6 +31,7 @@ returns that same exit code to the caller.
 | `npm run test:storage-contracts` | Validate command capability ownership, backend transaction boundaries, and the source-derived direct-SQL census. |
 | `npm run test:schema-migrations` | Validate the two migration lanes, repair graph, semantic reversibility, and generated test-pair closure. |
 | `npm run schema:migration-pairs` | Generate the 128 pinned migration test pairs as JSON without changing a database. |
+| `npm run test:compatibility-manifest` | Validate the compatibility manifest against its schema, the pinned inventories, and its evidence, compare the generated report, and run the negative fixtures. |
 | `npm run test:focused` | Run the focused bootstrap, toolchain rejection, and data-safety tests. |
 | `npm run test:generated` | Regenerate Go and detect byte drift against the committed ownership fixture. |
 | `npm run test:identity` | Reject upstream impersonation, identity drift, or an early `bd` alias. |

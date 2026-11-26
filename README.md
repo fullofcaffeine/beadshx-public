@@ -107,6 +107,9 @@ difference from upstream.
 
 - [Compatibility reference](engdocs/beadshx/compatibility/README.md): how
   `bdhx` matches upstream, topic by topic, and how parity is tested.
+- [Compatibility report](compatibility/generated/beads-v1.2.1.md): every
+  upstream command with its implementation and verification state, generated
+  from the [compatibility manifest](compatibility/manifests/beads-v1.2.1.json).
 - [Read-only development preview](engdocs/beadshx/operations/readonly-preview.md):
   what the read-only profile qualifies, and how to reproduce it.
 - [Port specification](beadshx-complete-port-prd.md) and
@@ -118,6 +121,9 @@ difference from upstream.
 - Run the parity suite with `npm run test:parity` (or `make beadshx-parity`).
   It compares `bdhx` with the upstream oracle; the cases are in
   [scripts/beadshx/test-parity-smoke.sh](scripts/beadshx/test-parity-smoke.sh).
+- `scripts/beadshx/check-compatibility-manifest.sh` checks the compatibility
+  manifest. When you change a known limit, the name of a parity case that the
+  manifest cites, or an M02 inventory, update the manifest in the same commit.
 - The handwritten Go islands under `internal/beadshx/` may only shrink.
   `make beadshx-test-native-pressure` fails when their non-test lines or
   imports grow above

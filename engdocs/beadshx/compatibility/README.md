@@ -20,6 +20,18 @@ For a short overview, see the [project README](../../../README.md).
 | [Snapshot extension](snapshot.md) | `bdhx snapshot`, a read-only command that upstream does not have |
 | [Known limits](limits.md) | Every known difference from upstream, grouped by topic, with its tracking task |
 
+## Compatibility manifest
+
+[compatibility/manifests/beads-v1.2.1.json](../../../compatibility/manifests/beads-v1.2.1.json)
+records the same facts in machine-readable form: one record for each
+upstream command, with its implementation and verification state, and one
+difference record for each item on [Known limits](limits.md). The
+[generated report](../../../compatibility/generated/beads-v1.2.1.md) shows
+the totals. `scripts/beadshx/check-compatibility-manifest.sh` fails when a
+task ID on the limits page has no difference record, or when a difference
+quotes text that the page no longer contains. So update the manifest in the
+same change as the page.
+
 ## Words used on these pages
 
 - **Workspace:** a `.beads` directory with its configuration and its

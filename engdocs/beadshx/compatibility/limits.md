@@ -3,7 +3,8 @@
 This page lists every known difference between `bdhx` and upstream `bd`
 v1.2.1. The other pages in this folder describe what already matches. A task
 ID in parentheses names the Beads task that tracks a difference, where one
-exists.
+exists. Each item has a difference record in the
+[compatibility manifest](../../../compatibility/manifests/beads-v1.2.1.json).
 
 ## Writes and migration
 

@@ -24,6 +24,7 @@
     "baseline:upstream-performance": "bash scripts/beadshx/performance-baseline.sh capture",
     "test:upstream-performance": "bash scripts/beadshx/performance-baseline.sh check",
     "test:schema-migrations": "bash scripts/beadshx/command.sh schema-migrations",
+    "test:compatibility-manifest": "bash scripts/beadshx/command.sh compatibility-manifest",
     "schema:migration-pairs": "bash scripts/beadshx/schema-migration-graph.sh pairs",
     "test:focused": "bash scripts/beadshx/command.sh test-focused",
     "test:generated": "bash scripts/beadshx/command.sh generated",
