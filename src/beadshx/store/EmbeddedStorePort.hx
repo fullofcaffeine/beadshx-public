@@ -31,6 +31,9 @@ interface EmbeddedStorePort {
 		layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult>;
 	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):Null<ReadyLoadResult>;
 
+	/** Opens and closes the store `count` times (EmbeddedSession.openForStoreCall); without embedded access it does nothing. */
+	function openForStoreCalls(beadsDir:String, databaseName:String, count:Int):Void;
+
 	/** The total, and the buckets of a grouping, that `bd count` prints. */
 	function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
 		layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<CountResult>>;

@@ -1,21 +1,24 @@
 package beadshx.store;
 
-import beadshx.store.CustomConfig.effectiveCustomStatuses;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 import beadshx.store.SqlBlockingAnnotation.IssueBlocking;
 import beadshx.store.SqlIssueFilter.IssueListConfigLayers;
+import beadshx.store.SqlIssueFilter.IssueSearchFilter;
 import beadshx.store.SqlIssueListReader.readQueryCandidates;
 import beadshx.store.SqlIssueListReader.readSqlIssueList;
 import beadshx.store.SqlIssueListReader.readSqlIssueSearch;
 
 /**
-	Own the read transactions of one list page; the list semantics are authored Haxe.
+	Own the store opens and read transactions of one list page; the list semantics are authored Haxe.
 
-	The page is one read. A request for blocking annotations, which the human
-	list prints, adds a second read, as upstream's list asks its
-	BlockingAnnotator after the page. Upstream renders the page undecorated
-	when that read fails, so a failure of the second read, of its open or of
-	its release leaves the page as it is.
+	The page is one read, which loads the list configuration too. A --ready
+	page first opens the store as upstream's defer-wake sweep does
+	(EmbeddedSession.openForDeferWake). The main page of `bd list` opens the
+	store for upstream's LoadStoreListConfig itself (see Application.runList).
+	A request for blocking annotations, which the human list prints, adds a
+	read, as upstream's list asks its BlockingAnnotator after the page.
+	Upstream renders the page undecorated when that read fails, so a failure
+	of that read, of its open or of its release leaves the page as it is.
 **/
 @:goBuildConstraint("cgo")
 @:goNative
@@ -25,6 +28,8 @@ final class EmbeddedIssueListReader {
 	static final QUERY_WORDING = EmbeddedReadWording.forNoun("query", false);
 
 	public static function read(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int, layers:IssueListConfigLayers):IssueListResult {
+		if (request.ready)
+			EmbeddedSession.openForDeferWake(beadsDir, databaseName);
 		final result:IssueListResult = switch EmbeddedSession.withRead(beadsDir, databaseName,
 			(context, transaction) -> readSqlIssueList(context, transaction, request, limit, layers)) {
 			case EmbeddedReadNotStarted(stage, error, _): ListFailure(WORDING.stageMessage(stage, error));
@@ -39,25 +44,27 @@ final class EmbeddedIssueListReader {
 	}
 
 	/**
-		`bd search` and `label list-all`: as the native facade on upstream's
-		store, the store open of upstream's pre-run, then for a status
-		selector other than `all` the custom statuses in a read of its own
-		(GetCustomStatusesDetailed), then the search in one read
-		(readSqlIssueSearch).
+		`bd search` and `label list-all`: the store open of upstream's pre-run,
+		then for a status selector other than `all` upstream's
+		LoadStoreListConfig (EmbeddedListConfig, three sessions), whose custom
+		statuses check the selector before the search opens the store again,
+		then the search in one read (readSqlIssueSearch), which carries the
+		counted rows that the native facade read on upstream's store. The
+		command opens the store for search's follow-up store calls itself.
 	**/
 	public static function search(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, layers:IssueListConfigLayers):IssueListResult {
 		EmbeddedSession.openForCommand(beadsDir, databaseName);
 		var customStatusNames = new Array<String>();
-		if (request.status != "" && request.status != "all")
-			switch SEARCH_WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> {
-				final statuses = effectiveCustomStatuses(SqlCustomConfigReader.readCustomStatuses(context, transaction), layers.customStatuses);
-				return StoreResult.Success([for (status in statuses) status.name]);
-			})) {
-				case Failure(message):
-					return ListFailure(message);
-				case Success(names):
-					customStatusNames = names;
-			}
+		if (request.status != "" && request.status != "all") {
+			customStatusNames = [
+				for (status in EmbeddedListConfig.load(beadsDir, databaseName, layers).customStatuses)
+					status.name
+			];
+			// Upstream's ApplyStatusFilter refuses a bad selector before SearchIssues opens the store.
+			final refused = SqlIssueFilter.applyStatusSelector(new IssueSearchFilter(), request.status, customStatusNames);
+			if (refused != null)
+				return ListFailure(refused);
+		}
 		return switch EmbeddedSession.withRead(beadsDir, databaseName,
 			(context, transaction) -> readSqlIssueSearch(context, transaction, query, request, customStatusNames)) {
 			case EmbeddedReadNotStarted(stage, error, _): ListFailure(SEARCH_WORDING.stageMessage(stage, error));

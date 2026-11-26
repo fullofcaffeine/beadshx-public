@@ -212,10 +212,16 @@ exists.
 - Dolt prints `level=warning msg="skipping in-progress database directory"`
   each time the store opens, for each unfinished database directory beside
   the database. Upstream opens the store in its pre-run and again for each
-  store call. `count`, `query` and `ping` open it as often as upstream, so
-  they print these lines as often. `list`, `ready`, `search` and
-  `label list-all` open it fewer times, so they print fewer of these lines
-  (beadshx-m08.73).
+  store call. `list` (also `--ready` and the `--parent` tree), `ready`,
+  `search`, `label list-all`, `count`, `query` and `ping` open it as often
+  as upstream, so they print these lines as often. For a store call whose
+  data `bdhx` reads elsewhere, or that writes, such as the defer wake before
+  each ready read, `bdhx` opens and closes the store without that call.
+  Other reads, such as `show`, `ready --explain`, `--gated` and `--mol`, and
+  the commands outside upstream's `readOnlyCommands` (see the workspace
+  identity item below), open it fewer times, so they print fewer of these
+  lines. `children` opens it once less than upstream, and `list --watch`
+  can open it a different number of times (beadshx-m08.73).
 
 ## Commands and output
 
@@ -268,6 +274,12 @@ exists.
   issues before it (beadshx-m08.26).
 - `bdhx` refuses `ready --claim`, so it never prints upstream's colored
   claim lines.
+- `bdhx` does not check the workspace identity yet. Upstream's pre-run does
+  this for each command outside its `readOnlyCommands`, such as
+  `label list-all`, `types` or `dep tree`, unless in strict read-only mode or
+  with `--global` or `BEADS_SKIP_IDENTITY_CHECK=1`. It compares the
+  `project_id` of `.beads/metadata.json` with the database's `_project_id`
+  and stops when the two differ. `bdhx` reads on there (beadshx-m08.74).
 - In a server-mode or proxied workspace, `bdhx` reads the human `ready`
   view through the native facade, with the query of `ready --json`.
   Upstream's human view reads wisps with another query (see

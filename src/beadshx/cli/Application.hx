@@ -455,6 +455,12 @@ final class Application {
 	/** utils.ErrAmbiguousID, the one partial-ID resolution failure that `bd history` reports. */
 	static final AMBIGUOUS_ISSUE_ID = "ambiguous issue ID: ";
 
+	/** Upstream LoadStoreListConfig's store calls: the custom statuses, the custom types and the infra types. */
+	static inline final LIST_CONFIG_STORE_CALLS = 3;
+
+	/** Upstream list's store calls before it routes: the pre-run's store open, then LoadStoreListConfig's. */
+	static inline final LIST_STORE_CALLS_BEFORE_ROUTING = 1 + LIST_CONFIG_STORE_CALLS;
+
 	static final jsonDeprecation = "NOTE: bd --json output format will change in v2.0. Set BD_JSON_ENVELOPE=1 to opt in early. See docs/reference/json-schema.md for migration details.";
 
 	final parser:Parser;
@@ -1829,14 +1835,26 @@ final class Application {
 									} else if (positiveOffset && !location.proxiedServer) {
 										runStoreFailure("--offset is only supported under --proxied-server");
 									} else {
+										// Upstream's pre-run opens the store, and list loads its configuration (LoadStoreListConfig,
+										// three store calls) for --watch and the --parent tree before it routes. This build takes
+										// those from the request, so it only opens the store as often.
+										if (!location.proxiedServer)
+											query.openForStoreCalls(location.path, location.databaseName, LIST_STORE_CALLS_BEFORE_ROUTING, invocation.global);
 										// Upstream's openRoutedReadStore asks for the user's role before it reads; a proxied server does not route.
 										final routedExit = location.proxiedServer ? null : routeListRead(invocation, location, query);
 										if (routedExit != null)
 											routedExit;
 										else if (invocation.watchMode)
 											runListWatch(invocation, location, effectiveLimit, query);
-										else
-											renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query), effectiveLimit);
+										else {
+											// Upstream's issueops.Reader.List loads the configuration again (three store calls) before
+											// the page. The page read loads it in its own transaction.
+											if (!location.proxiedServer)
+												query.openForStoreCalls(location.path, location.databaseName, LIST_CONFIG_STORE_CALLS, invocation.global);
+											final listed = loadListResult(invocation, location, effectiveLimit, query);
+											openForListViewRead(invocation, location, query, listed);
+											renderListResult(invocation, listed, effectiveLimit);
+										}
 									}
 									closeIssueQuery(query, result);
 							}
@@ -3652,10 +3670,19 @@ final class Application {
 		return 0;
 	}
 
-	/** Upstream labelListAllCmd: one unfiltered, unlimited search, whose bulk-loaded labels it counts. */
+	/**
+		Upstream labelListAllCmd: one unfiltered, unlimited search, whose
+		bulk-loaded labels it counts. `label list-all` is not one of upstream's
+		read-only commands, so its pre-run also checks the workspace identity
+		(validateWorkspaceIdentity): with a `project_id` in metadata.json, it
+		reads the database's `_project_id` in a store call of its own. This
+		build does not compare the two yet; it opens the store as that call does.
+	**/
 	function runLabelListAll(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		if (location.proxiedServer)
 			return runModeAwareFailure(invocation.output, LABEL_LIST_ALL_ROUTE_UNAVAILABLE);
+		if (readsWorkspaceIdentity(invocation, location))
+			query.openForStoreCalls(location.path, location.databaseName, 1, invocation.global);
 		final issues = switch query.issueSearch(location.path, location.databaseName, "", IssueListRequests.everyIssue(), invocation.global) {
 			case ListFailure(message): return runModeAwareFailure(invocation.output, message);
 			// The request sets no row cap, so this branch only completes the switch.
@@ -3668,6 +3695,26 @@ final class Application {
 		else
 			output.writeStdout(renderLabelCountsHuman(counts, terminalStyles()));
 		return 0;
+	}
+
+	/**
+		Whether upstream's pre-run reads the database's `_project_id` for the
+		workspace identity check: outside strict read-only mode and `--global`,
+		without BEADS_SKIP_IDENTITY_CHECK=1, when metadata.json names a project.
+	**/
+	static function readsWorkspaceIdentity(invocation:Invocation, location:WorkspaceLocation):Bool {
+		if (invocation.global || Sys.getEnv("BEADS_SKIP_IDENTITY_CHECK") == "1")
+			return false;
+		switch SchemaSkewBoundary.openIntent() {
+			case StrictReadOnlyOpen | NoEmbeddedOpen:
+				return false;
+			case ReadOnlyCommandOpen | PlainOpen:
+		}
+		return switch readMetadataFields(location.path) {
+			case MetadataFields(fields): final projectId = fields.get("project_id"); projectId != null && projectId != "";
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				false;
+		};
 	}
 
 	function renderRelatedDepList(invocation:Invocation, ids:Array<String>, dependencies:Array<RelatedIssue>, direction:RelationDirection):Int {
@@ -3876,6 +3923,8 @@ final class Application {
 			return deferredExit;
 		if (invocation.readyClaim)
 			return runReadyClaimRefusal();
+		// Upstream's pre-run opened the store before the command body.
+		query.openForStoreCalls(location.path, location.databaseName, 1, invocation.global);
 		// Upstream's openRoutedReadStore asks for the user's role before it reads.
 		final routedExit = routeListRead(invocation, location, query);
 		if (routedExit != null)
@@ -4123,7 +4172,12 @@ final class Application {
 		return switch query.issueSearch(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest, invocation.global) {
 			case ListFailure(message): runStoreFailure(message);
 			case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-			case ListSuccess(page): renderSearch(invocation, page);
+			case ListSuccess(page):
+				// Upstream's SearchIssues returns rows without counts, so search then reads the labels
+				// (GetLabelsForIssues) and, for --json, the dependency and comment counts, one store call
+				// each. The counted search already carries them, so this build only opens the store as often.
+				query.openForStoreCalls(location.path, location.databaseName, invocation.output == Json ? 3 : 1, invocation.global);
+				renderSearch(invocation, page);
 		};
 	}
 
@@ -4956,6 +5010,26 @@ final class Application {
 	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
 		return isListHierarchy(invocation) ? loadIssueHierarchy(invocation, location, effectiveLimit,
 			query) : query.issueList(location.path, location.databaseName, invocation.listRequest, effectiveLimit, invocation.global);
+	}
+
+	/**
+		Upstream's human list view makes one more store call after the page and,
+		for the `--parent` tree, after the tree's reads: GetAllDependencyRecords
+		for the pretty view, the tree and a `--format` template, or the
+		BlockingAnnotator for the other views. An embedded read of the
+		annotation makes that call itself (EmbeddedIssueListReader). Where this
+		build draws the view from the page's own rows, or prints no annotation
+		(`--long`), it opens the store as that call does. A template that the
+		Go facade renders opened its own store.
+	**/
+	function openForListViewRead(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, listed:IssueListResult):Void {
+		if (invocation.output != Human || location.proxiedServer || invocation.listRequest.blockingAnnotations)
+			return;
+		switch listed {
+			case ListSuccess(page) if (page.formatted == ""):
+				query.openForStoreCalls(location.path, location.databaseName, 1, invocation.global);
+			case ListSuccess(_) | ListFailure(_) | ListRowLimitExceeded(_, _, _):
+		}
 	}
 
 	/** True for the `--parent` tree view; its empty result prints "Issue 'X' has no children". */

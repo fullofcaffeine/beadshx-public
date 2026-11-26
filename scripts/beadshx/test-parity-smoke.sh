@@ -3530,6 +3530,37 @@ compare_real_database unfinished-marked-database-beside-count-by-status exact co
 compare_real_database unfinished-marked-database-beside-count-infra-json exact count --include-infra --by-type --json
 compare_real_database unfinished-marked-database-beside-query exact query status=open
 compare_real_database unfinished-marked-database-beside-ping ping-human ping
+# search reads its rows without counts, then the labels, and for --json the dependency and comment counts;
+# --status first loads the list configuration. label list-all is not one of upstream's read-only
+# commands, so its pre-run also reads the database's project ID, except in strict read-only mode.
+compare_real_database unfinished-marked-database-beside-search exact search parity
+compare_real_database unfinished-marked-database-beside-search-json exact search parity --json
+compare_real_database unfinished-marked-database-beside-search-status exact search parity --status open
+compare_real_database unfinished-marked-database-beside-search-bad-status exact search parity --status bogus
+compare_real_database unfinished-marked-database-beside-label-list-all exact label list-all
+compare_real_database unfinished-marked-database-beside-readonly-label-list-all-json exact --readonly label list-all --json
+# list loads its configuration before it routes, and again for the page; the human view then reads the
+# dependency records or the blocking notes, and the --parent tree reads the parent and each level first.
+# A ready read first wakes expired defers in a write transaction of its own, except in strict read-only
+# mode. The human ready view then reads each issue's dependency rows and each parent, or for an empty
+# page the statistics; a full page also counts the ready work, after another defer wake.
+compare_real_database unfinished-marked-database-beside-list exact list
+compare_real_database unfinished-marked-database-beside-list-json exact list --json
+compare_real_database unfinished-marked-database-beside-list-flat exact list --flat
+compare_real_database unfinished-marked-database-beside-list-long exact list --long
+compare_real_database unfinished-marked-database-beside-list-format exact list --format '{{.ID}}'
+compare_real_database unfinished-marked-database-beside-list-ready exact list --ready
+compare_real_database unfinished-marked-database-beside-readonly-list-ready-json exact --readonly list --ready --json
+compare_real_database unfinished-marked-database-beside-list-parent exact list --parent "$real_database_epic_id"
+compare_real_database unfinished-marked-database-beside-ready exact ready
+compare_real_database unfinished-marked-database-beside-ready-plain exact ready --plain
+compare_real_database unfinished-marked-database-beside-ready-json exact ready --json
+compare_real_database unfinished-marked-database-beside-ready-limit exact ready --limit 1
+compare_real_database unfinished-marked-database-beside-ready-limit-json exact ready --limit 1 --json
+compare_real_database unfinished-marked-database-beside-ready-empty exact ready --assignee nobody
+compare_real_database unfinished-marked-database-beside-ready-empty-json exact ready --assignee nobody --json
+compare_real_database unfinished-marked-database-beside-readonly-ready exact --readonly ready
+compare_real_database unfinished-marked-database-beside-readonly-ready-limit-json exact --readonly ready --limit 1 --json
 real_database_setup=""
 # A --db path that names a .beads directory with only a redirect selects the directory above it, which
 # has no metadata.json and no store. The strict open stops at the missing store directory without a write;
@@ -8357,7 +8388,8 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	# Upstream checks once, at the store open of the pre-run, however many reads the command makes
 	# after it: the two counts of a grouped count, the custom statuses that search --status reads
 	# first, the parent of each ready issue, the list reads of a --parent tree, and the later
-	# reads of ready --gated, --mol and --explain.
+	# reads of ready --gated, --mol and --explain. So do the store opens of list's configuration and
+	# view reads, of a full ready page's count, and of search's labels and counts.
 	compare_real_database_sql "schema-$schema_case-ignored-count-by-label-json" exact "$schema_sql" \
 		--readonly count --by-label --json
 	compare_real_database_sql "schema-$schema_case-ignored-search-status" exact "$schema_sql" \
@@ -8377,6 +8409,11 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-ready-explain" exact "$schema_sql" --readonly ready --explain
 	compare_real_database_sql "schema-$schema_case-ignored-ready-explain-json" exact "$schema_sql" \
 		--readonly ready --explain --json
+	compare_real_database_sql "schema-$schema_case-ignored-list" exact "$schema_sql" --readonly list
+	compare_real_database_sql "schema-$schema_case-ignored-list-ready-json" exact "$schema_sql" --readonly list --ready --json
+	compare_real_database_sql "schema-$schema_case-ignored-ready-limit-json" exact "$schema_sql" --readonly ready --limit 1 --json
+	compare_real_database_sql "schema-$schema_case-ignored-search-json" exact "$schema_sql" --readonly search parity --json
+	compare_real_database_sql "schema-$schema_case-ignored-label-list-all" exact "$schema_sql" --readonly label list-all
 	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 	compare_real_database_sql "schema-$schema_case-flag-ignored-dep-list" exact "$schema_sql" \
 		--readonly --ignore-schema-skew dep list "$real_database_issue_id"
@@ -8402,6 +8439,11 @@ expect_candidate_failure schema-behind-list-refused "" "$schema_behind_refusal" 
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database_sql schema-ahead-ignored-show exact "$schema_ahead_sql" show "$real_database_issue_id"
 compare_real_database_sql schema-behind-ignored-readonly-show-json exact "$schema_behind_sql" --readonly show "$real_database_issue_id" --json
+# Outside strict read-only mode upstream also opens the store for the defer wake of each ready read and
+# for the project ID check of label list-all; it still checks the schema once.
+compare_real_database_sql schema-ahead-ignored-nonstrict-ready-limit-json exact "$schema_ahead_sql" ready --limit 1 --json
+compare_real_database_sql schema-ahead-ignored-nonstrict-list-ready exact "$schema_ahead_sql" list --ready
+compare_real_database_sql schema-ahead-ignored-nonstrict-label-list-all-json exact "$schema_ahead_sql" label list-all --json
 for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	schema_case=ahead
 	[[ "$schema_sql" == "$schema_behind_sql" ]] && schema_case=behind

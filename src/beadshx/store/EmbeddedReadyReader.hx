@@ -12,19 +12,21 @@ private enum ReadyPageRead {
 }
 
 /**
-	Own the read transactions of `bd ready`; the ready semantics are authored Haxe.
+	Own the store opens and read transactions of `bd ready`; the ready semantics are authored Haxe.
 
 	What: the ready page, with the read that the view asks for: the counted
 	read of `--json` (SqlReadyWorkReader.readReadyWork) or the bare
-	GetReadyWork of the human view (readReadyIssues). Then, as the native
-	facade did after upstream, the total of a full page (CountReadyWork) and,
-	for an empty page, whether any issue is open or in progress
-	(GetStatistics). Upstream reads each in its own connection and ignores a
-	failure of the last two: an unknown total leaves the page untruncated, and
-	an unknown count reads as no open issues. After the bare read of a page
-	that is not empty, the human view's buildParentEpicMap reads the issues'
-	dependency rows and then each parent, each in its own connection; a failed
-	read leaves its titles out.
+	GetReadyWork of the human view (readReadyIssues). Then, as upstream, the
+	total of a full page (CountReadyWork) and, for an empty page of the human
+	view, whether any issue is open or in progress (GetStatistics). Upstream
+	reads each in its own connection and ignores a failure of the last two:
+	an unknown total leaves the page untruncated, and an unknown count reads
+	as no open issues. After the bare read of a page that is not empty, the
+	human view's buildParentEpicMap reads the issues' dependency rows and then
+	each parent, each in its own connection; a failed read leaves its titles
+	out. Upstream's store runs its defer-wake sweep before the page and before
+	the total, each in a connection of its own; this build opens the store as
+	the sweep does (EmbeddedSession.openForDeferWake) and writes nothing.
 	How: one embedded session for each read; the first one checks the schema.
 **/
 @:goBuildConstraint("cgo")
@@ -33,6 +35,7 @@ final class EmbeddedReadyReader {
 	static final WORDING = EmbeddedReadWording.forNoun("ready", false);
 
 	public static function read(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):ReadyLoadResult {
+		EmbeddedSession.openForDeferWake(beadsDir, databaseName);
 		final page = switch EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> switch SqlReadyWorkReader.buildReadyFilter(request) {
 			case Failure(message):
 				ReadyStopped(ReadyFailure(message));
@@ -59,15 +62,18 @@ final class EmbeddedReadyReader {
 	static function finish(beadsDir:String, databaseName:String, filter:ReadyWorkFilter, items:Array<IssueListItem>, query:ReadyQuery):ReadyLoadResult {
 		var total = ReadyTotal.TotalUnknown;
 		var truncated = false;
-		if (filter.limit > 0 && items.length == filter.limit)
+		if (filter.limit > 0 && items.length == filter.limit) {
+			EmbeddedSession.openForDeferWake(beadsDir, databaseName);
 			switch EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> SqlReadyWorkReader.countReadyWork(context, transaction, filter)) {
 				case EmbeddedReadFinished(Success(count), cleanup) if (cleanup.length == 0):
 					total = TotalKnown(NativeIntegers.fromInt(count));
 					truncated = count > items.length;
 				case EmbeddedReadFinished(_, _) | EmbeddedReadNotStarted(_, _, _):
 			}
+		}
 		var hasOpenIssues = false;
-		if (items.length == 0)
+		// Only the human view asks for the statistics of an empty page.
+		if (items.length == 0 && query.match(ReadyWork))
 			switch EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> SqlReadyWorkReader.readHasOpenIssues(context, transaction)) {
 				case EmbeddedReadFinished(Success(value), cleanup) if (cleanup.length == 0):
 					hasOpenIssues = value;

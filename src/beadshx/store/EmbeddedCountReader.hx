@@ -27,7 +27,8 @@ final class EmbeddedCountReader {
 	public static function read(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
 			layers:IssueListConfigLayers):StoreResult<CountResult> {
 		EmbeddedSession.openForCommand(beadsDir, databaseName);
-		final infraTypes = request.includeInfra ? loadInfraTypes(beadsDir, databaseName, layers) : [];
+		// LoadStoreListConfig's three store calls, of which the count reads only the infra types.
+		final infraTypes = request.includeInfra ? EmbeddedListConfig.load(beadsDir, databaseName, layers).infraTypes : [];
 		final filter = switch SqlIssueCountReader.buildCountFilter(request, infraTypes) {
 			case Failure(message): return Failure(message);
 			case Success(value): value;
@@ -48,20 +49,6 @@ final class EmbeddedCountReader {
 			(context, transaction) -> SqlIssueCountReader.countIssues(context, transaction, filter))) {
 			case Failure(message): Failure(message);
 			case Success(total): Success({total: NativeIntegers.fromInt(total), groups: buckets});
-		};
-	}
-
-	/**
-		Upstream LoadStoreListConfig's three store calls (GetCustomStatusesDetailed,
-		GetCustomTypes and GetInfraTypes), each in a session of its own, for the
-		infra types alone.
-	**/
-	static function loadInfraTypes(beadsDir:String, databaseName:String, layers:IssueListConfigLayers):Array<String> {
-		EmbeddedSession.withRead(beadsDir, databaseName, SqlCustomConfigReader.readCustomStatuses);
-		EmbeddedSession.withRead(beadsDir, databaseName, SqlCustomConfigReader.readCustomTypes);
-		return switch EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> SqlIssueFilter.loadInfraTypes(context, transaction, layers)) {
-			case EmbeddedReadFinished(value, _): value;
-			case EmbeddedReadNotStarted(_, _, _): SqlIssueFilter.fallbackInfraTypes([], layers);
 		};
 	}
 }

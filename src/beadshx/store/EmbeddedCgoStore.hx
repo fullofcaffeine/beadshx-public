@@ -68,6 +68,11 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedReadyReader.read(beadsDir, databaseName, request, query);
 	}
 
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int):Void {
+		for (_ in 0...count)
+			EmbeddedSession.openForStoreCall(beadsDir, databaseName);
+	}
+
 	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
 			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<CountResult>> {
 		return EmbeddedCountReader.read(beadsDir, databaseName, request, group, layers);

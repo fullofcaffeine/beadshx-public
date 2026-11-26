@@ -32,6 +32,16 @@ interface IssueQueryPort extends QueryTimePort {
 	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult;
 
 	/**
+		Opens and closes the embedded store once for each of `count` upstream
+		store calls whose data the command does not read from them
+		(EmbeddedSession.openForStoreCall): Dolt warns at each store open about
+		every unfinished database directory beside the database. The first open
+		of a workspace checks the schema, as upstream's pre-run store open does.
+		A server-mode or proxied workspace opens nothing here.
+	**/
+	function openForStoreCalls(beadsDir:String, databaseName:String, count:Int, global:Bool):Void;
+
+	/**
 		The issues of `bd search`, and of `label list-all` with no query text,
 		in display order. An embedded workspace searches with Haxe-owned SQL; a
 		server-mode or proxied workspace through the native facade.

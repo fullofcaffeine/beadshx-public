@@ -366,6 +366,46 @@ final class EmbeddedSession {
 		first read, which opens it again and reports the error in its words.
 	**/
 	public static function openForCommand(beadsDir:String, selectedDatabase:String):Void {
+		openAndClose(beadsDir, selectedDatabase);
+	}
+
+	/**
+		The store open of an upstream store call whose data this build takes
+		from another read, or does not need.
+
+		Why: Dolt warns at each store open about every unfinished database
+		directory beside the database, so a command prints those lines once for
+		each of upstream's store calls (`withConn`). Where a read of this build
+		carries the data of several upstream calls, or a call reads what this
+		build does not print, the command still opens the store for that call.
+		What: one open and close, as `openForCommand`; a store that does not
+		open is left to the command's own reads.
+	**/
+	public static function openForStoreCall(beadsDir:String, selectedDatabase:String):Void {
+		openAndClose(beadsDir, selectedDatabase);
+	}
+
+	/**
+		The store open of upstream's defer-wake sweep (embeddeddolt
+		wakeExpiredDefers), which runs in a write transaction of its own before
+		each ready read: GetReadyWork, GetReadyWorkWithCounts and CountReadyWork.
+
+		Why: the sweep opens the store, so Dolt warns once more. A strict
+		read-only store refuses the write before it opens (`withConn` returns
+		ErrReadOnly), so the sweep opens nothing there.
+		What: one open and close outside strict read-only mode. This build never
+		writes, so it does not wake an expired defer; it only opens the store as
+		the sweep does.
+	**/
+	public static function openForDeferWake(beadsDir:String, selectedDatabase:String):Void {
+		switch SchemaSkewBoundary.openIntent() {
+			case StrictReadOnlyOpen | NoEmbeddedOpen:
+			case ReadOnlyCommandOpen | PlainOpen:
+				openAndClose(beadsDir, selectedDatabase);
+		}
+	}
+
+	static function openAndClose(beadsDir:String, selectedDatabase:String):Void {
 		switch open(beadsDir, selectedDatabase) {
 			case EmbeddedSessionOpened(session):
 				session.close();

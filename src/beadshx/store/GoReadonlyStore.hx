@@ -325,6 +325,12 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return projectReadyOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readReadyOutcome(beadsDir, readyOptions(request), global)));
 	}
 
+	/** Only an embedded workspace opens its store for an upstream store call that the command does not read from. */
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int, global:Bool):Void {
+		if (embeddedRoute(beadsDir, global))
+			EmbeddedStoreAccess.openForStoreCalls(beadsDir, databaseName, count);
+	}
+
 	/**
 		An embedded workspace reads every query candidate with Haxe-owned SQL
 		(EmbeddedIssueListReader.queryCandidates); the native facade serves the
@@ -1777,6 +1783,9 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult {
 		return GoReadonlyStore.projectReadyOutcome(native.readReadyOutcome(GoReadonlyStore.readyOptions(request)));
 	}
+
+	/** A proxied server opens no embedded store. */
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int, global:Bool):Void {}
 
 	public function issueQuery(beadsDir:String, databaseName:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
 		return GoReadonlyStore.readQueryRows(native, request);
