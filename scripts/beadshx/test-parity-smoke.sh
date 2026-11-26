@@ -8367,9 +8367,14 @@ real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # config.yaml under BD_DEBUG. bdhx prints no debug lines itself, so an empty stderr shows no native open.
 real_database_extra_env=(BD_DEBUG=1)
 candidate_only_exit=0
+# The two abbreviation issues share a priority, so list, search and query order them by creation time,
+# newest first, and then by ID. The seed creates them one after the other, often within one second, so
+# these exact expectations pin their creation times: test-abcd22 is the newer one.
+abbreviation_order_sql="UPDATE issues SET created_at = '2026-08-21 10:00:00', updated_at = updated_at WHERE id = 'test-abcd11';
+UPDATE issues SET created_at = '2026-08-21 10:00:01', updated_at = updated_at WHERE id = 'test-abcd22';"
 expect_candidate_failure embedded-list-flat-without-native-open \
 	$'○ test-abcd22 [P2] [task] - Ambiguous abbreviation issue (blocks: test-abcd11)\n● test-abcd11 [P2] [task] - Unique abbreviation issue (blocked by: test-abcd22)' \
-	"" "" --readonly list --flat --id test-abcd11,test-abcd22
+	"" "$abbreviation_order_sql" --readonly list --flat --id test-abcd11,test-abcd22
 # So does ready, also for an empty page, which then reads whether any issue is open, and a list --ready page.
 expect_candidate_failure embedded-ready-empty-without-native-open \
 	$'\n✨ No ready work found (all issues have blocking dependencies)' "" "" --readonly ready --assignee nobody
@@ -8381,10 +8386,10 @@ expect_candidate_failure embedded-count-by-label-without-native-open \
 	--readonly count --id test-abcd11,test-abcd22 --by-label --json
 expect_candidate_failure embedded-search-without-native-open \
 	$'Found 2 issues matching \'abbreviation\':\ntest-abcd22 [P2] [task] open - Ambiguous abbreviation issue\ntest-abcd11 [P2] [task] open - Unique abbreviation issue' \
-	"" "" --readonly search abbreviation
+	"" "$abbreviation_order_sql" --readonly search abbreviation
 expect_candidate_failure embedded-query-without-native-open \
 	$'Found 2 issues:\n○ test-abcd22 [P2] [task] - Ambiguous abbreviation issue\n○ test-abcd11 [P2] [task] - Unique abbreviation issue' \
-	"" "" --readonly query title=abbreviation
+	"" "$abbreviation_order_sql" --readonly query title=abbreviation
 candidate_only_exit=1
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
