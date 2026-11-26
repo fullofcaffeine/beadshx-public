@@ -3914,7 +3914,7 @@ final class Application {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready):
-				switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
+				switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
 					case ListFailure(message): runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
@@ -3947,7 +3947,7 @@ final class Application {
 		};
 		final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
 			case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
-				switch query.issueList(location.path, IssueListRequests.readyExplainCandidates(), 0, invocation.global) {
+				switch query.issueList(location.path, location.databaseName, IssueListRequests.readyExplainCandidates(), 0, invocation.global) {
 					case ListFailure(message): return runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
@@ -3962,7 +3962,7 @@ final class Application {
 					case Success(value): value;
 					case Failure(_): [];
 				};
-				final records = switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.everyIssue(), 0, invocation.global) {
+				final records = switch query.issueList(location.path, location.databaseName, IssueListRequests.everyIssue(), 0, invocation.global) {
 					case ListSuccess(page): page.items;
 					case ListFailure(_) | ListRowLimitExceeded(_, _, _): [];
 				};
@@ -4041,13 +4041,13 @@ final class Application {
 
 	/** The root and the issues of ready --mol, both follow-up reads after the root's lookup. */
 	function loadMoleculeItems(location:WorkspaceLocation, rootId:String, query:IssueQueryPort, global:Bool):IssueListResult {
-		return switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.exact(rootId), 0, global) {
+		return switch query.issueList(location.path, location.databaseName, IssueListRequests.exact(rootId), 0, global) {
 			case ListFailure(message): ListFailure(message);
 			case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(rootPage):
 				if (rootPage.items.length == 0) {
 					ListFailure('template ${rootId} not found');
-				} else switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, global) {
+				} else switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, global) {
 					case ListFailure(message): ListFailure(message);
 					case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
@@ -4932,14 +4932,12 @@ final class Application {
 
 		Only the tree view (`--tree`, `--pretty`, `--deps` or `--watch`) walks every level
 		below `--parent`. `--flat`, `--json` and `--format` read one page of direct children.
-		A `--watch` refresh (`refresh`) is a follow-up read: upstream reads it in the store
-		that its pre-run opened once.
+		Each `--watch` refresh reads again; an embedded workspace reads with Haxe-owned SQL,
+		whose session checks the schema only at the command's first read.
 	**/
-	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort, refresh = false):IssueListResult {
-		if (isListHierarchy(invocation))
-			return loadIssueHierarchy(invocation, location, effectiveLimit, query, refresh);
-		return refresh ? query.issueListFollowUp(location.path, location.databaseName, invocation.listRequest, effectiveLimit,
-			invocation.global) : query.issueList(location.path, invocation.listRequest, effectiveLimit, invocation.global);
+	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
+		return isListHierarchy(invocation) ? loadIssueHierarchy(invocation, location, effectiveLimit,
+			query) : query.issueList(location.path, location.databaseName, invocation.listRequest, effectiveLimit, invocation.global);
 	}
 
 	/** True for the `--parent` tree view; its empty result prints "Issue 'X' has no children". */
@@ -4956,14 +4954,11 @@ final class Application {
 		The storage port returns direct children only. Haxe owns parent validation,
 		cycle defense, traversal order, and the upstream-compatible error context.
 		The page read comes first, as upstream's; the parent and each level are
-		follow-up reads, which upstream makes in the store that it opened once. So
-		is the page read of a `--watch` refresh (`refresh`).
+		follow-up reads, which upstream makes in the store that it opened once.
 	**/
-	function loadIssueHierarchy(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort, refresh:Bool):IssueListResult {
+	function loadIssueHierarchy(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
 		final request = invocation.listRequest;
-		final page = refresh ? query.issueListFollowUp(location.path, location.databaseName, request, effectiveLimit,
-			invocation.global) : query.issueList(location.path, request, effectiveLimit, invocation.global);
-		switch page {
+		switch query.issueList(location.path, location.databaseName, request, effectiveLimit, invocation.global) {
 			case ListFailure(message):
 				return ListFailure(message);
 			case ListRowLimitExceeded(found, source, cap):
@@ -4971,7 +4966,7 @@ final class Application {
 			case ListSuccess(_):
 		}
 
-		final parent = switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.exact(request.parentId), 0, invocation.global) {
+		final parent = switch query.issueList(location.path, location.databaseName, IssueListRequests.exact(request.parentId), 0, invocation.global) {
 			case ListFailure(message): return ListFailure('error checking parent issue: ${message}');
 			case ListRowLimitExceeded(found, source, cap): return ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(page):
@@ -4995,7 +4990,7 @@ final class Application {
 	function collectIssueDescendants(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, request:IssueListRequest, parentId:String,
 			seen:StringMap<Bool>):IssueListResult {
 		final childRequest = IssueListRequests.descendants(request, parentId);
-		return switch query.issueListFollowUp(location.path, location.databaseName, childRequest, 0, invocation.global) {
+		return switch query.issueList(location.path, location.databaseName, childRequest, 0, invocation.global) {
 			case ListFailure(message): ListFailure(message);
 			case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(page):
@@ -5045,7 +5040,7 @@ final class Application {
 			stopped = watch.waitForStop();
 			if (stopped)
 				continue;
-			switch loadListResult(invocation, location, effectiveLimit, query, true) {
+			switch loadListResult(invocation, location, effectiveLimit, query) {
 				case ListFailure(message):
 					output.writeStderr('Error refreshing issues: ${message}\n');
 				case ListRowLimitExceeded(found, source, cap):

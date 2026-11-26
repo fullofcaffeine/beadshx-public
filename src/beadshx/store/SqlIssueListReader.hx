@@ -89,12 +89,13 @@ final class SqlIssueListReader {
 			case IntPresent(_) | IntAbsent: 0;
 		};
 		// WithRowsBeforeThePage, then WithFetchOneExtra: reach past the skipped rows and one more.
+		// In Go's int: a bound that this build parsed natively can pass 32 bits (see GoInt).
 		if (offset > 0 && filter.limit > 0)
-			filter.limit += offset;
+			filter.limit = GoInt.add(filter.limit, offset);
 		if (filter.limit > 0) {
 			if (filter.maxRows > 0 && filter.limit == filter.maxRows)
-				filter.maxRows++;
-			filter.limit++;
+				filter.maxRows = GoInt.add(filter.maxRows, 1);
+			filter.limit = GoInt.add(filter.limit, 1);
 		}
 		final items = switch searchWithCounts(context, transaction, filter) {
 			case SearchRows(value): value;
@@ -405,7 +406,7 @@ final class SqlIssueListReader {
 	/** Upstream EffectiveSearchLimit: a row cap asks for one row past it. */
 	static function effectiveSearchLimit(limit:Int, maxRows:Int):Int {
 		if (maxRows > 0 && (limit == 0 || limit > maxRows))
-			return maxRows + 1;
+			return GoInt.add(maxRows, 1);
 		return limit;
 	}
 

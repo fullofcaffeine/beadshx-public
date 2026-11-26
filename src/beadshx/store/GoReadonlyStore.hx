@@ -791,28 +791,14 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 	}
 
 	/**
-		Haxe renders `dot`, `digraph` and most Go templates from the page; only a Go template
-		that needs upstream's Go types uses the native renderer (see IssueListFormat).
+		The embedded route reads the page, and its blocking annotations, with
+		Haxe-owned SQL (EmbeddedIssueListReader), with the list settings of the
+		workspace's layered config.yaml files. A --ready page and a Go template
+		that needs upstream's Go types still read through the native facade, as
+		does every page of a server-mode or `--global` read.
 	**/
-	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
-		final options = issueListOptions(request, effectiveLimit);
-		return switch selectIssueListFormat(request.format) {
-			case NativeTemplate(source):
-				projectIssueListFormatOutcome(facadeOpened(beadsDir, global,
-					() -> NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, source)));
-			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_):
-				projectIssueListOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global)));
-		};
-	}
-
-	/**
-		The embedded route reads the page with Haxe-owned SQL (SqlIssueListReader),
-		with the list settings of the workspace's layered config.yaml files. A
-		--ready page, blocking annotations and a Go template that needs upstream's
-		Go types still read through the native facade.
-	**/
-	public function issueListFollowUp(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
-		final haxeRead = !request.ready && !request.blockingAnnotations && switch selectIssueListFormat(request.format) {
+	public function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
+		final haxeRead = !request.ready && switch selectIssueListFormat(request.format) {
 			case NativeTemplate(_): false;
 			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_): true;
 		};
@@ -826,7 +812,16 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			if (embedded != null)
 				return embedded;
 		}
-		return issueList(beadsDir, request, effectiveLimit, global);
+		final options = issueListOptions(request, effectiveLimit);
+		// Haxe renders `dot`, `digraph` and most Go templates from the page; only a Go template
+		// that needs upstream's Go types uses the native renderer (see IssueListFormat).
+		return switch selectIssueListFormat(request.format) {
+			case NativeTemplate(source):
+				projectIssueListFormatOutcome(facadeOpened(beadsDir, global,
+					() -> NativeReadonlyFacade.readIssueListFormatOutcome(beadsDir, options, global, source)));
+			case NoListFormat | GraphvizDot | DependencyDigraph | PageTemplate(_):
+				projectIssueListOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readIssueListOutcome(beadsDir, options, global)));
+		};
 	}
 
 	/**
@@ -1658,7 +1653,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		this.native = native;
 	}
 
-	public function issueList(beadsDir:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
+	public function issueList(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
 		final options = GoReadonlyStore.issueListOptions(request, effectiveLimit);
 		return switch selectIssueListFormat(request.format) {
 			case NativeTemplate(source): GoReadonlyStore.projectIssueListFormatOutcome(native.readIssueListFormatOutcome(options, source));
@@ -1688,10 +1683,6 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 
 	public function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
 		return GoReadonlyStore.projectIssueListOutcome(native.readSearchOutcome(query, GoReadonlyStore.searchOptions(request)));
-	}
-
-	public function issueListFollowUp(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult {
-		return issueList(beadsDir, request, effectiveLimit, global);
 	}
 
 	public function issueStale(beadsDir:String, databaseName:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>> {

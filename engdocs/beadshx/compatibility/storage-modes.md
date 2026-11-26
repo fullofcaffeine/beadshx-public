@@ -160,10 +160,10 @@ applies only when the database has a Dolt remote and a recorded version.
 - At a stop, the commands that upstream counts as reads by their command name
   (`readOnlyCommands`) print upstream's warning, `Warning: refusing to ...
   Read-only command: continuing on schema vN without migrating ...`, and read
-  the database as it is. In `bdhx` these are `comments`, `blocked`, `graph`,
-  `show`, `events tail`, `events export`, `dep list`, `label list`,
-  `config list` and `config show`. The other reads print the warning and
-  refuse (see [Limits](limits.md#writes-and-migration)).
+  the database as it is. In `bdhx` these are `list`, `comments`, `blocked`,
+  `graph`, `show`, `events tail`, `events export`, `dep list`,
+  `label list`, `config list` and `config show`. The other reads print the
+  warning and refuse (see [Limits](limits.md#writes-and-migration)).
 - Every other command, such as `types`, `dep tree`, `info` or `status`, stops
   with the gate's message on stderr, or with its JSON error on stderr under
   JSON output (also with `BD_JSON_ENVELOPE=1`), and exit code 1.

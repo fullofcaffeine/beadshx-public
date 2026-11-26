@@ -8325,6 +8325,17 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 done
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
+# An embedded list reads its page, and the blocking notes of the flat view, with Haxe-owned SQL, so it
+# never opens the native store. That open would run upstream's config package, which logs its load of
+# config.yaml under BD_DEBUG. bdhx prints no debug lines itself, so an empty stderr shows no native open.
+real_database_extra_env=(BD_DEBUG=1)
+candidate_only_exit=0
+expect_candidate_failure embedded-list-flat-without-native-open \
+	$'○ test-abcd22 [P2] [task] - Ambiguous abbreviation issue (blocks: test-abcd11)\n● test-abcd11 [P2] [task] - Unique abbreviation issue (blocked by: test-abcd22)' \
+	"" "" --readonly list --flat --id test-abcd11,test-abcd22
+candidate_only_exit=1
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+
 # A server-mode workspace checks the schema only through its server, which does not answer here. An
 # embedded store that the workspace still holds, even one ahead of the binary, changes nothing: upstream
 # never opens it, and the escape hatch changes nothing either.
@@ -8482,6 +8493,12 @@ real_database_read_only=""
 # show records the issue in .beads/last-touched, so it compares without the read-only check. It reads an
 # issue with dependencies, and the dependents of --refs and --children, as upstream does too.
 real_database_setup=gate_without_cached_ref
+# An embedded list reads with Haxe-owned SQL too, so it warns and reads on as upstream does, also with the
+# escape hatch.
+compare_real_database gate-list exact list
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_real_database gate-ignored-list exact list
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 compare_real_database gate-show exact show "$real_database_bug_id"
 compare_real_database gate-show-related exact show "$real_database_issue_id"
 compare_real_database gate-show-related-json exact show "$real_database_epic_id" --json --include-dependents
@@ -8507,7 +8524,6 @@ EOF
 )
 gate_read_refusal() { printf '%s\nError: %s is not available yet on a database behind the binary in this build' "$gate_read_warning" "$1"; }
 candidate_only_setup=gate_without_cached_ref
-expect_candidate_failure gate-list-refused "" "$(gate_read_refusal list)" "" list
 expect_candidate_failure gate-count-json-refused \
 	'{"error":"count is not available yet on a database behind the binary in this build","schema_version":1}' "$gate_read_warning" "" count --json
 expect_candidate_failure gate-ready-refused "" "$(gate_read_refusal ready)" "" ready
@@ -8515,7 +8531,7 @@ expect_candidate_failure gate-search-refused "" "$(gate_read_refusal search)" ""
 expect_candidate_failure gate-query-refused "" "$(gate_read_refusal query)" "" query status=open
 expect_candidate_failure gate-ping-refused "" "$(gate_read_refusal ping)" "" ping
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
-expect_candidate_failure gate-ignored-list-refused "" "$(gate_read_refusal list)" "" list
+expect_candidate_failure gate-ignored-count-refused "" "$(gate_read_refusal count)" "" count
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 candidate_only_setup=""
 
