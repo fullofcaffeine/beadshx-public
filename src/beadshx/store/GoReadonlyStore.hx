@@ -321,7 +321,20 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return projectReadyOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readReadyOutcome(beadsDir, readyOptions(request), global)));
 	}
 
-	public function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
+	/**
+		An embedded workspace reads every query candidate with Haxe-owned SQL
+		(EmbeddedIssueListReader.queryCandidates); the native facade serves the
+		other routes. Haxe filters and pages the candidates either way.
+	**/
+	public function issueQuery(beadsDir:String, databaseName:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.queryCandidates(beadsDir, databaseName);
+			if (embedded != null)
+				return switch embedded {
+					case Failure(message): QueryRowsFailure(message);
+					case Success(items): queryRowsOfItems(items, request);
+				};
+		}
 		final opened = facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.openDirectQuerySession(beadsDir, global));
 		if (opened.isErr())
 			return QueryRowsFailure(errorMessage(opened));
@@ -441,6 +454,65 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 					}
 			}
 		}
+		return finishQueryRows(candidates, request);
+	}
+
+	/** The query candidates of list rows, filtered and paged by finishQueryRows. */
+	static function queryRowsOfItems(items:Array<IssueListItem>, request:QueryStorageRequest):QueryRowResult {
+		final candidates = new Array<IssueQueryRow>();
+		for (item in items)
+			switch queryRowOfItem(item) {
+				case Failure(message):
+					return QueryRowsFailure(message);
+				case Success(row):
+					candidates.push(row);
+			}
+		return finishQueryRows(candidates, request);
+	}
+
+	/**
+		The query candidate of one list row, with the facts that the native
+		copier took from upstream's issue (ProjectQueryPage): the pinned,
+		ephemeral and template flags, and each time as an instant. A list row
+		holds each time as Go's RFC3339Nano text in its own offset, which reads
+		back as the same instant, date and offset.
+	**/
+	static function queryRowOfItem(item:IssueListItem):StoreResult<IssueQueryRow> {
+		final created = instantOfText(item.createdAt);
+		final updated = instantOfText(item.updatedAt);
+		if (created == null || updated == null)
+			return Failure('issue ${item.id} has a time that does not read as RFC3339: ${item.createdAt}, ${item.updatedAt}');
+		final started = optionalInstantOfText(item.startedAt);
+		final closed = optionalInstantOfText(item.closedAt);
+		if (started == null || closed == null)
+			return Failure('issue ${item.id} has a time that does not read as RFC3339: ${item.startedAt}, ${item.closedAt}');
+		return Success({
+			item: item,
+			pinned: item.longFields.pinned,
+			ephemeral: item.longFields.ephemeral,
+			template: item.longFields.template,
+			created: created,
+			updated: updated,
+			started: started,
+			closed: closed
+		});
+	}
+
+	static function instantOfText(value:String):Null<QueryInstant> {
+		final parsed = TimePkg.parse(GO_RFC3339_NANO, value);
+		return parsed.value2 != null ? null : projectNativeTime(parsed.value1);
+	}
+
+	/** An empty text is no time; null when the text is not RFC3339. */
+	static function optionalInstantOfText(value:String):Null<OptionalQueryInstant> {
+		if (value == "")
+			return InstantAbsent;
+		final instant = instantOfText(value);
+		return instant == null ? null : InstantPresent(instant);
+	}
+
+	/** Haxe-owned query filtering and paging over every candidate row. */
+	public static function finishQueryRows(candidates:Array<IssueQueryRow>, request:QueryStorageRequest):QueryRowResult {
 		final matches = [for (row in candidates) if (QueryFilter.matches(request.filter, row)) row];
 		return switch request.fetch {
 			case CompleteCandidates: QueryRows({rows: matches, sourceHasMore: false, complete: true});
@@ -853,7 +925,13 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		};
 	}
 
-	public function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
+	/** An embedded workspace searches with Haxe-owned SQL (EmbeddedIssueListReader.search); the native facade serves the other routes. */
+	public function issueSearch(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.issueSearch(beadsDir, databaseName, query, request, listConfigLayers(beadsDir));
+			if (embedded != null)
+				return embedded;
+		}
 		final options = searchOptions(request);
 		return projectIssueListOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readSearchOutcome(beadsDir, query, options, global)));
 	}
@@ -1686,7 +1764,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return GoReadonlyStore.projectReadyOutcome(native.readReadyOutcome(GoReadonlyStore.readyOptions(request)));
 	}
 
-	public function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
+	public function issueQuery(beadsDir:String, databaseName:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
 		return GoReadonlyStore.readQueryRows(native, request);
 	}
 
@@ -1698,7 +1776,7 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return GoReadonlyStore.normalizeQueryTimes(inputs);
 	}
 
-	public function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
+	public function issueSearch(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):IssueListResult {
 		return GoReadonlyStore.projectIssueListOutcome(native.readSearchOutcome(query, GoReadonlyStore.searchOptions(request)));
 	}
 

@@ -6,7 +6,13 @@ import beadshx.query.QueryTimePort;
 interface IssueQueryPort extends QueryTimePort {
 	function relatedIssues(beadsDir:String, databaseName:String, plan:beadshx.relation.RelationRead.RelationReadPlan,
 		global:Bool):StoreResult<Array<beadshx.relation.RelatedIssue>>;
-	function issueQuery(beadsDir:String, request:QueryStorageRequest, global:Bool):QueryRowResult;
+
+	/**
+		The rows of one planned `bd query` fetch, which Haxe filters and pages.
+		An embedded workspace reads every candidate with Haxe-owned SQL; a
+		server-mode or proxied workspace through the native facade.
+	**/
+	function issueQuery(beadsDir:String, databaseName:String, request:QueryStorageRequest, global:Bool):QueryRowResult;
 
 	/**
 		The total, and the buckets of a grouping, of `bd count`. An embedded
@@ -24,7 +30,12 @@ interface IssueQueryPort extends QueryTimePort {
 	**/
 	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult;
 
-	function issueSearch(beadsDir:String, query:String, request:IssueListRequest, global:Bool):IssueListResult;
+	/**
+		The issues of `bd search`, and of `label list-all` with no query text,
+		in display order. An embedded workspace searches with Haxe-owned SQL; a
+		server-mode or proxied workspace through the native facade.
+	**/
+	function issueSearch(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):IssueListResult;
 
 	/** The stale issues, as `bd stale` lists them, stalest first. */
 	function issueStale(beadsDir:String, databaseName:String, request:StaleRequest, global:Bool):StoreResult<Array<StaleIssue>>;

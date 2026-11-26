@@ -95,6 +95,14 @@ class ReaderMessages {
 			noLabels: false,
 			includeInfra: false
 		}, ByStatus, {customTypes: [], customStatuses: [], infraTypes: []})));
+		add("search",
+			switch EmbeddedIssueListReader.search(beadsDir, databaseName, "issue", IssueListRequests.everyIssue(),
+				{customTypes: [], customStatuses: [], infraTypes: []}) {
+				case ListSuccess(_): Success(true);
+				case ListFailure(message): Failure(message);
+				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
+			});
+		add("query", done(EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName)));
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

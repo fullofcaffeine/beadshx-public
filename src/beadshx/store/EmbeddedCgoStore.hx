@@ -73,6 +73,15 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedCountReader.read(beadsDir, databaseName, request, group, layers);
 	}
 
+	public function issueSearch(beadsDir:String, databaseName:String, query:String, request:IssueListRequest,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult> {
+		return EmbeddedIssueListReader.search(beadsDir, databaseName, query, request, layers);
+	}
+
+	public function queryCandidates(beadsDir:String, databaseName:String):Null<StoreResult<Array<IssueListItem>>> {
+		return EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName);
+	}
+
 	public function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>> {
 		return EmbeddedCycleReader.read(beadsDir, databaseName);
 	}

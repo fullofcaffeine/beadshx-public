@@ -1,9 +1,12 @@
 package beadshx.store;
 
+import beadshx.store.CustomConfig.effectiveCustomStatuses;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 import beadshx.store.SqlBlockingAnnotation.IssueBlocking;
 import beadshx.store.SqlIssueFilter.IssueListConfigLayers;
+import beadshx.store.SqlIssueListReader.readQueryCandidates;
 import beadshx.store.SqlIssueListReader.readSqlIssueList;
+import beadshx.store.SqlIssueListReader.readSqlIssueSearch;
 
 /**
 	Own the read transactions of one list page; the list semantics are authored Haxe.
@@ -18,6 +21,8 @@ import beadshx.store.SqlIssueListReader.readSqlIssueList;
 @:goNative
 final class EmbeddedIssueListReader {
 	static final WORDING = EmbeddedReadWording.forNoun("list", false);
+	static final SEARCH_WORDING = EmbeddedReadWording.forNoun("search", false);
+	static final QUERY_WORDING = EmbeddedReadWording.forNoun("query", false);
 
 	public static function read(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int, layers:IssueListConfigLayers):IssueListResult {
 		final result:IssueListResult = switch EmbeddedSession.withRead(beadsDir, databaseName,
@@ -31,6 +36,39 @@ final class EmbeddedIssueListReader {
 			case ListSuccess(page): ListSuccess(annotated(beadsDir, databaseName, page));
 			case ListFailure(_) | ListRowLimitExceeded(_, _, _): result;
 		};
+	}
+
+	/**
+		`bd search` and `label list-all`: as the native facade on upstream's
+		store, the store open of upstream's pre-run, then for a status
+		selector other than `all` the custom statuses in a read of its own
+		(GetCustomStatusesDetailed), then the search in one read
+		(readSqlIssueSearch).
+	**/
+	public static function search(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, layers:IssueListConfigLayers):IssueListResult {
+		EmbeddedSession.openForCommand(beadsDir, databaseName);
+		var customStatusNames = new Array<String>();
+		if (request.status != "" && request.status != "all")
+			switch SEARCH_WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> {
+				final statuses = effectiveCustomStatuses(SqlCustomConfigReader.readCustomStatuses(context, transaction), layers.customStatuses);
+				return StoreResult.Success([for (status in statuses) status.name]);
+			})) {
+				case Failure(message):
+					return ListFailure(message);
+				case Success(names):
+					customStatusNames = names;
+			}
+		return switch EmbeddedSession.withRead(beadsDir, databaseName,
+			(context, transaction) -> readSqlIssueSearch(context, transaction, query, request, customStatusNames)) {
+			case EmbeddedReadNotStarted(stage, error, _): ListFailure(SEARCH_WORDING.stageMessage(stage, error));
+			case EmbeddedReadFinished(result, cleanup): cleanup.length == 0 ? result : ListFailure(SEARCH_WORDING.cleanupMessage(cleanup[0]));
+		};
+	}
+
+	/** After the store open of upstream's pre-run, every issue and wisp as `bd query` candidates (readQueryCandidates), in one read. */
+	public static function queryCandidates(beadsDir:String, databaseName:String):StoreResult<Array<IssueListItem>> {
+		EmbeddedSession.openForCommand(beadsDir, databaseName);
+		return QUERY_WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, readQueryCandidates));
 	}
 
 	static function annotated(beadsDir:String, databaseName:String, page:IssueListPage):IssueListPage {

@@ -3525,9 +3525,10 @@ real_database_setup=marked_database_beside
 compare_real_database unfinished-marked-database-beside-count exact count
 # Dolt warns at each store open: upstream's pre-run opens the store, then each store call opens it again.
 # A grouped count asks for the buckets and then the total, and --include-infra first loads the custom
-# statuses, the custom types and the infra types.
+# statuses, the custom types and the infra types. query makes one store call.
 compare_real_database unfinished-marked-database-beside-count-by-status exact count --by-status
 compare_real_database unfinished-marked-database-beside-count-infra-json exact count --include-infra --by-type --json
+compare_real_database unfinished-marked-database-beside-query exact query status=open
 real_database_setup=""
 # A --db path that names a .beads directory with only a redirect selects the directory above it, which
 # has no metadata.json and no store. The strict open stops at the missing store directory without a write;
@@ -8294,10 +8295,15 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-count" exact "$schema_sql" --readonly count
 	compare_real_database_sql "schema-$schema_case-ignored-stale" exact "$schema_sql" --readonly stale --days 1
 	# Upstream checks once, at the store open of the pre-run, however many reads the command makes
-	# after it: the two counts of a grouped count, the parent of each ready issue, the list reads of
-	# a --parent tree, and the later reads of ready --gated, --mol and --explain.
+	# after it: the two counts of a grouped count, the custom statuses that search --status reads
+	# first, the parent of each ready issue, the list reads of a --parent tree, and the later
+	# reads of ready --gated, --mol and --explain.
 	compare_real_database_sql "schema-$schema_case-ignored-count-by-label-json" exact "$schema_sql" \
 		--readonly count --by-label --json
+	compare_real_database_sql "schema-$schema_case-ignored-search-status" exact "$schema_sql" \
+		--readonly search parity --status open
+	compare_real_database_sql "schema-$schema_case-ignored-query-predicate-json" exact "$schema_sql" \
+		--readonly query 'status=open OR priority=0' --json
 	compare_real_database_sql "schema-$schema_case-ignored-ready" exact "$schema_sql" --readonly ready
 	compare_real_database_sql "schema-$schema_case-ignored-children" exact "$schema_sql" \
 		--readonly children "$real_database_epic_id"
@@ -8365,11 +8371,17 @@ expect_candidate_failure embedded-list-flat-without-native-open \
 expect_candidate_failure embedded-ready-empty-without-native-open \
 	$'\n✨ No ready work found (all issues have blocking dependencies)' "" "" --readonly ready --assignee nobody
 expect_candidate_failure embedded-list-ready-without-native-open "[]" "" "" --readonly list --ready --assignee nobody --json
-# So does count, also grouped.
+# So do count, also grouped, search, and query, which reads every issue and wisp as its candidates.
 expect_candidate_failure embedded-count-without-native-open "2" "" "" --readonly count --id test-abcd11,test-abcd22
 expect_candidate_failure embedded-count-by-label-without-native-open \
 	'{"groups":[{"count":2,"group":"(no labels)"}],"schema_version":1,"total":2}' "" "" \
 	--readonly count --id test-abcd11,test-abcd22 --by-label --json
+expect_candidate_failure embedded-search-without-native-open \
+	$'Found 2 issues matching \'abbreviation\':\ntest-abcd22 [P2] [task] open - Ambiguous abbreviation issue\ntest-abcd11 [P2] [task] open - Unique abbreviation issue' \
+	"" "" --readonly search abbreviation
+expect_candidate_failure embedded-query-without-native-open \
+	$'Found 2 issues:\n○ test-abcd22 [P2] [task] - Ambiguous abbreviation issue\n○ test-abcd11 [P2] [task] - Unique abbreviation issue' \
+	"" "" --readonly query title=abbreviation
 candidate_only_exit=1
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
@@ -8498,15 +8510,23 @@ compare_real_database gate-events-tail exact events tail
 compare_real_database gate-events-export exact events export
 compare_real_database gate-config-list exact config list
 compare_real_database gate-config-show exact config show
-# count reads an embedded workspace with Haxe-owned SQL too.
+# count, search and query read an embedded workspace with Haxe-owned SQL too.
 compare_real_database gate-count exact count
 compare_real_database gate-count-json exact count --json
 compare_real_database gate-count-by-label exact count --by-label
 compare_real_database gate-count-include-infra-by-type-json exact count --include-infra --by-type --json
+compare_real_database gate-search exact search parity
+compare_real_database gate-search-json exact search parity --json
+compare_real_database gate-search-status exact search parity --status open --sort title
+compare_real_database gate-query exact query status=open
+compare_real_database gate-query-json exact query status=open --json
+compare_real_database gate-query-predicate exact query 'status=open OR status=in_progress' --reverse
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database gate-ignored-comments exact comments "$real_database_issue_id"
 compare_real_database gate-ignored-count exact count
 compare_real_database gate-ignored-count-by-status-json exact count --by-status --json
+compare_real_database gate-ignored-search exact search parity --long
+compare_real_database gate-ignored-query-json exact query 'priority>=0' --all --json
 # The native facade's strict open would read under the escape hatch; the gate runs before it.
 compare_real_database gate-ignored-status exact status
 compare_real_database gate-ignored-info-json exact info --json
@@ -8552,9 +8572,9 @@ compare_real_database gate-show-refs exact show --refs "$real_database_child_id"
 compare_real_database gate-show-children exact show --children "$real_database_epic_id"
 real_database_setup=""
 
-# search, query and ping, and a list --format template that needs upstream's Go types, still read
-# through the native facade, whose strict read-only open cannot read a database behind the binary. They
-# print upstream's warning, then refuse, also under the escape hatch.
+# ping, and a list --format template that needs upstream's Go types, still read through the native
+# facade, whose strict read-only open cannot read a database behind the binary. They print upstream's
+# warning, then refuse, also under the escape hatch.
 gate_read_warning=$(
 	cat <<'EOF'
 Warning: refusing to auto-apply 1 pending schema migration to a remote-backed database (v64 -> v65): migrating clones independently forks the schema (#4259)
@@ -8572,8 +8592,6 @@ EOF
 gate_read_refusal() { printf '%s\nError: %s is not available yet on a database behind the binary in this build' "$gate_read_warning" "$1"; }
 gate_native_template='--format={{printf "%T" .Type}}'
 candidate_only_setup=gate_without_cached_ref
-expect_candidate_failure gate-search-refused "" "$(gate_read_refusal search)" "" search parity
-expect_candidate_failure gate-query-refused "" "$(gate_read_refusal query)" "" query status=open
 expect_candidate_failure gate-ping-refused "" "$(gate_read_refusal ping)" "" ping
 expect_candidate_failure gate-list-native-template-refused "" "$(gate_read_refusal list)" "" list "$gate_native_template"
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)

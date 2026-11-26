@@ -116,7 +116,91 @@ final class SqlIssueListReader {
 		return ListSuccess({items: page, hasMore: hasMore, formatted: ""});
 	}
 
-	/** Upstream SearchIssuesWithCountsInTx with no query text. */
+	/**
+		The read of `bd search` and of `label list-all`, as the native facade
+		ran it on upstream's store: SearchIssuesWithCountsInTx with the query
+		text and the filter that the facade built from the request, then the
+		display order (workapi.SortIssuesWithCounts).
+
+		What the filter takes: the limit, 50 when the request has none; the
+		status selector, checked against `customStatusNames` (upstream
+		ApplyStatusFilter), unless it is empty or `all`; the assignee and the
+		type as written; the labels; the description, notes and external
+		reference substrings; the empty-description, no-assignee and no-labels
+		checks; the created, updated and closed bounds; the priority range;
+		and the metadata filters. The issues and the wisps are both searched.
+	**/
+	public static function readSqlIssueSearch(context:Context, transaction:Tx, query:String, request:IssueListRequest,
+			customStatusNames:Array<String>):IssueListResult {
+		final filter = new IssueSearchFilter();
+		filter.queryText = query;
+		filter.limit = switch request.limit {
+			case IntPresent(value): value;
+			case IntAbsent: 50;
+		};
+		if (request.status != "" && request.status != "all") {
+			final refused = SqlIssueFilter.applyStatusSelector(filter, request.status, customStatusNames);
+			if (refused != null)
+				return ListFailure(refused);
+		}
+		if (request.assignee != "")
+			filter.assignee = request.assignee;
+		if (request.issueType != "")
+			filter.issueType = request.issueType;
+		filter.labels = request.labels;
+		filter.labelsAny = request.labelsAny;
+		filter.descriptionContains = request.descriptionContains;
+		filter.notesContains = request.notesContains;
+		filter.externalRefContains = request.externalContains;
+		filter.emptyDescription = request.emptyDescription;
+		filter.noAssignee = request.noAssignee;
+		filter.noLabels = request.noLabels;
+		final searchTimes = [
+			for (bound in request.timeFilters)
+				if (bound.match(CreatedAfter(_) | CreatedBefore(_) | UpdatedAfter(_) | UpdatedBefore(_) | ClosedAfter(_) | ClosedBefore(_))) bound
+		];
+		switch SqlIssueFilter.filterTimes(searchTimes) {
+			case Failure(message):
+				return ListFailure(message);
+			case Success(times):
+				filter.times = times;
+		}
+		filter.priorityMin = request.priorityMin;
+		filter.priorityMax = request.priorityMax;
+		filter.metadataFields = request.metadataFields;
+		filter.hasMetadataKey = request.hasMetadataKey;
+		// BuildIssueFilterClauses refuses an invalid metadata key before it builds the query.
+		final metadataError = SqlIssueFilter.metadataClauseError(filter.metadataFields, filter.hasMetadataKey);
+		if (metadataError != null)
+			return ListFailure(metadataError);
+		final items = switch searchWithCounts(context, transaction, filter) {
+			case SearchRows(value): value;
+			case SearchStopped(SearchFailed(message, _)): return ListFailure(message);
+			case SearchStopped(SearchRowCap(found, source, cap)): return ListRowLimitExceeded(found, source, cap);
+		};
+		sortForDisplay(items, request.sortBy, request.reverse);
+		return ListSuccess({items: items, hasMore: false, formatted: ""});
+	}
+
+	/**
+		Every issue and wisp as query candidates, in the order that the native
+		facade read them for `bd query`: issueops.Reader.List with AllFlag and
+		IncludeAllTypes, which lifts every default status, pinned, template,
+		gate and infra-type suppression and reads the wisps too, under the
+		default order (priority, newest first, then the ID). The facade paged
+		that list 50 rows at a time; one read without a limit gives the same
+		rows in the same order.
+	**/
+	public static function readQueryCandidates(context:Context, transaction:Tx):StoreResult<Array<IssueListItem>> {
+		return switch searchWithCounts(context, transaction, new IssueSearchFilter()) {
+			case SearchRows(items): Success(items);
+			case SearchStopped(SearchFailed(message, _)): Failure(message);
+			// The filter sets no row cap, so this branch only completes the switch.
+			case SearchStopped(SearchRowCap(found, _, cap)): Failure('row cap: $found over $cap');
+		};
+	}
+
+	/** Upstream SearchIssuesWithCountsInTx, with the filter's query text. */
 	static function searchWithCounts(context:Context, transaction:Tx, filter:IssueSearchFilter):IssueSearchRows {
 		final wispDependencies = switch probeTable(context, transaction, "wisp_dependencies") {
 			case TableHasRows | TableEmpty: true;

@@ -3655,7 +3655,7 @@ final class Application {
 	function runLabelListAll(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		if (location.proxiedServer)
 			return runModeAwareFailure(invocation.output, LABEL_LIST_ALL_ROUTE_UNAVAILABLE);
-		final issues = switch query.issueSearch(location.path, "", IssueListRequests.everyIssue(), invocation.global) {
+		final issues = switch query.issueSearch(location.path, location.databaseName, "", IssueListRequests.everyIssue(), invocation.global) {
 			case ListFailure(message): return runModeAwareFailure(invocation.output, message);
 			// The request sets no row cap, so this branch only completes the switch.
 			case ListRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
@@ -4110,7 +4110,7 @@ final class Application {
 			case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _):
 				// The native search checks --status, so this build searches to find a bad status first.
 				if (invocation.listRequest.status != "")
-					switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
+					switch query.issueSearch(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest, invocation.global) {
 						case ListFailure(message): return runStoreFailure(message);
 						case ListRowLimitExceeded(_, _, _) | ListSuccess(_):
 					}
@@ -4118,7 +4118,7 @@ final class Application {
 				if (checkExit != null)
 					return checkExit;
 		}
-		return switch query.issueSearch(location.path, invocation.searchQuery, invocation.listRequest, invocation.global) {
+		return switch query.issueSearch(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest, invocation.global) {
 			case ListFailure(message): runStoreFailure(message);
 			case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ListSuccess(page): renderSearch(invocation, page);
@@ -4182,7 +4182,7 @@ final class Application {
 				{filter: filter, fetch: OrderedPage(page.limit, page.offset, page.sortBy, page.reverse)};
 			case PredicateQuery(filter, _, _): {filter: filter, fetch: CompleteCandidates};
 		};
-		return switch query.issueQuery(location.path, storageRequest, invocation.global) {
+		return switch query.issueQuery(location.path, location.databaseName, storageRequest, invocation.global) {
 			case QueryRowsFailure(message): runStoreFailure(message);
 			case QueryRows(source):
 				switch finishQueryPage(plan, source) {

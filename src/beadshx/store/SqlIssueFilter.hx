@@ -59,9 +59,15 @@ typedef IssueFilterClauses = {
 	final arguments:Array<Dynamic>;
 }
 
-/** Upstream types.IssueFilter, as far as workapi.BuildListFilter fills it for a list request, and BuildCountFilter for a count. */
+/**
+	Upstream types.IssueFilter, as far as workapi.BuildListFilter fills it for a
+	list request, BuildCountFilter for a count, and search for its query text.
+**/
 @:goNative
 final class IssueSearchFilter {
+	/** The query argument of upstream's search, which BuildIssueFilterClauses matches before the filter; empty for none. */
+	public var queryText = "";
+
 	public var limit = 0;
 	public var maxRows = 0;
 	public var maxRowsSource = "";
@@ -364,10 +370,24 @@ final class SqlIssueFilter {
 			+ "so answering would return every ready issue rather than the ones asked for — drop --ready, or drop what it cannot carry";
 	}
 
-	/** Upstream BuildIssueFilterClauses for a search without query text. */
+	/** Upstream BuildIssueFilterClauses: the query text first (`queryText`), then the filter. */
 	public static function buildFilterClauses(filter:IssueSearchFilter, tables:IssueFilterTables):IssueFilterClauses {
 		final clauses = new Array<String>();
 		final arguments = new Array<Dynamic>();
+		if (filter.queryText != "") {
+			final lowerQuery = filter.queryText.toLowerCase();
+			if (looksLikeIssueId(filter.queryText)) {
+				clauses.push("(id = ? OR id LIKE ? OR LOWER(title) LIKE ? OR LOWER(external_ref) LIKE ?)");
+				arguments.push(lowerQuery);
+				arguments.push(lowerQuery + "%");
+				arguments.push('%$lowerQuery%');
+				arguments.push('%$lowerQuery%');
+			} else {
+				clauses.push("(LOWER(title) LIKE ? OR id LIKE ?)");
+				arguments.push('%$lowerQuery%');
+				arguments.push('%$lowerQuery%');
+			}
+		}
 		function like(column:String, value:String):Void {
 			if (value == "")
 				return;
@@ -519,6 +539,15 @@ final class SqlIssueFilter {
 	static final GO_RFC3339 = "2006-01-02T15:04:05Z07:00";
 	static final GO_RFC3339_NANO = "2006-01-02T15:04:05.999999999Z07:00";
 
+	/**
+		Upstream workapi.ApplyStatusFilter for a selector that is not empty: its
+		comma-separated parts, each trimmed, as one status or several; null when
+		they apply.
+	**/
+	public static function applyStatusSelector(filter:IssueSearchFilter, status:String, customNames:Array<String>):Null<String> {
+		return applyStatusParts(filter, [for (part in status.split(",")) goTrimSpace(part)], customNames);
+	}
+
 	/** Upstream applyStatusParts; null when the parts apply. */
 	static function applyStatusParts(filter:IssueSearchFilter, parts:Array<String>, customNames:Array<String>):Null<String> {
 		final valid = (status:String) -> BUILT_IN_STATUSES.indexOf(status) >= 0 || customNames.indexOf(status) >= 0;
@@ -610,6 +639,42 @@ final class SqlIssueFilter {
 		}
 		keys.sort(compareUtf8);
 		return [for (key in keys) {key: key, value: values.get(key)}];
+	}
+
+	/**
+		The check of upstream sqlbuild.AppendMetadataClauses, which builds the
+		metadata predicates of a search: the key filter first, then the field
+		keys in byte order, each refused with storage.ValidateMetadataKey's own
+		error; null when they are valid.
+	**/
+	public static function metadataClauseError(fields:Array<IssueListMetadataFilter>, hasKey:String):Null<String> {
+		if (hasKey != "" && !validMetadataKey(hasKey))
+			return metadataKeyError(hasKey);
+		for (field in sortedMetadataFields(fields))
+			if (!validMetadataKey(field.key))
+				return metadataKeyError(field.key);
+		return null;
+	}
+
+	/**
+		Upstream sqlbuild.LooksLikeIssueID: a `-` after the first character and
+		before the last, no space, and only ASCII letters, digits, `-` and `.`.
+	**/
+	public static function looksLikeIssueId(query:String):Bool {
+		final dash = query.indexOf("-");
+		if (dash <= 0 || dash >= query.length - 1)
+			return false;
+		if (query.indexOf(" ") >= 0)
+			return false;
+		for (index in 0...query.length) {
+			final code:Int = query.charCodeAt(index);
+			final letterOrDigit = (code >= "0".code && code <= "9".code)
+				|| (code >= "a".code && code <= "z".code)
+				|| (code >= "A".code && code <= "Z".code);
+			if (!(letterOrDigit || code == "-".code || code == ".".code))
+				return false;
+		}
+		return true;
 	}
 
 	/** Upstream storage.ValidateMetadataKey's pattern `^[a-zA-Z_][a-zA-Z0-9_./]*$`. */

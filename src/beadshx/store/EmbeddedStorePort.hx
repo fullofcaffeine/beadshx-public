@@ -35,6 +35,13 @@ interface EmbeddedStorePort {
 	function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
 		layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<CountResult>>;
 
+	/** The issues that `bd search` and `label list-all` read, in display order. */
+	function issueSearch(beadsDir:String, databaseName:String, query:String, request:IssueListRequest,
+		layers:SqlIssueFilter.IssueListConfigLayers):Null<IssueListResult>;
+
+	/** Every issue and wisp, the candidates that `bd query` filters and pages. */
+	function queryCandidates(beadsDir:String, databaseName:String):Null<StoreResult<Array<IssueListItem>>>;
+
 	function dependencyCycles(beadsDir:String, databaseName:String):Null<StoreResult<Array<beadshx.relation.DependencyCycle<RelatedIssue>>>>;
 	function dependencyTree(beadsDir:String, databaseName:String,
 		request:beadshx.relation.DependencyTree.DependencyTreeRequest):Null<StoreResult<Array<beadshx.relation.DependencyTree.TreeNode<RelatedIssue>>>>;
