@@ -22,6 +22,10 @@ final class EmbeddedStoreAccess {
 		implementation.checkSchema(beadsDir, databaseName);
 	}
 
+	public static function remoteMigrateGate(beadsDir:String, databaseName:String, currentVersion:Int):Null<RemoteMigrateGate.RemoteGateOutcome> {
+		return implementation.remoteMigrateGate(beadsDir, databaseName, currentVersion);
+	}
+
 	public static function dependencyEdges(beadsDir:String, databaseName:String, plan:DependencyReadPlan):Null<DependencyEdgeResult> {
 		return implementation.dependencyEdges(beadsDir, databaseName, plan);
 	}
@@ -130,6 +134,10 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	public function new() {}
 
 	public function checkSchema(beadsDir:String, databaseName:String):Void {}
+
+	public function remoteMigrateGate(beadsDir:String, databaseName:String, currentVersion:Int):Null<RemoteMigrateGate.RemoteGateOutcome> {
+		return null;
+	}
 
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
 		return null;

@@ -5,6 +5,7 @@ import beadshx.nativeextern.backoff.ExponentialBackOff;
 import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.context.ContextPkg;
 import beadshx.nativeextern.database.sql.DB;
+import beadshx.nativeextern.database.sql.NullString;
 import beadshx.nativeextern.database.sql.SqlPkg;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.nativeextern.database.sql.TxOptions;
@@ -18,9 +19,18 @@ import beadshx.store.DatabaseErrors.isTableNotExist;
 import beadshx.store.EmbeddedDatabaseLookup.isEmbeddedDatabaseIdentifier;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.InvalidDatabaseName.InvalidDatabaseNameStep;
+import beadshx.store.RemoteMigrateGate.MigrationContentHash;
+import beadshx.store.RemoteMigrateGate.RemoteGateOutcome;
+import beadshx.store.RemoteMigrateGate.RemoteGateRead;
+import beadshx.store.RemoteMigrateGate.RemoteGateReads;
+import beadshx.store.RemoteMigrateGate.evaluateRemoteGate;
+import beadshx.store.RemoteMigrateGate.remoteGateReadOnlyWarning;
+import beadshx.store.SchemaSkew.BINARY_SCHEMA_VERSION;
 import beadshx.store.SchemaSkew.SchemaCursorRead;
 import beadshx.store.SchemaSkew.SchemaSkewAbort;
+import beadshx.store.SchemaSkew.SchemaSkewBoundary;
 import beadshx.store.SchemaSkew.SchemaSkewChecks;
+import beadshx.store.SchemaSkew.SchemaSkewWarning;
 import beadshx.store.SchemaSkew.checkSchemaCursor;
 import haxe.io.Path;
 
@@ -150,9 +160,20 @@ final class EmbeddedSession {
 		BD_IGNORE_SCHEMA_SKEW=1 the check gives upstream's warning instead.
 		Every open checks as upstream's strict read-only open (`OpenReadOnly`)
 		does, also behind the binary: upstream's ordinary read commands would
-		migrate such a database first, and this build never migrates.
+		migrate such a database first, and this build never migrates. Without
+		strict read-only mode, upstream first runs its remote-migrate gate on a
+		database behind the binary (`openWithGate`).
 	**/
 	public static function open(beadsDir:String, selectedDatabase:String):EmbeddedSessionOpen {
+		return openSession(beadsDir, selectedDatabase, true);
+	}
+
+	/** Opens the session like `open`, without the schema check. */
+	public static function openWithoutCheck(beadsDir:String, selectedDatabase:String):EmbeddedSessionOpen {
+		return openSession(beadsDir, selectedDatabase, false);
+	}
+
+	static function openSession(beadsDir:String, selectedDatabase:String, checks:Bool):EmbeddedSessionOpen {
 		final config = new Config();
 		config.directory = Path.join([beadsDir, "embeddeddolt"]);
 		config.database = resolveEmbeddedDatabaseName(beadsDir, selectedDatabase);
@@ -177,8 +198,10 @@ final class EmbeddedSession {
 		// Upstream's `USE` after this check needs no port: the connector already starts in the database.
 		if (goTrimSpace(config.database) != "" && !isEmbeddedDatabaseIdentifier(config.database))
 			return EmbeddedSessionUnavailable(SessionDatabaseName, new go.Error(InvalidDatabaseName.error(config.database, OpenSqlName)), session.close());
-		if (!SchemaSkewChecks.isChecked(beadsDir)) {
+		if (checks && !SchemaSkewChecks.isChecked(beadsDir)) {
 			final cursor = session.readSchemaCursor();
+			if (session.openWithGate(beadsDir, cursor))
+				return EmbeddedSessionOpened(session);
 			final refusal = checkSchemaCursor(cursor);
 			if (refusal != null) {
 				// Upstream openReadOnly ignores the errors of its cleanup here.
@@ -190,6 +213,64 @@ final class EmbeddedSession {
 				SchemaSkewChecks.markChecked(beadsDir);
 		}
 		return EmbeddedSessionOpened(session);
+	}
+
+	/**
+		Upstream's plain store open (embeddeddolt initSchema) for a database
+		behind the binary: its remote-migrate gate before the migration.
+
+		Why: without strict read-only mode upstream does not check that the
+		database is behind. It runs the gate, then migrates. A command in
+		upstream's `readOnlyCommands` warns at a gate stop and reads the
+		database as it is; every other command stops there.
+		What: true when the session may go on after the gate's warning. False
+		when the gate does not apply, so the caller runs the strict check, which
+		refuses where upstream would migrate. Otherwise this closes the session
+		and throws the gate's refusal, also where upstream would write.
+	**/
+	function openWithGate(beadsDir:String, cursor:SchemaCursorRead):Bool {
+		final version = switch cursor {
+			case CursorVersion(version) if (version < BINARY_SCHEMA_VERSION): version;
+			case _: return false;
+		};
+		// The command decides its intent from its workspace's configuration, so only a database behind the binary asks.
+		final intent = SchemaSkewBoundary.openIntent();
+		switch intent {
+			case ReadOnlyCommandOpen | PlainOpen:
+			case NoEmbeddedOpen | StrictReadOnlyOpen:
+				return false;
+		}
+		final gate = remoteGate(version);
+		SchemaSkewChecks.recordGate(beadsDir, gate);
+		switch gate {
+			case MigratesWithoutGate:
+				return false;
+			case GateStops(stop) if (intent == ReadOnlyCommandOpen):
+				SchemaSkewWarning.holdGateWarning(remoteGateReadOnlyWarning(stop));
+				SchemaSkewChecks.markChecked(beadsDir);
+				return true;
+			case GateStops(stop):
+				close();
+				throw new SchemaSkewAbort(RemoteGateStopped(stop));
+			case GateWrites(write):
+				close();
+				throw new SchemaSkewAbort(RemoteGateWouldWrite(write));
+			case GateReadFailed(error):
+				close();
+				throw new SchemaSkewAbort(RemoteGateFailed(error));
+		}
+	}
+
+	/**
+		Upstream's remote-migrate gate (`schema.CheckRemoteMigrateGateWithAdopt`)
+		for a database at `currentVersion`. Upstream reads on its open
+		connection; this reads in one read transaction, which sees the same data.
+	**/
+	public function remoteGate(currentVersion:Int):RemoteGateOutcome {
+		return switch read((context, transaction) -> evaluateRemoteGate(currentVersion, new EmbeddedRemoteGateReads(context, transaction))) {
+			case EmbeddedReadNotStarted(_, error, _): GateReadFailed('remote-migrate gate: read current version: ${error.toString()}');
+			case EmbeddedReadFinished(outcome, _): outcome;
+		};
 	}
 
 	/**
@@ -392,5 +473,142 @@ final class EmbeddedReadWording {
 			case EmbeddedReadFinished(Failure(message), _): Failure(message);
 			case EmbeddedReadFinished(value, cleanup): cleanup.length == 0 ? value : Failure(cleanupMessage(cleanup[0]));
 		};
+	}
+}
+
+/** The reads of upstream's remote-migrate gate, with upstream's queries, in one read transaction. */
+@:goBuildConstraint("cgo")
+@:goNative
+private final class EmbeddedRemoteGateReads implements RemoteGateReads {
+	final context:Context;
+	final transaction:Tx;
+
+	public function new(context:Context, transaction:Tx) {
+		this.context = context;
+		this.transaction = transaction;
+	}
+
+	public function remoteCount():RemoteGateRead<Int> {
+		final queried = transaction.queryNativeContext(context, "SELECT COUNT(*) FROM dolt_remotes");
+		if (queried.error != null)
+			return isTableNotExist(queried.error) ? GateValue(0) : GateError(queried.error.text());
+		final rows = queried.rows;
+		if (!rows.next()) {
+			final rowError = rows.errNative();
+			rows.close();
+			if (rowError != null)
+				return isTableNotExist(rowError) ? GateValue(0) : GateError(rowError.text());
+			return GateError("sql: no rows in result set");
+		}
+		final count = go.NativePointer.of(0);
+		final scanError = rows.scanNative(count);
+		rows.close();
+		if (scanError != null)
+			return isTableNotExist(scanError) ? GateValue(0) : GateError(scanError.text());
+		return GateValue(count.get());
+	}
+
+	public function contentHashes():RemoteGateRead<Array<MigrationContentHash>> {
+		return readHashes("SELECT version, content_hash FROM schema_migrations");
+	}
+
+	public function activeBranch():Null<String> {
+		final queried = transaction.queryNativeContext(context, "SELECT active_branch()");
+		if (queried.error != null)
+			return null;
+		final rows = queried.rows;
+		final branch = new NullString();
+		final found = rows.next() && rows.scanNative(branch) == null;
+		rows.close();
+		return found && branch.valid ? branch.string : null;
+	}
+
+	public function hasMigrationTableAt(ref:String):RemoteGateRead<Bool> {
+		return hasRows('SHOW TABLES AS OF \'${ref}\' LIKE \'schema_migrations\'');
+	}
+
+	public function hasContentHashColumnAt(ref:String):RemoteGateRead<Bool> {
+		return hasRows('SHOW COLUMNS FROM schema_migrations AS OF \'${ref}\' LIKE \'content_hash\'');
+	}
+
+	public function contentHashesAt(ref:String):RemoteGateRead<Array<MigrationContentHash>> {
+		return readHashes('SELECT version, content_hash FROM schema_migrations AS OF \'${ref}\'');
+	}
+
+	public function aheadBehind(ref:String):RemoteGateRead<{ahead:Int, behind:Int}> {
+		final queried = transaction.queryNativeContext(context,
+			'SELECT (SELECT COUNT(*) FROM dolt_log WHERE commit_hash NOT IN (SELECT commit_hash FROM dolt_log AS OF \'${ref}\')) AS ahead, ' +
+			'(SELECT COUNT(*) FROM dolt_log AS OF \'${ref}\' WHERE commit_hash NOT IN (SELECT commit_hash FROM dolt_log)) AS behind');
+		if (queried.error != null)
+			return GateError(queried.error.text());
+		final rows = queried.rows;
+		if (!rows.next()) {
+			final rowError = rows.errNative();
+			rows.close();
+			return GateError(rowError != null ? rowError.text() : "sql: no rows in result set");
+		}
+		final ahead = go.NativePointer.of(0);
+		final behind = go.NativePointer.of(0);
+		final scanError = rows.scanNative(ahead, behind);
+		rows.close();
+		return scanError != null ? GateError(scanError.text()) : GateValue({ahead: ahead.get(), behind: behind.get()});
+	}
+
+	public function changedTables():RemoteGateRead<Array<String>> {
+		final queried = transaction.queryNativeContext(context, "SELECT table_name FROM dolt_status");
+		if (queried.error != null)
+			return GateError(queried.error.text());
+		final rows = queried.rows;
+		final tables = new Array<String>();
+		while (rows.next()) {
+			final table = new NullString();
+			final scanError = rows.scanNative(table);
+			if (scanError != null) {
+				rows.close();
+				return GateError(scanError.text());
+			}
+			tables.push(table.string);
+		}
+		final rowError = rows.errNative();
+		rows.close();
+		return rowError != null ? GateError(rowError.text()) : GateValue(tables);
+	}
+
+	/** Upstream `queryHasRows`. */
+	function hasRows(query:String):RemoteGateRead<Bool> {
+		final queried = transaction.queryNativeContext(context, query);
+		if (queried.error != null)
+			return GateError(queried.error.text());
+		final rows = queried.rows;
+		if (rows.next()) {
+			rows.close();
+			return GateValue(true);
+		}
+		final rowError = rows.errNative();
+		rows.close();
+		return rowError != null ? GateError(rowError.text()) : GateValue(false);
+	}
+
+	/** Upstream `ReadMigrationContentHashes`' rows: each version whose hash is not NULL or empty. */
+	function readHashes(query:String):RemoteGateRead<Array<MigrationContentHash>> {
+		final queried = transaction.queryNativeContext(context, query);
+		if (queried.error != null)
+			return GateError(queried.error.text());
+		final rows = queried.rows;
+		final hashes = new Array<MigrationContentHash>();
+		while (rows.next()) {
+			final version = go.NativePointer.of(0);
+			final hash = new NullString();
+			final scanError = rows.scanNative(version, hash);
+			if (scanError != null) {
+				rows.close();
+				return GateError(scanError.text());
+			}
+			if (hash.valid && hash.string != "")
+				hashes.push({version: version.get(), hash: hash.string});
+		}
+		final rowError = rows.errNative();
+		rows.close();
+		return rowError != null ? GateError(rowError.text()) : GateValue(hashes);
 	}
 }

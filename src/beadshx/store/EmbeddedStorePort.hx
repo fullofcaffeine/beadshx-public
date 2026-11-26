@@ -43,4 +43,7 @@ interface EmbeddedStorePort {
 
 	/** Opens and closes one session for its schema check (`ReadonlyStorePort.checkSchema`); without embedded access it does nothing. */
 	function checkSchema(beadsDir:String, databaseName:String):Void;
+
+	/** Opens one session without the schema check and runs upstream's remote-migrate gate (`ReadonlyStorePort.remoteMigrateGate`). */
+	function remoteMigrateGate(beadsDir:String, databaseName:String, currentVersion:Int):Null<RemoteMigrateGate.RemoteGateOutcome>;
 }

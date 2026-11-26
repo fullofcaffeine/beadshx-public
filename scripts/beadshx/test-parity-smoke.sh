@@ -8256,6 +8256,181 @@ store_failure_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_store_failure redirect-proxied-server ignored-global-list-json --global list --json
 store_failure_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
+# The remote-migrate gate (#4259). Without strict read-only mode, upstream's store open runs this gate on a
+# database behind the binary before it migrates. With a Dolt remote it refuses the migration: the commands
+# in upstream's readOnlyCommands warn and read the database as it is, and every other store command stops
+# with the gate's message (or its JSON error on stderr). The smart gate reads only the cached
+# remote-tracking ref remotes/origin/main and tailors the stop; where it can prove a migration or a
+# fast-forward safe, upstream writes, and this build refuses instead. Each setup adds a Dolt remote in the
+# case's own directory (file://, never the network) and pushes to it where the scenario needs a cached ref.
+gate_add_remote="CALL DOLT_REMOTE('add', 'origin', '@REMOTE@')"
+gate_scratch_branch=("CALL DOLT_CHECKOUT('-b', 'scratch')" "INSERT INTO config (\`key\`, value) VALUES ('beadshx.scratch', '1')")
+gate_sql() {
+	local root="$1"
+	shift
+	mkdir -p "$root/dolt-remote"
+	printf '%s\n' "$@" | sed "s|@REMOTE@|file://$root/dolt-remote|g" | "$fixture_sql" "$root/work" >/dev/null
+}
+gate_without_cached_ref() { gate_sql "$1" "$schema_behind_sql" "$gate_add_remote"; }
+gate_remote_ahead() { gate_sql "$1" "$gate_add_remote" "CALL DOLT_PUSH('origin', 'main')" "$schema_behind_sql"; }
+gate_fork_skew() {
+	gate_sql "$1" "$gate_add_remote" "CALL DOLT_PUSH('origin', 'main')" "$schema_behind_sql" \
+		"UPDATE schema_migrations SET content_hash = REPEAT('0', 64) WHERE version IN (7, 12)"
+}
+gate_remote_behind() {
+	gate_sql "$1" "DELETE FROM schema_migrations WHERE version > 63" "CALL DOLT_COMMIT('-Am', 'at v63')" "$gate_add_remote" \
+		"CALL DOLT_PUSH('origin', 'main')" \
+		"INSERT INTO schema_migrations SELECT version, content_hash FROM schema_migrations AS OF 'main~1' WHERE version = 64"
+}
+# HEAD and the cached remote at the same version: a first mover, which upstream migrates at or above v43.
+gate_remote_level() {
+	gate_sql "$1" "DELETE FROM schema_migrations WHERE version > $2" "CALL DOLT_COMMIT('-Am', 'local')" "$gate_add_remote" \
+		"CALL DOLT_PUSH('origin', 'main')" "${gate_scratch_branch[@]}"
+}
+gate_remote_level_64() { gate_remote_level "$1" 64; }
+gate_remote_level_42() { gate_remote_level "$1" 42; }
+# HEAD one commit behind the cached remote with a clean working set, so it can fast-forward. The fixture
+# tool's own commit lands on a scratch branch.
+gate_remote_one_ahead() {
+	gate_sql "$1" "DELETE FROM schema_migrations WHERE version > $2" "CALL DOLT_COMMIT('-Am', 'local')" \
+		"CALL DOLT_CHECKOUT('-b', 'remote-state')" \
+		"INSERT INTO schema_migrations SELECT version, content_hash FROM schema_migrations AS OF 'main~1' WHERE version = $(($2 + 1))" \
+		"CALL DOLT_COMMIT('-Am', 'remote')" "$gate_add_remote" "CALL DOLT_PUSH('origin', 'remote-state:main')" \
+		"CALL DOLT_CHECKOUT('main')" "${gate_scratch_branch[@]}"
+}
+gate_remote_one_ahead_63() { gate_remote_one_ahead "$1" 63; }
+gate_remote_one_ahead_64() { gate_remote_one_ahead "$1" 64; }
+real_database_read_only=1
+real_database_setup=gate_without_cached_ref
+compare_real_database gate-types exact types
+compare_real_database gate-types-json exact types --json
+compare_real_database gate-dep-tree exact dep tree "$real_database_issue_id"
+compare_real_database gate-history exact history "$real_database_issue_id"
+compare_real_database gate-config-get exact config get issue_prefix
+compare_real_database gate-info exact info
+compare_real_database gate-info-thanks exact info --thanks
+compare_real_database gate-status exact status
+compare_real_database gate-stale-json exact stale --json
+compare_real_database gate-children exact children "$real_database_issue_id"
+compare_real_database gate-where exact where
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database gate-envelope-statuses-json exact statuses --json
+real_database_extra_env=(BD_SMART_GATE=0)
+compare_real_database gate-smart-off-types exact types
+real_database_extra_env=(BD_SMART_GATE=maybe)
+compare_real_database gate-smart-unparseable-types exact types
+compare_real_database gate-smart-unparseable-types-json exact types --json
+real_database_extra_env=(BD_ALLOW_REMOTE_MIGRATE=maybe)
+compare_real_database gate-allow-unparseable-types exact types
+real_database_extra_env=(BD_ALLOW_REMOTE_MIGRATE=false)
+compare_real_database gate-allow-false-types exact types
+# The schema skew escape hatch skips only the checks of the strict read-only open, not the gate.
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_real_database gate-ignored-types exact types
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# Strict read-only mode opens without the gate and refuses the database behind the binary.
+compare_real_database gate-readonly-types exact --readonly types
+compare_real_database gate-readonly-comments exact --readonly comments "$real_database_issue_id"
+real_database_extra_config='readonly: true'
+compare_real_database gate-readonly-setting-dep-list exact dep list "$real_database_issue_id"
+real_database_extra_config=""
+# The commands in readOnlyCommands, by cobra's leaf name, warn and read.
+compare_real_database gate-comments exact comments "$real_database_issue_id"
+compare_real_database gate-comments-json exact comments "$real_database_issue_id" --json
+compare_real_database gate-blocked exact blocked
+compare_real_database gate-graph exact graph "$real_database_issue_id"
+compare_real_database gate-dep-list exact dep list "$real_database_issue_id"
+compare_real_database gate-label-list exact label list "$real_database_bug_id"
+compare_real_database gate-events-tail exact events tail
+compare_real_database gate-events-export exact events export
+compare_real_database gate-config-list exact config list
+compare_real_database gate-config-show exact config show
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+compare_real_database gate-ignored-comments exact comments "$real_database_issue_id"
+# The native facade's strict open would read under the escape hatch; the gate runs before it.
+compare_real_database gate-ignored-status exact status
+compare_real_database gate-ignored-info-json exact info --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=gate_remote_ahead
+compare_real_database gate-adopt-types exact types
+compare_real_database gate-adopt-types-json exact types --json
+compare_real_database gate-adopt-comments exact comments "$real_database_issue_id"
+real_database_extra_env=(BD_SMART_GATE=maybe)
+compare_real_database gate-adopt-smart-unparseable-types exact types
+real_database_extra_env=(BD_ALLOW_REMOTE_MIGRATE=maybe)
+compare_real_database gate-adopt-allow-unparseable-types exact types
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+real_database_setup=gate_remote_one_ahead_63
+compare_real_database gate-adopt-ff-types exact types
+compare_real_database gate-adopt-ff-types-json exact types --json
+compare_real_database gate-adopt-ff-blocked exact blocked
+real_database_setup=gate_fork_skew
+compare_real_database gate-fork-skew-types exact types
+compare_real_database gate-fork-skew-types-json exact types --json
+compare_real_database gate-fork-skew-comments exact comments "$real_database_issue_id"
+real_database_setup=gate_remote_level_42
+compare_real_database gate-below-floor-types exact types
+compare_real_database gate-below-floor-types-json exact types --json
+real_database_setup=gate_remote_behind
+compare_real_database gate-remote-behind-types exact types
+real_database_read_only=""
+# show records the issue in .beads/last-touched, so it compares without the read-only check.
+real_database_setup=gate_without_cached_ref
+compare_real_database gate-show exact show "$real_database_bug_id"
+real_database_setup=""
+
+# The reads that go through the native facade open the store with upstream's strict read-only open,
+# which cannot read a database behind the binary. They print upstream's warning, then refuse. show and
+# label list read an issue with dependencies through it too.
+gate_read_warning=$(
+	cat <<'EOF'
+Warning: refusing to auto-apply 1 pending schema migration to a remote-backed database (v64 -> v65): migrating clones independently forks the schema (#4259)
+  Read-only command: continuing on schema v64 without migrating.
+  Writes are blocked until the schema is reconciled.  This is a
+  coordination decision, not an auto-fix - do NOT run a migration unless
+  you are the single designated migrator (only ONE clone may migrate a
+  shared remote, else the schema forks; #4259):
+    • designated migrator (only ONE machine): bd migrate --force && bd dolt push
+    • every other clone (another already migrated): bd bootstrap
+    • several machines: only ONE migrates; sync each other clone and run
+      bd dolt pull after the migrator pushes, before upgrading it
+EOF
+)
+gate_read_refusal() { printf '%s\nError: %s is not available yet on a database behind the binary in this build' "$gate_read_warning" "$1"; }
+candidate_only_setup=gate_without_cached_ref
+expect_candidate_failure gate-list-refused "" "$(gate_read_refusal list)" "" list
+expect_candidate_failure gate-count-json-refused \
+	'{"error":"count is not available yet on a database behind the binary in this build","schema_version":1}' "$gate_read_warning" "" count --json
+expect_candidate_failure gate-ready-refused "" "$(gate_read_refusal ready)" "" ready
+expect_candidate_failure gate-search-refused "" "$(gate_read_refusal search)" "" search parity
+expect_candidate_failure gate-query-refused "" "$(gate_read_refusal query)" "" query status=open
+expect_candidate_failure gate-ping-refused "" "$(gate_read_refusal ping)" "" ping
+expect_candidate_failure gate-show-related-refused "" "$(gate_read_refusal show)" "" show "$real_database_issue_id"
+expect_candidate_failure gate-label-list-related-refused "" "$(gate_read_refusal "label list")" "" label list "$real_database_issue_id"
+real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
+expect_candidate_failure gate-ignored-list-refused "" "$(gate_read_refusal list)" "" list
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=""
+
+# Where upstream writes (BD_ALLOW_REMOTE_MIGRATE=1 or a first mover migrates, or a clean clone one commit
+# behind a remote at v65 fast-forwards), this build refuses and leaves the database unchanged.
+gate_migrate_refusal() { printf 'Error: %s is not available yet where upstream would migrate a database with a Dolt remote in this build' "$1"; }
+candidate_only_setup=gate_without_cached_ref
+real_database_extra_env=(BD_ALLOW_REMOTE_MIGRATE=1)
+expect_candidate_failure gate-allow-types-refused "" "$(gate_migrate_refusal types)" "" types
+expect_candidate_failure gate-allow-comments-refused "" "$(gate_migrate_refusal comments)" "" comments "$real_database_issue_id"
+expect_candidate_failure gate-allow-types-json-refused \
+	'{"error":"types is not available yet where upstream would migrate a database with a Dolt remote in this build","schema_version":1}' "" "" \
+	types --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+candidate_only_setup=gate_remote_level_64
+expect_candidate_failure gate-first-mover-types-refused "" "$(gate_migrate_refusal types)" "" types
+expect_candidate_failure gate-first-mover-list-refused "" "$(gate_migrate_refusal list)" "" list
+candidate_only_setup=gate_remote_one_ahead_64
+expect_candidate_failure gate-fast-forward-types-refused "" \
+	"Error: types is not available yet where upstream would fast-forward a database with a Dolt remote in this build" "" types
+candidate_only_setup=""
+
 wait_for_watch_text() {
 	local file="$1"
 	local value="$2"

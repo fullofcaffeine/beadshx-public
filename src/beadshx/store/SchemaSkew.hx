@@ -1,5 +1,10 @@
 package beadshx.store;
 
+import beadshx.store.RemoteMigrateGate.RemoteGateOutcome;
+import beadshx.store.RemoteMigrateGate.RemoteGateStop;
+import beadshx.store.RemoteMigrateGate.RemoteGateWrite;
+import beadshx.store.RemoteMigrateGate.remoteGateError;
+
 /**
 	Upstream `schema.LatestVersion()` in the pinned v1.2.1 binary: the highest
 	main-lane migration, `0065_widen_wisp_comments_text`. The main lane of
@@ -24,6 +29,30 @@ enum SchemaSkewRefusal {
 
 	/** Upstream `CheckBehindDrift` could not read the version: `schema behind-drift check: <error>`. */
 	BehindCheckFailed(error:String);
+
+	/** Upstream's plain open stopped at its remote-migrate gate (`*schema.RemoteMigrateGateError`). */
+	RemoteGateStopped(stop:RemoteGateStop);
+
+	/** Upstream's plain open would migrate or fast-forward a database that has a Dolt remote; this build never writes. */
+	RemoteGateWouldWrite(write:RemoteGateWrite);
+
+	/** A read of upstream's remote-migrate gate failed: `remote-migrate gate: ...`. */
+	RemoteGateFailed(error:String);
+}
+
+/** How upstream's pre-run opens the embedded store for the command (cmd/bd/store_factory.go). */
+enum EmbeddedOpenIntent {
+	/** The command opens a SQL server (server mode, proxied, --global): no embedded open runs the gate. */
+	NoEmbeddedOpen;
+
+	/** Strict read-only mode: upstream `OpenReadOnly`, which refuses a database behind the binary. */
+	StrictReadOnlyOpen;
+
+	/** A command in upstream's `readOnlyCommands`: `OpenForReadOnlyCommand`, which warns at a gate stop and reads on. */
+	ReadOnlyCommandOpen;
+
+	/** Every other command: upstream `Open`, which stops at the gate. */
+	PlainOpen;
 }
 
 private final FORWARD_CHECK_PREFIX = "schema skew check: ";
@@ -72,6 +101,23 @@ final class SchemaSkewBoundary {
 	public static function ignoreForProcess():Void {
 		Sys.putEnv("BD_IGNORE_SCHEMA_SKEW", "1");
 	}
+
+	/** Until a command sets its own, every open checks as the strict read-only open does. */
+	static var intent:() -> EmbeddedOpenIntent = () -> StrictReadOnlyOpen;
+
+	/**
+		Sets how the command's store opens. Upstream decides it in the pre-run,
+		from strict read-only mode and the command name; the workspace that
+		decides strict mode is known only once the command has found it, so the
+		check asks `decide` when it runs.
+	**/
+	public static function useOpenIntent(decide:() -> EmbeddedOpenIntent):Void {
+		intent = decide;
+	}
+
+	public static function openIntent():EmbeddedOpenIntent {
+		return intent();
+	}
 }
 
 /** Upstream's `Error()` text of each refusal. */
@@ -87,6 +133,12 @@ function schemaSkewRefusalError(refusal:SchemaSkewRefusal):String {
 			FORWARD_CHECK_PREFIX + error;
 		case BehindCheckFailed(error):
 			BEHIND_CHECK_PREFIX + error;
+		case RemoteGateStopped(stop):
+			remoteGateError(stop);
+		case RemoteGateWouldWrite(_):
+			"the remote-migrate gate would let upstream write";
+		case RemoteGateFailed(error):
+			error;
 	};
 }
 
@@ -108,7 +160,10 @@ function schemaSkewOpenError(refusal:SchemaSkewRefusal, strictOpen:Bool):String 
 	return switch refusal {
 		case ForwardCheckFailed(_) if (!strictOpen):
 			'embeddeddolt: init schema: ${schemaSkewRefusalError(refusal)}';
-		case DatabaseAhead(_, _) | DatabaseBehind(_, _) | ForwardCheckFailed(_) | BehindCheckFailed(_):
+		// Only the plain open runs the gate.
+		case RemoteGateFailed(_):
+			'embeddeddolt: init schema: ${schemaSkewRefusalError(refusal)}';
+		case DatabaseAhead(_, _) | DatabaseBehind(_, _) | ForwardCheckFailed(_) | BehindCheckFailed(_) | RemoteGateStopped(_) | RemoteGateWouldWrite(_):
 			schemaSkewRefusalError(refusal);
 	};
 }
@@ -260,6 +315,7 @@ private function leadingVersion(text:String, start:Int):Null<Int> {
 @:goNative
 final class SchemaSkewChecks {
 	static final checked = new Map<String, Bool>();
+	static final gates = new Map<String, RemoteGateOutcome>();
 
 	public static function isChecked(beadsDir:String):Bool {
 		return checked.exists(beadsDir);
@@ -268,6 +324,16 @@ final class SchemaSkewChecks {
 	/** Records a check of `beadsDir` that let the command go on. */
 	public static function markChecked(beadsDir:String):Void {
 		checked.set(beadsDir, true);
+	}
+
+	/** Records the remote-migrate gate outcome of the check of `beadsDir`. */
+	public static function recordGate(beadsDir:String, outcome:RemoteGateOutcome):Void {
+		gates.set(beadsDir, outcome);
+	}
+
+	/** The gate outcome that a check of `beadsDir` recorded, or null when no check ran the gate. */
+	public static function recordedGate(beadsDir:String):Null<RemoteGateOutcome> {
+		return gates.get(beadsDir);
 	}
 }
 
@@ -285,9 +351,23 @@ final class SchemaSkewChecks {
 @:goNative
 final class SchemaSkewWarning {
 	static var held:Null<String> = null;
+	static var gateHeld:Null<String> = null;
+	static var gateWarned = false;
 
 	public static function hold(warning:String):Void {
 		held = warning;
+	}
+
+	/**
+		Holds the warning of upstream's remote-migrate gate for a read-only
+		command, once per process: upstream prints it once, at its store open.
+		The native facade never prints it, so `drop` keeps it.
+	**/
+	public static function holdGateWarning(warning:String):Void {
+		if (gateWarned)
+			return;
+		gateWarned = true;
+		gateHeld = warning;
 	}
 
 	/** The native facade's store open printed the same warning itself. */
@@ -295,10 +375,12 @@ final class SchemaSkewWarning {
 		held = null;
 	}
 
-	/** The held warning, which the caller now writes, or null. */
+	/** The held warnings, which the caller now writes, or null. */
 	public static function take():Null<String> {
+		final gate = gateHeld;
 		final warning = held;
+		gateHeld = null;
 		held = null;
-		return warning;
+		return gate == null ? warning : warning == null ? gate : gate + warning;
 	}
 }

@@ -103,9 +103,8 @@ In an embedded workspace, every command that reads the database first
 compares the highest version in the `schema_migrations` table with the
 schema version of upstream v1.2.1, v65, as upstream does. `info --whats-new`
 and `info --thanks` read nothing, but upstream opens the store first, so they
-check too. Errors
-from the flag parser still come first, and this check comes before the other
-checks of the command's arguments.
+check too. Errors from the flag parser still come first, and this check comes
+before the other checks of the command's arguments.
 
 - When the database is ahead of the binary, the command stops with
   upstream's `schema version mismatch: ... Your bd binary is stale` message
@@ -114,8 +113,9 @@ checks of the command's arguments.
 - When the database is behind the binary, the command stops with upstream's
   `--readonly` error, `Error: failed to open database: schema version
   mismatch: ... the read-only open cannot migrate it ...`, in every output
-  mode. Without `--readonly`, upstream would migrate the database (see
-  [Limits](limits.md#writes-and-migration)).
+  mode. Without strict read-only mode, upstream would migrate the database
+  (see [Limits](limits.md#writes-and-migration)), unless it has a Dolt remote
+  (see [Remote-migrate gate](#remote-migrate-gate)).
 - A failed read of the version, for example when a value in the table is not
   a number, stops the command with the same `failed to open database`
   prefix. Without strict read-only mode, upstream's schema initialization
@@ -134,6 +134,37 @@ prints the warning once, also when it reads the database more than once, as
 print it again (see [Limits](limits.md#commands-and-output)). `where`
 prints no stored prefix when the check stops, as upstream does. `version`
 does not check.
+
+### Remote-migrate gate
+
+Without strict read-only mode, upstream does not refuse an embedded database
+that is behind the binary. Before it migrates, its store open runs the
+remote-migrate gate (#4259), and so does `bdhx`, without a write. The gate
+applies only when the database has a Dolt remote and a recorded version.
+`BD_IGNORE_SCHEMA_SKEW` does not change it.
+
+- The gate reads only local data: the `dolt_remotes` table, the content
+  hashes in `schema_migrations` at `HEAD` and at the cached ref
+  `remotes/origin/<branch>`, the commit history and `dolt_status`. It never
+  fetches.
+- Like upstream, it stops with one of four messages: the default stop, adopt,
+  adopt with a fast-forward that would not reach v65, or a fork when the two
+  sides applied different content for a migration. The default stop names
+  why the smart gate could not do better: no cached ref with content hashes,
+  a cached remote behind this clone, a database below v43 at the same version
+  as its cached remote, `BD_SMART_GATE=0`, or a `BD_SMART_GATE` value that is
+  not a boolean. A `BD_ALLOW_REMOTE_MIGRATE` value that is not a boolean adds
+  upstream's note.
+- At a stop, the commands that upstream counts as reads by their command name
+  (`readOnlyCommands`) print upstream's warning, `Warning: refusing to ...
+  Read-only command: continuing on schema vN without migrating ...`, and read
+  the database as it is. In `bdhx` these are `comments`, `blocked`, `graph`,
+  `show`, `events tail`, `events export`, `dep list`, `label list`,
+  `config list` and `config show`. The other reads print the warning and
+  refuse (see [Limits](limits.md#writes-and-migration)).
+- Every other command, such as `types`, `dep tree`, `info` or `status`, stops
+  with the gate's message on stderr, or with its JSON error on stderr under
+  JSON output (also with `BD_JSON_ENVELOPE=1`), and exit code 1.
 
 A server-mode workspace never checks an embedded store that it still holds in
 `.beads/embeddeddolt`, as upstream never opens that store. Its own check runs

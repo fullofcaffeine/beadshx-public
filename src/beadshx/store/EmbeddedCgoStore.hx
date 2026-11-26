@@ -24,6 +24,17 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		}
 	}
 
+	public function remoteMigrateGate(beadsDir:String, databaseName:String, currentVersion:Int):Null<RemoteMigrateGate.RemoteGateOutcome> {
+		return switch EmbeddedSession.openWithoutCheck(beadsDir, databaseName) {
+			case EmbeddedSessionOpened(session):
+				final outcome = session.remoteGate(currentVersion);
+				session.close();
+				outcome;
+			case EmbeddedSessionUnavailable(_, _, _):
+				null;
+		};
+	}
+
 	public function relatedIssues(beadsDir:String, databaseName:String, plan:RelationReadPlan):Null<StoreResult<Array<RelatedIssue>>> {
 		return EmbeddedRelationReader.read(beadsDir, databaseName, plan);
 	}

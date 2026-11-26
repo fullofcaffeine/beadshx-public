@@ -137,8 +137,15 @@ import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EventsJournal.EventsJournalRead;
 import beadshx.store.InvalidDatabaseName;
 import beadshx.store.InvalidDatabaseName.InvalidDatabaseNameStep;
+import beadshx.store.RemoteMigrateGate.RemoteGateStop;
+import beadshx.store.RemoteMigrateGate.RemoteGateWrite;
+import beadshx.store.RemoteMigrateGate.remoteGateJson;
+import beadshx.store.RemoteMigrateGate.remoteGateReadOnlyWarning;
+import beadshx.store.RemoteMigrateGate.remoteGateUserMessage;
+import beadshx.store.SchemaSkew.EmbeddedOpenIntent;
 import beadshx.store.SchemaSkew.SCHEMA_SKEW_ESCAPE_HINT;
 import beadshx.store.SchemaSkew.SchemaSkewBoundary;
+import beadshx.store.SchemaSkew.SchemaSkewWarning;
 import beadshx.store.SchemaSkew.SchemaSkewRefusal;
 import beadshx.store.SchemaSkew.schemaSkewOpenError;
 import beadshx.store.SchemaSkew.schemaSkewRefusalError;
@@ -630,12 +637,32 @@ final class Application {
 		and not under `bd events`.
 	**/
 	static function prunesEventsJournal(command:Command):Bool {
+		return command != Events && !isReadOnlyCommand(command);
+	}
+
+	/** Upstream isReadOnlyCommand (cmd/bd/main.go:155-179): the command is in readOnlyCommands by cobra's leaf name. */
+	static function isReadOnlyCommand(command:Command):Bool {
 		return switch command {
 			case List | Ready | Show | Count | Search | Query | Graph | Blocked | Comments | Ping | DepList | ConfigList | ConfigShow | LabelList |
-				EventsTail | EventsExport | Events: false;
+				EventsTail | EventsExport: true;
 			case RootHelp | Version | Where | Info | Status | Stale | Orphans | Children | DepCycles | DepTree | GraphCheck | History | Types | Statuses |
-				Config | ConfigGet | ConfigValidate | ConfigDrift | Label | LabelListAll | Snapshot: true;
+				Config | ConfigGet | ConfigValidate | ConfigDrift | Label | LabelListAll | Snapshot | Events: false;
 		};
+	}
+
+	/**
+		How upstream's pre-run opens the embedded store (cmd/bd/store_factory.go):
+		none for a SQL server, then strict read-only mode for the bound
+		workspace, then the command's classification as a read.
+	**/
+	function embeddedOpenIntent(invocation:Invocation):EmbeddedOpenIntent {
+		final location = boundWorkspace;
+		if (invocation.global || (location != null && (location.proxiedServer || opensServerStore(location))))
+			return NoEmbeddedOpen;
+		final config = location != null ? LayeredConfig.forWorkspace(location.path) : LayeredConfig.atStartup();
+		if (strictReadonly(invocation, config))
+			return StrictReadOnlyOpen;
+		return isReadOnlyCommand(invocation.command) ? ReadOnlyCommandOpen : PlainOpen;
 	}
 
 	static function usesStore(command:Command):Bool {
@@ -720,6 +747,7 @@ final class Application {
 		// Upstream's pre-run sets the escape hatch for every store open, before it opens any.
 		if (invocation.ignoreSchemaSkew)
 			SchemaSkewBoundary.ignoreForProcess();
+		SchemaSkewBoundary.useOpenIntent(() -> embeddedOpenIntent(invocation));
 		final metadataExit = checkWorkspaceMetadata(invocation);
 		if (metadataExit != null)
 			return metadataExit;
@@ -7426,6 +7454,7 @@ final class Application {
 		open that strict read-only mode selects for the bound workspace.
 	**/
 	function runSchemaSkewRefusal(invocation:Invocation, refusal:SchemaSkewRefusal):Int {
+		final location = boundWorkspace;
 		switch refusal {
 			case DatabaseAhead(database, binary):
 				switch invocation.output {
@@ -7434,12 +7463,74 @@ final class Application {
 					case Json:
 						output.writeStderr(renderSchemaSkewJson(refusal, database, binary, output.usesJsonEnvelope()));
 				}
-			case DatabaseBehind(_, _) | ForwardCheckFailed(_) | BehindCheckFailed(_):
-				final location = boundWorkspace;
+			case RemoteGateStopped(stop):
+				writeRemoteGateStop(invocation, stop);
+			case RemoteGateWouldWrite(write):
+				writeRemoteGateWrite(invocation, write);
+			// The native facade opens with upstream's strict read-only open, which refuses before the plain open's gate could run.
+			case DatabaseBehind(version, _) if (location != null && opensWithGate(embeddedOpenIntent(invocation))):
+				switch store.remoteMigrateGate(location.path, selectedDatabaseName(invocation, location), version) {
+					case MigratesWithoutGate:
+						output.writeStderr('Error: failed to open database: ${schemaSkewOpenError(refusal, false)}\n');
+					case GateStops(stop) if (isReadOnlyCommand(invocation.command)):
+						// Upstream warns and reads; the native facade cannot read a database behind the binary.
+						SchemaSkewWarning.holdGateWarning(remoteGateReadOnlyWarning(stop));
+						writeCandidateRefusal(invocation,
+							'${commandPath(invocation.command)} is not available yet on a database behind the binary in this build');
+					case GateStops(stop):
+						writeRemoteGateStop(invocation, stop);
+					case GateWrites(write):
+						writeRemoteGateWrite(invocation, write);
+					case GateReadFailed(error):
+						output.writeStderr('Error: failed to open database: ${schemaSkewOpenError(RemoteGateFailed(error), false)}\n');
+				}
+			case DatabaseBehind(_, _) | ForwardCheckFailed(_) | BehindCheckFailed(_) | RemoteGateFailed(_):
 				final config = location != null ? LayeredConfig.forWorkspace(location.path) : LayeredConfig.atStartup();
 				output.writeStderr('Error: failed to open database: ${schemaSkewOpenError(refusal, strictReadonly(invocation, config))}\n');
 		}
 		return 1;
+	}
+
+	/**
+		Upstream's pre-run at a remote-migrate gate stop (cmd/bd/main.go): the
+		full gate message on stderr, or `handleRemoteMigrateGateJSON`'s error on
+		stderr under JSON output.
+	**/
+	function writeRemoteGateStop(invocation:Invocation, stop:RemoteGateStop):Void {
+		switch invocation.output {
+			case Human:
+				output.writeStderr(remoteGateUserMessage(stop));
+			case Json:
+				output.writeStderr(escapeJsonHtml(remoteGateJson(stop, output.usesJsonEnvelope())));
+		}
+	}
+
+	/** Whether upstream's open runs the remote-migrate gate: an embedded open without strict read-only mode. */
+	static function opensWithGate(intent:EmbeddedOpenIntent):Bool {
+		return switch intent {
+			case ReadOnlyCommandOpen | PlainOpen: true;
+			case NoEmbeddedOpen | StrictReadOnlyOpen: false;
+		};
+	}
+
+	/** Where upstream's gate lets it migrate or fast-forward, this build, which never writes, refuses. */
+	function writeRemoteGateWrite(invocation:Invocation, write:RemoteGateWrite):Void {
+		final action = switch write {
+			case EscapeHatchMigration | FirstMoverMigration: "migrate";
+			case FastForward: "fast-forward";
+		};
+		writeCandidateRefusal(invocation,
+			'${commandPath(invocation.command)} is not available yet where upstream would ${action} a database with a Dolt remote in this build');
+	}
+
+	/** `runModeAwareFailure` without its schema check, for a refusal at the schema check itself. */
+	function writeCandidateRefusal(invocation:Invocation, message:String):Void {
+		switch invocation.output {
+			case Human:
+				output.writeStderr('Error: ${message}\n');
+			case Json:
+				writeJsonStdout('{\n  "error": ${Json.stringify(message)},\n  "schema_version": 1\n}\n');
+		}
 	}
 
 	/**

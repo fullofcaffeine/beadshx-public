@@ -90,8 +90,8 @@ each command in detail.
 
 - Write commands, such as `create`, `update` and `close`, are not ported:
   `bdhx` prints `unknown command`.
-- On a database with an older schema, `bdhx` stops with upstream's read-only
-  error. Upstream would migrate the database.
+- On a database with an older schema and no Dolt remote, `bdhx` stops with
+  upstream's read-only error. Upstream would migrate the database.
 - In a server-mode or proxied workspace (the database runs in a Dolt
   server), some commands, such as `dep tree`, `blocked`, `graph`, `history`
   and the `config` commands, report that they are not available yet.

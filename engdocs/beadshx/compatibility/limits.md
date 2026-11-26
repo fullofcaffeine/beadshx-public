@@ -16,20 +16,31 @@ exists.
   and `dep add` asks for one of the read subcommands. Writes come with the
   write milestones (M09 and later).
 - Without `--readonly`, upstream migrates a database whose schema is behind
-  the binary, and then runs the command. It also migrates when the
-  `schema_migrations` table is missing or empty. `bdhx` never migrates. It
-  stops with upstream's `--readonly` error and leaves the database unchanged.
+  the binary and that has no Dolt remote, and then runs the command. It also
+  migrates when the `schema_migrations` table is missing or empty. `bdhx`
+  never migrates. It stops with upstream's `--readonly` error and leaves the
+  database unchanged.
   When the working set has changes in tables that a pending migration
   touches, upstream's read commands warn about these dirty tables instead of
   a migration, and `bdhx` stops in the same way. Migration parity (M12)
   removes this limit.
-- When such a database has a Dolt remote, upstream does not migrate it. Its
-  read commands, such as `list`, `show` and `comments`, print its
-  remote-migrate gate warning (`Warning: refusing to auto-apply ... (#4259)`)
-  and read the database as it is. Its other commands, such as `types` and
-  `dep tree`, stop with the full gate message, or with its JSON error under
-  `--json`. `bdhx` stops with the `--readonly` error in both cases
-  (beadshx-m08.61).
+- When such a database has a Dolt remote, `bdhx` runs upstream's
+  remote-migrate gate (see
+  [Storage modes](storage-modes.md#remote-migrate-gate)). Where the gate lets
+  upstream write, `bdhx` stops with `Error: <command> is not available yet
+  where upstream would migrate a database with a Dolt remote in this build`.
+  Upstream migrates with `BD_ALLOW_REMOTE_MIGRATE=1`, and when the cached
+  remote is at the same version, v43 or later. The error says `fast-forward`
+  instead when `HEAD` is an ancestor of a cached remote at v65 and the working
+  set is clean: upstream then fast-forwards to the remote.
+- At a gate stop, upstream's reads `list`, `count`, `ready`, `search`,
+  `query` and `ping`, and `show` and `label list` for an issue with
+  dependencies, print the gate's warning and read the database as it is. In
+  `bdhx` they read through the native facade, whose strict read-only open
+  cannot read a database behind the binary, so they print the same warning
+  and then stop with `Error: <command> is not available yet on a database
+  behind the binary in this build`, also with `BD_IGNORE_SCHEMA_SKEW=1`
+  (beadshx-m08.67).
 - Upstream `show` records the issue that it showed in `.beads/last-touched`.
   `bdhx` reads that file, for `show` without an ID, but never writes it
   (beadshx-m08.27).

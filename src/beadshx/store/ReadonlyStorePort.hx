@@ -28,4 +28,12 @@ interface ReadonlyStorePort extends IssueQueryPort {
 		command's own read to report.
 	**/
 	function checkSchema(beadsDir:String, databaseName:String):Void;
+
+	/**
+		Upstream's remote-migrate gate for the embedded database of `beadsDir`
+		at `currentVersion`, behind the binary, as the command's schema check
+		recorded it or, when no check ran it, from a session of its own. A store
+		that does not open migrates without the gate.
+	**/
+	function remoteMigrateGate(beadsDir:String, databaseName:String, currentVersion:Int):RemoteMigrateGate.RemoteGateOutcome;
 }
