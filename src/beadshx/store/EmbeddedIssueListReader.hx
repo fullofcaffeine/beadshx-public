@@ -8,6 +8,9 @@ import beadshx.store.SqlIssueFilter.IssueSearchFilter;
 import beadshx.store.SqlIssueListReader.readQueryCandidates;
 import beadshx.store.SqlIssueListReader.readSqlIssueList;
 import beadshx.store.SqlIssueListReader.readSqlIssueSearch;
+import beadshx.store.SqlIssueListReader.IssueSearchFailure;
+import beadshx.store.SqlIssueSearch.SearchedIssues;
+import beadshx.store.StoreResult;
 
 /**
 	Own the store opens and read transactions of one list page; the list semantics are authored Haxe.
@@ -54,10 +57,7 @@ final class EmbeddedIssueListReader {
 		EmbeddedSession.openForCommand(beadsDir, databaseName);
 		var customStatusNames = new Array<String>();
 		if (request.status != "" && request.status != "all") {
-			customStatusNames = [
-				for (status in EmbeddedListConfig.load(beadsDir, databaseName, layers).customStatuses)
-					status.name
-			];
+			customStatusNames = searchStatusNames(beadsDir, databaseName, layers);
 			// Upstream's ApplyStatusFilter refuses a bad selector before SearchIssues opens the store.
 			final refused = SqlIssueFilter.applyStatusSelector(new IssueSearchFilter(), request.status, customStatusNames);
 			if (refused != null)
@@ -66,6 +66,47 @@ final class EmbeddedIssueListReader {
 		return finishListRead(SEARCH_WORDING,
 			EmbeddedSession.withRead(beadsDir, databaseName,
 				(context, transaction) -> readSqlIssueSearch(context, transaction, query, request, customStatusNames)));
+	}
+
+	/**
+		Upstream search's check of a `--status` selector, which comes before its
+		other flag checks (cmd/bd/search.go:114-122): the store open of
+		upstream's pre-run, then LoadStoreListConfig (three sessions) and
+		ApplyStatusFilter. Null when the selector applies; `all` and an empty
+		selector read nothing.
+	**/
+	public static function searchStatusRefusal(beadsDir:String, databaseName:String, status:String, layers:IssueListConfigLayers):Null<String> {
+		EmbeddedSession.openForCommand(beadsDir, databaseName);
+		if (status == "" || status == "all")
+			return null;
+		return SqlIssueFilter.applyStatusSelector(new IssueSearchFilter(), status, searchStatusNames(beadsDir, databaseName, layers));
+	}
+
+	/** The custom status names of upstream's LoadStoreListConfig (EmbeddedListConfig). */
+	static function searchStatusNames(beadsDir:String, databaseName:String, layers:IssueListConfigLayers):Array<String> {
+		return [
+			for (status in EmbeddedListConfig.load(beadsDir, databaseName, layers).customStatuses)
+				status.name
+		];
+	}
+
+	/**
+		Upstream `SearchIssues` with an issue type and a status and no other
+		filter, such as the closed gates of `ready --gated`
+		(cmd/bd/mol_ready_gated.go:131-141): the IDs of the issues it finds, in
+		one read with upstream's query and words (SqlIssueSearch).
+	**/
+	public static function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):StoreResult<Array<String>> {
+		final filter = new IssueSearchFilter();
+		filter.issueType = issueType;
+		filter.status = status;
+		return SEARCH_WORDING.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName,
+			(context, transaction) -> switch SqlIssueSearch.searchIssues(context, transaction, filter) {
+				case IssuesFound(issues): Success([for (issue in issues) issue.fields.id]);
+				case IssuesNotSearched(SearchFailed(message, _)): Failure(message);
+				// The filter sets no row cap, so this branch only completes the switch.
+				case IssuesNotSearched(SearchRowCap(found, _, cap)): Failure('row cap: $found over $cap');
+			}));
 	}
 
 	/**

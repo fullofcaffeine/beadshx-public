@@ -258,6 +258,23 @@ exists. Each item has a difference record in the
     search where upstream prints `failed to search issues: ` and the error.
     `ready --explain` shows no cycles, where upstream keeps them
     (beadshx-83m4).
+- When a read fails after the store opened, some commands still stop at
+  another read than upstream's, or print other words, because one `bdhx`
+  read does the work of several upstream store calls (beadshx-h98f):
+  - `search` and `label list-all` read the issues with their counts in one
+    query. Upstream runs `SearchIssues` and then reads the labels and the
+    counts, so it prints `search issues: ` where `bdhx` prints
+    `search count issues: `.
+  - `ready --explain` reads the ready issues with their counts first;
+    upstream reads them without counts and then the blocked issues.
+    `ready --mol` reads the issues of the molecule as one list, where
+    upstream prints `failed to get dependents of <id>: ` or
+    `failed to get dependencies for <id>: `.
+  - A failed read of an exact issue ID stops `show`, `comments`,
+    `dep list`, `dep tree` and `graph` with that error. Upstream ignores it
+    and resolves the ID with its ID search, so it can print another error.
+  - In a server-mode workspace, `ping` counts the issues through the native
+    facade, where upstream searches for one issue.
 
 ## Commands and output
 

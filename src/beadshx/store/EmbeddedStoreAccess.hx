@@ -158,6 +158,15 @@ final class EmbeddedStoreAccess {
 	public static function searchIssueIds(beadsDir:String, databaseName:String, query:String):Null<StoreResult<Array<String>>> {
 		return implementation.searchIssueIds(beadsDir, databaseName, query);
 	}
+
+	public static function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>> {
+		return implementation.typedIssueIds(beadsDir, databaseName, issueType, status);
+	}
+
+	public static function searchStatusCheck(beadsDir:String, databaseName:String, status:String,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>> {
+		return implementation.searchStatusCheck(beadsDir, databaseName, status, layers);
+	}
 }
 
 private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
@@ -296,6 +305,15 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String):Null<StoreResult<Array<String>>> {
+		return null;
+	}
+
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>> {
+		return null;
+	}
+
+	public function searchStatusCheck(beadsDir:String, databaseName:String, status:String,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>> {
 		return null;
 	}
 }

@@ -246,7 +246,7 @@ final class SqlExportReader {
 	}
 
 	/** Upstream `PartitionWispIDsInTx`, as the set of IDs in the wisps table. */
-	static function partitionWispIds(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Map<String, Bool>> {
+	public static function partitionWispIds(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Map<String, Bool>> {
 		final wisps = new Map<String, Bool>();
 		if (ids.length == 0)
 			return Success(wisps);

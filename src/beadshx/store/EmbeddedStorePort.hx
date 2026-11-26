@@ -21,6 +21,13 @@ interface EmbeddedStorePort {
 
 	function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:String):Null<StoreResult<String>>;
 	function searchIssueIds(beadsDir:String, databaseName:String, query:String):Null<StoreResult<Array<String>>>;
+
+	/** Upstream `SearchIssues` with an issue type and a status: the IDs it finds. */
+	function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>>;
+
+	/** Search's check of a `--status` selector: success when it applies, or upstream's refusal. */
+	function searchStatusCheck(beadsDir:String, databaseName:String, status:String, layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>>;
+
 	function issueComments(beadsDir:String, databaseName:String, issueId:String):Null<StoreResult<Array<IssueComment>>>;
 	function issueHistory(beadsDir:String, databaseName:String, issueId:String):Null<StoreResult<Array<IssueHistory.IssueHistoryEntry>>>;
 	function issueEvents(beadsDir:String, databaseName:String, issueId:String, limit:Int):Null<StoreResult<Array<IssueHistory.IssueEvent>>>;

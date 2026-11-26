@@ -180,7 +180,7 @@ visibly non-green.
 
 | Disposition | Differences |
 | --- | ---: |
-| fix_planned | 17 |
+| fix_planned | 18 |
 | decision_pending | 2 |
 | waived | 2 |
 | untriaged | 27 |
@@ -220,6 +220,7 @@ visibly non-green.
 | `diff:no-tips` | untriaged | none | output | 3 | bdhx prints no tips and records no tip time in the database. |
 | `diff:no-worktree-jj-fallback` | untriaged | none | behavior | 37 | Workspace lookups do not include upstream's Git worktree and jj workspace fallbacks. |
 | `diff:prefix-fallback` | untriaged | none | behavior | 10 | Without a stored issue_prefix, partial issue IDs resolve with the config.yaml prefix instead of upstream's guess. |
+| `diff:read-failure-words` | fix_planned | beadshx-h98f | error | 9 | After a failed read, search, label list-all, ready --explain, ready --mol, the exact-ID lookup and server-mode ping stop at another read or print other words than upstream's store calls. |
 | `diff:ready-claim-refused` | untriaged | none | behavior | 1 | bdhx refuses ready --claim. |
 | `diff:ready-explain-server` | untriaged | none | output | 1 | In a server-mode or proxied workspace, ready --explain derives blocked issues and cycles without the stored flag and full dependency tables. |
 | `diff:release-step-error-words` | fix_planned | beadshx-83m4 | error | 9 | Before-read failures and some failures after the read keep bdhx's own words or stop at a different step than upstream's store calls. |
@@ -322,7 +323,7 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/close` | no | haxe | not_started | D0 | unknown | unknown | 0 |
 | `cmd:bd/codex-hook` | yes | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/comment` | no | haxe | not_started | D2 | unknown | unknown | 0 |
-| `cmd:bd/comments` | no | haxe | partial | D2 | unknown | pass, sampled (26 scenarios) | 23 |
+| `cmd:bd/comments` | no | haxe | partial | D2 | unknown | pass, sampled (26 scenarios) | 24 |
 | `cmd:bd/comments/add` | no | haxe | not_started | D0 | unknown | unknown | 1 |
 | `cmd:bd/comments/list` | no | haxe | partial | D0 | unknown | pass, sampled (3 scenarios) | 23 |
 | `cmd:bd/compact` | no | haxe | not_started | D2 | unknown | unknown | 0 |
@@ -357,10 +358,10 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/dep` | no | haxe | partial | D2 | unknown | pass, sampled (1 scenarios) | 23 |
 | `cmd:bd/dep/add` | no | haxe | not_started | D0 | unknown | unknown | 0 |
 | `cmd:bd/dep/cycles` | no | haxe | partial | D2 | unknown | pass, sampled (12 scenarios) | 22 |
-| `cmd:bd/dep/list` | no | haxe | partial | D0 | unknown | pass, sampled (10 scenarios) | 23 |
+| `cmd:bd/dep/list` | no | haxe | partial | D0 | unknown | pass, sampled (10 scenarios) | 24 |
 | `cmd:bd/dep/relate` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/dep/remove` | no | haxe | not_started | D0 | unknown | unknown | 0 |
-| `cmd:bd/dep/tree` | no | haxe | partial | D2 | unknown | pass, sampled (29 scenarios) | 25 |
+| `cmd:bd/dep/tree` | no | haxe | partial | D2 | unknown | pass, sampled (29 scenarios) | 26 |
 | `cmd:bd/dep/unrelate` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/diff` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/doctor` | no | haxe | not_started | D1 | unknown | unknown | 0 |
@@ -427,7 +428,7 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/gitlab/push` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/gitlab/status` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/gitlab/sync` | no | haxe | not_started | D2 | unknown | unknown | 0 |
-| `cmd:bd/graph` | no | haxe | partial | D2 | unknown | pass, sampled (107 scenarios) | 24 |
+| `cmd:bd/graph` | no | haxe | partial | D2 | unknown | pass, sampled (107 scenarios) | 25 |
 | `cmd:bd/graph/check` | no | haxe | partial | D2 | unknown | pass, sampled (17 scenarios) | 24 |
 | `cmd:bd/heartbeat` | no | haxe | not_started | D0 | unknown | unknown | 0 |
 | `cmd:bd/help` | no | haxe | partial | D2 | unknown | pass, sampled (44 scenarios) | 8 |
@@ -459,7 +460,7 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/label` | no | haxe | implemented | D2 | unknown | pass, sampled (6 scenarios) | 0 |
 | `cmd:bd/label/add` | no | haxe | not_started | D0 | unknown | unknown | 1 |
 | `cmd:bd/label/list` | no | haxe | partial | D0 | unknown | pass, sampled (18 scenarios) | 22 |
-| `cmd:bd/label/list-all` | no | haxe | partial | D2 | unknown | pass, sampled (21 scenarios) | 23 |
+| `cmd:bd/label/list-all` | no | haxe | partial | D2 | unknown | pass, sampled (21 scenarios) | 24 |
 | `cmd:bd/label/propagate` | no | haxe | not_started | D2 | unknown | unknown | 1 |
 | `cmd:bd/label/remove` | no | haxe | not_started | D0 | unknown | unknown | 1 |
 | `cmd:bd/linear` | no | haxe | not_started | D2 | unknown | unknown | 0 |
@@ -521,7 +522,7 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/notion/sync` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/onboard` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/orphans` | no | go_facade | partial | D1 | unknown | pass, sampled (22 scenarios) | 22 |
-| `cmd:bd/ping` | no | haxe | partial | D1 | unknown | pass, sampled (19 scenarios) | 21 |
+| `cmd:bd/ping` | no | haxe | partial | D1 | unknown | pass, sampled (19 scenarios) | 22 |
 | `cmd:bd/preflight` | no | haxe | not_started | D1 | unknown | unknown | 0 |
 | `cmd:bd/prime` | no | haxe | not_started | D0 | unknown | unknown | 0 |
 | `cmd:bd/priority` | no | haxe | not_started | D2 | unknown | unknown | 0 |
@@ -535,7 +536,7 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/q` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/query` | no | haxe | partial | D2 | unknown | pass, sampled (77 scenarios) | 21 |
 | `cmd:bd/quickstart` | no | haxe | not_started | D1 | unknown | unknown | 0 |
-| `cmd:bd/ready` | no | haxe | partial | D0 | unknown | pass, sampled (264 scenarios) | 31 |
+| `cmd:bd/ready` | no | haxe | partial | D0 | unknown | pass, sampled (264 scenarios) | 32 |
 | `cmd:bd/recall` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/reclaim` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/recompute-blocked` | no | haxe | not_started | D2 | unknown | unknown | 0 |
@@ -553,13 +554,13 @@ No command uses the `development_fallback` lane.
 | `cmd:bd/rules/audit` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/rules/compact` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/schema` | no | haxe | not_started | D2 | unknown | unknown | 0 |
-| `cmd:bd/search` | no | haxe | partial | D0 | unknown | pass, sampled (59 scenarios) | 22 |
+| `cmd:bd/search` | no | haxe | partial | D0 | unknown | pass, sampled (59 scenarios) | 23 |
 | `cmd:bd/send-metrics` | yes | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/serve` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/set-state` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/setup` | no | haxe | not_started | D1 | unknown | unknown | 0 |
 | `cmd:bd/ship` | no | haxe | not_started | D2 | unknown | unknown | 0 |
-| `cmd:bd/show` | no | haxe | partial | D0 | unknown | pass, sampled (88 scenarios) | 26 |
+| `cmd:bd/show` | no | haxe | partial | D0 | unknown | pass, sampled (88 scenarios) | 27 |
 | `cmd:bd/sql` | no | haxe | not_started | D2 | unknown | unknown | 0 |
 | `cmd:bd/stale` | no | haxe | partial | D1 | unknown | pass, sampled (45 scenarios) | 23 |
 | `cmd:bd/state` | no | haxe | not_started | D2 | unknown | unknown | 0 |

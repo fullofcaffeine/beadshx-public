@@ -3964,23 +3964,34 @@ final class Application {
 		};
 	}
 
+	/**
+		Upstream findGateReadyMolecules (cmd/bd/mol_ready_gated.go:129-243): the
+		closed gates first, whose failed search stops the command
+		("searching closed gates: "), and nothing more when there are none; then
+		the ready work ("getting ready work: "). Upstream's later reads, of the
+		hooked issues, each gate's dependents and each molecule, skip what fails;
+		this build reads them as one candidate list, so a failed read of that
+		list finds no molecule.
+	**/
 	function runReadyGated(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWorkWithCounts, invocation.global) {
-			case ReadyFailure(message): runModeAwareFailure(invocation.output, message);
-			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-			case ReadySuccess(ready):
-				switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
-					case ListFailure(message): runModeAwareFailure(invocation.output, message);
-					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-					case ListSuccess(candidates):
-						final molecules = GatedReady.discover(ready.page.items, candidates.items);
-						if (invocation.output == Json)
-							return writeRenderedJsonStdout(renderGatedReadyJson(molecules, output.usesJsonEnvelope()));
-						else
-							output.writeStdout(renderGatedReadyHuman(molecules, terminalStyles()));
-						0;
+		final molecules = switch query.typedIssueIds(location.path, location.databaseName, "gate", "closed", invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'searching closed gates: ${message}');
+			case Success(gates) if (gates.length == 0): [];
+			case Success(_):
+				switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWork, invocation.global) {
+					case ReadyFailure(message): return runModeAwareFailure(invocation.output, 'getting ready work: ${message}');
+					case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
+					case ReadySuccess(ready):
+						switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
+							case ListFailure(_) | ListRowLimitExceeded(_, _, _): [];
+							case ListSuccess(candidates): GatedReady.discover(ready.page.items, candidates.items);
+						}
 				}
 		};
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderGatedReadyJson(molecules, output.usesJsonEnvelope()));
+		output.writeStdout(renderGatedReadyHuman(molecules, terminalStyles()));
+		return 0;
 	}
 
 	/**
@@ -4057,10 +4068,11 @@ final class Application {
 	}
 
 	function runReadyMolecule(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch lookupIssueSummary(location, invocation.readyMolecule, invocation.global, query) {
-			case Failure(_): runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
-			case Success(IssueMissing): runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
-			case Success(IssueFound(root)):
+		return switch resolveMoleculeRoot(location, invocation.readyMolecule, invocation.global, query) {
+			case MoleculeRootUnresolved: runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
+			case MoleculeRootUnreadable(message): runModeAwareFailure(invocation.output, 'loading molecule: failed to get template: ${message}');
+			case MoleculeRootMissing(id): runModeAwareFailure(invocation.output, 'loading molecule: template ${id} not found');
+			case MoleculeRootFound(root):
 				switch loadMoleculeItems(location, root.id, query, invocation.global) {
 					case ListFailure(message): runModeAwareFailure(invocation.output, 'loading molecule: ${message}');
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
@@ -4094,10 +4106,45 @@ final class Application {
 		};
 	}
 
+	/**
+		Upstream runMoleculeReady's lookup (cmd/bd/ready.go:584-592):
+		ResolvePartialID, which ignores a failed read of the exact and the
+		prefixed ID and then resolves the ID with its ID search, so only that
+		search can leave the molecule unresolved; then loadTemplateSubgraph's
+		GetIssue of the resolved ID (cmd/bd/template.go:89-95), whose failure
+		is "failed to get template: ".
+	**/
+	function resolveMoleculeRoot(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):MoleculeRootLookup {
+		final exact = query.issueSummary(location.path, location.databaseName, id, global);
+		switch exact {
+			case Success(IssueFound(summary)):
+				return MoleculeRootFound(summary);
+			case Success(IssueMissing) | Failure(_):
+		}
+		final issuePrefix = partialIdPrefix(location);
+		final prefixed = configuredPrefixCandidate(id, issuePrefix);
+		if (prefixed != id)
+			switch query.issueSummary(location.path, location.databaseName, prefixed, global) {
+				case Success(IssueFound(summary)):
+					return MoleculeRootFound(summary);
+				case Success(IssueMissing) | Failure(_):
+			}
+		final resolved = switch resolveAbbreviatedId(location, id, issuePrefix, prefixed, global, query) {
+			case Failure(_) | Success(null): return MoleculeRootUnresolved;
+			case Success(value): value;
+		};
+		return switch query.issueSummary(location.path, location.databaseName, resolved, global) {
+			case Failure(message): MoleculeRootUnreadable(message);
+			case Success(IssueMissing): MoleculeRootMissing(resolved);
+			case Success(IssueFound(summary)): MoleculeRootFound(summary);
+		};
+	}
+
 	/** The root and the issues of ready --mol, both follow-up reads after the root's lookup. */
 	function loadMoleculeItems(location:WorkspaceLocation, rootId:String, query:IssueQueryPort, global:Bool):IssueListResult {
 		return switch query.issueList(location.path, location.databaseName, IssueListRequests.exact(rootId), 0, global) {
-			case ListFailure(message): ListFailure(message);
+			// loadTemplateSubgraph's GetIssue of the root (cmd/bd/template.go:89-92).
+			case ListFailure(message): ListFailure('failed to get template: ${message}');
 			case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(rootPage):
 				if (rootPage.items.length == 0) {
@@ -4162,12 +4209,13 @@ final class Application {
 			case PlainCheckFailure(message) if (location.proxiedServer):
 				return runModeAwareFailure(invocation.output, message);
 			case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _):
-				// The native search checks --status, so this build searches to find a bad status first.
-				if (invocation.listRequest.status != "")
-					switch query.issueSearch(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest, invocation.global) {
-						case ListFailure(message): return runStoreFailure(message);
-						case ListRowLimitExceeded(_, _, _) | ListSuccess(_):
-					}
+				// Upstream checks --status, which reads the custom statuses, before the other flags (cmd/bd/search.go:114-122).
+				if (invocation.listRequest.status != "") {
+					final refused = query.searchStatusRefusal(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest,
+						invocation.global);
+					if (refused != null)
+						return runStoreFailure(refused);
+				}
 				final checkExit = reportDeferredCheck(invocation, invocation.deferredCheck);
 				if (checkExit != null)
 					return checkExit;
@@ -6400,34 +6448,69 @@ final class Application {
 
 	function resolveAbbreviatedIssue(location:WorkspaceLocation, input:String, issuePrefix:String, normalized:String, global:Bool,
 			query:IssueQueryPort):StoreResult<IssueLookup> {
+		return switch resolveAbbreviatedId(location, input, issuePrefix, normalized, global, query) {
+			case Failure(message): Failure(message);
+			case Success(null): Success(IssueMissing);
+			case Success(id): query.issueSummary(location.path, location.databaseName, id, global);
+		};
+	}
+
+	/**
+		The substring step of upstream ResolvePartialID (internal/utils/id_parser.go:121-226):
+		SearchIssueIDs with the search part of the hash (see partialIdSearchPart),
+		then the candidate whose full ID is the input, or else the last whose hash
+		is the hash, or else the one whose hash starts with it. Null when nothing
+		matches; a failed search and an ambiguous hash fail.
+	**/
+	function resolveAbbreviatedId(location:WorkspaceLocation, input:String, issuePrefix:String, normalized:String, global:Bool,
+			query:IssueQueryPort):StoreResult<Null<String>> {
 		final prefix = normalizedPrefix(issuePrefix);
 		final hashPart = StringTools.startsWith(normalized, prefix) ? normalized.substr(prefix.length) : normalized;
 		if (!isPartialIdHash(hashPart))
-			return Success(IssueMissing);
-		return switch query.searchIssueIds(location.path, location.databaseName, hashPart, global) {
+			return Success(null);
+		return switch query.searchIssueIds(location.path, location.databaseName, partialIdSearchPart(hashPart), global) {
 			case Failure(message): Failure('failed to search issues: ${message}');
 			case Success(ids):
 				final matches = new Array<String>();
 				var exactMatch = "";
 				for (candidate in ids) {
+					if (candidate == input) {
+						exactMatch = candidate;
+						break;
+					}
 					final candidateHash = StringTools.startsWith(candidate, prefix) ? candidate.substr(prefix.length) : candidate;
-					if (candidate == input || candidateHash == hashPart)
+					if (candidateHash == hashPart)
 						exactMatch = candidate;
 					else if (StringTools.startsWith(candidateHash, hashPart))
 						matches.push(candidate);
 				}
 				if (exactMatch != "") {
-					query.issueSummary(location.path, location.databaseName, exactMatch, global);
+					Success(exactMatch);
 				} else if (matches.length == 0) {
-					Success(IssueMissing);
+					Success(null);
 				} else {
 					matches.sort(compareIssueIds);
 					if (matches.length > 1)
 						Failure('${AMBIGUOUS_ISSUE_ID}"${input}" matches ${matches.length} issues: [${matches.join(" ")}]\nUse more characters to disambiguate');
 					else
-						query.issueSummary(location.path, location.databaseName, matches[0], global);
+						Success(matches[0]);
 				}
 		};
+	}
+
+	/**
+		Upstream partialIDSearchPart (internal/utils/id_parser.go:230-242): the
+		part after the hash's last hyphen, when it is not empty and is a hash
+		too, or else the whole hash.
+	**/
+	static function partialIdSearchPart(hashPart:String):String {
+		final dash = hashPart.lastIndexOf("-");
+		if (dash >= 0 && dash < hashPart.length - 1) {
+			final suffix = hashPart.substr(dash + 1);
+			if (isPartialIdHash(suffix))
+				return suffix;
+		}
+		return hashPart;
 	}
 
 	static function compareIssueIds(left:String, right:String):Int {
@@ -9229,4 +9312,18 @@ final class Application {
 			+ "      --sandbox        Disable remote publication\n"
 			+ "  -v, --verbose        Enable verbose/debug output\n";
 	}
+}
+
+/** How ready --mol found its root: upstream ResolvePartialID, then loadTemplateSubgraph's GetIssue. */
+private enum MoleculeRootLookup {
+	MoleculeRootFound(root:IssueSummary);
+
+	/** ResolvePartialID failed or found nothing: upstream says the molecule is not found. */
+	MoleculeRootUnresolved;
+
+	/** GetIssue of the resolved ID failed with this error. */
+	MoleculeRootUnreadable(message:String);
+
+	/** GetIssue found no issue under the resolved ID. */
+	MoleculeRootMissing(id:String);
 }

@@ -1,10 +1,10 @@
 package beadshx.store;
 
 import beadshx.nativeextern.context.Context;
-import beadshx.nativeextern.database.sql.NullString;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.relation.DependencySnapshot;
 import beadshx.relation.RawDependencyEdge;
+import beadshx.store.DatabaseErrors.isTableNotExist;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 
@@ -17,25 +17,24 @@ enum EmbeddedDependencyResult {
 /**
 	Reads stored dependency facts directly through independent Go APIs.
 
-	What: owns one read transaction of the shared `EmbeddedSession`, and the row scan.
+	What: owns one read transaction of the shared `EmbeddedSession`, and the row scans.
 	Why: first-party Beads `issueops.EdgeReader` is migration scaffolding, not a
-	permanent implementation boundary for the Haxe port.
-	How: query issue and wisp presence plus both edge planes inside one transaction,
-	copy concrete scalar rows, then roll back so this read can persist no state.
+	permanent implementation boundary for the Haxe port. A failed read must say
+	what upstream's says, and Dolt words a failed query after its SQL, so each
+	query is upstream's query.
+	How: upstream ExecuteEdgeRead (internal/storage/issueops/edges.go) in one
+	transaction: PresentIssueOrWispIDsInTx ("check issue existence in <table>: ")
+	over the issues and then the wisps table, in batches, where a missing table
+	has no IDs; then GetDependencyRecordsForIssuesInTx: the wisp partition
+	("partition wisp ids: ") and the rows of the wisps from wisp_dependencies,
+	then of the other IDs from dependencies ("get dependency records from
+	<table>: "). The read is rolled back, so it can persist no state.
 **/
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedDependencyReader {
-	static final READ_ANCHOR = "SELECT 'present', id, '', '', '', '', '', '', '' FROM issues WHERE id = ? "
-		+ "UNION ALL SELECT 'present', id, '', '', '', '', '', '', '' FROM wisps WHERE id = ? "
-		+ "UNION ALL SELECT 'edge', COALESCE(id, ''), issue_id, "
-		+ "COALESCE(depends_on_issue_id, depends_on_wisp_id, depends_on_external), type, "
-		+ "COALESCE(CAST(created_at AS CHAR), ''), COALESCE(created_by, ''), COALESCE(metadata, ''), COALESCE(thread_id, '') "
-		+ "FROM dependencies WHERE issue_id = ? "
-		+ "UNION ALL SELECT 'edge', COALESCE(id, ''), issue_id, "
-		+ "COALESCE(depends_on_issue_id, depends_on_wisp_id, depends_on_external), type, "
-		+ "COALESCE(CAST(created_at AS CHAR), ''), COALESCE(created_by, ''), COALESCE(metadata, ''), COALESCE(thread_id, '') "
-		+ "FROM wisp_dependencies WHERE issue_id = ?";
+	/** Upstream queryBatchSize. */
+	static inline final BATCH_SIZE = 200;
 
 	final beadsDir:String;
 	final databaseName:String;
@@ -58,77 +57,78 @@ final class EmbeddedDependencyReader {
 	}
 
 	function readAnchors(context:Context, transaction:Tx, anchors:Array<String>):StoreResult<DependencySnapshot> {
-		final present = new Map<String, Bool>();
+		final present = switch presentIds(context, transaction, anchors) {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
+		final wisps = switch SqlExportReader.partitionWispIds(context, transaction, anchors) {
+			case Failure(message): return Failure(message);
+			case Success(value): value;
+		};
 		final edges = new Array<RawDependencyEdge>();
-		for (anchor in anchors)
-			switch readAnchor(context, transaction, anchor, present, edges) {
-				case EmbeddedDependencyFailure(message):
-					return Failure(message);
-				case EmbeddedDependencySnapshot(_):
+		for (plane in [
+			{table: "wisp_dependencies", ids: [for (anchor in anchors) if (wisps.exists(anchor)) anchor]},
+			{table: "dependencies", ids: [for (anchor in anchors) if (!wisps.exists(anchor)) anchor]}
+		]) {
+			var start = 0;
+			while (start < plane.ids.length) {
+				final batch = plane.ids.slice(start, start + BATCH_SIZE);
+				start += BATCH_SIZE;
+				switch SqlGraphReader.readDependencyBatch(context, transaction, plane.table, batch) {
+					case Failure(message):
+						return Failure(message);
+					case Success(rows):
+						for (row in rows)
+							edges.push({
+								// The source-keyed read does not select the row's own key.
+								id: "",
+								issueId: row.issueId,
+								dependsOnId: row.dependsOnId,
+								dependencyType: row.type,
+								createdAt: row.createdAt,
+								createdBy: row.createdBy,
+								metadata: row.metadata,
+								threadId: row.threadId
+							});
+				}
 			}
+		}
 		return Success({presentIds: [for (anchor in anchors) if (present.exists(anchor)) anchor], edges: edges});
 	}
 
-	function readAnchor(context:Context, transaction:Tx, anchor:String, present:Map<String, Bool>, edges:Array<RawDependencyEdge>):EmbeddedDependencyResult {
-		final queried = transaction.queryContext(context, READ_ANCHOR, anchor, anchor, anchor, anchor);
-		if (queried.value2 != null)
-			return EmbeddedDependencyFailure('read dependency anchor "$anchor": ${queried.value2.toString()}');
-		final rows = queried.value1;
-		while (rows.next()) {
-			final kind = new NullString();
-			final id = new NullString();
-			final issueId = new NullString();
-			final dependsOnId = new NullString();
-			final dependencyType = new NullString();
-			final createdAt = new NullString();
-			final createdBy = new NullString();
-			final metadata = new NullString();
-			final threadId = new NullString();
-			final scanError = rows.scan(kind, id, issueId, dependsOnId, dependencyType, createdAt, createdBy, metadata, threadId);
-			if (scanError != null) {
-				rows.close();
-				return EmbeddedDependencyFailure('scan dependency anchor "$anchor": ${scanError.toString()}');
-			}
-			if (!kind.valid)
-				continue;
-			switch kind.string {
-				case "present":
-					if (id.valid)
-						present.set(id.string, true);
-				case "edge":
-					edges.push({
-						id: value(id),
-						issueId: value(issueId),
-						dependsOnId: value(dependsOnId),
-						dependencyType: value(dependencyType),
-						createdAt: canonicalStoredTime(value(createdAt)),
-						createdBy: value(createdBy),
-						metadata: value(metadata),
-						threadId: value(threadId)
-					});
-				case _:
-					rows.close();
-					return EmbeddedDependencyFailure('read dependency anchor "$anchor": unknown row kind "${kind.string}"');
+	/** Upstream PresentIssueOrWispIDsInTx: the anchors that either table holds. */
+	static function presentIds(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Map<String, Bool>> {
+		final present = new Map<String, Bool>();
+		for (table in ["issues", "wisps"]) {
+			var start = 0;
+			while (start < ids.length) {
+				final batch = ids.slice(start, start + BATCH_SIZE);
+				start += BATCH_SIZE;
+				final arguments:Array<Dynamic> = [for (id in batch) id];
+				final queried = transaction.queryNativeContext(context, 'SELECT id FROM $table WHERE id IN (${[for (_ in batch) "?"].join(",")})',
+					...arguments);
+				if (queried.error != null) {
+					// An older schema has no wisps table: none of the IDs is a wisp.
+					if (isTableNotExist(queried.error))
+						break;
+					return Failure('check issue existence in $table: ${queried.error.text()}');
+				}
+				final rows = queried.rows;
+				while (rows.next()) {
+					final id = go.NativePointer.of("");
+					final scanError = rows.scanNative(id);
+					if (scanError != null) {
+						rows.closeNative();
+						return Failure('check issue existence in $table: scan: ${scanError.text()}');
+					}
+					present.set(id.get(), true);
+				}
+				rows.closeNative();
+				final rowError = rows.errNative();
+				if (rowError != null)
+					return Failure('check issue existence in $table: rows: ${rowError.text()}');
 			}
 		}
-		final rowError = rows.err();
-		if (rowError != null) {
-			rows.close();
-			return EmbeddedDependencyFailure('finish dependency anchor "$anchor": ${rowError.toString()}');
-		}
-		final closeError = rows.close();
-		if (closeError != null)
-			return EmbeddedDependencyFailure('close dependency anchor "$anchor": ${closeError.toString()}');
-		return EmbeddedDependencySnapshot({presentIds: [], edges: []});
-	}
-
-	static inline function value(field:NullString):String {
-		return field.valid ? field.string : "";
-	}
-
-	static function canonicalStoredTime(value:String):String {
-		if (value.length < 19 || value.charAt(10) != " ")
-			return value;
-		return value.substr(0, 10) + "T" + value.substr(11) + "Z";
+		return Success(present);
 	}
 }

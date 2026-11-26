@@ -60,6 +60,15 @@ the error where upstream does:
   details it cannot read and prints only the error.
 - `graph` leaves out an `external:<project>:<id>` dependency when the read
   of the issue that `<id>` names fails, as upstream does.
+- `ready --gated` searches the closed gates first and then reads the ready
+  issues, and puts upstream's `searching closed gates: ` or
+  `getting ready work: ` before a failed read. `ready --mol` puts
+  `loading molecule: failed to get template: ` before a failed read of the
+  molecule, also when only its exact ID cannot be read.
+- `search` checks `--status` before its other flags, as upstream does, so a
+  bad date or priority fails before the search reads.
+- `dep list` with several IDs, and the search of a partial issue ID, read
+  with upstream's queries, so a failed read has upstream's words.
 
 A store that does not open fails before the command reads, also under
 `--global` outside shared-server mode: `bdhx` then prints `Error: ` and the

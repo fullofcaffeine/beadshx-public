@@ -289,8 +289,8 @@ class Main {
 			'relations: error: check issue existence in issues: $missingDatabase',
 			'tree: error: get issue: $missingDatabase',
 			'assigned: error: read assigned issue: $missingDatabase',
-			'id-search: error: search embedded issue IDs: $missingDatabase',
-			'dependencies: error: read dependency anchor "$issueId": $missingDatabase',
+			'id-search: error: search issues: search issues: $missingDatabase',
+			'dependencies: error: check issue existence in issues: $missingDatabase',
 			'summary: error: get issue: $missingDatabase'
 		];
 		final missing = "'<beads>/embeddeddolt' does not exist";

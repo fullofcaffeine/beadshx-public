@@ -181,4 +181,14 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 			case EmbeddedIssueIds(ids): Success(ids);
 		};
 	}
+
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>> {
+		return EmbeddedIssueListReader.typedIssueIds(beadsDir, databaseName, issueType, status);
+	}
+
+	public function searchStatusCheck(beadsDir:String, databaseName:String, status:String,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>> {
+		final refused = EmbeddedIssueListReader.searchStatusRefusal(beadsDir, databaseName, status, layers);
+		return refused == null ? Success(true) : Failure(refused);
+	}
 }

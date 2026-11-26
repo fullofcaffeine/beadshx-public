@@ -17,6 +17,11 @@ final class IssueListRequests {
 		return request("", id);
 	}
 
+	/** Every issue of one type and status, without the list's other filters, as upstream SearchIssues reads them with only those two. */
+	public static function typed(issueType:String, status:String):IssueListRequest {
+		return request("", "", false, status, issueType);
+	}
+
 	/** Fetch complete rows plus blocker annotations for `ready --explain`. */
 	public static function readyExplainCandidates():IssueListRequest {
 		return request("", "", true);
@@ -78,10 +83,10 @@ final class IssueListRequests {
 		};
 	}
 
-	static function request(parentId:String, idFilter:String, blockingAnnotations:Bool = false):IssueListRequest {
+	static function request(parentId:String, idFilter:String, blockingAnnotations:Bool = false, status:String = "", issueType:String = ""):IssueListRequest {
 		return {
-			status: "",
-			issueType: "",
+			status: status,
+			issueType: issueType,
 			assignee: "",
 			titleSearch: "",
 			specPrefix: "",

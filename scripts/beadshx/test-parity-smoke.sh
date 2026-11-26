@@ -8466,6 +8466,32 @@ real_database_extra_env=(BD_JSON_ENVELOPE=1)
 compare_real_database_sql read-failure-envelope-count-json exact "$read_failure_assignee_sql" count --assignee fixture --json
 compare_real_database_sql read-failure-envelope-ping-json ping-failure-json "$read_failure_assignee_sql" ping --json
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# ready --gated searches the closed gates first, and wraps a failure in "searching closed gates: "; then it
+# reads the ready work, "getting ready work: " (cmd/bd/mol_ready_gated.go:129-151). Without is_blocked only the
+# ready read fails. Its later reads skip what fails, so without a dependency column it finds no molecule.
+read_failure_blocked_flag_sql="ALTER TABLE issues DROP COLUMN is_blocked"
+read_failure_dependency_metadata_sql="ALTER TABLE dependencies DROP COLUMN metadata"
+compare_real_database_sql read-failure-ready-gated exact "$read_failure_assignee_sql" ready --gated
+compare_real_database_sql read-failure-ready-gated-json exact "$read_failure_assignee_sql" ready --gated --json
+compare_real_database_sql read-failure-ready-gated-ready exact "$read_failure_blocked_flag_sql" ready --gated
+compare_real_database_sql read-failure-ready-gated-ready-json exact "$read_failure_blocked_flag_sql" ready --gated --json
+compare_real_database_sql read-failure-ready-gated-dependents exact "$read_failure_dependency_metadata_sql" ready --gated
+# ready --mol resolves the ID with ResolvePartialID, which ignores a failed read of the exact ID and finds it
+# with its ID search; loadTemplateSubgraph's GetIssue then fails: "failed to get template: " (template.go:89-92).
+compare_real_database_sql read-failure-ready-mol exact "$read_failure_assignee_sql" ready --mol "$real_database_gated_molecule_id"
+compare_real_database_sql read-failure-ready-mol-json exact "$read_failure_assignee_sql" \
+	ready --mol "$real_database_gated_molecule_id" --json
+# search checks --status before its other flags (cmd/bd/search.go:114-122), so the date error comes before
+# any search read.
+compare_real_database_sql read-failure-search-status-date exact "$read_failure_assignee_sql" \
+	search parity --status open --created-after bogus
+# A dependency list of several IDs reads them as upstream's EdgeReader does: PresentIssueOrWispIDsInTx, then
+# GetDependencyRecordsForIssuesInTx, "get dependency records from <table>: " (internal/storage/issueops/edges.go).
+read_failure_thread_id_sql="ALTER TABLE dependencies DROP COLUMN thread_id"
+compare_real_database_sql read-failure-dep-list-batch exact "$read_failure_thread_id_sql" \
+	dep list "$real_database_issue_id" "$real_database_bug_id"
+compare_real_database_sql read-failure-dep-list-batch-json exact "$read_failure_thread_id_sql" \
+	dep list "$real_database_issue_id" "$real_database_bug_id" --json
 real_database_read_only=""
 # Upstream's text views of show read the labels, the dependencies, the dependents and the comments with
 # store calls of their own and ignore a failure of each (cmd/bd/show.go:200-235, show_thread.go:136-162);

@@ -72,6 +72,18 @@ interface IssueQueryPort extends QueryTimePort {
 	function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String>;
 	function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>>;
 
+	/**
+		Upstream `SearchIssues` with an issue type and a status and no other
+		filter, such as the closed gates of `ready --gated`: the IDs it finds.
+	**/
+	function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String, global:Bool):StoreResult<Array<String>>;
+
+	/**
+		Upstream search's check of a `--status` selector, before its other flag
+		checks (cmd/bd/search.go:114-122). Null when the selector applies.
+	**/
+	function searchStatusRefusal(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):Null<String>;
+
 	/** The comments of an exact issue ID, as `bd comments` lists them. */
 	function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>>;
 

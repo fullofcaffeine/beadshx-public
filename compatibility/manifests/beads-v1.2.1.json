@@ -22231,6 +22231,33 @@
       }
     },
     {
+      "id": "diff:read-failure-words",
+      "summary": "After a failed read, search, label list-all, ready --explain, ready --mol, the exact-ID lookup and server-mode ping stop at another read or print other words than upstream's store calls.",
+      "category": "error",
+      "disposition": "fix_planned",
+      "trackingTask": "beadshx-h98f",
+      "affects": [
+        "cmd:bd/comments",
+        "cmd:bd/dep/list",
+        "cmd:bd/dep/tree",
+        "cmd:bd/graph",
+        "cmd:bd/label/list-all",
+        "cmd:bd/ping",
+        "cmd:bd/ready",
+        "cmd:bd/search",
+        "cmd:bd/show"
+      ],
+      "profiles": [
+        "prof:portable-nocgo",
+        "prof:release-cgo"
+      ],
+      "source": {
+        "evidence": "ev:limits",
+        "section": "Embedded store layouts",
+        "quote": "some commands still stop at another read than upstream's"
+      }
+    },
+    {
       "id": "diff:ready-claim-refused",
       "summary": "bdhx refuses ready --claim.",
       "category": "behavior",

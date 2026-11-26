@@ -1562,6 +1562,47 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return readLastTouchedId(beadsDir);
 	}
 
+	/**
+		An embedded workspace runs upstream's SearchIssues (EmbeddedIssueListReader.typedIssueIds).
+		The native facade has no such search; its list of the same filter finds the same issues.
+	**/
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String, global:Bool):StoreResult<Array<String>> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.typedIssueIds(beadsDir, databaseName, issueType, status);
+			if (embedded != null)
+				return embedded;
+		}
+		return listedIds(issueList(beadsDir, databaseName, IssueListRequests.typed(issueType, status), 0, global));
+	}
+
+	/** The IDs of a list read; a row cap cannot happen without one, so it reads as a failure. */
+	public static function listedIds(result:IssueListResult):StoreResult<Array<String>> {
+		return switch result {
+			case ListSuccess(page): Success([for (item in page.items) item.id]);
+			case ListFailure(message): Failure(message);
+			case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
+		};
+	}
+
+	/**
+		An embedded workspace checks the selector as upstream does (EmbeddedIssueListReader.searchStatusRefusal).
+		The native facade checks it inside its search, so this searches and reports a failed search.
+	**/
+	public function searchStatusRefusal(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):Null<String> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.searchStatusCheck(beadsDir, databaseName, request.status, listConfigLayers(beadsDir));
+			if (embedded != null)
+				return switch embedded {
+					case Failure(message): message;
+					case Success(_): null;
+				};
+		}
+		return switch issueSearch(beadsDir, databaseName, query, request, global) {
+			case ListFailure(message): message;
+			case ListRowLimitExceeded(_, _, _) | ListSuccess(_): null;
+		};
+	}
+
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>> {
 		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.searchIssueIds(beadsDir, databaseName, query);
@@ -1829,6 +1870,17 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String> {
 		final result = native.findAssignedIssue(actor, GoReadonlyStore.issueStatusWireValue(status));
 		return result.isErr() ? Failure(GoReadonlyStore.errorMessage(result)) : Success(result.unwrap());
+	}
+
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String, global:Bool):StoreResult<Array<String>> {
+		return GoReadonlyStore.listedIds(issueList(beadsDir, databaseName, IssueListRequests.typed(issueType, status), 0, global));
+	}
+
+	public function searchStatusRefusal(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):Null<String> {
+		return switch issueSearch(beadsDir, databaseName, query, request, global) {
+			case ListFailure(message): message;
+			case ListRowLimitExceeded(_, _, _) | ListSuccess(_): null;
+		};
 	}
 
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>> {
