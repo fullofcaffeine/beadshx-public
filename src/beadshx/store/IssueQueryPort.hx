@@ -19,10 +19,11 @@ interface IssueQueryPort extends QueryTimePort {
 
 	/**
 		A list read that follows the command's first read of the store, such as
-		the exact parent and each level of a --parent tree. Upstream reads them in
-		the store that its pre-run opened once. An embedded workspace reads them
-		with Haxe-owned SQL, whose session skips the schema check that the first
-		read made; any other workspace reads them as `issueList` does.
+		the exact parent and each level of a --parent tree, or the issues that
+		ready --gated, --mol and --explain read later. Upstream reads them in the
+		store that its pre-run opened once. An embedded workspace reads them with
+		Haxe-owned SQL, whose session skips the schema check that the first read
+		made; any other workspace reads them as `issueList` does.
 	**/
 	function issueListFollowUp(beadsDir:String, databaseName:String, request:IssueListRequest, effectiveLimit:Int, global:Bool):IssueListResult;
 

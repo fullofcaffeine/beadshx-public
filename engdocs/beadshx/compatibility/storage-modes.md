@@ -127,8 +127,12 @@ checks of the command's arguments.
   [Limits](limits.md#writes-and-migration)).
 
 `BD_IGNORE_SCHEMA_SKEW=1` or `--ignore-schema-skew` prints upstream's warning
-instead, and the command reads the database. `where` prints no stored prefix
-when the check stops, as upstream does. `version` does not check.
+instead, and the command reads the database. Like upstream, the command
+prints the warning once, also when it reads the database more than once, as
+`children`, `ready --gated` and `ready --explain` do. A few commands still
+print it again (see [Limits](limits.md#commands-and-output)). `where`
+prints no stored prefix when the check stops, as upstream does. `version`
+does not check.
 
 A server-mode workspace never checks an embedded store that it still holds in
 `.beads/embeddeddolt`, as upstream never opens that store. Its own check runs

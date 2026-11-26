@@ -109,8 +109,9 @@ exists.
   open database: schema version mismatch: ...` on one line in every output
   mode, where upstream prints its stale-binary message or its JSON error with
   `schema_skew`. With the escape hatch, the warning probably repeats once for
-  each native open. Upstream's read-only server open does not check a
-  database that is behind the binary (beadshx-m08.62).
+  each native open, such as each list read of a `children` tree. Upstream's
+  read-only server open does not check a database that is behind the binary
+  (beadshx-m08.62).
 - Every command that reads the database reports that it is not available yet
   in shared-server mode, and when the `db` setting names a database. Only
   `version`, `where` and help pages still run. In these cases upstream
@@ -233,9 +234,12 @@ exists.
   upstream's note there.
 - With `BD_IGNORE_SCHEMA_SKEW=1` on a database that is ahead of or behind the
   binary, a command that opens the native store more than once prints the
-  warning once for each open. Upstream prints it once. `ready --gated`,
-  `ready --mol` and `ready --explain` can print it more than once. They stop
-  doing so when their later reads are ported to Haxe (beadshx-m08.63).
+  warning once for each open. Upstream prints it once. In an embedded
+  workspace, these commands can print it more than once: `show --thread`,
+  once more for each message of the thread; `show` with more than one issue
+  ID, once more for each issue with dependencies after the first; and
+  `list --watch` and `show --watch`, once more at each refresh
+  (beadshx-m08.65).
 - `bdhx` renders most `list --format` Go templates itself (see
   [Read commands](read-commands.md#list---format-templates)). Some templates
   need upstream's Go types, for example `{{printf "%T" .Type}}`,

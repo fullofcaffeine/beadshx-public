@@ -3860,7 +3860,7 @@ final class Application {
 			case ReadyFailure(message): runStoreFailure(message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready):
-				switch query.issueList(location.path, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
+				switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
 					case ListFailure(message): runStoreFailure(message);
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
@@ -3876,43 +3876,48 @@ final class Application {
 
 	/**
 		Upstream runReadyExplain (cmd/bd/ready.go:450-514): the ready set, then
-		GetBlockedIssues, whose failure stops the command, and DetectCycles, whose
-		failure upstream only logs. Its blocked list comes from the stored
-		`is_blocked` flag and its cycles from the blocking edges of both dependency
-		tables, which only an embedded workspace reads with Haxe-owned SQL; in a
-		server-mode or proxied workspace, also one that keeps an embeddeddolt
-		directory from before, the candidates' blocking edges stand in for both.
+		GetBlockedIssues, whose failure stops the command, DetectCycles, and the
+		blockers' records (GetIssuesByIDs); upstream only logs a failure of the last
+		two. Its blocked list comes from the stored `is_blocked` flag and its cycles
+		from the blocking edges of both dependency tables, which only an embedded
+		workspace reads with Haxe-owned SQL. There the blockers' records come from a
+		follow-up read of every issue. In a server-mode or proxied workspace, also
+		one that keeps an embeddeddolt directory from before, the candidates'
+		blocking edges stand in for the blocked list and the cycles.
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
-			case ReadyFailure(message): runStoreFailure(message);
-			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-			case ReadySuccess(ready):
-				switch query.issueList(location.path, IssueListRequests.readyExplainCandidates(), 0, invocation.global) {
-					case ListFailure(message): runStoreFailure(message);
-					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-					case ListSuccess(candidates):
-						final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
-							case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
-								ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
-									ReadyExplain.cyclesFromEdges(candidates.items));
-							case Failure(message):
-								return runModeAwareFailure(invocation.output, message);
-							case Success(entries):
-								final blocked:Array<BlockedEntry> = [for (entry in entries) {issue: entry.issue, blockedBy: entry.blockedBy}];
-								final cycles = switch query.graphCycles(location.path, location.databaseName, invocation.global) {
-									case Success(value): value;
-									case Failure(_): [];
-								};
-								ReadyExplain.build(ready.page.items, candidates.items, blocked, cycles);
-						};
-						if (invocation.output == Json)
-							return writeRenderedJsonStdout(renderReadyExplanationJson(explanation, output.usesJsonEnvelope()));
-						else
-							output.writeStdout(renderReadyExplanationHuman(explanation, terminalStyles()));
-						0;
-				}
+		final ready = switch query.issueReady(location.path, readyExplainRequest(), invocation.global) {
+			case ReadyFailure(message): return runStoreFailure(message);
+			case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
+			case ReadySuccess(value): value;
 		};
+		final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
+			case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
+				switch query.issueList(location.path, IssueListRequests.readyExplainCandidates(), 0, invocation.global) {
+					case ListFailure(message): return runStoreFailure(message);
+					case ListRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
+					case ListSuccess(candidates):
+						ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
+							ReadyExplain.cyclesFromEdges(candidates.items));
+				}
+			case Failure(message):
+				return runModeAwareFailure(invocation.output, message);
+			case Success(entries):
+				final blocked:Array<BlockedEntry> = [for (entry in entries) {issue: entry.issue, blockedBy: entry.blockedBy}];
+				final cycles = switch query.graphCycles(location.path, location.databaseName, invocation.global) {
+					case Success(value): value;
+					case Failure(_): [];
+				};
+				final records = switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.everyIssue(), 0, invocation.global) {
+					case ListSuccess(page): page.items;
+					case ListFailure(_) | ListRowLimitExceeded(_, _, _): [];
+				};
+				ReadyExplain.build(ready.page.items, records, blocked, cycles);
+		};
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderReadyExplanationJson(explanation, output.usesJsonEnvelope()));
+		output.writeStdout(renderReadyExplanationHuman(explanation, terminalStyles()));
+		return 0;
 	}
 
 	static function readyExplainRequest():beadshx.store.ReadyRequest {
@@ -3980,14 +3985,15 @@ final class Application {
 		};
 	}
 
+	/** The root and the issues of ready --mol, both follow-up reads after the root's lookup. */
 	function loadMoleculeItems(location:WorkspaceLocation, rootId:String, query:IssueQueryPort, global:Bool):IssueListResult {
-		return switch query.issueList(location.path, IssueListRequests.exact(rootId), 0, global) {
+		return switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.exact(rootId), 0, global) {
 			case ListFailure(message): ListFailure(message);
 			case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(rootPage):
 				if (rootPage.items.length == 0) {
 					ListFailure('template ${rootId} not found');
-				} else switch query.issueList(location.path, IssueListRequests.moleculeCandidates(), 0, global) {
+				} else switch query.issueListFollowUp(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, global) {
 					case ListFailure(message): ListFailure(message);
 					case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
