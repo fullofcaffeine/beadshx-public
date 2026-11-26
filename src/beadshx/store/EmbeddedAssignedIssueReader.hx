@@ -23,8 +23,7 @@ final class EmbeddedAssignedIssueReader {
 		+ ") assigned ORDER BY priority ASC, created_at DESC, id ASC LIMIT 1";
 
 	static final WORDING = new EmbeddedReadWording("open embedded assigned-issue connector", "ping embedded assigned-issue database",
-		"begin embedded assigned-issue transaction", "roll back assigned issue", "close embedded assigned-issue database",
-		"close embedded assigned-issue connector");
+		"begin embedded assigned-issue transaction");
 
 	final beadsDir:String;
 	final databaseName:String;
@@ -36,15 +35,17 @@ final class EmbeddedAssignedIssueReader {
 
 	public function read(actor:String, status:String):EmbeddedAssignedIssueResult {
 		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readAssigned(context, transaction, actor, status));
-		return switch WORDING.bodyFailureFirst(read) {
+		return switch WORDING.joinedResult(read) {
 			case Failure(message): EmbeddedAssignedIssueFailure(message);
 			case Success(result): result;
 		};
 	}
 
 	/**
-		A failed query or row iteration wins over the session's release steps.
-		A failed scan is a result: a failed release step still replaces it.
+		A failed query or row iteration fails the body, and each failed release
+		step follows it. A failed scan is a result, which a failed release step
+		replaces. Upstream's current-issue lookup ignores every error of its
+		search, so the caller reads any failure as no issue.
 	**/
 	static function readAssigned(context:Context, transaction:Tx, actor:String, status:String):StoreResult<EmbeddedAssignedIssueResult> {
 		final queried = transaction.queryContext(context, READ_ASSIGNED, actor, status, actor, status);

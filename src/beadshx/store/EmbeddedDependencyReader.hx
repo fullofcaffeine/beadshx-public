@@ -50,8 +50,8 @@ final class EmbeddedDependencyReader {
 			return EmbeddedDependencySnapshot({presentIds: [], edges: []});
 
 		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readAnchors(context, transaction, anchors));
-		// A failed anchor read wins over the session's release steps.
-		return switch EmbeddedReadWording.forNoun("dependency", true).bodyFailureFirst(read) {
+		// A failed anchor read comes first; each failed release step follows it, as upstream withConn joins them.
+		return switch EmbeddedReadWording.forNoun("dependency", true).joinedResult(read) {
 			case Failure(message): EmbeddedDependencyFailure(message);
 			case Success(snapshot): EmbeddedDependencySnapshot(snapshot);
 		};

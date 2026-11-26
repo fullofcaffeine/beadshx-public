@@ -19,6 +19,6 @@ final class EmbeddedHistoryReader {
 	}
 
 	static function read<T>(beadsDir:String, databaseName:String, reader:(Context, Tx) -> StoreResult<T>):StoreResult<T> {
-		return EmbeddedReadWording.forNoun("history", false).cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, reader));
+		return EmbeddedReadWording.forNoun("history", false).joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, reader));
 	}
 }

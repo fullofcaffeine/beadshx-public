@@ -1,5 +1,6 @@
 package beadshx.store;
 
+import beadshx.store.EmbeddedSession.EmbeddedRead;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 import beadshx.store.SqlBlockingAnnotation.IssueBlocking;
 import beadshx.store.SqlIssueFilter.IssueListConfigLayers;
@@ -30,11 +31,8 @@ final class EmbeddedIssueListReader {
 	public static function read(beadsDir:String, databaseName:String, request:IssueListRequest, limit:Int, layers:IssueListConfigLayers):IssueListResult {
 		if (request.ready)
 			EmbeddedSession.openForDeferWake(beadsDir, databaseName);
-		final result:IssueListResult = switch EmbeddedSession.withRead(beadsDir, databaseName,
-			(context, transaction) -> readSqlIssueList(context, transaction, request, limit, layers)) {
-			case EmbeddedReadNotStarted(stage, error, _): ListFailure(WORDING.stageMessage(stage, error));
-			case EmbeddedReadFinished(result, cleanup): cleanup.length == 0 ? result : ListFailure(WORDING.cleanupMessage(cleanup[0]));
-		};
+		final result = finishListRead(WORDING,
+			EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlIssueList(context, transaction, request, limit, layers)));
 		if (!request.blockingAnnotations)
 			return result;
 		return switch result {
@@ -65,17 +63,32 @@ final class EmbeddedIssueListReader {
 			if (refused != null)
 				return ListFailure(refused);
 		}
-		return switch EmbeddedSession.withRead(beadsDir, databaseName,
-			(context, transaction) -> readSqlIssueSearch(context, transaction, query, request, customStatusNames)) {
-			case EmbeddedReadNotStarted(stage, error, _): ListFailure(SEARCH_WORDING.stageMessage(stage, error));
-			case EmbeddedReadFinished(result, cleanup): cleanup.length == 0 ? result : ListFailure(SEARCH_WORDING.cleanupMessage(cleanup[0]));
+		return finishListRead(SEARCH_WORDING,
+			EmbeddedSession.withRead(beadsDir, databaseName,
+				(context, transaction) -> readSqlIssueSearch(context, transaction, query, request, customStatusNames)));
+	}
+
+	/**
+		Upstream `withConn`'s join for a page (`EmbeddedReadWording.joinReadErrors`).
+		A row cap comes from inside upstream's store call, and
+		`handleMaxRowsError` finds it through the join with `errors.As`, so the
+		cap stays and the release errors go.
+	**/
+	static function finishListRead(wording:EmbeddedReadWording, read:EmbeddedRead<IssueListResult>):IssueListResult {
+		return switch read {
+			case EmbeddedReadNotStarted(stage, error, _): ListFailure(wording.stageMessage(stage, error));
+			case EmbeddedReadFinished(ListRowLimitExceeded(found, source, cap), _): ListRowLimitExceeded(found, source, cap);
+			case EmbeddedReadFinished(ListFailure(message), cleanup): ListFailure(EmbeddedReadWording.joinReadErrors(message, cleanup));
+			case EmbeddedReadFinished(ListSuccess(page), cleanup):
+				final released = EmbeddedReadWording.joinReadErrors(null, cleanup);
+				released == null ? ListSuccess(page) : ListFailure(released);
 		};
 	}
 
 	/** After the store open of upstream's pre-run, every issue and wisp as `bd query` candidates (readQueryCandidates), in one read. */
 	public static function queryCandidates(beadsDir:String, databaseName:String):StoreResult<Array<IssueListItem>> {
 		EmbeddedSession.openForCommand(beadsDir, databaseName);
-		return QUERY_WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, readQueryCandidates));
+		return QUERY_WORDING.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, readQueryCandidates));
 	}
 
 	static function annotated(beadsDir:String, databaseName:String, page:IssueListPage):IssueListPage {

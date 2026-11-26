@@ -48,33 +48,19 @@ final class EmbeddedIssueSummaryReader {
 		};
 	}
 
-	/** A failed rollback joins the read's result; a failed close counts only after a successful read. */
+	/**
+		Upstream `withConn`'s join (`EmbeddedReadWording.joinReadErrors`): a
+		failed lookup, then the failed rollback and each failed close, each on
+		its own line and without words. After a successful lookup, a failed
+		release step replaces the issue or the miss.
+	**/
 	private static function finishSummaryRead(result:EmbeddedIssueSummaryResult, cleanup:Array<EmbeddedSessionCleanupFailure>):EmbeddedIssueSummaryResult {
-		var rollbackError:Null<go.Error> = null;
-		final closeFailures = new Array<EmbeddedSessionCleanupFailure>();
-		for (failure in cleanup)
-			switch failure {
-				case SessionRollbackFailed(error):
-					rollbackError = error;
-				case SessionCloseDatabaseFailed(_) | SessionCloseConnectorFailed(_):
-					closeFailures.push(failure);
-			}
-		final rolledBack = finishSummaryTransaction(result, rollbackError);
-		return switch rolledBack {
-			case EmbeddedIssueSummaryFailure(_): rolledBack;
-			case _: closeFailures.length == 0 ? rolledBack : EmbeddedIssueSummaryFailure(WORDING.cleanupMessage(closeFailures[0]));
+		final failure = switch result {
+			case EmbeddedIssueSummaryFailure(message): message;
+			case EmbeddedIssueSummaryFound(_) | EmbeddedIssueSummaryMissing: null;
 		};
-	}
-
-	/** Owns the read transaction's rollback result, independently of connection cleanup. */
-	private static function finishSummaryTransaction(result:EmbeddedIssueSummaryResult, rollbackError:Null<go.Error>):EmbeddedIssueSummaryResult {
-		if (rollbackError == null)
-			return result;
-		final rollbackMessage = rollbackError.toString();
-		return switch result {
-			case EmbeddedIssueSummaryFailure(message): EmbeddedIssueSummaryFailure('$message\n$rollbackMessage');
-			case _: EmbeddedIssueSummaryFailure(rollbackMessage);
-		};
+		final joined = EmbeddedReadWording.joinReadErrors(failure, cleanup);
+		return joined == null ? result : EmbeddedIssueSummaryFailure(joined);
 	}
 
 	/** Issues win over wisps; a hard issue error never falls through. */

@@ -1,12 +1,13 @@
 package beadshx.store;
 
+import beadshx.store.EmbeddedSession.EmbeddedRead;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 import beadshx.store.SqlIssueListReader.IssueSearchFailure;
 import beadshx.store.SqlIssueListReader.IssueSearchRows;
 import beadshx.store.SqlReadyWorkReader.ReadyWorkFilter;
 
 /** The ready page of the first read, or how the read ended. */
-private enum ReadyPageRead {
+enum ReadyPageRead {
 	ReadyPage(filter:ReadyWorkFilter, items:Array<IssueListItem>);
 	ReadyStopped(result:ReadyLoadResult);
 }
@@ -36,26 +37,42 @@ final class EmbeddedReadyReader {
 
 	public static function read(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):ReadyLoadResult {
 		EmbeddedSession.openForDeferWake(beadsDir, databaseName);
-		final page = switch EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> switch SqlReadyWorkReader.buildReadyFilter(request) {
-			case Failure(message):
-				ReadyStopped(ReadyFailure(message));
-			case Success(filter):
-				final rows = switch query {
-					case ReadyWorkWithCounts: SqlReadyWorkReader.readReadyWork(context, transaction, filter);
-					case ReadyWork: SqlReadyWorkReader.readReadyIssues(context, transaction, filter);
-				};
-				switch rows {
-					case SearchRows(items): ReadyPage(filter, items);
-					case SearchStopped(SearchFailed(message, _)): ReadyStopped(ReadyFailure(message));
-					case SearchStopped(SearchRowCap(found, source, cap)): ReadyStopped(ReadyRowLimitExceeded(found, source, cap));
-				}
-		}) {
-			case EmbeddedReadNotStarted(stage, error, _): ReadyStopped(ReadyFailure(WORDING.stageMessage(stage, error)));
-			case EmbeddedReadFinished(value, cleanup): cleanup.length == 0 ? value : ReadyStopped(ReadyFailure(WORDING.cleanupMessage(cleanup[0])));
-		};
+		final page = finishPageRead(EmbeddedSession.withRead(beadsDir, databaseName,
+			(context, transaction) -> switch SqlReadyWorkReader.buildReadyFilter(request) {
+				case Failure(message):
+					ReadyStopped(ReadyFailure(message));
+				case Success(filter):
+					final rows = switch query {
+						case ReadyWorkWithCounts: SqlReadyWorkReader.readReadyWork(context, transaction, filter);
+						case ReadyWork: SqlReadyWorkReader.readReadyIssues(context, transaction, filter);
+					};
+					switch rows {
+						case SearchRows(items): ReadyPage(filter, items);
+						case SearchStopped(SearchFailed(message, _)): ReadyStopped(ReadyFailure(message));
+						case SearchStopped(SearchRowCap(found, source, cap)): ReadyStopped(ReadyRowLimitExceeded(found, source, cap));
+					}
+			}));
 		return switch page {
 			case ReadyStopped(result): result;
 			case ReadyPage(filter, items): finish(beadsDir, databaseName, filter, items, query);
+		};
+	}
+
+	/**
+		Upstream `withConn`'s join for the page (`EmbeddedReadWording.joinReadErrors`).
+		A row cap comes from inside upstream's store call, and
+		`handleMaxRowsError` finds it through the join with `errors.As`, so the
+		cap stays and the release errors go.
+	**/
+	static function finishPageRead(read:EmbeddedRead<ReadyPageRead>):ReadyPageRead {
+		return switch read {
+			case EmbeddedReadNotStarted(stage, error, _): ReadyStopped(ReadyFailure(WORDING.stageMessage(stage, error)));
+			case EmbeddedReadFinished(ReadyStopped(ReadyRowLimitExceeded(found, source, cap)), _): ReadyStopped(ReadyRowLimitExceeded(found, source, cap));
+			case EmbeddedReadFinished(ReadyStopped(ReadyFailure(message)), cleanup):
+				ReadyStopped(ReadyFailure(EmbeddedReadWording.joinReadErrors(message, cleanup)));
+			case EmbeddedReadFinished(value, cleanup):
+				final released = EmbeddedReadWording.joinReadErrors(null, cleanup);
+				released == null ? value : ReadyStopped(ReadyFailure(released));
 		};
 	}
 

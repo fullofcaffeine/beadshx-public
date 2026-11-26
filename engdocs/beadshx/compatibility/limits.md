@@ -229,6 +229,28 @@ exists. Each item has a difference record in the
   identity item below), open it fewer times, so they print fewer of these
   lines. `children` opens it once less than upstream, and `list --watch`
   can open it a different number of times (beadshx-m08.73).
+- After a read, the embedded store rolls back the read and closes. When one
+  of these steps fails, `bdhx` prints the errors as upstream does: the error
+  of the read, if there is one, and then the error of each failed step, one
+  on each line, with no added words. A row limit, a truncated `events`
+  window, `types` and `statuses` ignore the failed step, as upstream does.
+  Some differences stay, because one `bdhx` read can do the work of
+  upstream's earlier store calls too:
+  - When the store does not open, ping or begin the read, `bdhx` keeps its
+    own words, such as `begin embedded list transaction: `, and does not add
+    a failed close. Upstream prints `embeddeddolt: begin tx: ` and adds it.
+    `types` and `statuses` then fail, where upstream ignores the error.
+  - When only a step after the read fails, upstream can stop at an earlier
+    store call, with the words of that call: for example
+    `load custom types: ` for `list`, `count --include-infra` and
+    `search --status` when `types.custom` is not set, or
+    `failed to search issues: ` when it finds an issue from its ID. A
+    missing issue then stops `show`, `comments` and `dep` with the error,
+    where upstream tries its routes first.
+  - `dep tree` prints the error where upstream prints its row limit, and
+    `graph --all` prints the row limit of its `in_progress` or `blocked`
+    search where upstream prints `failed to search issues: ` and the error.
+    `ready --explain` shows no cycles, where upstream keeps them.
 
 ## Commands and output
 

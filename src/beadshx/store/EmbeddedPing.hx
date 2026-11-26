@@ -34,7 +34,7 @@ final class EmbeddedPing {
 		EmbeddedSession.openForCommand(beadsDir, databaseName);
 		final start = TimePkg.now();
 		final storeMs = elapsedMilliseconds(start);
-		final counted = WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, countIssues));
+		final counted = WORDING.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, countIssues));
 		final totalMs = elapsedMilliseconds(start);
 		return switch counted {
 			case Failure(message): Failure(message);

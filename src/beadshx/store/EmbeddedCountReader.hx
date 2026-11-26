@@ -35,7 +35,7 @@ final class EmbeddedCountReader {
 		};
 		final buckets = new Array<CountBucket>();
 		if (!group.match(Ungrouped)) {
-			final counts = switch WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName,
+			final counts = switch WORDING.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName,
 				(context, transaction) -> SqlIssueCountReader.countIssuesByGroup(context, transaction, filter, group))) {
 				case Failure(message): return Failure(message);
 				case Success(value): value;
@@ -45,7 +45,7 @@ final class EmbeddedCountReader {
 			for (key in keys)
 				buckets.push({group: key, count: NativeIntegers.fromInt(counts.count(key))});
 		}
-		return switch WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName,
+		return switch WORDING.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName,
 			(context, transaction) -> SqlIssueCountReader.countIssues(context, transaction, filter))) {
 			case Failure(message): Failure(message);
 			case Success(total): Success({total: NativeIntegers.fromInt(total), groups: buckets});

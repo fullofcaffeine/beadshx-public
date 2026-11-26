@@ -10,6 +10,6 @@ import beadshx.store.SqlBlockedReader.readSqlBlocked;
 final class EmbeddedBlockedReader {
 	public static function read(beadsDir:String, databaseName:String, parentId:String):StoreResult<Array<BlockedIssue>> {
 		return EmbeddedReadWording.forNoun("blocked", false)
-			.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlBlocked(context, transaction, parentId)));
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlBlocked(context, transaction, parentId)));
 	}
 }

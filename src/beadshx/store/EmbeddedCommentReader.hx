@@ -9,7 +9,7 @@ import beadshx.store.SqlCommentReader.readSqlDirectIssueComments;
 final class EmbeddedCommentReader {
 	public static function read(beadsDir:String, databaseName:String, issueId:String):StoreResult<Array<IssueComment>> {
 		return EmbeddedReadWording.forNoun("comments", false)
-			.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName,
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName,
 				(context, transaction) -> readSqlDirectIssueComments(context, transaction, issueId)));
 	}
 }

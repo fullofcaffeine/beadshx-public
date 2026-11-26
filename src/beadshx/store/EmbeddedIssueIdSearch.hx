@@ -20,7 +20,7 @@ final class EmbeddedIssueIdSearch {
 		+ ") candidates ORDER BY id ASC";
 
 	static final WORDING = new EmbeddedReadWording("open embedded issue-ID connector", "ping embedded issue-ID database",
-		"begin embedded issue-ID transaction", "roll back embedded issue-ID search", "close embedded issue-ID database", "close embedded issue-ID connector");
+		"begin embedded issue-ID transaction");
 
 	final beadsDir:String;
 	final databaseName:String;
@@ -32,13 +32,13 @@ final class EmbeddedIssueIdSearch {
 
 	public function read(query:String):EmbeddedIssueIdSearchResult {
 		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readIds(context, transaction, query));
-		return switch WORDING.bodyFailureFirst(read) {
+		return switch WORDING.joinedResult(read) {
 			case Failure(message): EmbeddedIssueIdSearchFailure(message);
 			case Success(ids): EmbeddedIssueIds(ids);
 		};
 	}
 
-	/** Every failure of the query or its rows wins over the session's release steps. */
+	/** Every failure of the query or its rows; the session joins each failed release step after it. */
 	static function readIds(context:Context, transaction:Tx, query:String):StoreResult<Array<String>> {
 		final pattern = "%" + query.toLowerCase() + "%";
 		final queried = transaction.queryContext(context, READ_IDS, pattern, pattern);
