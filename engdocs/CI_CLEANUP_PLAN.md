@@ -650,6 +650,10 @@ uv run pytest --durations=50
 uv build
 ```
 
+`pyproject.toml` gives each test a 120-second timeout through pytest-timeout,
+which `uv.lock` pins. A hanging test then fails under its own name and does not
+use up the job's deadline.
+
 ### npm Package
 
 `npm-package` currently has no lockfile, so use `npm install` until a separate
