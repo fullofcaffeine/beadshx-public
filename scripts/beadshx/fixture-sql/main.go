@@ -9,11 +9,17 @@
 // It refuses any workspace without the .beadshx-disposable-fixture marker and
 // any workspace that is not in embedded mode. Never point it at real data.
 //
+// --message sets the commit message. --no-commit commits the SQL transaction
+// but makes no Dolt commit, so the change stays in the working set (dirty,
+// unless it only touches tables that dolt_ignore names). The logical state
+// tests use both to build revision states.
+//
 // With --query it instead runs one read query in a transaction that it rolls
 // back, and prints each row as tab-separated values (NULL as "NULL"). Tests use
 // it to read values, such as Dolt revision hashes, that bd prints nowhere.
 //
-// Usage: fixture-sql WORKSPACE < STATEMENTS (one SQL statement per line)
+// Usage: fixture-sql [--message TEXT | --no-commit] WORKSPACE < STATEMENTS
+// (one SQL statement per line)
 //
 //	fixture-sql --query WORKSPACE < QUERY
 package main
@@ -33,19 +39,66 @@ import (
 	"github.com/steveyegge/beads/internal/storage/embeddeddolt"
 )
 
-const fixtureMarker = ".beadshx-disposable-fixture"
+const (
+	fixtureMarker = ".beadshx-disposable-fixture"
+	// defaultMessage is the Dolt commit message without --message.
+	defaultMessage = "beadshx parity fixture"
+)
+
+// invocation is one parsed command line.
+type invocation struct {
+	query     bool
+	workspace string
+	// message is the Dolt commit message; empty with --no-commit or --query.
+	message string
+}
+
+func parseArguments(arguments []string) (invocation, error) {
+	result := invocation{message: defaultMessage}
+	noCommit, messageSet := false, false
+	for len(arguments) > 1 {
+		switch arguments[0] {
+		case "--query":
+			result.query = true
+			arguments = arguments[1:]
+		case "--no-commit":
+			noCommit = true
+			arguments = arguments[1:]
+		case "--message":
+			if len(arguments) < 3 || arguments[1] == "" {
+				return invocation{}, errors.New("--message takes a non-empty message")
+			}
+			result.message, messageSet = arguments[1], true
+			arguments = arguments[2:]
+		default:
+			return invocation{}, fmt.Errorf("unknown option %q", arguments[0])
+		}
+	}
+	if len(arguments) != 1 || arguments[0] == "" || strings.HasPrefix(arguments[0], "--") {
+		return invocation{}, errors.New("missing workspace")
+	}
+	if (result.query && (noCommit || messageSet)) || (noCommit && messageSet) {
+		return invocation{}, errors.New("--query, --message and --no-commit do not combine")
+	}
+	result.workspace = arguments[0]
+	if noCommit || result.query {
+		result.message = ""
+	}
+	return result, nil
+}
 
 func main() {
-	var err error
-	switch {
-	case len(os.Args) == 2:
-		err = run(context.Background(), os.Args[1], os.Stdin)
-	case len(os.Args) == 3 && os.Args[1] == "--query":
-		err = query(context.Background(), os.Args[2], os.Stdin, os.Stdout)
-	default:
-		fmt.Fprintln(os.Stderr, "usage: fixture-sql WORKSPACE < STATEMENTS")
+	command, err := parseArguments(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fixture-sql: %v\n", err)
+		fmt.Fprintln(os.Stderr, "usage: fixture-sql [--message TEXT | --no-commit] WORKSPACE < STATEMENTS")
 		fmt.Fprintln(os.Stderr, "       fixture-sql --query WORKSPACE < QUERY")
 		os.Exit(2)
+	}
+	if command.query {
+		err = query(context.Background(), command.workspace, os.Stdin, os.Stdout)
+	} else {
+		err = run(context.Background(), command.workspace, os.Stdin, command.message)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fixture-sql: %v\n", err)
@@ -151,7 +204,9 @@ func query(ctx context.Context, workspace string, input io.Reader, output io.Wri
 	return rows.Err()
 }
 
-func run(ctx context.Context, workspace string, input io.Reader) (err error) {
+// run applies the statements in one transaction and, unless message is empty,
+// makes a Dolt commit with that message.
+func run(ctx context.Context, workspace string, input io.Reader, message string) (err error) {
 	database, err := fixtureDatabase(workspace)
 	if err != nil {
 		return err
@@ -175,8 +230,10 @@ func run(ctx context.Context, workspace string, input io.Reader) (err error) {
 			return errors.Join(fmt.Errorf("%s: %w", statement, execErr), tx.Rollback())
 		}
 	}
-	if _, commitErr := tx.ExecContext(ctx, "CALL DOLT_COMMIT('-Am', ?)", "beadshx parity fixture"); commitErr != nil {
-		return errors.Join(fmt.Errorf("dolt commit: %w", commitErr), tx.Rollback())
+	if message != "" {
+		if _, commitErr := tx.ExecContext(ctx, "CALL DOLT_COMMIT('-Am', ?)", message); commitErr != nil {
+			return errors.Join(fmt.Errorf("dolt commit: %w", commitErr), tx.Rollback())
+		}
 	}
 	return tx.Commit()
 }
