@@ -183,28 +183,20 @@ if name=='go':
 				}
 				records = append(records, record)
 			}
-			want := 35
-			if embedded {
-				want = 4
-			} else if scalar {
-				want = 2
-			}
-			if mode == "compile_failure" || mode == "embedded_compile_failure" || mode == "scalar_compile_failure" {
-				want = 1
-			} else if fail && !embedded && !scalar {
-				want = 25
-			}
-			if len(records) != want {
-				t.Fatalf("dispatch count=%d want%d", len(records), want)
+			if len(records) == 0 {
+				t.Fatalf("no dispatches: %s", out)
 			}
 			fixture := records[0].Cwd
 			var expected []invocation
-			contracts := []string{"storage_errors", "storage_relation_errors", "storage_summary_errors", "render_metadata", "raw_metadata_output", "nullable_issue_strings", "native_issue_math", "sql_comment_reader", "sql_comment_details", "server_driver_timeouts", "complete_issue_row"}
+			// Keep this list in the script's order; the dispatch counts below
+			// are derived from it rather than pinned by hand.
+			contracts := []string{"storage_errors", "storage_relation_errors", "storage_summary_errors", "storage_read_cleanup_errors", "render_metadata", "raw_metadata_output", "nullable_issue_strings", "native_issue_math", "sql_comment_reader", "sql_comment_details", "server_driver_timeouts", "complete_issue_row"}
 			if embedded {
 				contracts = []string{"embedded_comment_details"}
 			} else if scalar {
 				contracts = []string{"scalar_label_details"}
 			}
+			readerRun := 0
 			for _, contract := range contracts {
 				if contract == "embedded_comment_details" {
 					expected = append(expected, invocation{fixture, "npx", []string{"--no-install", "haxe", "test/embedded_comment_details/compile.hxml", "-D", "go_no_build"}}, invocation{fixture, "go", []string{"env", "GOMODCACHE"}}, invocation{fixture, "go", []string{"env", "GOCACHE"}}, invocation{fixture, "go", []string{"test", "-tags=gms_pure_go", "-run", "^TestEmbeddedCommentDetails$", "-count=1", "-timeout=300s", "./generated/go/bdhx"}})
@@ -223,6 +215,20 @@ if name=='go':
 					expected = append(expected, invocation{fixture, "go", []string{"test", "-tags=gms_pure_go", "./test/sql_comment_reader", "-run", test, "-count=1"}})
 				}
 				expected = append(expected, invocation{fixture, "go", []string{"run", "-tags=gms_pure_go", "./generated/go/bdhx"}})
+				if contract == "sql_comment_reader" {
+					// The observation failure modes corrupt this contract's run
+					// output, so the wrapper stops after this dispatch.
+					readerRun = len(expected)
+				}
+			}
+			want := len(expected)
+			if mode == "compile_failure" || mode == "embedded_compile_failure" || mode == "scalar_compile_failure" {
+				want = 1
+			} else if fail && !embedded && !scalar {
+				want = readerRun
+			}
+			if len(records) != want {
+				t.Fatalf("dispatch count=%d want%d", len(records), want)
 			}
 			expected = expected[:want]
 			if !reflect.DeepEqual(records, expected) {
