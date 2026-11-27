@@ -1,0 +1,8 @@
+{
+  "description": "Declare the D0 workflow tier to be full compatibility.",
+  "filter": ".workflowTiers.d0IsFullCompatibility = true",
+  "expect": [
+    "D0 counted as full coverage: workflowTiers.d0IsFullCompatibility is true",
+    "workflowTiers.d0IsFullCompatibility does not match inv:daily-workflow /scope/d0IsFullCompatibility"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Count a candidate-only refusal check as parity.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/where\") | .verification[] | select(.profile == \"prof:release-cgo\") | .scenarios) |= (. + [\"candidate-only/legacy-config-where-unported\"] | sort)",
+  "expect": [
+    "refusal scenario counted as parity: cmd:bd/where@release-cgo cites candidate-only/legacy-config-where-unported"
+  ]
+}

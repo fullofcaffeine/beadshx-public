@@ -64,8 +64,13 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedIssueListReader.read(beadsDir, databaseName, request, limit, layers);
 	}
 
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
-		return EmbeddedReadyReader.read(beadsDir, databaseName, request);
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):Null<ReadyLoadResult> {
+		return EmbeddedReadyReader.read(beadsDir, databaseName, request, query);
+	}
+
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int):Void {
+		for (_ in 0...count)
+			EmbeddedSession.openForStoreCall(beadsDir, databaseName);
 	}
 
 	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
@@ -82,7 +87,7 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 		return EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName);
 	}
 
-	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>> {
 		return EmbeddedPing.check(beadsDir, databaseName);
 	}
 
@@ -175,5 +180,15 @@ final class EmbeddedCgoStore implements EmbeddedStorePort {
 			case EmbeddedIssueIdSearchFailure(message): Failure(message);
 			case EmbeddedIssueIds(ids): Success(ids);
 		};
+	}
+
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>> {
+		return EmbeddedIssueListReader.typedIssueIds(beadsDir, databaseName, issueType, status);
+	}
+
+	public function searchStatusCheck(beadsDir:String, databaseName:String, status:String,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>> {
+		final refused = EmbeddedIssueListReader.searchStatusRefusal(beadsDir, databaseName, status, layers);
+		return refused == null ? Success(true) : Failure(refused);
 	}
 }

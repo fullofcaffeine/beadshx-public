@@ -1,0 +1,611 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:beadshx:compatibility-manifest:schema:1",
+  "title": "BeadsHX compatibility manifest",
+  "description": "Record shapes and closed vocabularies of a BeadsHX compatibility manifest. scripts/beadshx/check-compatibility-manifest.sh checks the facts that JSON Schema cannot express: joins, set equality with the pinned inventories, digests, evidence freshness, and coverage rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "sourceInventories",
+    "profiles",
+    "capabilities",
+    "operations",
+    "outputs",
+    "errors",
+    "data",
+    "effects",
+    "nativeBoundaries",
+    "performance",
+    "workflowTiers",
+    "commands",
+    "evidence",
+    "differences",
+    "waivers"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "identity": { "$ref": "#/$defs/identity" },
+    "sourceInventories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/sourceInventory" }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profile" }
+    },
+    "capabilities": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/capabilityRecord" } } } },
+    "operations": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/operationRecord" } } } },
+    "outputs": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/scenarioRecord" } } } },
+    "errors": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/scenarioRecord" } } } },
+    "data": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/sourcedRecord" } } } },
+    "effects": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/sourcedRecord" } } } },
+    "nativeBoundaries": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/nativeBoundaryRecord" } } } },
+    "performance": { "$ref": "#/$defs/registry", "properties": { "records": { "items": { "$ref": "#/$defs/sourcedRecord" } } } },
+    "workflowTiers": { "$ref": "#/$defs/workflowTiers" },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "differences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/difference" }
+    },
+    "waivers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/waiver" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "repositoryPath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$",
+      "not": { "pattern": "(^|/)\\.\\.(/|$)" }
+    },
+    "jsonPointer": { "type": "string", "pattern": "^(/[^/]+)+$" },
+    "taskId": { "type": "string", "pattern": "^beadshx-[a-z0-9]+([.-][a-z0-9]+)*$" },
+    "commandId": { "type": "string", "pattern": "^cmd:bd(/[a-z0-9_][a-z0-9_-]*)*$" },
+    "profileId": { "type": "string", "pattern": "^prof:[a-z0-9][a-z0-9-]*$" },
+    "inventoryId": { "type": "string", "pattern": "^inv:[a-z0-9][a-z0-9-]*$" },
+    "evidenceId": { "type": "string", "pattern": "^ev:[a-z0-9][a-z0-9-]*$" },
+    "evidenceRef": {
+      "description": "An evidence record or a digest-pinned source inventory.",
+      "type": "string",
+      "pattern": "^(ev|inv):[a-z0-9][a-z0-9-]*$"
+    },
+    "differenceId": { "type": "string", "pattern": "^diff:[a-z0-9][a-z0-9-]*$" },
+    "waiverId": { "type": "string", "pattern": "^waiver:[a-z0-9][a-z0-9-]*$" },
+    "tierId": { "type": "string", "pattern": "^tier:D[0-9]+$" },
+    "operationId": { "type": "string", "pattern": "^op:[a-z0-9][a-z0-9-]*$" },
+    "registryRecordId": {
+      "type": "string",
+      "pattern": "^(cap|op|out|err|data|eff|nb|perf):[A-Za-z0-9][A-Za-z0-9_./-]*$"
+    },
+    "scenarioId": { "type": "string", "pattern": "^[a-z][a-z-]*/[A-Za-z0-9][A-Za-z0-9_.+/-]*$" },
+    "sourceRef": {
+      "description": "<inventory>#<collection>/<record id>: one record of a source inventory collection.",
+      "type": "string",
+      "pattern": "^inv:[a-z0-9][a-z0-9-]*#[A-Za-z0-9_]+/[A-Za-z0-9_.:+/-]+$"
+    },
+    "collectionRef": {
+      "description": "<inventory>#<collection>: every record of a source inventory collection.",
+      "type": "string",
+      "pattern": "^inv:[a-z0-9][a-z0-9-]*#[A-Za-z0-9_]+$"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestId", "upstream", "sourceLock", "compilerLock"],
+      "properties": {
+        "manifestId": { "type": "string", "pattern": "^beads-v[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "upstream": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project", "version", "commit"],
+          "properties": {
+            "project": { "$ref": "#/$defs/text" },
+            "version": { "type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "commit": { "$ref": "#/$defs/commit" }
+          }
+        },
+        "sourceLock": { "$ref": "#/$defs/lockReference" },
+        "compilerLock": { "$ref": "#/$defs/lockReference" }
+      }
+    },
+    "lockReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "pointer"],
+      "properties": {
+        "path": { "$ref": "#/$defs/repositoryPath" },
+        "pointer": { "$ref": "#/$defs/jsonPointer" }
+      }
+    },
+    "sourceInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "task", "kind", "path", "encoding", "sha256"],
+      "properties": {
+        "id": { "$ref": "#/$defs/inventoryId" },
+        "task": { "$ref": "#/$defs/taskId" },
+        "kind": {
+          "enum": [
+            "command-inventory",
+            "command-policy",
+            "output-contracts",
+            "error-contracts",
+            "storage-contracts",
+            "schema-migrations",
+            "effect-contracts",
+            "native-pressure-policy",
+            "performance-policy",
+            "performance-comparison",
+            "daily-workflow"
+          ]
+        },
+        "path": { "$ref": "#/$defs/repositoryPath" },
+        "encoding": { "enum": ["json", "gzip-json"] },
+        "schemaVersion": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "commitPointer": { "$ref": "#/$defs/jsonPointer" }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "goos", "goarch", "cgoEnabled", "buildTags", "requirementState"],
+      "properties": {
+        "id": { "$ref": "#/$defs/profileId" },
+        "source": { "$ref": "#/$defs/sourceRef" },
+        "goos": { "type": "string", "pattern": "^[a-z0-9]+$" },
+        "goarch": { "type": "string", "pattern": "^[a-z0-9]+$" },
+        "cgoEnabled": { "type": "boolean" },
+        "buildTags": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9_]+$" } },
+        "requirementState": { "$ref": "#/$defs/requirementState" }
+      }
+    },
+    "requirementState": { "enum": ["required", "not_applicable", "unsupported"] },
+    "registry": {
+      "description": "pending: nothing inventoried yet (owner required, no records). partial: some records, completeness pending (owner required). complete: the records equal every record of completeAgainst.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["pending", "partial", "complete"] },
+        "owner": { "$ref": "#/$defs/taskId" },
+        "completeAgainst": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/collectionRef" }
+        },
+        "records": { "type": "array", "minItems": 1 }
+      },
+      "oneOf": [
+        {
+          "properties": { "state": { "const": "pending" } },
+          "required": ["owner"],
+          "not": { "anyOf": [{ "required": ["records"] }, { "required": ["completeAgainst"] }] }
+        },
+        {
+          "properties": { "state": { "const": "partial" } },
+          "required": ["owner", "records"],
+          "not": { "required": ["completeAgainst"] }
+        },
+        {
+          "properties": { "state": { "const": "complete" } },
+          "required": ["records", "completeAgainst"],
+          "not": { "required": ["owner"] }
+        }
+      ]
+    },
+    "capabilityRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^cap:[A-Za-z0-9][A-Za-z0-9_./-]*$" },
+        "source": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "operationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "capabilities", "effectRecipe"],
+      "properties": {
+        "id": { "$ref": "#/$defs/operationId" },
+        "source": { "$ref": "#/$defs/sourceRef" },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^cap:[A-Za-z0-9][A-Za-z0-9_./-]*$" }
+        },
+        "effectRecipe": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "scenarioRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(out|err):[A-Za-z0-9][A-Za-z0-9_./-]*$" },
+        "source": { "$ref": "#/$defs/sourceRef" },
+        "commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/commandId" } }
+      }
+    },
+    "sourcedRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(data|eff|perf):[A-Za-z0-9][A-Za-z0-9_./-]*$" },
+        "source": { "$ref": "#/$defs/sourceRef" }
+      }
+    },
+    "nativeBoundaryRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^nb:[A-Za-z0-9][A-Za-z0-9_./-]*$" },
+        "kind": { "enum": ["go_facade", "boundary_group", "compiler_feature"] },
+        "source": { "$ref": "#/$defs/sourceRef" },
+        "path": { "$ref": "#/$defs/repositoryPath" }
+      },
+      "oneOf": [
+        { "properties": { "kind": { "const": "go_facade" } }, "required": ["path"], "not": { "required": ["source"] } },
+        { "properties": { "kind": { "enum": ["boundary_group", "compiler_feature"] } }, "required": ["source"], "not": { "required": ["path"] } }
+      ]
+    },
+    "workflowTiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "completeAgainst", "d0IsFullCompatibility", "records"],
+      "properties": {
+        "state": { "const": "complete" },
+        "completeAgainst": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/collectionRef" }
+        },
+        "d0IsFullCompatibility": {
+          "description": "Echo of the approved M02-09 profile. A workflow tier is a filtered view; it never changes the full-compatibility denominator.",
+          "type": "boolean"
+        },
+        "records": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "source", "assignment"],
+            "properties": {
+              "id": { "$ref": "#/$defs/tierId" },
+              "source": { "$ref": "#/$defs/sourceRef" },
+              "assignment": { "enum": ["listed-commands", "remaining-commands"] }
+            }
+          }
+        }
+      }
+    },
+    "axis": {
+      "description": "pending: not inventoried yet; known lists records already known to apply, without claiming completeness. listed: the complete list. none: proved absent by negative evidence. An empty list is never allowed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["pending", "listed", "none"] },
+        "owner": { "$ref": "#/$defs/taskId" },
+        "known": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/registryRecordId" } },
+        "ids": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/registryRecordId" } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } }
+      },
+      "oneOf": [
+        {
+          "properties": { "state": { "const": "pending" } },
+          "required": ["owner"],
+          "not": { "anyOf": [{ "required": ["ids"] }, { "required": ["evidence"] }] }
+        },
+        {
+          "properties": { "state": { "const": "listed" } },
+          "required": ["ids", "evidence"],
+          "not": { "anyOf": [{ "required": ["owner"] }, { "required": ["known"] }] }
+        },
+        {
+          "properties": { "state": { "const": "none" } },
+          "required": ["evidence"],
+          "not": { "anyOf": [{ "required": ["owner"] }, { "required": ["known"] }, { "required": ["ids"] }] }
+        }
+      ]
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "aliases",
+        "hidden",
+        "runnable",
+        "profiles",
+        "activations",
+        "operation",
+        "workflowTier",
+        "requirementState",
+        "ownershipLane",
+        "implementationState",
+        "axes",
+        "verification"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/commandId" },
+        "aliases": {
+          "description": "Echo of the M02-01 inventory, which is complete; an empty list means the inventory records no alias.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_-]*$" }
+        },
+        "hidden": { "type": "boolean" },
+        "runnable": { "type": "boolean" },
+        "profiles": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/profileId" } },
+        "activations": { "type": "array", "minItems": 1, "items": { "enum": ["completion", "normal"] } },
+        "operation": { "$ref": "#/$defs/operationId" },
+        "workflowTier": { "$ref": "#/$defs/tierId" },
+        "requirementState": { "$ref": "#/$defs/requirementState" },
+        "ownershipLane": {
+          "description": "The lane that owns the behavior, or that will own it for a command that is not started. A development fallback is never implemented compatibility.",
+          "enum": ["haxe", "go_facade", "haxe_go_compiler", "development_fallback"]
+        },
+        "implementationState": { "enum": ["not_started", "partial", "implemented"] },
+        "axes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outputs", "errors", "data", "effects", "nativeBoundaries", "performance"],
+          "properties": {
+            "outputs": { "$ref": "#/$defs/axis" },
+            "errors": { "$ref": "#/$defs/axis" },
+            "data": { "$ref": "#/$defs/axis" },
+            "effects": { "$ref": "#/$defs/axis" },
+            "nativeBoundaries": { "$ref": "#/$defs/axis" },
+            "performance": { "$ref": "#/$defs/axis" }
+          }
+        },
+        "verification": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/verification" }
+        }
+      }
+    },
+    "verification": {
+      "description": "One record per command profile. pass with coverage sampled covers only the listed scenarios; coverage complete needs complete scenario denominators.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "state"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/profileId" },
+        "state": { "enum": ["unknown", "blocked", "fail", "pass"] },
+        "coverage": { "enum": ["sampled", "complete"] },
+        "blockedBy": { "$ref": "#/$defs/taskId" },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } },
+        "scenarios": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scenarioId" } }
+      },
+      "oneOf": [
+        {
+          "properties": { "state": { "const": "unknown" } },
+          "not": { "anyOf": [{ "required": ["coverage"] }, { "required": ["blockedBy"] }, { "required": ["evidence"] }, { "required": ["scenarios"] }] }
+        },
+        {
+          "properties": { "state": { "const": "blocked" } },
+          "required": ["blockedBy"],
+          "not": { "anyOf": [{ "required": ["coverage"] }, { "required": ["scenarios"] }] }
+        },
+        {
+          "properties": { "state": { "const": "fail" } },
+          "required": ["evidence"],
+          "not": { "anyOf": [{ "required": ["coverage"] }, { "required": ["blockedBy"] }] }
+        },
+        {
+          "properties": { "state": { "const": "pass" } },
+          "required": ["coverage", "evidence", "scenarios"],
+          "not": { "required": ["blockedBy"] }
+        }
+      ]
+    },
+    "scenarioFamilies": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z-]*$" },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "type": "string", "pattern": "^[a-z_]+$" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "path", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/evidenceId" },
+        "kind": { "enum": ["document", "test", "differential-suite", "negative", "dogfood"] },
+        "path": { "$ref": "#/$defs/repositoryPath" },
+        "description": { "$ref": "#/$defs/text" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "listsDifferences": {
+          "description": "The document is the complete list of known differences: every BeadsHX task ID in it must track a difference.",
+          "const": true
+        },
+        "lane": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workflow", "job", "runner"],
+          "properties": {
+            "workflow": { "$ref": "#/$defs/repositoryPath" },
+            "job": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+            "runner": { "$ref": "#/$defs/repositoryPath" }
+          }
+        },
+        "profile": { "$ref": "#/$defs/profileId" },
+        "families": {
+          "description": "Scenario families that compare BeadsHX with the pinned upstream binary: family -> helper functions. A scenario ID is family/<first argument>[/<second argument>], or family/<helper> for a helper called without arguments.",
+          "$ref": "#/$defs/scenarioFamilies"
+        },
+        "refusalFamilies": {
+          "description": "Scenario families that check BeadsHX-only behavior, such as an exact refusal. They can reproduce a difference but never verify parity.",
+          "$ref": "#/$defs/scenarioFamilies"
+        },
+        "covers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "axis"],
+            "properties": {
+              "command": { "$ref": "#/$defs/commandId" },
+              "axis": { "enum": ["outputs", "errors", "data", "effects", "nativeBoundaries", "performance"] }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": { "kind": { "const": "differential-suite" } },
+          "required": ["lane", "profile", "families"],
+          "not": { "anyOf": [{ "required": ["sha256"] }, { "required": ["covers"] }, { "required": ["listsDifferences"] }] }
+        },
+        {
+          "properties": { "kind": { "const": "negative" } },
+          "required": ["sha256", "covers"],
+          "not": { "anyOf": [{ "required": ["lane"] }, { "required": ["profile"] }, { "required": ["families"] }, { "required": ["refusalFamilies"] }, { "required": ["listsDifferences"] }] }
+        },
+        {
+          "properties": { "kind": { "const": "document" } },
+          "not": { "anyOf": [{ "required": ["lane"] }, { "required": ["profile"] }, { "required": ["families"] }, { "required": ["refusalFamilies"] }, { "required": ["covers"] }] }
+        },
+        {
+          "properties": { "kind": { "enum": ["test", "dogfood"] } },
+          "not": { "anyOf": [{ "required": ["lane"] }, { "required": ["profile"] }, { "required": ["families"] }, { "required": ["refusalFamilies"] }, { "required": ["covers"] }, { "required": ["listsDifferences"] }] }
+        }
+      ]
+    },
+    "difference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "category", "disposition", "affects", "profiles", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/differenceId" },
+        "summary": { "$ref": "#/$defs/text" },
+        "category": {
+          "enum": [
+            "behavior",
+            "output",
+            "error",
+            "persistent-state",
+            "platform",
+            "production-data-safety",
+            "native-readback",
+            "licensing",
+            "provenance",
+            "recovery"
+          ]
+        },
+        "disposition": { "enum": ["fix_planned", "decision_pending", "waived", "untriaged"] },
+        "trackingTask": { "$ref": "#/$defs/taskId" },
+        "waiver": { "$ref": "#/$defs/waiverId" },
+        "affects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/commandId" } },
+        "profiles": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/profileId" } },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidence", "section", "quote"],
+          "properties": {
+            "evidence": { "$ref": "#/$defs/evidenceId" },
+            "section": { "$ref": "#/$defs/text" },
+            "quote": { "$ref": "#/$defs/text" }
+          }
+        }
+      },
+      "oneOf": [
+        { "properties": { "disposition": { "enum": ["fix_planned", "decision_pending"] } }, "required": ["trackingTask"], "not": { "required": ["waiver"] } },
+        { "properties": { "disposition": { "const": "waived" } }, "required": ["waiver"] },
+        { "properties": { "disposition": { "const": "untriaged" } }, "not": { "required": ["waiver"] } }
+      ]
+    },
+    "waiver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "differences",
+        "commands",
+        "profiles",
+        "upstreamBehavior",
+        "beadshxBehavior",
+        "userImpact",
+        "migrationImpact",
+        "scenarios",
+        "tests",
+        "reason",
+        "requesterDisposition",
+        "ownerRole",
+        "reviewTrigger",
+        "removalCondition",
+        "rollback",
+        "upstreamFallback",
+        "source"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/waiverId" },
+        "status": { "enum": ["approved", "pending", "expired"] },
+        "differences": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/differenceId" } },
+        "commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/commandId" } },
+        "profiles": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/profileId" } },
+        "upstreamBehavior": { "$ref": "#/$defs/text" },
+        "beadshxBehavior": { "$ref": "#/$defs/text" },
+        "userImpact": { "$ref": "#/$defs/text" },
+        "migrationImpact": { "$ref": "#/$defs/text" },
+        "scenarios": {
+          "description": "Reproducing fixtures: scenario IDs of a differential-suite evidence record.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/scenarioId" }
+        },
+        "tests": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } },
+        "reason": { "$ref": "#/$defs/text" },
+        "requesterDisposition": { "$ref": "#/$defs/text" },
+        "decisionDate": { "$ref": "#/$defs/date" },
+        "ownerRole": { "$ref": "#/$defs/text" },
+        "reviewTrigger": { "$ref": "#/$defs/text" },
+        "reviewTask": { "$ref": "#/$defs/taskId" },
+        "reviewDate": { "$ref": "#/$defs/date" },
+        "removalCondition": { "$ref": "#/$defs/text" },
+        "rollback": { "$ref": "#/$defs/text" },
+        "upstreamFallback": { "$ref": "#/$defs/text" },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidence", "section"],
+          "properties": {
+            "evidence": { "$ref": "#/$defs/evidenceId" },
+            "section": { "$ref": "#/$defs/text" }
+          }
+        }
+      },
+      "if": { "properties": { "status": { "const": "approved" } } },
+      "then": { "required": ["decisionDate"] }
+    }
+  }
+}

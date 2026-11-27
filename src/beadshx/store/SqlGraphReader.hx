@@ -360,10 +360,19 @@ final class SqlGraphReader {
 			case Failure(message): return Failure(message);
 			case Success(value): value;
 		};
-		final table = wisps.exists(id) ? "wisp_dependencies" : "dependencies";
+		return readDependencyBatch(context, transaction, wisps.exists(id) ? "wisp_dependencies" : "dependencies", [id]);
+	}
+
+	/**
+		One batch of getDependencyRecordsIntoFromTable: the dependency rows of
+		`ids` from one dependency table, in upstream's order. A NULL created_by
+		fails the read, as upstream's scan does.
+	**/
+	public static function readDependencyBatch(context:Context, transaction:Tx, table:String, ids:Array<String>):StoreResult<Array<GraphDependency>> {
+		final arguments:Array<Dynamic> = [for (id in ids) id];
 		final queried = transaction.queryContext(context,
-			'SELECT issue_id, $DEP_TARGET AS depends_on_id, type, created_at, created_by, metadata, thread_id FROM $table WHERE issue_id IN (?) ORDER BY issue_id, depends_on_id, type, id',
-			id);
+			'SELECT issue_id, $DEP_TARGET AS depends_on_id, type, created_at, created_by, metadata, thread_id FROM $table WHERE issue_id IN (${[for (_ in ids) "?"].join(",")}) ORDER BY issue_id, depends_on_id, type, id',
+			...arguments);
 		if (queried.value2 != null)
 			return Failure('get dependency records from $table: ${queried.value2.toString()}');
 		final rows = queried.value1;

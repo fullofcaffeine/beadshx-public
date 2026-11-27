@@ -138,7 +138,7 @@ PY_COMPARE
 
 # Synthetic errors, sqlmock, JSON rendering, and the server driver's lazy pool
 # never open a real database.
-for contract in storage_errors storage_relation_errors storage_summary_errors render_metadata raw_metadata_output nullable_issue_strings native_issue_math sql_comment_reader sql_comment_details server_driver_timeouts complete_issue_row; do
+for contract in storage_errors storage_relation_errors storage_summary_errors storage_read_cleanup_errors render_metadata raw_metadata_output nullable_issue_strings native_issue_math sql_comment_reader sql_comment_details server_driver_timeouts complete_issue_row; do
     npx --no-install haxe "test/$contract/compile.hxml" -D go_no_build
     # This authored Go observer checks the generated Haxe boundary directly.
     # Keep this contract last so its test cannot leak into another generation.

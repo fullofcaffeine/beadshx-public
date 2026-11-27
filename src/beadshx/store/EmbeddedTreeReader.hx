@@ -12,6 +12,6 @@ import beadshx.store.SqlTreeReader.readSqlTree;
 final class EmbeddedTreeReader {
 	public static function read(beadsDir:String, databaseName:String, request:DependencyTreeRequest):StoreResult<Array<TreeNode<RelatedIssue>>> {
 		return EmbeddedReadWording.forNoun("tree", false)
-			.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlTree(context, transaction, request)));
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlTree(context, transaction, request)));
 	}
 }

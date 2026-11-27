@@ -20,6 +20,18 @@ For a short overview, see the [project README](../../../README.md).
 | [Snapshot extension](snapshot.md) | `bdhx snapshot`, a read-only command that upstream does not have |
 | [Known limits](limits.md) | Every known difference from upstream, grouped by topic, with its tracking task |
 
+## Compatibility manifest
+
+[compatibility/manifests/beads-v1.2.1.json](../../../compatibility/manifests/beads-v1.2.1.json)
+records the same facts in machine-readable form: one record for each
+upstream command, with its implementation and verification state, and one
+difference record for each item on [Known limits](limits.md). The
+[generated report](../../../compatibility/generated/beads-v1.2.1.md) shows
+the totals. `scripts/beadshx/check-compatibility-manifest.sh` fails when a
+task ID on the limits page has no difference record, or when a difference
+quotes text that the page no longer contains. So update the manifest in the
+same change as the page.
+
 ## Words used on these pages
 
 - **Workspace:** a `.beads` directory with its configuration and its
@@ -45,11 +57,38 @@ changed no file in the workspace. Run it with `npm run test:parity` (or
 `make beadshx-parity`). The cases are in
 [scripts/beadshx/test-parity-smoke.sh](../../../scripts/beadshx/test-parity-smoke.sh).
 
-Some output differs by design, and the suite normalizes it: workspace paths,
-durations, times in log lines, and the development identity of `bdhx`. Where
-upstream prints in a random order, the suite compares the stable part. Cases
-where `bdhx` refuses on purpose run as candidate-only cases: they check the
-exact refusal of `bdhx`, and that it wrote nothing.
+Some cases also compare the logical database state. After both runs, the
+suite exports the Dolt database of each side with
+[scripts/beadshx/logical-state](../../../scripts/beadshx/logical-state/main.go):
+every table row for row, the views, and the revision state (the commit graph,
+the message and changed tables of each commit, the branches and the working
+set). A byte check cannot compare two databases that both changed, because
+Dolt writes different bytes for equal data. In a read case, each side must
+keep the state from before the run exactly. A write case compares the two
+sides with declared rules. These rules remove only what the moment of a run
+decides, such as commit hashes, the times that the runs stamp, and random
+lock values. `logical-state rules` gives the reason for each rule.
+[scripts/beadshx/test-logical-state.sh](../../../scripts/beadshx/test-logical-state.sh)
+tests that the comparison finds the differences that the output hides.
+
+Some output differs between two correct runs. Before it compares the output,
+the suite rewrites only these declared values, with
+[scripts/beadshx/output-normalizers](../../../scripts/beadshx/output-normalizers/main.go):
+the temporary paths of each side, the times and durations that a run prints,
+the order of output that upstream builds from a Go map, and the name and
+version that each build prints for itself. Each normalizer has a name, and
+it declares the values that it rewrites, why they change from run to run,
+and which comparisons can use it. `output-normalizers rules` prints these
+declarations. A normalizer rewrites nothing else. For example, `work-path`
+replaces only the exact path of that side's work directory, never a longer
+path or the other side's path. Each comparison names its normalizers, and
+each case writes them to the `normalizers` file of its evidence. The tests
+of each normalizer show that it rewrites its declared value, that it keeps
+values that only look like it, and that a difference outside the declared
+value still fails the comparison.
+
+Cases where `bdhx` refuses on purpose run as candidate-only cases: they check
+the exact refusal of `bdhx`, and that it wrote nothing.
 
 Server-mode and proxied workspaces need a running Dolt server, which the
 parity suite does not start.

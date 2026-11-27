@@ -1,0 +1,7 @@
+{
+  "description": "Verify a command with D0 dogfood evidence.",
+  "filter": ".evidence = (.evidence + [{\"id\": \"ev:d0-dogfood\", \"kind\": \"dogfood\", \"path\": \"compatibility/daily-workflow/profile.json\", \"description\": \"A D0 dogfood session.\"}] | sort_by(.id)) | (.commands[] | select(.id == \"cmd:bd/list\") | .verification[] | select(.profile == \"prof:release-cgo\") | .evidence) |= (. + [\"ev:d0-dogfood\"] | sort)",
+  "expect": [
+    "D0 counted as full coverage: cmd:bd/list@release-cgo passes on dogfood evidence ev:d0-dogfood"
+  ]
+}

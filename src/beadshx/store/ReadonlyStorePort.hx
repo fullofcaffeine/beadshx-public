@@ -16,7 +16,7 @@ interface ReadonlyStorePort extends IssueQueryPort {
 		workspace's embedded store (no SQL server, not proxied), which an
 		embedded workspace then pings with authored Haxe.
 	**/
-	function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingSnapshot>;
+	function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingOutcome>;
 
 	function status(beadsDir:String, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot>;
 	function lastTouchedId(beadsDir:String):String;

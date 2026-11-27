@@ -13,7 +13,7 @@ import beadshx.store.SqlRelationReader.relatedIssueFromSql;
 final class EmbeddedRelationReader {
 	public static function read(beadsDir:String, databaseName:String, plan:RelationReadPlan):StoreResult<Array<RelatedIssue>> {
 		final outcome = EmbeddedReadWording.forNoun("relation", false)
-			.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlRelations(context, transaction, plan)));
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlRelations(context, transaction, plan)));
 		return switch outcome {
 			case Failure(message): Failure(message);
 			case Success(rows):

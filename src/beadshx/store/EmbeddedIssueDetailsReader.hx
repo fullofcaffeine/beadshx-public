@@ -27,16 +27,15 @@ final class EmbeddedIssueDetailsReader {
 	}
 
 	public function read(id:String, request:IssueDetailsRequest):StoreResult<IssueDetailsLookup> {
-		// A failed read wins over the session's release steps.
+		// A failed read comes first; each failed release step follows it, as upstream withConn joins them.
 		return EmbeddedReadWording.forNoun("detail", true)
-			.bodyFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName,
-				(context, transaction) -> readSqlIssueDetails(context, transaction, id, request)));
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlIssueDetails(context, transaction, id, request)));
 	}
 
 	/** Upstream `GetDependentsWithMetadata`: every issue that depends on `id`, with its whole record. */
 	public function readDependents(id:String):StoreResult<Array<RelatedIssue>> {
 		return EmbeddedReadWording.forNoun("relation", false)
-			.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName,
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName,
 				(context, transaction) -> readSqlDependencyRows(context, transaction, id, Incoming)));
 	}
 }

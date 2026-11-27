@@ -18,7 +18,7 @@ build_outputs() {
 }
 outputs_before="$(build_outputs)"
 
-for command_name in setup bootstrap generate build oracle inventory inventory-check output-contracts error-contracts storage-contracts effect-contracts native-pressure schema-migrations test-focused generated identity caf-intent parity test ci-local format lint package clean; do
+for command_name in setup bootstrap generate build oracle inventory inventory-check output-contracts error-contracts storage-contracts effect-contracts native-pressure schema-migrations compatibility-manifest test-focused generated identity caf-intent parity test ci-local format lint package clean; do
 	grep -Fq "bash scripts/beadshx/command.sh $command_name" "$repository_root/package.json"
 done
 

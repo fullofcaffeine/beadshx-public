@@ -21,6 +21,7 @@ import beadshx.relation.GraphLayout.computeGraphLayout;
 import beadshx.relation.GraphExternal.ExternalTargetLookup;
 import beadshx.relation.GraphExternal.GraphRowSelection;
 import beadshx.relation.GraphExternal.GRAPH_EXTERNAL_UNAVAILABLE;
+import beadshx.relation.GraphExternal.readResolvedTarget;
 import beadshx.relation.GraphExternal.selectGraphRows;
 import beadshx.nativeextern.filepath.FilepathPkg;
 import beadshx.workspace.PrefixRoutes.prefixRouteLeaves;
@@ -191,6 +192,7 @@ import beadshx.store.IssueLookup;
 import beadshx.store.IssueQueryPort;
 import beadshx.store.CountResult;
 import beadshx.store.ReadyLoadResult;
+import beadshx.store.ReadyQuery;
 import beadshx.store.ReadyResult;
 import beadshx.store.ReadyTotal;
 import beadshx.store.IssueListDependency;
@@ -204,6 +206,7 @@ import beadshx.store.IssueStatus;
 import beadshx.store.IssueSummary;
 import beadshx.store.IssueType;
 import beadshx.store.OptionalInt;
+import beadshx.store.PingOutcome;
 import beadshx.store.PingSnapshot;
 import beadshx.store.ReadonlyStorePort;
 import beadshx.store.StatusSnapshot;
@@ -453,6 +456,12 @@ final class Application {
 
 	/** utils.ErrAmbiguousID, the one partial-ID resolution failure that `bd history` reports. */
 	static final AMBIGUOUS_ISSUE_ID = "ambiguous issue ID: ";
+
+	/** Upstream LoadStoreListConfig's store calls: the custom statuses, the custom types and the infra types. */
+	static inline final LIST_CONFIG_STORE_CALLS = 3;
+
+	/** Upstream list's store calls before it routes: the pre-run's store open, then LoadStoreListConfig's. */
+	static inline final LIST_STORE_CALLS_BEFORE_ROUTING = 1 + LIST_CONFIG_STORE_CALLS;
 
 	static final jsonDeprecation = "NOTE: bd --json output format will change in v2.0. Set BD_JSON_ENVELOPE=1 to opt in early. See docs/reference/json-schema.md for migration details.";
 
@@ -1653,7 +1662,7 @@ final class Application {
 								case Failure(message): runStoreFailure(message);
 								case Success(_) if (invocation.infoThanks):
 									// Upstream checks --thanks first and prints the page in every output mode.
-									output.writeStdout(ThanksPage.render(output.textStyle, startupColors, colors, darkBackground));
+									ThanksPage.print(output.writeStdout, output.textStyle, startupColors, colors, darkBackground);
 									0;
 								case Success(_):
 									renderWhatsNew(invocation.output);
@@ -1718,7 +1727,8 @@ final class Application {
 					case Accepted:
 						if (!findsDatabase(invocation, location)) runWorkspaceDatabaseNotFound(location); else switch pingStore(location, invocation.global) {
 							case Failure(message): runStoreFailure(message);
-							case Success(snapshot):
+							case Success(PingFailed(reason, totalMs)): runPingFailure(invocation.output, reason, totalMs);
+							case Success(PingAnswered(snapshot)):
 								renderPing(invocation.output, snapshot);
 								0;
 						}
@@ -1727,7 +1737,7 @@ final class Application {
 	}
 
 	/** Upstream ping's body finds the workspace (cmd/bd/ping.go:48) before it pings the store; under a proxied server it pings the server instead. */
-	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingSnapshot> {
+	function pingStore(location:WorkspaceLocation, global:Bool):StoreResult<PingOutcome> {
 		if (!location.proxiedServer)
 			lookups.findBeadsDir();
 		final pinged = store.ping(location.path, location.databaseName, !location.proxiedServer && !opensServerStore(location), global);
@@ -1828,14 +1838,26 @@ final class Application {
 									} else if (positiveOffset && !location.proxiedServer) {
 										runStoreFailure("--offset is only supported under --proxied-server");
 									} else {
+										// Upstream's pre-run opens the store, and list loads its configuration (LoadStoreListConfig,
+										// three store calls) for --watch and the --parent tree before it routes. This build takes
+										// those from the request, so it only opens the store as often.
+										if (!location.proxiedServer)
+											query.openForStoreCalls(location.path, location.databaseName, LIST_STORE_CALLS_BEFORE_ROUTING, invocation.global);
 										// Upstream's openRoutedReadStore asks for the user's role before it reads; a proxied server does not route.
 										final routedExit = location.proxiedServer ? null : routeListRead(invocation, location, query);
 										if (routedExit != null)
 											routedExit;
 										else if (invocation.watchMode)
 											runListWatch(invocation, location, effectiveLimit, query);
-										else
-											renderListResult(invocation, loadListResult(invocation, location, effectiveLimit, query), effectiveLimit);
+										else {
+											// Upstream's issueops.Reader.List loads the configuration again (three store calls) before
+											// the page. The page read loads it in its own transaction.
+											if (!location.proxiedServer)
+												query.openForStoreCalls(location.path, location.databaseName, LIST_CONFIG_STORE_CALLS, invocation.global);
+											final listed = loadListResult(invocation, location, effectiveLimit, query);
+											openForListViewRead(invocation, location, query, listed);
+											renderListResult(invocation, listed, effectiveLimit);
+										}
 									}
 									closeIssueQuery(query, result);
 							}
@@ -2469,17 +2491,28 @@ final class Application {
 		not hold that ID yet.
 		What: the lookup first resolves the ID in this database as a partial ID
 		(see lookupIssueSummary). An error other than "not found", such as an
-		ambiguous ID, leaves the row out. A miss tries the routes.jsonl prefix
-		routes (see prefixRouteLeaves) and then contributor auto-routing, which
-		first asks for the user's role (see warnUnconfiguredRole and autoRoute).
-		When either would open another repository, this fails with
-		GRAPH_EXTERNAL_UNAVAILABLE; else the row is left out.
-		How: each ID resolves once in this database; the routes run for each miss,
-		as upstream's warnings repeat. The added issues are read like GetIssue.
+		ambiguous ID, leaves the row out. A found ID's issue is read at once, like
+		GetIssue, and a failed read leaves the row out too (readResolvedTarget). A
+		miss tries the routes.jsonl prefix routes (see prefixRouteLeaves) and then
+		contributor auto-routing, which first asks for the user's role (see
+		warnUnconfiguredRole and autoRoute). When either would open another
+		repository, this fails with GRAPH_EXTERNAL_UNAVAILABLE; else the row is
+		left out.
+		How: each ID resolves once in this database, and each resolved ID is read
+		once; the routes run for each miss, as upstream's warnings repeat.
 	**/
 	function keepGraphRows(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, issues:Array<RelatedIssue>,
 			rows:Array<GraphDependency>):StoreResult<KeptGraph> {
 		final resolved = new Map<String, StoreResult<IssueLookup>>();
+		final read = new Map<String, Null<RelatedIssue>>();
+		function readTarget(id:String):Bool {
+			if (!read.exists(id))
+				read.set(id, switch query.graphIssues(location.path, location.databaseName, [id], invocation.global) {
+					case Success(issues) if (issues.length == 1): issues[0];
+					case Success(_) | Failure(_): null;
+				});
+			return read.get(id) != null;
+		}
 		var autoRouted:Null<Bool> = null;
 		function lookup(target:String):ExternalTargetLookup {
 			var found = resolved.get(target);
@@ -2489,7 +2522,7 @@ final class Application {
 			}
 			switch found {
 				case Success(IssueFound(summary)):
-					return ExternalTargetFound(summary.id);
+					return readResolvedTarget(summary.id, readTarget);
 				case Failure(_):
 					return ExternalTargetMissing;
 				case Success(IssueMissing):
@@ -2510,20 +2543,7 @@ final class Application {
 					for (row in kept)
 						withTarget(rows[row.index], row.dependsOnId)
 				];
-				if (addedIds.length == 0) {
-					Success({issues: issues, rows: keptRows});
-				} else {
-					final distinct = new Array<String>();
-					for (id in addedIds)
-						if (!distinct.contains(id))
-							distinct.push(id);
-					switch query.graphIssues(location.path, location.databaseName, distinct, invocation.global) {
-						case Failure(message): Failure(message);
-						case Success(read):
-							final byId = [for (issue in read) issue.id => issue];
-							Success({issues: issues.concat([for (id in addedIds) byId.get(id)]), rows: keptRows});
-					}
-				}
+				Success({issues: issues.concat([for (id in addedIds) read.get(id)]), rows: keptRows});
 		};
 	}
 
@@ -3651,10 +3671,19 @@ final class Application {
 		return 0;
 	}
 
-	/** Upstream labelListAllCmd: one unfiltered, unlimited search, whose bulk-loaded labels it counts. */
+	/**
+		Upstream labelListAllCmd: one unfiltered, unlimited search, whose
+		bulk-loaded labels it counts. `label list-all` is not one of upstream's
+		read-only commands, so its pre-run also checks the workspace identity
+		(validateWorkspaceIdentity): with a `project_id` in metadata.json, it
+		reads the database's `_project_id` in a store call of its own. This
+		build does not compare the two yet; it opens the store as that call does.
+	**/
 	function runLabelListAll(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
 		if (location.proxiedServer)
 			return runModeAwareFailure(invocation.output, LABEL_LIST_ALL_ROUTE_UNAVAILABLE);
+		if (readsWorkspaceIdentity(invocation, location))
+			query.openForStoreCalls(location.path, location.databaseName, 1, invocation.global);
 		final issues = switch query.issueSearch(location.path, location.databaseName, "", IssueListRequests.everyIssue(), invocation.global) {
 			case ListFailure(message): return runModeAwareFailure(invocation.output, message);
 			// The request sets no row cap, so this branch only completes the switch.
@@ -3667,6 +3696,26 @@ final class Application {
 		else
 			output.writeStdout(renderLabelCountsHuman(counts, terminalStyles()));
 		return 0;
+	}
+
+	/**
+		Whether upstream's pre-run reads the database's `_project_id` for the
+		workspace identity check: outside strict read-only mode and `--global`,
+		without BEADS_SKIP_IDENTITY_CHECK=1, when metadata.json names a project.
+	**/
+	static function readsWorkspaceIdentity(invocation:Invocation, location:WorkspaceLocation):Bool {
+		if (invocation.global || Sys.getEnv("BEADS_SKIP_IDENTITY_CHECK") == "1")
+			return false;
+		switch SchemaSkewBoundary.openIntent() {
+			case StrictReadOnlyOpen | NoEmbeddedOpen:
+				return false;
+			case ReadOnlyCommandOpen | PlainOpen:
+		}
+		return switch readMetadataFields(location.path) {
+			case MetadataFields(fields): final projectId = fields.get("project_id"); projectId != null && projectId != "";
+			case MetadataAbsent | MetadataFieldsUndecodable(_) | MetadataFieldsUnsupported | MetadataFieldsLegacyOnly:
+				false;
+		};
 	}
 
 	function renderRelatedDepList(invocation:Invocation, ids:Array<String>, dependencies:Array<RelatedIssue>, direction:RelationDirection):Int {
@@ -3787,7 +3836,8 @@ final class Application {
 									deferredExit;
 								} else switch query.issueCount(location.path, location.databaseName, invocation.countRequest, invocation.countGroup,
 									invocation.global) {
-									case Failure(message): runStoreFailure(message);
+									// Upstream executeCount: HandleErrorRespectJSON (cmd/bd/count.go:179, :192).
+									case Failure(message): runModeAwareFailure(invocation.output, message);
 									case Success(count): renderCount(invocation, count);
 								};
 								closeIssueQuery(query, result);
@@ -3875,6 +3925,8 @@ final class Application {
 			return deferredExit;
 		if (invocation.readyClaim)
 			return runReadyClaimRefusal();
+		// Upstream's pre-run opened the store before the command body.
+		query.openForStoreCalls(location.path, location.databaseName, 1, invocation.global);
 		// Upstream's openRoutedReadStore asks for the user's role before it reads.
 		final routedExit = routeListRead(invocation, location, query);
 		if (routedExit != null)
@@ -3903,30 +3955,43 @@ final class Application {
 	}
 
 	function runReadyList(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, location.databaseName, invocation.readyRequest, invocation.global) {
-			case ReadyFailure(message): runStoreFailure(message);
+		final read = invocation.output == Json ? ReadyQuery.ReadyWorkWithCounts : ReadyQuery.ReadyWork;
+		return switch query.issueReady(location.path, location.databaseName, invocation.readyRequest, read, invocation.global) {
+			// Upstream: HandleErrorRespectJSON (cmd/bd/ready.go:186, :225).
+			case ReadyFailure(message): runModeAwareFailure(invocation.output, message);
 			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(ready): renderReady(invocation, location.proxiedServer, ready, query, location);
 		};
 	}
 
+	/**
+		Upstream findGateReadyMolecules (cmd/bd/mol_ready_gated.go:129-243): the
+		closed gates first, whose failed search stops the command
+		("searching closed gates: "), and nothing more when there are none; then
+		the ready work ("getting ready work: "). Upstream's later reads, of the
+		hooked issues, each gate's dependents and each molecule, skip what fails;
+		this build reads them as one candidate list, so a failed read of that
+		list finds no molecule.
+	**/
 	function runReadyGated(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), invocation.global) {
-			case ReadyFailure(message): runStoreFailure(message);
-			case ReadyRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-			case ReadySuccess(ready):
-				switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
-					case ListFailure(message): runStoreFailure(message);
-					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-					case ListSuccess(candidates):
-						final molecules = GatedReady.discover(ready.page.items, candidates.items);
-						if (invocation.output == Json)
-							return writeRenderedJsonStdout(renderGatedReadyJson(molecules, output.usesJsonEnvelope()));
-						else
-							output.writeStdout(renderGatedReadyHuman(molecules, terminalStyles()));
-						0;
+		final molecules = switch query.typedIssueIds(location.path, location.databaseName, "gate", "closed", invocation.global) {
+			case Failure(message): return runModeAwareFailure(invocation.output, 'searching closed gates: ${message}');
+			case Success(gates) if (gates.length == 0): [];
+			case Success(_):
+				switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWork, invocation.global) {
+					case ReadyFailure(message): return runModeAwareFailure(invocation.output, 'getting ready work: ${message}');
+					case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
+					case ReadySuccess(ready):
+						switch query.issueList(location.path, location.databaseName, IssueListRequests.moleculeCandidates(), 0, invocation.global) {
+							case ListFailure(_) | ListRowLimitExceeded(_, _, _): [];
+							case ListSuccess(candidates): GatedReady.discover(ready.page.items, candidates.items);
+						}
 				}
 		};
+		if (invocation.output == Json)
+			return writeRenderedJsonStdout(renderGatedReadyJson(molecules, output.usesJsonEnvelope()));
+		output.writeStdout(renderGatedReadyHuman(molecules, terminalStyles()));
+		return 0;
 	}
 
 	/**
@@ -3941,15 +4006,15 @@ final class Application {
 		blocking edges stand in for the blocked list and the cycles.
 	**/
 	function runReadyExplain(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		final ready = switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), invocation.global) {
-			case ReadyFailure(message): return runStoreFailure(message);
+		final ready = switch query.issueReady(location.path, location.databaseName, readyExplainRequest(), ReadyWorkWithCounts, invocation.global) {
+			case ReadyFailure(message): return runModeAwareFailure(invocation.output, message);
 			case ReadyRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 			case ReadySuccess(value): value;
 		};
 		final explanation = switch query.blockedIssues(location.path, location.databaseName, "", invocation.global) {
 			case Failure(message) if (message == BLOCKED_ROUTE_UNAVAILABLE):
 				switch query.issueList(location.path, location.databaseName, IssueListRequests.readyExplainCandidates(), 0, invocation.global) {
-					case ListFailure(message): return runStoreFailure(message);
+					case ListFailure(message): return runModeAwareFailure(invocation.output, message);
 					case ListRowLimitExceeded(found, source, cap): return runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(candidates):
 						ReadyExplain.build(ready.page.items, candidates.items, ReadyExplain.blockedFromEdges(candidates.items),
@@ -4003,12 +4068,13 @@ final class Application {
 	}
 
 	function runReadyMolecule(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort):Int {
-		return switch lookupIssueSummary(location, invocation.readyMolecule, invocation.global, query) {
-			case Failure(_): runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
-			case Success(IssueMissing): runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
-			case Success(IssueFound(root)):
+		return switch resolveMoleculeRoot(location, invocation.readyMolecule, invocation.global, query) {
+			case MoleculeRootUnresolved: runModeAwareFailure(invocation.output, 'molecule \'${invocation.readyMolecule}\' not found');
+			case MoleculeRootUnreadable(message): runModeAwareFailure(invocation.output, 'loading molecule: failed to get template: ${message}');
+			case MoleculeRootMissing(id): runModeAwareFailure(invocation.output, 'loading molecule: template ${id} not found');
+			case MoleculeRootFound(root):
 				switch loadMoleculeItems(location, root.id, query, invocation.global) {
-					case ListFailure(message): runStoreFailure('loading molecule: ${message}');
+					case ListFailure(message): runModeAwareFailure(invocation.output, 'loading molecule: ${message}');
 					case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
 					case ListSuccess(page):
 						final steps = new Array<MoleculeStep>();
@@ -4040,10 +4106,45 @@ final class Application {
 		};
 	}
 
+	/**
+		Upstream runMoleculeReady's lookup (cmd/bd/ready.go:584-592):
+		ResolvePartialID, which ignores a failed read of the exact and the
+		prefixed ID and then resolves the ID with its ID search, so only that
+		search can leave the molecule unresolved; then loadTemplateSubgraph's
+		GetIssue of the resolved ID (cmd/bd/template.go:89-95), whose failure
+		is "failed to get template: ".
+	**/
+	function resolveMoleculeRoot(location:WorkspaceLocation, id:String, global:Bool, query:IssueQueryPort):MoleculeRootLookup {
+		final exact = query.issueSummary(location.path, location.databaseName, id, global);
+		switch exact {
+			case Success(IssueFound(summary)):
+				return MoleculeRootFound(summary);
+			case Success(IssueMissing) | Failure(_):
+		}
+		final issuePrefix = partialIdPrefix(location);
+		final prefixed = configuredPrefixCandidate(id, issuePrefix);
+		if (prefixed != id)
+			switch query.issueSummary(location.path, location.databaseName, prefixed, global) {
+				case Success(IssueFound(summary)):
+					return MoleculeRootFound(summary);
+				case Success(IssueMissing) | Failure(_):
+			}
+		final resolved = switch resolveAbbreviatedId(location, id, issuePrefix, prefixed, global, query) {
+			case Failure(_) | Success(null): return MoleculeRootUnresolved;
+			case Success(value): value;
+		};
+		return switch query.issueSummary(location.path, location.databaseName, resolved, global) {
+			case Failure(message): MoleculeRootUnreadable(message);
+			case Success(IssueMissing): MoleculeRootMissing(resolved);
+			case Success(IssueFound(summary)): MoleculeRootFound(summary);
+		};
+	}
+
 	/** The root and the issues of ready --mol, both follow-up reads after the root's lookup. */
 	function loadMoleculeItems(location:WorkspaceLocation, rootId:String, query:IssueQueryPort, global:Bool):IssueListResult {
 		return switch query.issueList(location.path, location.databaseName, IssueListRequests.exact(rootId), 0, global) {
-			case ListFailure(message): ListFailure(message);
+			// loadTemplateSubgraph's GetIssue of the root (cmd/bd/template.go:89-92).
+			case ListFailure(message): ListFailure('failed to get template: ${message}');
 			case ListRowLimitExceeded(found, source, cap): ListRowLimitExceeded(found, source, cap);
 			case ListSuccess(rootPage):
 				if (rootPage.items.length == 0) {
@@ -4108,12 +4209,13 @@ final class Application {
 			case PlainCheckFailure(message) if (location.proxiedServer):
 				return runModeAwareFailure(invocation.output, message);
 			case PlainCheckFailure(_) | OutputCheckFailure(_) | ExactCheckFailure(_, _):
-				// The native search checks --status, so this build searches to find a bad status first.
-				if (invocation.listRequest.status != "")
-					switch query.issueSearch(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest, invocation.global) {
-						case ListFailure(message): return runStoreFailure(message);
-						case ListRowLimitExceeded(_, _, _) | ListSuccess(_):
-					}
+				// Upstream checks --status, which reads the custom statuses, before the other flags (cmd/bd/search.go:114-122).
+				if (invocation.listRequest.status != "") {
+					final refused = query.searchStatusRefusal(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest,
+						invocation.global);
+					if (refused != null)
+						return runStoreFailure(refused);
+				}
 				final checkExit = reportDeferredCheck(invocation, invocation.deferredCheck);
 				if (checkExit != null)
 					return checkExit;
@@ -4121,7 +4223,12 @@ final class Application {
 		return switch query.issueSearch(location.path, location.databaseName, invocation.searchQuery, invocation.listRequest, invocation.global) {
 			case ListFailure(message): runStoreFailure(message);
 			case ListRowLimitExceeded(found, source, cap): runListRowLimitExceeded(found, source, cap);
-			case ListSuccess(page): renderSearch(invocation, page);
+			case ListSuccess(page):
+				// Upstream's SearchIssues returns rows without counts, so search then reads the labels
+				// (GetLabelsForIssues) and, for --json, the dependency and comment counts, one store call
+				// each. The counted search already carries them, so this build only opens the store as often.
+				query.openForStoreCalls(location.path, location.databaseName, invocation.output == Json ? 3 : 1, invocation.global);
+				renderSearch(invocation, page);
 		};
 	}
 
@@ -4183,7 +4290,8 @@ final class Application {
 			case PredicateQuery(filter, _, _): {filter: filter, fetch: CompleteCandidates};
 		};
 		return switch query.issueQuery(location.path, location.databaseName, storageRequest, invocation.global) {
-			case QueryRowsFailure(message): runStoreFailure(message);
+			// Upstream runQuery: HandleErrorRespectJSON (cmd/bd/query.go:195).
+			case QueryRowsFailure(message): runModeAwareFailure(invocation.output, message);
 			case QueryRows(source):
 				switch finishQueryPage(plan, source) {
 					case Failure(message): runStoreFailure(message);
@@ -4313,7 +4421,8 @@ final class Application {
 									runModeAwareFailure(invocation.output,
 										'invalid status \'${invocation.staleRequest.status}\'. Valid values: open, in_progress, blocked, deferred');
 								} else switch query.issueStale(location.path, location.databaseName, invocation.staleRequest, invocation.global) {
-									case Failure(message): runStoreFailure(message);
+									// Upstream: HandleErrorRespectJSON (cmd/bd/stale.go:53).
+									case Failure(message): runModeAwareFailure(invocation.output, message);
 									case Success(issues): renderStale(invocation, issues);
 								};
 								closeIssueQuery(query, result);
@@ -4791,7 +4900,7 @@ final class Application {
 		if (invocation.readyPlain || !invocation.readyPretty) {
 			output.writeStdout(renderReadyPlain(result.page, styles));
 		} else {
-			output.writeStdout(renderReadyPretty(result.page, query, location, invocation.global, styles));
+			output.writeStdout(renderReadyPretty(result.page, result.parentEpicTitles, query, location, invocation.global, styles));
 		}
 		if (result.truncated) {
 			if (proxied) {
@@ -4850,11 +4959,32 @@ final class Application {
 		formatPrettyIssueWithContext prints it, with its parent epic's title in
 		the muted style, then the footer.
 
-		Upstream buildParentEpicMap (cmd/bd/ready.go:362-413) reads each parent
-		with GetIssue and skips one that it cannot read. The issue summary is that
-		read: Haxe-owned SQL in an embedded workspace, so it opens no second store.
+		Upstream buildParentEpicMap (cmd/bd/ready.go:362-413) reads each issue's
+		dependency rows, then each parent with GetIssue, and skips a parent that
+		it cannot read. An embedded read makes those reads and brings the titles
+		(`epicTitles`). Otherwise each parent that a row names is looked up here,
+		with the issue summary.
 	**/
-	function renderReadyPretty(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool, styles:TerminalStyles):String {
+	function renderReadyPretty(page:IssueListPage, epicTitles:Null<Map<String, String>>, query:IssueQueryPort, location:WorkspaceLocation, global:Bool,
+			styles:TerminalStyles):String {
+		final titles = epicTitles != null ? epicTitles : lookUpParentEpicTitles(page, query, location, global);
+		var rendered = "";
+		for (issue in page.items) {
+			var line = renderPrettyIssue(issue, styles);
+			final parentTitle = titles.get(issue.id);
+			if (parentTitle != null && parentTitle != "")
+				line += " " + styles.renderMuted('← ${parentTitle}');
+			rendered += line + "\n";
+		}
+		rendered += "\n" + StringTools.rpad("", "-", 80) + "\n";
+		rendered += 'Ready: ${page.items.length} issues with no active blockers\n\n';
+		rendered += "Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n";
+		rendered += "Priority: P0–P4 (label only; not a status icon)\n";
+		return rendered;
+	}
+
+	/** The parent epic title of each issue whose row names a parent, each parent looked up once. */
+	static function lookUpParentEpicTitles(page:IssueListPage, query:IssueQueryPort, location:WorkspaceLocation, global:Bool):Map<String, String> {
 		final parentTitles = new Map<String, String>();
 		for (issue in page.items) {
 			if (issue.parent == "" || parentTitles.exists(issue.parent))
@@ -4867,19 +4997,13 @@ final class Application {
 			}
 			parentTitles.set(issue.parent, title);
 		}
-		var rendered = "";
+		final titles = new Map<String, String>();
 		for (issue in page.items) {
-			var line = renderPrettyIssue(issue, styles);
-			final parentTitle = issue.parent == "" ? null : parentTitles.get(issue.parent);
-			if (parentTitle != null && parentTitle != "")
-				line += " " + styles.renderMuted('← ${parentTitle}');
-			rendered += line + "\n";
+			final title = issue.parent == "" ? null : parentTitles.get(issue.parent);
+			if (title != null && title != "")
+				titles.set(issue.id, title);
 		}
-		rendered += "\n" + StringTools.rpad("", "-", 80) + "\n";
-		rendered += 'Ready: ${page.items.length} issues with no active blockers\n\n';
-		rendered += "Status: ○ open  ◐ in_progress  ● blocked  ✓ closed  ❄ deferred\n";
-		rendered += "Priority: P0–P4 (label only; not a status icon)\n";
-		return rendered;
+		return titles;
 	}
 
 	/**
@@ -4939,6 +5063,26 @@ final class Application {
 	function loadListResult(invocation:Invocation, location:WorkspaceLocation, effectiveLimit:Int, query:IssueQueryPort):IssueListResult {
 		return isListHierarchy(invocation) ? loadIssueHierarchy(invocation, location, effectiveLimit,
 			query) : query.issueList(location.path, location.databaseName, invocation.listRequest, effectiveLimit, invocation.global);
+	}
+
+	/**
+		Upstream's human list view makes one more store call after the page and,
+		for the `--parent` tree, after the tree's reads: GetAllDependencyRecords
+		for the pretty view, the tree and a `--format` template, or the
+		BlockingAnnotator for the other views. An embedded read of the
+		annotation makes that call itself (EmbeddedIssueListReader). Where this
+		build draws the view from the page's own rows, or prints no annotation
+		(`--long`), it opens the store as that call does. A template that the
+		Go facade renders opened its own store.
+	**/
+	function openForListViewRead(invocation:Invocation, location:WorkspaceLocation, query:IssueQueryPort, listed:IssueListResult):Void {
+		if (invocation.output != Human || location.proxiedServer || invocation.listRequest.blockingAnnotations)
+			return;
+		switch listed {
+			case ListSuccess(page) if (page.formatted == ""):
+				query.openForStoreCalls(location.path, location.databaseName, 1, invocation.global);
+			case ListSuccess(_) | ListFailure(_) | ListRowLimitExceeded(_, _, _):
+		}
 	}
 
 	/** True for the `--parent` tree view; its empty result prints "Issue 'X' has no children". */
@@ -5719,10 +5863,12 @@ final class Application {
 			case ReadHere(Failure(message)): ReadHere(Failure(message));
 			case ReadHere(Success(IssueMissing)): ReadHere(Failure('no issue found matching "${id}"'));
 			case ReadHere(Success(IssueFound(summary))):
+				// displayShowIssueReturn ignores a failed read of each part, as show's text view does (cmd/bd/show_display.go:117-141).
 				ReadHere(query.issueDetails(location.path, summary.id, {
 					includeDependents: true,
 					includeComments: includeComments,
-					briefDependencies: false
+					briefDependencies: false,
+					bestEffortRelations: true
 				}, global));
 		};
 	}
@@ -5756,10 +5902,12 @@ final class Application {
 			case ReadHere(Success(IssueFound(summary))):
 				canonicalId = summary.id;
 		}
+		// findRepliesTo and findReplies give no parent and no replies when their read fails (cmd/bd/show_thread.go:136-162).
 		final detailRequest:IssueDetailsRequest = {
 			includeDependents: true,
 			includeComments: false,
-			briefDependencies: false
+			briefDependencies: false,
+			bestEffortRelations: true
 		};
 		var root:Null<IssueDetails> = null;
 		switch query.issueDetails(location.path, canonicalId, detailRequest, invocation.global) {
@@ -6087,10 +6235,13 @@ final class Application {
 		}
 		if (ids.length == 0)
 			return runModeAwareFailure(invocation.output, "at least one issue ID is required (use positional args, --id flag, or --current)");
+		// Upstream's text view reads the labels, dependencies, dependents and comments with store calls of their own and
+		// ignores a failure of each (cmd/bd/show.go:200-235).
 		final request:IssueDetailsRequest = {
 			includeDependents: true,
 			includeComments: true,
-			briefDependencies: false
+			briefDependencies: false,
+			bestEffortRelations: true
 		};
 		final found = new Array<IssueDetails>();
 		for (id in ids) {
@@ -6210,7 +6361,8 @@ final class Application {
 					output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
 				case ReadHere(Success(IssueFound(summary))):
 					switch query.issueDetails(location.path, summary.id, request, invocation.global) {
-						case Failure(message): output.writeStderr('Error fetching ${id}: ${message}\n');
+						// Upstream's IssueReader.Get stops the command (cmd/bd/show.go:164-168).
+						case Failure(message): return runModeAwareFailure(invocation.output, message);
 						case Success(DetailsMissing): output.writeStderr('Error fetching ${id}: no issue found matching "${id}"\n');
 						case Success(DetailsFound(details)): found.push(details);
 					}
@@ -6296,34 +6448,69 @@ final class Application {
 
 	function resolveAbbreviatedIssue(location:WorkspaceLocation, input:String, issuePrefix:String, normalized:String, global:Bool,
 			query:IssueQueryPort):StoreResult<IssueLookup> {
+		return switch resolveAbbreviatedId(location, input, issuePrefix, normalized, global, query) {
+			case Failure(message): Failure(message);
+			case Success(null): Success(IssueMissing);
+			case Success(id): query.issueSummary(location.path, location.databaseName, id, global);
+		};
+	}
+
+	/**
+		The substring step of upstream ResolvePartialID (internal/utils/id_parser.go:121-226):
+		SearchIssueIDs with the search part of the hash (see partialIdSearchPart),
+		then the candidate whose full ID is the input, or else the last whose hash
+		is the hash, or else the one whose hash starts with it. Null when nothing
+		matches; a failed search and an ambiguous hash fail.
+	**/
+	function resolveAbbreviatedId(location:WorkspaceLocation, input:String, issuePrefix:String, normalized:String, global:Bool,
+			query:IssueQueryPort):StoreResult<Null<String>> {
 		final prefix = normalizedPrefix(issuePrefix);
 		final hashPart = StringTools.startsWith(normalized, prefix) ? normalized.substr(prefix.length) : normalized;
 		if (!isPartialIdHash(hashPart))
-			return Success(IssueMissing);
-		return switch query.searchIssueIds(location.path, location.databaseName, hashPart, global) {
+			return Success(null);
+		return switch query.searchIssueIds(location.path, location.databaseName, partialIdSearchPart(hashPart), global) {
 			case Failure(message): Failure('failed to search issues: ${message}');
 			case Success(ids):
 				final matches = new Array<String>();
 				var exactMatch = "";
 				for (candidate in ids) {
+					if (candidate == input) {
+						exactMatch = candidate;
+						break;
+					}
 					final candidateHash = StringTools.startsWith(candidate, prefix) ? candidate.substr(prefix.length) : candidate;
-					if (candidate == input || candidateHash == hashPart)
+					if (candidateHash == hashPart)
 						exactMatch = candidate;
 					else if (StringTools.startsWith(candidateHash, hashPart))
 						matches.push(candidate);
 				}
 				if (exactMatch != "") {
-					query.issueSummary(location.path, location.databaseName, exactMatch, global);
+					Success(exactMatch);
 				} else if (matches.length == 0) {
-					Success(IssueMissing);
+					Success(null);
 				} else {
 					matches.sort(compareIssueIds);
 					if (matches.length > 1)
 						Failure('${AMBIGUOUS_ISSUE_ID}"${input}" matches ${matches.length} issues: [${matches.join(" ")}]\nUse more characters to disambiguate');
 					else
-						query.issueSummary(location.path, location.databaseName, matches[0], global);
+						Success(matches[0]);
 				}
 		};
+	}
+
+	/**
+		Upstream partialIDSearchPart (internal/utils/id_parser.go:230-242): the
+		part after the hash's last hyphen, when it is not empty and is a hash
+		too, or else the whole hash.
+	**/
+	static function partialIdSearchPart(hashPart:String):String {
+		final dash = hashPart.lastIndexOf("-");
+		if (dash >= 0 && dash < hashPart.length - 1) {
+			final suffix = hashPart.substr(dash + 1);
+			if (isPartialIdHash(suffix))
+				return suffix;
+		}
+		return hashPart;
 	}
 
 	static function compareIssueIds(left:String, right:String):Int {
@@ -8149,6 +8336,22 @@ final class Application {
 
 	static final schemaTables = ["issues", "dependencies", "labels", "config", "metadata"];
 
+	/**
+		Upstream pingFail (cmd/bd/ping.go:88-101): under --json the reason, the
+		status and the time as a JSON object on stdout (SilentExit), otherwise
+		HandleError's line with the time after the reason.
+	**/
+	function runPingFailure(mode:OutputMode, reason:String, totalMs:Int):Int {
+		checkSchemaBeforeFailure();
+		switch mode {
+			case Human:
+				output.writeStderr('Error: bd ping: ${reason} (${totalMs}ms)\n');
+			case Json:
+				writeJsonStdout('{\n  "error": ${Json.stringify(reason)},\n  "schema_version": 1,\n  "status": "error",\n  "total_ms": ${totalMs}\n}\n');
+		}
+		return 1;
+	}
+
 	function renderPing(mode:OutputMode, snapshot:PingSnapshot):Void {
 		switch mode {
 			case Human:
@@ -9109,4 +9312,18 @@ final class Application {
 			+ "      --sandbox        Disable remote publication\n"
 			+ "  -v, --verbose        Enable verbose/debug output\n";
 	}
+}
+
+/** How ready --mol found its root: upstream ResolvePartialID, then loadTemplateSubgraph's GetIssue. */
+private enum MoleculeRootLookup {
+	MoleculeRootFound(root:IssueSummary);
+
+	/** ResolvePartialID failed or found nothing: upstream says the molecule is not found. */
+	MoleculeRootUnresolved;
+
+	/** GetIssue of the resolved ID failed with this error. */
+	MoleculeRootUnreadable(message:String);
+
+	/** GetIssue found no issue under the resolved ID. */
+	MoleculeRootMissing(id:String);
 }

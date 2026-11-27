@@ -46,7 +46,7 @@ endif
 .PHONY: all build doctor-build test test-icu-path test-full-cgo test-regression test-upgrade test-cross-version test-migration corpus-regen bench bench-quick clean clean-test-tmp install install-force help check-up-to-date fmt fmt-check check-testing-short
 .PHONY: ci-pr-core ci-pr-policy ci-pr-lint ci-package-mcp ci-package-npm
 .PHONY: beadshx-bootstrap beadshx-bootstrap-check beadshx-clean-generated
-.PHONY: beadshx-generate beadshx-build beadshx-build-oracle beadshx-inventory beadshx-test-inventory beadshx-test-output-contracts beadshx-test-error-contracts beadshx-test-storage-contracts beadshx-test-effect-contracts beadshx-test-native-pressure beadshx-test-schema-migrations beadshx-schema-migration-pairs beadshx-test-focused beadshx-test-generated beadshx-test-identity beadshx-test-caf-intent
+.PHONY: beadshx-generate beadshx-build beadshx-build-oracle beadshx-inventory beadshx-test-inventory beadshx-test-output-contracts beadshx-test-error-contracts beadshx-test-storage-contracts beadshx-test-effect-contracts beadshx-test-native-pressure beadshx-test-schema-migrations beadshx-schema-migration-pairs beadshx-test-compatibility-manifest beadshx-test-focused beadshx-test-generated beadshx-test-identity beadshx-test-caf-intent
 .PHONY: beadshx-parity beadshx-test beadshx-ci-local beadshx-format beadshx-lint beadshx-package beadshx-hooks-install
 .PHONY: api-gen api-check
 
@@ -99,6 +99,9 @@ beadshx-test-schema-migrations:
 
 beadshx-schema-migration-pairs:
 	@./scripts/beadshx/schema-migration-graph.sh pairs
+
+beadshx-test-compatibility-manifest:
+	@./scripts/beadshx/command.sh compatibility-manifest
 
 beadshx-test-focused:
 	@./scripts/beadshx/command.sh test-focused

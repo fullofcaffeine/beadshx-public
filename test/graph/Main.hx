@@ -22,6 +22,7 @@ import beadshx.relation.AllGraphs.groupAllGraphs;
 import beadshx.relation.GraphExternal.ExternalTargetLookup;
 import beadshx.relation.GraphExternal.GraphRowSelection;
 import beadshx.relation.GraphExternal.externalTarget;
+import beadshx.relation.GraphExternal.readResolvedTarget;
 import beadshx.relation.GraphExternal.selectGraphRows;
 import beadshx.relation.GoSort.goPdqsort;
 import beadshx.relation.GoSort.goSortSlice;
@@ -118,6 +119,22 @@ class Main {
 			edge("a", "external:o:far", "blocks"),
 			edge("a", "external:o:x", "blocks")
 		]), "elsewhere after m,far");
+		// Upstream reads a resolved ID's issue at once (resolveAndGetFromStore). A failed read leaves the row
+		// out, adds nothing, and a later row to that issue is left out too; another target still joins.
+		final reads = new Array<String>();
+		final failedRead = selectGraphRows(["a", "b"], [
+			edge("a", "external:o:x", "blocks"),
+			edge("b", "p-x", "relates-to"),
+			edge("b", "external:o:y", "blocks")
+		], target -> readResolvedTarget(target == "x" ? "p-x" : "p-y", id -> {
+			reads.push(id);
+			return id != "p-x";
+		}));
+		equal(switch failedRead {
+			case GraphRowsElsewhere: "elsewhere";
+			case GraphRowsSelected(added, kept): [for (row in kept) '${row.index}>${row.dependsOnId}'].join(" ") + ' | ${added.join(",")}';
+		}, "2>p-y | p-y");
+		equal(reads.join(","), "p-x,p-y");
 	}
 
 	/**

@@ -1,0 +1,7 @@
+{
+  "description": "Count a development fallback as implemented compatibility.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/label\") | .ownershipLane) = \"development_fallback\"",
+  "expect": [
+    "development fallback counted as implemented: cmd:bd/label"
+  ]
+}

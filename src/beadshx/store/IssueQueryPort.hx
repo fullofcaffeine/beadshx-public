@@ -25,10 +25,21 @@ interface IssueQueryPort extends QueryTimePort {
 		The ready work of `bd ready` and the first read of ready --gated, --mol
 		and --explain, with the total of a full page and, for an empty one,
 		whether any issue is open. An embedded workspace reads it with
-		Haxe-owned SQL; a server-mode or proxied workspace through the native
-		facade.
+		Haxe-owned SQL, with the read that `query` names; a server-mode or
+		proxied workspace through the native facade, which reads the counted
+		query for both.
 	**/
-	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult;
+	function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult;
+
+	/**
+		Opens and closes the embedded store once for each of `count` upstream
+		store calls whose data the command does not read from them
+		(EmbeddedSession.openForStoreCall): Dolt warns at each store open about
+		every unfinished database directory beside the database. The first open
+		of a workspace checks the schema, as upstream's pre-run store open does.
+		A server-mode or proxied workspace opens nothing here.
+	**/
+	function openForStoreCalls(beadsDir:String, databaseName:String, count:Int, global:Bool):Void;
 
 	/**
 		The issues of `bd search`, and of `label list-all` with no query text,
@@ -60,6 +71,18 @@ interface IssueQueryPort extends QueryTimePort {
 	function issueDependents(beadsDir:String, id:String, global:Bool):StoreResult<Array<IssueDependency>>;
 	function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String>;
 	function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>>;
+
+	/**
+		Upstream `SearchIssues` with an issue type and a status and no other
+		filter, such as the closed gates of `ready --gated`: the IDs it finds.
+	**/
+	function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String, global:Bool):StoreResult<Array<String>>;
+
+	/**
+		Upstream search's check of a `--status` selector, before its other flag
+		checks (cmd/bd/search.go:114-122). Null when the selector applies.
+	**/
+	function searchStatusRefusal(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):Null<String>;
 
 	/** The comments of an exact issue ID, as `bd comments` lists them. */
 	function issueComments(beadsDir:String, databaseName:String, issueId:String, global:Bool):StoreResult<Array<IssueComment>>;

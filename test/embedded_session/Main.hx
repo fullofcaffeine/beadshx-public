@@ -241,6 +241,7 @@ class Main {
 			"stale:stale",
 			"list:list",
 			"ready:ready",
+			"ready-human:ready",
 			"count:count",
 			"search:search",
 			"query:query",
@@ -272,10 +273,11 @@ class Main {
 			'stale: error: failed to get stale issues: $missingDatabase',
 			'list: error: search issues with counts: wisp dependency probe: $missingDatabase',
 			'ready: error: get ready work with counts: wisp dependency probe: $missingDatabase',
+			'ready-human: error: get ready work: compute deferred parent children: deferred parents: check future-deferred parents from issues: $missingDatabase',
 			'count: error: count by column status: $missingDatabase',
 			'search: error: search issues with counts: wisp dependency probe: $missingDatabase',
 			'query: error: search issues with counts: wisp dependency probe: $missingDatabase',
-			'ping: error: count issues: $missingDatabase',
+			'ping: error: query failed: search issues: search issues: $missingDatabase',
 			'comments: error: get issue comments from comments: $missingDatabase',
 			'cycles: error: dependency graph: query dependencies: $missingDatabase',
 			'events: error: journal: read since 0: $missingDatabase',
@@ -287,8 +289,8 @@ class Main {
 			'relations: error: check issue existence in issues: $missingDatabase',
 			'tree: error: get issue: $missingDatabase',
 			'assigned: error: read assigned issue: $missingDatabase',
-			'id-search: error: search embedded issue IDs: $missingDatabase',
-			'dependencies: error: read dependency anchor "$issueId": $missingDatabase',
+			'id-search: error: search issues: search issues: $missingDatabase',
+			'dependencies: error: check issue existence in issues: $missingDatabase',
 			'summary: error: get issue: $missingDatabase'
 		];
 		final missing = "'<beads>/embeddeddolt' does not exist";

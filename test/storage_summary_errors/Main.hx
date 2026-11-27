@@ -3,6 +3,7 @@ import beadshx.nativeextern.context.ContextPkg;
 import beadshx.nativeextern.database.sql.DB;
 import beadshx.nativeextern.database.sql.TxOptions;
 import beadshx.store.EmbeddedIssueSummaryReader.EmbeddedIssueSummaryResult;
+import beadshx.store.EmbeddedSession.EmbeddedSessionCleanupFailure;
 
 @:go.import("github.com/DATA-DOG/go-sqlmock") @:go.package("sqlmock")
 extern class SummaryMocks {
@@ -271,7 +272,8 @@ class Main {
 		if (begun.value2 != null)
 			throw begun.value2.toString();
 		final input = readFailed ? EmbeddedIssueSummaryFailure("summary read failed") : EmbeddedIssueSummaryMissing;
-		final result = beadshx.store.EmbeddedIssueSummaryReader.finishSummaryTransaction(input, begun.value1.rollback());
+		final rolledBack = begun.value1.rollback();
+		final result = beadshx.store.EmbeddedIssueSummaryReader.finishSummaryRead(input, rolledBack == null ? [] : [SessionRollbackFailed(rolledBack)]);
 		final closed = opened.database.close();
 		if (closed != null)
 			throw closed.toString();

@@ -1,0 +1,7 @@
+{
+  "description": "Reference an operation where the outputs axis needs an output record.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/list\") | .axes.outputs.known) |= (. + [\"op:issue-queries\"] | sort)",
+  "expect": [
+    "wrong record kind: cmd:bd/list outputs record -> op:issue-queries has kind operation, want output"
+  ]
+}

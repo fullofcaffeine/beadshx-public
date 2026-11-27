@@ -1,0 +1,7 @@
+{
+  "description": "Keep a waiver past its review date.",
+  "filter": "(.waivers[] | select(.id == \"waiver:snapshot-extension\") | .reviewDate) = \"2026-01-01\"",
+  "expect": [
+    "waiver outlives its review condition: waiver:snapshot-extension review date 2026-01-01"
+  ]
+}

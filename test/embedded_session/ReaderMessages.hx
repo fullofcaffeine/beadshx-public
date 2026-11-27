@@ -21,6 +21,8 @@ import beadshx.store.EmbeddedStaleReader;
 import beadshx.store.EmbeddedTreeReader;
 import beadshx.store.IssueListRequests;
 import beadshx.store.IssueListResult;
+import beadshx.store.PingOutcome;
+import beadshx.store.ReadyQuery;
 import beadshx.store.StoreResult;
 
 /**
@@ -48,7 +50,7 @@ class ReaderMessages {
 				case ListFailure(message): Failure(message);
 				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
 			});
-		add("ready", switch EmbeddedReadyReader.read(beadsDir, databaseName, {
+		final readyRequest:beadshx.store.ReadyRequest = {
 			issueType: "",
 			assignee: "",
 			unassigned: false,
@@ -71,11 +73,17 @@ class ReaderMessages {
 			brief: false,
 			maxRows: IntAbsent,
 			maxRowsSource: ""
-		}) {
-			case ReadySuccess(_): Success(true);
-			case ReadyFailure(message): Failure(message);
-			case ReadyRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
-		});
+		};
+		// The counted read of `bd ready --json`, then the bare read of the human view.
+		for (entry in [
+			{name: "ready", query: ReadyQuery.ReadyWorkWithCounts},
+			{name: "ready-human", query: ReadyQuery.ReadyWork}
+		])
+			add(entry.name, switch EmbeddedReadyReader.read(beadsDir, databaseName, readyRequest, entry.query) {
+				case ReadySuccess(_): Success(true);
+				case ReadyFailure(message): Failure(message);
+				case ReadyRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
+			});
 		add("count", done(EmbeddedCountReader.read(beadsDir, databaseName, {
 			status: "",
 			issueType: "",
@@ -104,7 +112,12 @@ class ReaderMessages {
 				case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
 			});
 		add("query", done(EmbeddedIssueListReader.queryCandidates(beadsDir, databaseName)));
-		add("ping", done(EmbeddedPing.check(beadsDir, databaseName)));
+		// Upstream pingFail's reason for a failed search; a store that does not open fails as before.
+		add("ping", switch EmbeddedPing.check(beadsDir, databaseName) {
+			case Success(PingAnswered(_)): Success(true);
+			case Success(PingFailed(reason, _)): Failure(reason);
+			case Failure(message): Failure(message);
+		});
 		add("comments", done(EmbeddedCommentReader.read(beadsDir, databaseName, issueId)));
 		add("cycles", done(EmbeddedCycleReader.read(beadsDir, databaseName)));
 		add("events", done(EmbeddedEventsJournalReader.read(beadsDir, databaseName, 0, 10)));

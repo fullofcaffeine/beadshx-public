@@ -1,0 +1,8 @@
+{
+  "description": "Claim that a command has no effects, citing evidence that is not negative evidence for it.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/version\") | .axes.effects) = {\"state\": \"none\", \"evidence\": [\"ev:parity-smoke\"]}",
+  "expect": [
+    "false none claim: cmd:bd/version effects cites ev:parity-smoke, which is not negative evidence covering it",
+    "false none claim: cmd:bd/version effects is none, but its operation op:cli-without-store always runs fs-discover-workspace"
+  ]
+}

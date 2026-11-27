@@ -1,0 +1,7 @@
+{
+  "description": "Count a difference as waived while its waiver still waits for approval.",
+  "filter": "(.waivers[] | select(.id == \"waiver:snapshot-extension\")) |= (.status = \"pending\" | del(.decisionDate))",
+  "expect": [
+    "pending waiver counted as green: diff:snapshot-extension is waived by waiver:snapshot-extension, whose status is pending"
+  ]
+}

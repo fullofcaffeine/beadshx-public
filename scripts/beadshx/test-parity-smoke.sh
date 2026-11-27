@@ -11,7 +11,12 @@ candidate="${2:-$repository_root/build/bin/bdhx}"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/beadshx-parity-smoke.XXXXXX")"
 # Writes rows that bd refuses to create (such as dependency cycles) into marked fixtures.
 fixture_sql="$test_root/bin/fixture-sql"
-(cd "$repository_root" && go build -tags gms_pure_go -o "$fixture_sql" ./scripts/beadshx/fixture-sql)
+# Exports and compares the logical Dolt state of a database case: see real_database_logical_state.
+logical_state="$test_root/bin/logical-state"
+# Rewrites the declared volatile values of one side's output: see normalize_output.
+output_normalizers="$test_root/bin/output-normalizers"
+(cd "$repository_root" && go build -mod=readonly -tags gms_pure_go -o "$test_root/bin/" \
+	./scripts/beadshx/fixture-sql ./scripts/beadshx/logical-state ./scripts/beadshx/output-normalizers)
 cleanup() {
 	local status=$?
 	while IFS= read -r pid_file; do
@@ -71,10 +76,42 @@ no_workspace_root_usage=""
 # When set, each side of a no-workspace case must print its own root help: see compare_root_help.
 no_workspace_root_help=""
 
-# Keeps the first line of a root flag error and replaces the root usage after it with one marker
-# line. Any other text stays, so a missing usage or a second error line differs.
-normalize_root_usage() {
-	awk 'NR == 1 { print; next } NR == 2 && $0 == "Usage:" { print "<root usage>"; exit } { print }' "$1"
+# Usage: normalize_output NAME INPUT OUTPUT RULES [OPTION...]
+# Writes one side's output with the values that the named normalizers declare rewritten, and nothing
+# else. RULES is a comma-separated list, possibly empty, which copies the output exactly. Each
+# comparison names its own normalizers; `output-normalizers rules` gives the fields, reason and scope
+# of each one, and scripts/beadshx/output-normalizers tests that none hides a difference outside its
+# fields. A normalizer that does not find its declared value in the declared form fails the case.
+normalize_output() {
+	local name="$1" input="$2" output="$3" rules="$4"
+	shift 4
+	if ! "$output_normalizers" apply --rules "$rules" "$@" "$input" >"$output"; then
+		printf '%s: the %s normalizers did not accept %s\n' "$name" "$rules" "$input" >&2
+		cat "$input" >&2
+		return 1
+	fi
+}
+
+# Usage: is_build_output_command ARGUMENT...
+# Succeeds when the arguments, after leading -C DIRECTORY and --db PATH pairs, are those of a command
+# that prints only the build's own name, version, commit or command list: version, version --json,
+# --version, --help, or none (the root help). Only such a case may compare its stdout with the
+# build-output normalizer.
+is_build_output_command() {
+	while [[ $# -ge 2 && ("$1" == -C || "$1" == --db) ]]; do
+		shift 2
+	done
+	case "$*" in
+	'' | version | 'version --json' | --version | --help) return 0 ;;
+	esac
+	return 1
+}
+
+# Usage: record_normalizers CASE-ROOT STREAM RULES
+# Adds the normalizers that a comparison applied to one stream of both sides to the case's evidence,
+# CASE-ROOT/normalizers, which the test root keeps when the suite fails.
+record_normalizers() {
+	printf '%s: %s\n' "$2" "${3:-none}" >>"$1/normalizers"
 }
 
 # Writes the case's user config.yaml under each HOME directory given.
@@ -170,6 +207,7 @@ compare_no_workspace() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
+	record_normalizers "$case_root" stdout ""
 	if [[ -n "$no_workspace_root_help" ]]; then
 		# The root help names each binary and lists its own commands, so each side's stdout must be
 		# what that side prints for --help in the same environment.
@@ -202,11 +240,15 @@ compare_no_workspace() {
 		return 1
 	fi
 	local oracle_stderr="$case_root/oracle.stderr" candidate_stderr="$case_root/candidate.stderr"
-	if [[ -n "$no_workspace_root_usage" ]]; then
+	local stderr_rules=""
+	# A root flag error ends with the root usage, which names each build and lists its own commands.
+	[[ -n "$no_workspace_root_usage" ]] && stderr_rules=root-usage
+	record_normalizers "$case_root" stderr "$stderr_rules"
+	if [[ -n "$stderr_rules" ]]; then
 		oracle_stderr="$case_root/oracle.stderr.normalized"
 		candidate_stderr="$case_root/candidate.stderr.normalized"
-		normalize_root_usage "$case_root/oracle.stderr" >"$oracle_stderr"
-		normalize_root_usage "$case_root/candidate.stderr" >"$candidate_stderr"
+		normalize_output "$name" "$case_root/oracle.stderr" "$oracle_stderr" "$stderr_rules" || return 1
+		normalize_output "$name" "$case_root/candidate.stderr" "$candidate_stderr" "$stderr_rules" || return 1
 	fi
 	if ! cmp -s "$oracle_stderr" "$candidate_stderr"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
@@ -850,18 +892,18 @@ compare_store_failure() {
 			"$scenario" "$case_name" "$oracle_exit" "$candidate_exit" >&2
 		return 1
 	fi
+	record_normalizers "$case_root" stdout ""
 	if ! cmp -s "$case_root/oracle.stdout" "$case_root/candidate.stdout"; then
 		printf '%s/%s stdout differs from upstream\n' "$scenario" "$case_name" >&2
 		diff -u "$case_root/oracle.stdout" "$case_root/candidate.stdout" >&2 || true
 		return 1
 	fi
 	# A warning about the permissions of the .beads directory names each side's own workspace.
-	local side side_work side_work_logical
+	local side
+	record_normalizers "$case_root" stderr work-path
 	for side in oracle candidate; do
-		side_work="$(cd "$case_root/$side/work" && pwd -P)"
-		side_work_logical="$(cd "$case_root/$side/work" && pwd -L)"
-		sed -e "s|$side_work|<work>|g" -e "s|$side_work_logical|<work>|g" \
-			"$case_root/$side.stderr" >"$case_root/$side.stderr.normalized"
+		normalize_output "$scenario/$case_name" "$case_root/$side.stderr" "$case_root/$side.stderr.normalized" work-path \
+			--work "$(cd "$case_root/$side/work" && pwd -P)" --work "$(cd "$case_root/$side/work" && pwd -L)" || return 1
 	done
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s/%s stderr differs from upstream\n' "$scenario" "$case_name" >&2
@@ -1249,6 +1291,16 @@ real_database_beads_mode=700
 # When set, a database case also requires the upstream command to leave its task state unchanged,
 # and gives each side an empty TMPDIR that must stay empty.
 real_database_read_only=""
+# When set, a database case also compares the logical Dolt state of both sides after the run, with
+# scripts/beadshx/logical-state: every table row for row, the schema objects, and the revision state
+# (commit graph, messages, changed tables, branches and working set). "unchanged" requires each side's
+# state to equal the fixture's state before the run exactly, with no normalization rule. "equal"
+# requires the two sides' states to be equal under the declared write rules, and then lets the
+# candidate change its fixture: see check_logical_state.
+real_database_logical_state=""
+# Normalizers that undo how a database case's stdout reached the harness, before the comparison's own:
+# pty-transcript while the cases run through the script terminal runners (write_terminal_runner).
+real_database_transport_rules=""
 real_database_case_count=0
 real_database_out_of_memory_count=0
 candidate_only_case_count=0
@@ -1258,76 +1310,51 @@ candidate_only_setup=""
 candidate_only_exit=1
 printf 'parity [%ss]: PASS database fixture setup\n' "$SECONDS"
 
-# Upstream's thanks page (cmd/bd/thanks.go) sorts its contributor map by commit count with an unstable
-# sort, so contributors with the same count print in a random order. This reads a page's names in their
-# order, requires each contributor once with the counts never rising, and requires the rows and wrapped
-# lines that upstream's layout gives for that order. It then prints the page with the names in one order:
-# by count, then as upstream's source lists them.
-thanks_page_python='
-import re
-import sys
+# The rules of an "equal" logical state comparison: commit hashes as their place in the history, the
+# times that the runs stamp, row ids that upstream derives from those times, and random lock values
+# as kept or fresh against the state before the run. `logical-state rules` gives each reason.
+logical_state_write_rules=commit-hash,run-time,derived-row-id,random-token
 
-source, page = sys.argv[1], sys.argv[2]
-table = re.findall(r"^\t\"([^\"]+)\":\s+(\d+),$", open(source, encoding="utf-8").read(), re.M)
-commits = {name: int(count) for name, count in table}
-rank = {name: index for index, (name, _) in enumerate(table)}
-lines = open(page, encoding="utf-8").read().split("\n")
-sgr = re.compile(r"\x1b\[[0-9;]*m")
-plain = [sgr.sub("", line) for line in lines]
-featured_at = plain.index("  Featured Contributors")
-additional_at = plain.index("  Additional Contributors")
-rows = slice(featured_at + 2, additional_at - 1)
-wrapped = slice(additional_at + 2, len(lines) - 2)
-if plain[additional_at - 1] != "" or plain[len(lines) - 2:] != ["", ""]:
-    sys.exit("the page does not end as upstream'"'"'s does")
-
-
-def full_name(shown):
-    if shown in commits:
-        return shown
-    cut = [name for name in commits if len(name.encode()) > 20 and name.encode()[:17].decode() + "..." == shown]
-    if len(cut) != 1:
-        sys.exit("unknown contributor: " + repr(shown))
-    return cut[0]
-
-
-def style_of(line):
-    codes = sgr.findall(line)
-    return (codes[0], codes[1]) if codes else ("", "")
-
-
-order = [full_name(shown) for row in plain[rows] for shown in re.split(r" {2,}", row[2:].rstrip(" "))]
-order += [full_name(shown) for shown in "".join(line[2:] for line in plain[wrapped]).split(", ")]
-if sorted(order) != sorted(commits):
-    sys.exit("the page does not name each contributor once")
-if any(commits[left] < commits[right] for left, right in zip(order, order[1:])):
-    sys.exit("the page does not sort the contributors by commit count")
-name_open, name_close = style_of(lines[rows][0])
-dim_open, dim_close = style_of(lines[wrapped][0])
-
-
-def render(names):
-    featured, rest = names[:20], names[20:]
-    width = min(max(len(name.encode()) for name in featured), 20) + 2
-    cells = [name if len(name.encode()) <= 20 else name.encode()[:17].decode() + "..." for name in featured]
-    columns = ["  " + "".join(name_open + cell + " " * (width - len(cell)) + name_close for cell in cells[at:at + 4])
-               for at in range(0, len(cells), 4)]
-    out, line, length = [], "  ", 2
-    for index, name in enumerate(rest):
-        entry = name + (", " if index < len(rest) - 1 else "")
-        if length + len(entry.encode()) > width * 4 + 4 and length > 2:
-            out.append(line)
-            line, length = "  ", 2
-        line += dim_open + entry + dim_close
-        length += len(entry.encode())
-    return columns, out + [line]
-
-
-if render(order) != (lines[rows], lines[wrapped]):
-    sys.exit("the rows differ from upstream'"'"'s layout for the same order")
-columns, rest = render(sorted(order, key=lambda name: (-commits[name], rank[name])))
-sys.stdout.write("\n".join(lines[:rows.start] + columns + lines[rows.stop:wrapped.start] + rest + lines[wrapped.stop:]))
-'
+# Usage: check_logical_state NAME CASE-ROOT SINCE UNTIL
+# Compares the logical state of both sides of a database case after its run, in the
+# real_database_logical_state mode. CASE-ROOT holds before.state.json, the state before the run;
+# SINCE and UNTIL are the whole UTC seconds in which the two runs started and ended.
+check_logical_state() {
+	local name="$1" case_root="$2" since="$3" until="$4" side status
+	for side in oracle candidate; do
+		"$logical_state" export "$case_root/$side-state/work" >"$case_root/$side.state.json" || return 2
+	done
+	case "$real_database_logical_state" in
+	unchanged)
+		for side in oracle candidate; do
+			status=0
+			"$logical_state" compare "$case_root/before.state.json" "$case_root/$side.state.json" \
+				>"$case_root/$side.state.report" || status=$?
+			if [[ "$status" -ne 0 ]]; then
+				printf '%s %s command changed the logical database state (left: before, right: after the run)\n' \
+					"$name" "$side" >&2
+				cat "$case_root/$side.state.report" >&2
+				return 1
+			fi
+		done
+		;;
+	equal)
+		status=0
+		"$logical_state" compare --rules "$logical_state_write_rules" --since "$since" --until "$until" \
+			--baseline "$case_root/before.state.json" "$case_root/oracle.state.json" "$case_root/candidate.state.json" \
+			>"$case_root/state.report" || status=$?
+		if [[ "$status" -ne 0 ]]; then
+			printf '%s logical database state differs from upstream (left: upstream, right: candidate)\n' "$name" >&2
+			cat "$case_root/state.report" >&2
+			return 1
+		fi
+		;;
+	*)
+		printf 'unknown logical state mode: %s\n' "$real_database_logical_state" >&2
+		return 2
+		;;
+	esac
+}
 
 compare_real_database() {
 	local name="$1"
@@ -1373,6 +1400,11 @@ compare_real_database() {
 			"$real_database_setup" "$state_root"
 		fi
 	done
+	if [[ -n "$real_database_logical_state" ]]; then
+		# Export the state before the run from a copy, so that the export cannot touch either side.
+		copy_fixture_tree "$oracle_root/work" "$case_root/before-work"
+		"$logical_state" export "$case_root/before-work" >"$case_root/before.state.json"
+	fi
 	candidate_before="$(fingerprint_tree "$candidate_root")"
 	local oracle_before="" oracle_temporary=(BEADSHX_PARITY_TMP=inherited) candidate_temporary=(BEADSHX_PARITY_TMP=inherited)
 	if [[ -n "$real_database_read_only" ]]; then
@@ -1392,6 +1424,8 @@ compare_real_database() {
 	local oracle_extra_env=("${real_database_extra_env[@]//<work>/$oracle_work}")
 	local candidate_extra_env=("${real_database_extra_env[@]//<work>/$candidate_work}")
 
+	local state_since state_until
+	state_since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	set +e
 	(
 		cd "$oracle_root/work${real_database_directory:+/$real_database_directory}"
@@ -1413,6 +1447,7 @@ compare_real_database() {
 			"$candidate" "$@"
 	) >"$case_root/candidate.stdout" 2>"$case_root/candidate.stderr"
 	candidate_exit=$?
+	state_until="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	candidate_after="$(fingerprint_tree "$candidate_root")"
 	set -e
 	if [[ -n "$real_database_read_only" ]]; then
@@ -1453,163 +1488,88 @@ compare_real_database() {
 		cat "$case_root/candidate.stderr" >&2
 		return 1
 	fi
+	# Each side's own values for the normalizers that its comparison names.
+	local oracle_values=(--work "$oracle_work" --work "$oracle_work_logical")
+	local candidate_values=(--work "$candidate_work" --work "$candidate_work_logical")
 	# A metadata.json load warning names each side's own workspace. Dolt's logrus warnings carry the time
-	# of each side's own run.
-	sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" -e 's/^time="[^"]*" /time="<time>" /' \
-		"$case_root/oracle.stderr" >"$case_root/oracle.stderr.normalized"
-	sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" -e 's/^time="[^"]*" /time="<time>" /' \
-		"$case_root/candidate.stderr" >"$case_root/candidate.stderr.normalized"
+	# of each side's own run. A failed ping prints the duration of its own run (cmd/bd/ping.go:100).
+	local stderr_rules=work-path,log-time
+	case "$comparison" in
+	ping-failure) stderr_rules=work-path,log-time,ping-failure-duration ;;
+	esac
+	record_normalizers "$case_root" stderr "$stderr_rules"
+	normalize_output "$name" "$case_root/oracle.stderr" "$case_root/oracle.stderr.normalized" "$stderr_rules" \
+		"${oracle_values[@]}" || return 1
+	normalize_output "$name" "$case_root/candidate.stderr" "$case_root/candidate.stderr.normalized" "$stderr_rules" \
+		"${candidate_values[@]}" || return 1
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s stderr differs from upstream\n' "$name" >&2
 		diff -u "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized" >&2 || true
 		return 1
 	fi
-	if [[ "$candidate_before" != "$candidate_after" ]]; then
+	# An "equal" logical state comparison replaces the byte check: a write changes the fixture.
+	if [[ "$candidate_before" != "$candidate_after" && "$real_database_logical_state" != equal ]]; then
 		printf '%s candidate command changed the read-only fixture\n' "$name" >&2
 		return 1
 	fi
+	if [[ -n "$real_database_logical_state" ]]; then
+		check_logical_state "$name" "$case_root" "$state_since" "$state_until" || return 1
+	fi
+	# Each comparison names the normalizers that rewrite its declared volatile values in stdout.
+	local stdout_rules
 	case "$comparison" in
-	exact | exact-home)
-		sed -e "s|$oracle_work|<work>|g" -e "s|$oracle_work_logical|<work>|g" \
-			"$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
-			"$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		if [[ "$comparison" == exact-home ]]; then
-			# The user config.yaml path names each side's own HOME, which Go prints cleaned.
-			local oracle_home candidate_home
-			oracle_home="$(cd "$oracle_root/user-home" && pwd -L)"
-			candidate_home="$(cd "$candidate_root/user-home" && pwd -L)"
-			sed -i.bak "s|$oracle_home|<home>|g" "$case_root/oracle.normalized"
-			sed -i.bak "s|$candidate_home|<home>|g" "$case_root/candidate.normalized"
-		fi
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
+	exact) stdout_rules=work-path ;;
+	# The user config.yaml path names each side's own HOME, which Go prints cleaned.
+	exact-home)
+		stdout_rules=work-path,home-path
+		oracle_values+=(--home "$(cd "$oracle_root/user-home" && pwd -L)")
+		candidate_values+=(--home "$(cd "$candidate_root/user-home" && pwd -L)")
 		;;
-	show-grouped-multi)
-		# Pinned direct mode ranges over a Go map of parent IDs, so only the
-		# block order is unstable. Compare the exact rendered line multiset.
-		LC_ALL=C sort "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		LC_ALL=C sort "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout content differs from upstream\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
-	config-validate-routing)
-		# Upstream lists the valid routing modes from a Go map, in random order; compare them as a set.
-		for side in oracle candidate; do
-			jq -Rr 'if test("routing\\.mode: .* is invalid \\(valid values: [a-z, ]*\\)") then
-				sub("\\(valid values: (?<modes>[a-z, ]*)\\)"; "(valid values: \(.modes | split(", ") | sort | join(", ")))")
-			else . end' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting the routing modes\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
-	config-show-tied-text | config-show-tied-json)
-		# config show sorts with sort.Slice, which is not stable, over rows gathered from Go maps,
-		# so the rows of one key set by two sources print in either order. The exact cases pin
-		# the order of distinct keys; here only the order of tied rows may vary.
-		for side in oracle candidate; do
-			if [[ "$comparison" == config-show-tied-json ]]; then
-				jq 'sort_by(.key, .source, .value)' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-			else
-				LC_ALL=C sort "$case_root/$side.stdout" >"$case_root/$side.normalized"
-			fi
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting tied rows\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
+	# show --children and show --refs over several issues print one block per issue in Go map order.
+	show-children-multi) stdout_rules=children-block-order ;;
+	show-refs-multi) stdout_rules=refs-block-order ;;
+	config-validate-routing) stdout_rules=routing-mode-order ;;
+	# config show prints the rows of one key that two sources set in either order.
+	config-show-tied-text) stdout_rules=config-tie-rows ;;
+	config-show-tied-json) stdout_rules=config-tie-entries ;;
 	thanks-page)
-		for side in oracle candidate; do
-			if ! python3 -I -c "$thanks_page_python" "$repository_root/cmd/bd/thanks.go" "$case_root/$side.stdout" \
-				>"$case_root/$side.normalized" 2>"$case_root/$side.thanks-error"; then
-				printf '%s %s stdout is not a thanks page in upstream'"'"'s layout: %s\n' \
-					"$name" "$side" "$(cat "$case_root/$side.thanks-error")" >&2
-				cat "$case_root/$side.stdout" >&2
-				return 1
-			fi
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after ordering the tied contributors\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
+		stdout_rules=thanks-contributor-order
+		oracle_values+=(--thanks-source "$repository_root/cmd/bd/thanks.go")
+		candidate_values+=(--thanks-source "$repository_root/cmd/bd/thanks.go")
 		;;
+	# version, --version and the root help print this build's own name, identity and commands.
 	stderr-only)
-		# The exit code and stderr compared above. stdout prints this build's own name or identity.
-		;;
-	ping-human)
-		sed -E 's/[0-9]+ms/<duration>/' "$case_root/oracle.stdout" >"$case_root/oracle.normalized"
-		sed -E 's/[0-9]+ms/<duration>/' "$case_root/candidate.stdout" >"$case_root/candidate.normalized"
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after normalizing the ping timing\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
+		if ! is_build_output_command "$@"; then
+			printf '%s: stderr-only compares only version, version --json, --version, --help and the root command\n' \
+				"$name" >&2
+			return 2
 		fi
+		stdout_rules=build-output
 		;;
-	ping-json)
-		for side in oracle candidate; do
-			jq -e '
-				all(.query_ms, .resolve_ms, .store_ms, .total_ms; type == "number" and . >= 0) and
-				.total_ms == (.query_ms + .resolve_ms + .store_ms)
-			' "$case_root/$side.stdout" >/dev/null
-			jq -S 'del(.query_ms, .resolve_ms, .store_ms, .total_ms)' \
-				"$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"
-		;;
-	molecule-ready-json)
-		for side in oracle candidate; do
-			jq -S '
-				(.parallel_groups[]? |= sort) |
-				(.steps[]?.parallel_info.blocked_by |= sort) |
-				(.steps[]?.parallel_info.blocks |= sort) |
-				(.steps[]?.parallel_info.can_parallel |= sort)
-			' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"
-		;;
-	graph-open-json)
-		# graph --open adds the rows it joins over left-out issues in Go map order.
-		for side in oracle candidate; do
-			jq -S '(.layout.Nodes[].DependsOn) |= (if . == null then . else sort end)' \
-				"$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting DependsOn\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
-	graph-html)
-		# graph --html lists its JSON nodes in Go map order. Each node starts with {"id":, which
-		# cannot occur inside a JSON string, so split the nodes there and sort their exact text.
-		for side in oracle candidate; do
-			jq -Rr 'if startswith("const nodes = [{\"id\":") and endswith("}];") then
-				"const nodes = [{\"id\":" + (.[21:-3] | split("},{\"id\":") | sort | join("},{\"id\":")) + "}];"
-			else . end' "$case_root/$side.stdout" >"$case_root/$side.normalized"
-		done
-		if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
-			printf '%s stdout differs from upstream after sorting the HTML nodes\n' "$name" >&2
-			diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
-			return 1
-		fi
-		;;
+	ping-human) stdout_rules=ping-duration ;;
+	ping-json) stdout_rules=ping-timings ;;
+	# A failed ping prints nothing on stdout, and its duration on stderr (see stderr_rules above).
+	ping-failure) stdout_rules=work-path ;;
+	ping-failure-json) stdout_rules=ping-failure-time ;;
+	molecule-ready-json) stdout_rules=molecule-parallel-order ;;
+	graph-open-json) stdout_rules=graph-depends-on-order ;;
+	graph-html) stdout_rules=graph-html-node-order ;;
 	*)
 		printf 'unknown real-database comparison: %s\n' "$comparison" >&2
 		return 2
 		;;
 	esac
+	stdout_rules="${real_database_transport_rules:+$real_database_transport_rules,}$stdout_rules"
+	record_normalizers "$case_root" stdout "$stdout_rules"
+	normalize_output "$name" "$case_root/oracle.stdout" "$case_root/oracle.normalized" "$stdout_rules" \
+		"${oracle_values[@]}" || return 1
+	normalize_output "$name" "$case_root/candidate.stdout" "$case_root/candidate.normalized" "$stdout_rules" \
+		"${candidate_values[@]}" || return 1
+	if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
+		printf '%s stdout differs from upstream after the %s normalizers\n' "$name" "$stdout_rules" >&2
+		diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
+		return 1
+	fi
 	printf 'parity [%ss]: PASS database/%s\n' "$SECONDS" "$name"
 }
 
@@ -1679,6 +1639,18 @@ compare_real_database_sql() {
 	real_database_extra_sql=""
 }
 
+# Usage: compare_real_database_state NAME STATE-MODE COMPARISON ARGUMENT...
+# A database case that also compares the logical state in STATE-MODE: see real_database_logical_state.
+compare_real_database_state() {
+	local name="$1"
+	local mode="$2"
+	local comparison="$3"
+	shift 3
+	real_database_logical_state="$mode"
+	compare_real_database "$name" "$comparison" "$@"
+	real_database_logical_state=""
+}
+
 # Runs only the candidate, for a view this build does not port yet: it must exit 1 with this
 # exact output (stdout compared as compact JSON when given), leave the fixture and its HOME
 # unchanged, and write nothing to its own empty TMPDIR.
@@ -1731,16 +1703,18 @@ expect_candidate_failure() {
 		find "$case_root/candidate-tmp" -mindepth 1 -print >&2
 		return 1
 	fi
-	actual_stdout="$(cat "$case_root/candidate.stdout")"
-	if [[ -n "$expected_stdout" ]]; then
-		actual_stdout="$(jq -c . "$case_root/candidate.stdout" 2>/dev/null || cat "$case_root/candidate.stdout")"
-	fi
+	# The expected JSON is written on one line, so a JSON stdout is compared without its indentation.
+	local stdout_rules=""
+	[[ -n "$expected_stdout" ]] && stdout_rules=json-compact
+	record_normalizers "$case_root" stdout "$stdout_rules"
+	normalize_output "$name" "$case_root/candidate.stdout" "$case_root/candidate.normalized" "$stdout_rules" || return 1
+	actual_stdout="$(cat "$case_root/candidate.normalized")"
 	# A warning that names the workspace names it as <work>, and one that names
 	# its parent (the candidate state root) names it as <state>.
-	local candidate_state
-	candidate_state="$(cd "$state_root" && pwd -P)"
-	actual_stderr="$(sed -e "s|$candidate_work|<work>|g" -e "s|$candidate_work_logical|<work>|g" \
-		-e "s|$candidate_state|<state>|g" "$case_root/candidate.stderr")"
+	record_normalizers "$case_root" stderr work-path,state-path
+	normalize_output "$name" "$case_root/candidate.stderr" "$case_root/candidate.stderr.normalized" work-path,state-path \
+		--work "$candidate_work" --work "$candidate_work_logical" --state "$(cd "$state_root" && pwd -P)" || return 1
+	actual_stderr="$(cat "$case_root/candidate.stderr.normalized")"
 	if [[ "$candidate_exit" -ne "$candidate_only_exit" || "$actual_stdout" != "$expected_stdout" ||
 		"$actual_stderr" != "$expected_stderr" ]]; then
 		printf '%s: expected exit %s, stdout [%s], stderr [%s]; got exit %s, stdout [%s], stderr [%s]\n' \
@@ -1761,6 +1735,20 @@ compare_real_database_import() {
 	real_database_extra_import=""
 }
 
+# Logical database state (BHX-M06-07). Besides the output, each case exports both sides' Dolt state
+# after the run and requires it to equal the fixture's state before the run: every table row for row
+# and the revision state commit for commit, with no normalization rule. Most cases check only the
+# candidate's bytes, so this also shows that the upstream read wrote nothing to its database. Upstream
+# show changes the bytes of its fixture (it writes .beads/last-touched), but not its database state.
+compare_real_database_state state-unchanged-list-json unchanged exact list --json
+compare_real_database_state state-unchanged-show-json unchanged exact show "$real_database_issue_id" --json
+compare_real_database_state state-unchanged-comments unchanged exact comments "$real_database_issue_id"
+compare_real_database_state state-unchanged-dep-list unchanged exact dep list "$real_database_issue_id"
+compare_real_database_state state-unchanged-label-list-all unchanged exact label list-all
+compare_real_database_state state-unchanged-count-json unchanged exact count --json
+compare_real_database_state state-unchanged-search-json unchanged exact search parity --json
+# The write mode, which the write commands use, also passes for a read: both sides keep the state.
+compare_real_database_state state-equal-show equal exact show "$real_database_issue_id"
 compare_real_database info-schema-json exact info --schema --json
 # info --thanks prints upstream's thank-you page once the pre-run has opened the store. Upstream checks it
 # before --whats-new and prints the page in every output mode. Its text styles take internal/ui's colors
@@ -1802,9 +1790,9 @@ compare_real_database_sql types-config-human exact "$types_config_sql" types
 types_config_json_sql="DELETE FROM custom_types
 UPDATE config SET value = '[\"x\", \" y \", \"\", null, \"x\"]' WHERE \`key\` = 'types.custom'"
 compare_real_database_sql types-config-json exact "$types_config_json_sql" types --json
-# Server-mode, proxied and --global workspaces have no Haxe-owned route yet.
-expect_candidate_failure types-global-unported "" \
-	"Error: types is not available yet for server-mode or proxied workspaces in this build" "" types --global
+# Server-mode, proxied and --global workspaces have no Haxe-owned route yet. Outside shared-server mode,
+# upstream's pre-run refuses --global before it opens a store (cmd/bd/main.go:1518-1521), and so does bdhx.
+compare_real_database types-global-unported exact types --global
 # The fixture has no custom statuses. Upstream fills an empty custom_statuses table from a valid
 # status.custom like custom_types, so those statuses print by name; an invalid value prints none.
 compare_real_database statuses-human exact statuses
@@ -1821,9 +1809,7 @@ compare_real_database_sql statuses-config-human exact "$status_config_sql" statu
 compare_real_database_sql statuses-config-json exact "$status_config_sql" statuses --json
 compare_real_database_sql statuses-config-invalid-human exact "DELETE FROM config WHERE \`key\` = 'status.custom'
 INSERT INTO config (\`key\`, value) VALUES ('status.custom', 'good:active,Bad')" statuses
-expect_candidate_failure statuses-global-json-unported \
-	'{"error":"statuses is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	statuses --global --json
+compare_real_database statuses-global-json-unported exact statuses --global --json
 # types.custom and status.custom also come from the layered config.yaml and BD_TYPES_CUSTOM or
 # BD_STATUS_CUSTOM, through upstream's getConfigList: Viper's string list (a YAML sequence, or a
 # scalar split at white space), each entry split again at commas. A set variable, even a blank
@@ -2744,15 +2730,11 @@ for config_subcommand in set set-many unset apply; do
 	expect_candidate_failure "config-$config_subcommand-unported" "" \
 		"Error: config $config_subcommand is not available yet in this build" "" config "$config_subcommand" export.auto true
 done
-expect_candidate_failure config-list-global-unported "" \
-	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config list --global
-expect_candidate_failure config-get-global-json-unported \
-	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	config get export.auto --global --json
-expect_candidate_failure config-show-global-unported "" \
-	"Error: config is not available yet for server-mode or proxied workspaces in this build" "" config show --global
-expect_candidate_failure config-show-global-json-unported \
-	'{"error":"config is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
+# Outside shared-server mode, upstream's pre-run refuses --global before it opens a store, and so does bdhx.
+compare_real_database config-list-global-unported exact config list --global
+compare_real_database config-get-global-json-unported exact config get export.auto --global --json
+compare_real_database config-show-global-unported exact config show --global
+compare_real_database config-show-global-json-unported exact \
 	config show --global --json
 # Upstream config show creates the embedded database when the workspace has none.
 candidate_only_setup=remove_embedded_database
@@ -3530,6 +3512,37 @@ compare_real_database unfinished-marked-database-beside-count-by-status exact co
 compare_real_database unfinished-marked-database-beside-count-infra-json exact count --include-infra --by-type --json
 compare_real_database unfinished-marked-database-beside-query exact query status=open
 compare_real_database unfinished-marked-database-beside-ping ping-human ping
+# search reads its rows without counts, then the labels, and for --json the dependency and comment counts;
+# --status first loads the list configuration. label list-all is not one of upstream's read-only
+# commands, so its pre-run also reads the database's project ID, except in strict read-only mode.
+compare_real_database unfinished-marked-database-beside-search exact search parity
+compare_real_database unfinished-marked-database-beside-search-json exact search parity --json
+compare_real_database unfinished-marked-database-beside-search-status exact search parity --status open
+compare_real_database unfinished-marked-database-beside-search-bad-status exact search parity --status bogus
+compare_real_database unfinished-marked-database-beside-label-list-all exact label list-all
+compare_real_database unfinished-marked-database-beside-readonly-label-list-all-json exact --readonly label list-all --json
+# list loads its configuration before it routes, and again for the page; the human view then reads the
+# dependency records or the blocking notes, and the --parent tree reads the parent and each level first.
+# A ready read first wakes expired defers in a write transaction of its own, except in strict read-only
+# mode. The human ready view then reads each issue's dependency rows and each parent, or for an empty
+# page the statistics; a full page also counts the ready work, after another defer wake.
+compare_real_database unfinished-marked-database-beside-list exact list
+compare_real_database unfinished-marked-database-beside-list-json exact list --json
+compare_real_database unfinished-marked-database-beside-list-flat exact list --flat
+compare_real_database unfinished-marked-database-beside-list-long exact list --long
+compare_real_database unfinished-marked-database-beside-list-format exact list --format '{{.ID}}'
+compare_real_database unfinished-marked-database-beside-list-ready exact list --ready
+compare_real_database unfinished-marked-database-beside-readonly-list-ready-json exact --readonly list --ready --json
+compare_real_database unfinished-marked-database-beside-list-parent exact list --parent "$real_database_epic_id"
+compare_real_database unfinished-marked-database-beside-ready exact ready
+compare_real_database unfinished-marked-database-beside-ready-plain exact ready --plain
+compare_real_database unfinished-marked-database-beside-ready-json exact ready --json
+compare_real_database unfinished-marked-database-beside-ready-limit exact ready --limit 1
+compare_real_database unfinished-marked-database-beside-ready-limit-json exact ready --limit 1 --json
+compare_real_database unfinished-marked-database-beside-ready-empty exact ready --assignee nobody
+compare_real_database unfinished-marked-database-beside-ready-empty-json exact ready --assignee nobody --json
+compare_real_database unfinished-marked-database-beside-readonly-ready exact --readonly ready
+compare_real_database unfinished-marked-database-beside-readonly-ready-limit-json exact --readonly ready --limit 1 --json
 real_database_setup=""
 # A --db path that names a .beads directory with only a redirect selects the directory above it, which
 # has no metadata.json and no store. The strict open stops at the missing store directory without a write;
@@ -5000,6 +5013,65 @@ compare_real_database ready-claim-explain-readonly exact --readonly ready --clai
 compare_real_database ready-claim-assignee-readonly exact --readonly ready --claim --assignee fixture
 compare_real_database ready-claim-mol-type-readonly exact --readonly ready --claim --mol-type bogus
 compare_real_database ready-claim-sort-readonly exact --readonly ready --claim --sort bogus
+# The human ready view reads the bare GetReadyWork (cmd/bd/ready.go:220), not the counted query of
+# --json: wisps come from their own search, which leaves out --label-pattern and --label-regex but
+# applies --mol-type, joins the label tables for --label and --label-any, and then drops wisps that
+# are deferred, blocked or pinned in Go; a page of --limit N reads wisps in pages of max(N, 100).
+# The view then reads each issue's dependency rows and each parent, for the parent epic titles.
+ready_wisp_records="$(jq -nc --arg epic "$real_database_epic_id" --arg bug "$real_database_bug_id" \
+	--arg gated "$real_database_gated_molecule_id" '
+	def wisp($id; $title; $priority): {id: $id, title: $title, status: "open", priority: $priority, issue_type: "task",
+		created_at: "2026-08-20T10:00:00Z", updated_at: "2026-08-21T13:00:00Z", ephemeral: true};
+	wisp("test-rw-plain"; "Ready wisp without labels"; 2),
+	(wisp("test-rw-label"; "Ready wisp with a zz label"; 1) + {labels: ["zz-top"], assignee: "fixture", estimated_minutes: 15,
+		created_at: "2026-08-20T09:00:00Z"}),
+	(wisp("test-rw-swarm"; "Ready swarm wisp"; 3) + {mol_type: "swarm", created_at: "2026-08-20T11:00:00Z"}),
+	(wisp("test-rw-child"; "Ready wisp under the epic"; 2) + {created_at: "2026-08-20T12:00:00Z",
+		dependencies: [{issue_id: "test-rw-child", depends_on_id: $epic, type: "parent-child",
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}),
+	(wisp("test-rw-deferred"; "Deferred wisp"; 0) + {defer_until: "2099-01-01T00:00:00Z"}),
+	(wisp("test-rw-pinned"; "Pinned wisp"; 0) + {pinned: true}),
+	(wisp("test-rw-blocked"; "Blocked wisp"; 0) + {dependencies: [{issue_id: "test-rw-blocked", depends_on_id: $bug,
+		type: "blocks", created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]}),
+	(wisp("test-rw-durable"; "Durable wisp"; 1) + {created_at: "2026-08-20T08:00:00Z"}),
+	(wisp("test-rw-heartbeat"; "Heartbeat wisp"; 2) + {wisp_type: "heartbeat", created_at: "2026-08-20T13:00:00Z"}),
+	# An issue under two epics: the view titles it with its last parent-child row, in depends_on_id order.
+	(wisp("test-rw-two-parents"; "Issue under two epics"; 3) + {ephemeral: false, created_at: "2026-08-20T14:00:00Z",
+		dependencies: [($epic, $gated) | {issue_id: "test-rw-two-parents", depends_on_id: ., type: "parent-child",
+			created_at: "2026-08-21T10:00:00Z", created_by: "fixture"}]})')"
+real_database_extra_import="$ready_wisp_records"
+# Import marks the wisp that an open issue blocks. A wisp kept without being ephemeral stays in the wisps
+# table; Dolt ignores the wisp tables, so the title change gives fixture-sql's commit something to record.
+real_database_extra_sql="UPDATE wisps SET ephemeral = 0, updated_at = updated_at WHERE id = 'test-rw-durable'
+UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$real_database_bug_id'"
+compare_real_database ready-wisps-label-pattern exact ready --include-ephemeral --label-pattern 'zz*'
+compare_real_database ready-wisps-label-pattern-plain exact ready --include-ephemeral --label-pattern 'zz*' --plain
+compare_real_database ready-wisps-label-pattern-json exact ready --include-ephemeral --label-pattern 'zz*' --json
+compare_real_database ready-wisps-label-regex-plain exact ready --include-ephemeral --label-regex '^zz' --plain
+compare_real_database ready-wisps-label exact ready --include-ephemeral --label zz-top
+compare_real_database ready-wisps-label-any-plain exact ready --include-ephemeral --label-any zz-top,parity --plain
+compare_real_database ready-wisps-exclude-label-plain exact ready --include-ephemeral --exclude-label zz-top --plain
+compare_real_database ready-wisps-mol-type exact ready --include-ephemeral --mol-type swarm
+compare_real_database ready-wisps-mol-type-plain exact ready --include-ephemeral --mol-type swarm --plain
+compare_real_database ready-wisps-include-deferred-plain exact ready --include-ephemeral --include-deferred --plain
+compare_real_database ready-wisps-without-ephemeral-plain exact ready --plain
+compare_real_database ready-wisps-pretty exact ready --include-ephemeral
+compare_real_database ready-wisps-parent exact ready --include-ephemeral --parent "$real_database_epic_id"
+compare_real_database ready-wisps-unassigned-plain exact ready --include-ephemeral --unassigned --plain
+compare_real_database ready-wisps-assignee-plain exact ready --include-ephemeral --assignee fixture --plain
+compare_real_database ready-wisps-type-priority-plain exact ready --include-ephemeral --type task --priority 2 --plain
+compare_real_database ready-wisps-sort-oldest-plain exact ready --include-ephemeral --sort oldest --plain
+compare_real_database ready-wisps-sort-priority exact ready --include-ephemeral --sort priority
+compare_real_database ready-wisps-limit-plain exact ready --include-ephemeral --limit 3 --plain
+compare_real_database ready-wisps-limit-pattern exact ready --include-ephemeral --label-pattern 'zz*' --limit 2
+compare_real_database ready-wisps-unlimited-plain exact ready --include-ephemeral --limit 0 --plain
+compare_real_database ready-wisps-unlimited-pattern-plain exact ready --include-ephemeral --label-pattern 'zz*' --limit 0 --plain
+compare_real_database ready-wisps-max-rows exact ready --include-ephemeral --max-rows 2 --limit 0
+compare_real_database ready-wisps-max-rows-pattern exact ready --include-ephemeral --label-pattern 'zz*' --max-rows 2
+compare_real_database ready-wisps-max-rows-enough-plain exact ready --include-ephemeral --max-rows 40 --limit 0 --plain
+compare_real_database_env ready-wisps-max-rows-env exact BEADS_MAX_ROWS=2 ready --include-ephemeral --label-regex '^zz'
+real_database_extra_import=""
+real_database_extra_sql=""
 compare_real_database list-human exact list
 compare_real_database list-json exact list --json
 compare_real_database list-positional exact list parity
@@ -5186,7 +5258,7 @@ compare_real_database_colors show-color-children-short exact CLICOLOR_FORCE=1 sh
 compare_real_database_colors show-color-children-none exact CLICOLOR_FORCE=1 show --children test-cl-p0
 compare_real_database_colors show-color-refs exact CLICOLOR_FORCE=1 show --refs test-cl
 # Upstream prints one block per issue from a Go map (cmd/bd/show_refs.go:54), so compare the lines as a multiset.
-compare_real_database_colors show-color-refs-blocker show-grouped-multi CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
+compare_real_database_colors show-color-refs-blocker show-refs-multi CLICOLOR_FORCE=1 show --refs test-cl-p0 test-cl-waiting
 compare_real_database_colors show-color-thread exact CLICOLOR_FORCE=1 show --thread test-msg-reply
 compare_real_database_colors show-color-pipe exact "" show test-cl test-cl-closed
 compare_real_database_colors show-color-no-color-flag exact CLICOLOR_FORCE=1 show test-cl --no-color
@@ -6547,7 +6619,7 @@ compare_real_database show-children-short exact show "$real_database_epic_id" --
 compare_real_database show-children-json exact show "$real_database_epic_id" --children --json
 compare_real_database show-children-empty-human exact show "$real_database_bug_id" --children
 compare_real_database show-children-empty-json exact show "$real_database_bug_id" --children --json
-compare_real_database show-children-multiple show-grouped-multi show "$real_database_epic_id" "$real_database_bug_id" --children
+compare_real_database show-children-multiple show-children-multi show "$real_database_epic_id" "$real_database_bug_id" --children
 compare_real_database show-children-disabled exact show "$real_database_bug_id" --children=false
 compare_real_database_env show-children-json-envelope exact BD_JSON_ENVELOPE=1 show "$real_database_epic_id" --children --json
 compare_real_database show-refs-human exact show "$real_database_epic_id" --refs
@@ -6555,7 +6627,7 @@ compare_real_database show-refs-short-ignored exact show "$real_database_epic_id
 compare_real_database show-refs-json exact show "$real_database_epic_id" --refs --json
 compare_real_database show-refs-empty-human exact show "$real_database_bug_id" --refs
 compare_real_database show-refs-empty-json exact show "$real_database_bug_id" --refs --json
-compare_real_database show-refs-multiple show-grouped-multi show "$real_database_epic_id" "$real_database_bug_id" --refs
+compare_real_database show-refs-multiple show-refs-multi show "$real_database_epic_id" "$real_database_bug_id" --refs
 compare_real_database show-refs-disabled exact show "$real_database_bug_id" --refs=false
 compare_real_database_env show-refs-json-envelope exact BD_JSON_ENVELOPE=1 show "$real_database_epic_id" --refs --json
 # An upstream claim sets the status, the assignee and the start time, and writes a row to the
@@ -6806,13 +6878,10 @@ UPDATE issues SET title = 'Retitled bug', updated_at = updated_at WHERE id = '$r
 compare_real_database_sql history-wisp-null-time-human exact "$history_wisp_null_sql" history test-cwisp --events
 compare_real_database_sql history-wisp-null-time-json exact "$history_wisp_null_sql" history test-cwisp --events --json
 real_database_extra_import=""
-# Upstream reads proxied workspaces through the server; --global always selects a server database.
-expect_candidate_failure history-global-unported "" \
-	"Error: history is not available yet for server-mode or proxied workspaces in this build" "" \
-	history "$real_database_issue_id" --global
-expect_candidate_failure history-global-json-unported \
-	'{"error":"history is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	history "$real_database_issue_id" --events --global --json
+# Upstream reads proxied workspaces through the server; --global always selects a server database. Outside
+# shared-server mode, upstream's pre-run refuses --global before it opens a store, and so does bdhx.
+compare_real_database history-global-unported exact history "$real_database_issue_id" --global
+compare_real_database history-global-json-unported exact history "$real_database_issue_id" --events --global --json
 # bd events tail and export print bd_events_journal rows after --since as JSON lines, oldest first, cut by a
 # SQL LIMIT. The stored payloads are compacted and HTML-escaped, never re-encoded. A read whose rows do not
 # continue the checkpoint fails with the retained window. Reads never prune (the events family is exempt).
@@ -6944,12 +7013,9 @@ expect_candidate_failure events-tail-follow-unported "" "Error: events tail --fo
 	events tail --follow
 expect_candidate_failure events-prune-unported "" "Error: events prune is not available yet in this build" "" \
 	events prune --before 3
-expect_candidate_failure events-tail-global-unported "" \
-	"Error: events tail is not available yet for server-mode or proxied workspaces in this build" "" \
-	events tail --global
-expect_candidate_failure events-export-global-json-unported \
-	'{"error":"events export is not available yet for server-mode or proxied workspaces in this build","schema_version":1}' "" "" \
-	events export --global --json
+# Outside shared-server mode, upstream's pre-run refuses --global before it opens a store, and so does bdhx.
+compare_real_database events-tail-global-unported exact events tail --global
+compare_real_database events-export-global-json-unported exact events export --global --json
 
 # The global JSON switch. Without --json or the root --format, upstream reads the `json` setting of
 # the layered config (BD_JSON, then config.local.yaml, config.yaml and the user config.yaml) once
@@ -7389,10 +7455,12 @@ compare_real_database_dotenv dotenv-claude-code-empty-environment-wins exact $'C
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 # On a terminal, agent mode lowers the default limit of list from 50 to 20, and every list view
 # says on stderr when a limit hid issues. These cases run each side on a pseudo-terminal through a
-# runner that prints the transcript: stdout and stderr in the order written, without carriage
-# returns and without the echo of the end of input that `script` sends. The flat list without agent
-# mode would start a pager there, so it has no case. bdhx prints the hint after a Go template that
-# it renders itself, but not after one that the native store renders (see engdocs/beadshx/compatibility/limits.md).
+# runner that prints the transcript: stdout and stderr in the order written. The comparison applies the
+# pty-transcript normalizer first (real_database_transport_rules), which removes the carriage return
+# that the terminal adds before each line feed and the echo of the end of input that `script` sends.
+# The flat list without agent mode would start a pager there, so it has no case. bdhx prints the hint
+# after a Go template that it renders itself, but not after one that the native store renders (see
+# engdocs/beadshx/compatibility/limits.md).
 # The fixture lists 20 issues by default, so the cases add a 21st, of the lowest priority.
 # A third argument sets the pseudo-terminal's column count (stty cols) before the binary runs;
 # without it the pseudo-terminal reports no size, so term.GetSize gives 0 columns.
@@ -7423,9 +7491,7 @@ Linux)
 	;;
 esac
 status=$?
-transcript="${transcript%x}"
-transcript="${transcript//$'^D\b\b'/}"
-printf '%s' "${transcript//$'\r'/}"
+printf '%s' "${transcript%x}"
 exit "$status"
 RUNNER
 	} >"$runner"
@@ -7447,6 +7513,7 @@ import_terminal_issue() {
 }
 oracle="$test_root/bin/terminal-oracle"
 candidate="$test_root/bin/terminal-candidate"
+real_database_transport_rules=pty-transcript
 real_database_setup=import_terminal_issue
 real_database_extra_env=(BD_AGENT_MODE=1)
 compare_real_database agent-mode-terminal-list-flat exact list --flat
@@ -7463,6 +7530,7 @@ compare_real_database terminal-list-format-dot-limit exact list --format dot --l
 compare_real_database terminal-list-format-template-limit exact list --format '{{.IssueID}} {{.DependsOnID}} {{.Type}}' --limit 15
 compare_real_database terminal-list-format-digraph-all exact list --format digraph --limit 0
 real_database_setup=""
+real_database_transport_rules=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"
 # On a 120-column terminal the wrap width is the terminal width, capped at 100 cells: a
@@ -7479,6 +7547,7 @@ import_wide_close_reason() {
 }
 oracle="$test_root/bin/terminal-wide-oracle"
 candidate="$test_root/bin/terminal-wide-candidate"
+real_database_transport_rules=pty-transcript
 real_database_setup=import_wide_close_reason
 wide_close_reason="$close_reason_long"
 compare_real_database terminal-wide-show-close-reason-long exact show test-reason
@@ -7487,6 +7556,7 @@ compare_real_database terminal-wide-show-close-reason-cap-fits exact show test-r
 wide_close_reason="$(close_reason_record "$(printf '%087d' 0 | tr 0 r)")"
 compare_real_database terminal-wide-show-close-reason-cap-long exact show test-reason
 real_database_setup=""
+real_database_transport_rules=""
 oracle="$pipe_oracle"
 candidate="$pipe_candidate"
 # With colors on, upstream's internal/ui package init asks the terminal for its background once per
@@ -8298,7 +8368,8 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	# Upstream checks once, at the store open of the pre-run, however many reads the command makes
 	# after it: the two counts of a grouped count, the custom statuses that search --status reads
 	# first, the parent of each ready issue, the list reads of a --parent tree, and the later
-	# reads of ready --gated, --mol and --explain.
+	# reads of ready --gated, --mol and --explain. So do the store opens of list's configuration and
+	# view reads, of a full ready page's count, and of search's labels and counts.
 	compare_real_database_sql "schema-$schema_case-ignored-count-by-label-json" exact "$schema_sql" \
 		--readonly count --by-label --json
 	compare_real_database_sql "schema-$schema_case-ignored-search-status" exact "$schema_sql" \
@@ -8318,6 +8389,11 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-ready-explain" exact "$schema_sql" --readonly ready --explain
 	compare_real_database_sql "schema-$schema_case-ignored-ready-explain-json" exact "$schema_sql" \
 		--readonly ready --explain --json
+	compare_real_database_sql "schema-$schema_case-ignored-list" exact "$schema_sql" --readonly list
+	compare_real_database_sql "schema-$schema_case-ignored-list-ready-json" exact "$schema_sql" --readonly list --ready --json
+	compare_real_database_sql "schema-$schema_case-ignored-ready-limit-json" exact "$schema_sql" --readonly ready --limit 1 --json
+	compare_real_database_sql "schema-$schema_case-ignored-search-json" exact "$schema_sql" --readonly search parity --json
+	compare_real_database_sql "schema-$schema_case-ignored-label-list-all" exact "$schema_sql" --readonly label list-all
 	real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
 	compare_real_database_sql "schema-$schema_case-flag-ignored-dep-list" exact "$schema_sql" \
 		--readonly --ignore-schema-skew dep list "$real_database_issue_id"
@@ -8343,6 +8419,11 @@ expect_candidate_failure schema-behind-list-refused "" "$schema_behind_refusal" 
 real_database_extra_env=(BD_IGNORE_SCHEMA_SKEW=1)
 compare_real_database_sql schema-ahead-ignored-show exact "$schema_ahead_sql" show "$real_database_issue_id"
 compare_real_database_sql schema-behind-ignored-readonly-show-json exact "$schema_behind_sql" --readonly show "$real_database_issue_id" --json
+# Outside strict read-only mode upstream also opens the store for the defer wake of each ready read and
+# for the project ID check of label list-all; it still checks the schema once.
+compare_real_database_sql schema-ahead-ignored-nonstrict-ready-limit-json exact "$schema_ahead_sql" ready --limit 1 --json
+compare_real_database_sql schema-ahead-ignored-nonstrict-list-ready exact "$schema_ahead_sql" list --ready
+compare_real_database_sql schema-ahead-ignored-nonstrict-label-list-all-json exact "$schema_ahead_sql" label list-all --json
 for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	schema_case=ahead
 	[[ "$schema_sql" == "$schema_behind_sql" ]] && schema_case=behind
@@ -8354,13 +8435,75 @@ for schema_sql in "$schema_ahead_sql" "$schema_behind_sql"; do
 	compare_real_database_sql "schema-$schema_case-ignored-show-thread-json" exact "$schema_sql" \
 		--readonly show test-msg-leaf --thread --json
 	# Upstream prints the --refs and --children blocks of two IDs from a Go map
-	# (cmd/bd/show_refs.go:54), so compare their lines as a multiset; stderr stays exact.
-	compare_real_database_sql "schema-$schema_case-ignored-show-refs" show-grouped-multi "$schema_sql" \
+	# (cmd/bd/show_refs.go:54), so only the order of the blocks may differ; stderr stays exact.
+	compare_real_database_sql "schema-$schema_case-ignored-show-refs" show-refs-multi "$schema_sql" \
 		--readonly show --refs "$real_database_child_id" "$real_database_epic_id"
-	compare_real_database_sql "schema-$schema_case-ignored-show-children" show-grouped-multi "$schema_sql" \
+	compare_real_database_sql "schema-$schema_case-ignored-show-children" show-children-multi "$schema_sql" \
 		--readonly show --children "$real_database_epic_id" "$real_database_child_id"
 done
 real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+
+# A store read that fails after the store opened (beadshx-8prp). Without the column that upstream's query
+# names, Dolt refuses that query, and each command reports the error in upstream's route: count, stale,
+# query and ready through HandleErrorRespectJSON, a JSON object on stdout under --json, and ping through
+# pingFail, with the reason "query failed: " and its duration (cmd/bd/ping.go:63-99). Ping reads
+# SearchIssues with a limit of one: an ID scan, then the rows of those IDs ("search issues (hydrate)").
+read_failure_assignee_sql="ALTER TABLE issues DROP COLUMN assignee"
+read_failure_status_sql="ALTER TABLE issues DROP COLUMN status"
+real_database_read_only=1
+compare_real_database_sql read-failure-count exact "$read_failure_assignee_sql" count --assignee fixture
+compare_real_database_sql read-failure-count-json exact "$read_failure_assignee_sql" count --assignee fixture --json
+compare_real_database_sql read-failure-count-by-status-json exact "$read_failure_status_sql" count --by-status --json
+compare_real_database_sql read-failure-stale exact "$read_failure_assignee_sql" stale
+compare_real_database_sql read-failure-stale-json exact "$read_failure_assignee_sql" stale --json
+compare_real_database_sql read-failure-query exact "$read_failure_assignee_sql" query status=open
+compare_real_database_sql read-failure-query-json exact "$read_failure_assignee_sql" query status=open --json
+compare_real_database_sql read-failure-ready exact "$read_failure_assignee_sql" ready
+compare_real_database_sql read-failure-ready-json exact "$read_failure_assignee_sql" ready --json
+compare_real_database_sql read-failure-ping ping-failure "$read_failure_assignee_sql" ping
+compare_real_database_sql read-failure-ping-json ping-failure-json "$read_failure_assignee_sql" ping --json
+real_database_extra_env=(BD_JSON_ENVELOPE=1)
+compare_real_database_sql read-failure-envelope-count-json exact "$read_failure_assignee_sql" count --assignee fixture --json
+compare_real_database_sql read-failure-envelope-ping-json ping-failure-json "$read_failure_assignee_sql" ping --json
+real_database_extra_env=(BEADSHX_PARITY_EXTRA=1)
+# ready --gated searches the closed gates first, and wraps a failure in "searching closed gates: "; then it
+# reads the ready work, "getting ready work: " (cmd/bd/mol_ready_gated.go:129-151). Without is_blocked only the
+# ready read fails. Its later reads skip what fails, so without a dependency column it finds no molecule.
+read_failure_blocked_flag_sql="ALTER TABLE issues DROP COLUMN is_blocked"
+read_failure_dependency_metadata_sql="ALTER TABLE dependencies DROP COLUMN metadata"
+compare_real_database_sql read-failure-ready-gated exact "$read_failure_assignee_sql" ready --gated
+compare_real_database_sql read-failure-ready-gated-json exact "$read_failure_assignee_sql" ready --gated --json
+compare_real_database_sql read-failure-ready-gated-ready exact "$read_failure_blocked_flag_sql" ready --gated
+compare_real_database_sql read-failure-ready-gated-ready-json exact "$read_failure_blocked_flag_sql" ready --gated --json
+compare_real_database_sql read-failure-ready-gated-dependents exact "$read_failure_dependency_metadata_sql" ready --gated
+# ready --mol resolves the ID with ResolvePartialID, which ignores a failed read of the exact ID and finds it
+# with its ID search; loadTemplateSubgraph's GetIssue then fails: "failed to get template: " (template.go:89-92).
+compare_real_database_sql read-failure-ready-mol exact "$read_failure_assignee_sql" ready --mol "$real_database_gated_molecule_id"
+compare_real_database_sql read-failure-ready-mol-json exact "$read_failure_assignee_sql" \
+	ready --mol "$real_database_gated_molecule_id" --json
+# search checks --status before its other flags (cmd/bd/search.go:114-122), so the date error comes before
+# any search read.
+compare_real_database_sql read-failure-search-status-date exact "$read_failure_assignee_sql" \
+	search parity --status open --created-after bogus
+# A dependency list of several IDs reads them as upstream's EdgeReader does: PresentIssueOrWispIDsInTx, then
+# GetDependencyRecordsForIssuesInTx, "get dependency records from <table>: " (internal/storage/issueops/edges.go).
+read_failure_thread_id_sql="ALTER TABLE dependencies DROP COLUMN thread_id"
+compare_real_database_sql read-failure-dep-list-batch exact "$read_failure_thread_id_sql" \
+	dep list "$real_database_issue_id" "$real_database_bug_id"
+compare_real_database_sql read-failure-dep-list-batch-json exact "$read_failure_thread_id_sql" \
+	dep list "$real_database_issue_id" "$real_database_bug_id" --json
+real_database_read_only=""
+# Upstream's text views of show read the labels, the dependencies, the dependents and the comments with
+# store calls of their own and ignore a failure of each (cmd/bd/show.go:200-235, show_thread.go:136-162);
+# IssueReader.Get behind show --json stops the command at its first failure (show.go:159-168). Without
+# the type column, every read of dependencies and dependents fails.
+read_failure_dependency_type_sql="ALTER TABLE dependencies DROP COLUMN type"
+compare_real_database_sql read-failure-show exact "$read_failure_dependency_type_sql" show "$real_database_issue_id"
+compare_real_database_sql read-failure-show-epic exact "$read_failure_dependency_type_sql" show "$real_database_epic_id"
+compare_real_database_sql read-failure-show-thread exact "$read_failure_dependency_type_sql" show test-msg-leaf --thread
+compare_real_database_sql read-failure-show-thread-json exact "$read_failure_dependency_type_sql" show test-msg-leaf --thread --json
+compare_real_database_sql read-failure-show-dependents-json exact "$read_failure_dependency_type_sql" \
+	show "$real_database_issue_id" "$real_database_bug_id" --include-dependents --json
 
 # An embedded list reads its page, and the blocking notes of the flat view, with Haxe-owned SQL, so it
 # never opens the native store. That open would run upstream's config package, which logs its load of
@@ -8661,17 +8804,6 @@ watch_case_count=0
 watch_extra_sql=""
 watch_extra_env=(BEADSHX_PARITY_EXTRA=1)
 
-normalize_watch_stderr() {
-	# Poll cadence is not observable command policy. A context cancellation can
-	# race with the final interrupt and is shutdown noise, not a failed refresh.
-	# Keep every other refresh failure, collapsing only immediate repeats.
-	awk '
-		$0 ~ /^Error refreshing issues: .*context canceled$/ { next }
-		$0 ~ /^Error refreshing issues:/ && $0 == previous { next }
-		{ print; previous = $0 }
-	' "$1"
-}
-
 compare_watch_refresh() {
 	local name="$1"
 	printf 'parity [%ss]: START watch/%s\n' "$SECONDS" "$name"
@@ -8779,23 +8911,25 @@ compare_watch_refresh() {
 		printf '%s-watch exit mismatch: upstream=%s candidate=%s\n' "$name" "$oracle_exit" "$candidate_exit" >&2
 		return 1
 	fi
-	if [[ "$name" == list* ]]; then
-		for implementation in oracle candidate; do
-			sed -E 's/Beads - Open & In Progress \([0-9]{2}:[0-9]{2}:[0-9]{2}\)/Beads - Open \& In Progress (<time>)/' \
-				"$case_root/$implementation.stdout" >"$case_root/$implementation.normalized"
-		done
-	else
-		cp -f "$case_root/oracle.stdout" "$case_root/oracle.normalized"
-		cp -f "$case_root/candidate.stdout" "$case_root/candidate.normalized"
-	fi
+	# The list watch prints the clock time of each refresh in its header.
+	local stdout_rules=""
+	[[ "$name" == list* ]] && stdout_rules=watch-header-time
+	record_normalizers "$case_root" stdout "$stdout_rules"
+	for implementation in oracle candidate; do
+		normalize_output "$name-watch" "$case_root/$implementation.stdout" "$case_root/$implementation.normalized" \
+			"$stdout_rules" || return 1
+	done
 	if ! cmp -s "$case_root/oracle.normalized" "$case_root/candidate.normalized"; then
 		printf '%s-watch stdout differs from upstream\n' "$name" >&2
 		diff -u "$case_root/oracle.normalized" "$case_root/candidate.normalized" >&2 || true
 		return 1
 	fi
+	# Poll cadence is not observable command policy, and a refresh that the final interrupt cancels is
+	# shutdown noise. Every other refresh failure stays, once for each run of repeats.
+	record_normalizers "$case_root" stderr watch-refresh-noise
 	for implementation in oracle candidate; do
-		normalize_watch_stderr "$case_root/$implementation.stderr" \
-			>"$case_root/$implementation.stderr.normalized"
+		normalize_output "$name-watch" "$case_root/$implementation.stderr" "$case_root/$implementation.stderr.normalized" \
+			watch-refresh-noise || return 1
 	done
 	if ! cmp -s "$case_root/oracle.stderr.normalized" "$case_root/candidate.stderr.normalized"; then
 		printf '%s-watch stderr differs from upstream\n' "$name" >&2
@@ -8890,8 +9024,11 @@ for implementation in oracle candidate; do
 	run_json_stderr_terminal "$implementation-json-legacy" "$binary" 0
 	jq -e '.schema_version == 1' \
 		"$test_root/$implementation-json-legacy.stdout" >/dev/null
-	note_count="$(tr -d '\r' <"$test_root/$implementation-json-legacy.terminal" | \
-		grep -Foc "$json_deprecation" || true)"
+	# The terminal adds a carriage return before each line feed of the transcript.
+	record_normalizers "$test_root/$implementation-json-legacy-root" terminal pty-transcript
+	normalize_output "$implementation-json-legacy" "$test_root/$implementation-json-legacy.terminal" \
+		"$test_root/$implementation-json-legacy.terminal.normalized" pty-transcript
+	note_count="$(grep -Foc "$json_deprecation" "$test_root/$implementation-json-legacy.terminal.normalized" || true)"
 	if [[ "$note_count" -ne 1 ]]; then
 		printf '%s emitted %s JSON terminal notices, want 1\n' \
 			"$implementation" "$note_count" >&2
@@ -8900,8 +9037,10 @@ for implementation in oracle candidate; do
 	printf 'parity [%ss]: PASS terminal/%s-json-legacy\n' "$SECONDS" "$implementation"
 
 	run_json_stderr_terminal "$implementation-json-envelope" "$binary" 1
-	if tr -d '\r' <"$test_root/$implementation-json-envelope.terminal" | \
-		grep -Fq "$json_deprecation"; then
+	record_normalizers "$test_root/$implementation-json-envelope-root" terminal pty-transcript
+	normalize_output "$implementation-json-envelope" "$test_root/$implementation-json-envelope.terminal" \
+		"$test_root/$implementation-json-envelope.terminal.normalized" pty-transcript
+	if grep -Fq "$json_deprecation" "$test_root/$implementation-json-envelope.terminal.normalized"; then
 		printf '%s emitted the legacy JSON notice with BD_JSON_ENVELOPE=1\n' \
 			"$implementation" >&2
 		exit 1

@@ -86,6 +86,8 @@ final ISSUE_TOTAL_ROUTE_UNAVAILABLE = "issue statistics are not available yet fo
 **/
 @:goNative
 final class GoReadonlyStore implements ReadonlyStorePort {
+	static inline final GLOBAL_MODE_ERROR = "--global requires shared-server mode (set BEADS_DOLT_SHARED_SERVER=1 or dolt.shared-server: true in config.yaml)";
+
 	static inline final GO_RFC3339_NANO = "2006-01-02T15:04:05.999999999Z07:00";
 
 	/**
@@ -116,9 +118,10 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		before this, so a proxied `--global` fails that check.
 	**/
 	public function openIssueQuery(beadsDir:String, serverStore:Bool, databaseName:String, proxiedServer:Bool, global:Bool):StoreResult<IssueQueryPort> {
-		if (global)
-			if (proxiedServer)
-				return Failure("--global requires shared-server mode (set BEADS_DOLT_SHARED_SERVER=1 or dolt.shared-server: true in config.yaml)");
+		// Upstream's pre-run refuses --global outside shared-server mode before it opens a store (cmd/bd/main.go:1518-1521),
+		// so the error is a plain open error, not one of a store call that the command reports in its own way.
+		if (global && (proxiedServer || !LayeredConfig.forWorkspace(beadsDir).sharedServerMode()))
+			return Failure(GLOBAL_MODE_ERROR);
 		if (!proxiedServer) {
 			if (!global && (serverStore || !sys.FileSystem.exists(haxe.io.Path.join([beadsDir, "embeddeddolt"]))))
 				switch validate(beadsDir, false) {
@@ -311,14 +314,24 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 			() -> NativeReadonlyFacade.readCountOutcome(beadsDir, countOptions(request), countGroupWireValue(group), global)));
 	}
 
-	/** An embedded workspace reads ready work with Haxe-owned SQL (EmbeddedReadyReader); the native facade serves the other routes. */
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+	/**
+		An embedded workspace reads ready work with Haxe-owned SQL
+		(EmbeddedReadyReader), with the read that `query` names; the native
+		facade serves the other routes with the counted read.
+	**/
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult {
 		if (embeddedRoute(beadsDir, global)) {
-			final embedded = EmbeddedStoreAccess.issueReady(beadsDir, databaseName, request);
+			final embedded = EmbeddedStoreAccess.issueReady(beadsDir, databaseName, request, query);
 			if (embedded != null)
 				return embedded;
 		}
 		return projectReadyOutcome(facadeOpened(beadsDir, global, () -> NativeReadonlyFacade.readReadyOutcome(beadsDir, readyOptions(request), global)));
+	}
+
+	/** Only an embedded workspace opens its store for an upstream store call that the command does not read from. */
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int, global:Bool):Void {
+		if (embeddedRoute(beadsDir, global))
+			EmbeddedStoreAccess.openForStoreCalls(beadsDir, databaseName, count);
 	}
 
 	/**
@@ -845,7 +858,7 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		no server, not proxied) pings with authored Haxe (EmbeddedPing); the
 		native facade serves the other routes.
 	**/
-	public function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingSnapshot> {
+	public function ping(beadsDir:String, databaseName:String, embeddedStore:Bool, global:Bool):StoreResult<PingOutcome> {
 		if (embeddedStore && embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.ping(beadsDir, databaseName);
 			if (embedded != null)
@@ -855,12 +868,12 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		if (result.isErr())
 			return Failure(errorMessage(result));
 		final native = result.unwrap();
-		return Success({
+		return Success(PingAnswered({
 			resolveMs: native.resolveMs(),
 			storeMs: native.storeMs(),
 			queryMs: native.queryMs(),
 			totalMs: native.totalMs()
-		});
+		}));
 	}
 
 	public function status(beadsDir:String, skipBlocked:Bool, assignee:String, global:Bool):StoreResult<StatusSnapshot> {
@@ -1549,6 +1562,47 @@ final class GoReadonlyStore implements ReadonlyStorePort {
 		return readLastTouchedId(beadsDir);
 	}
 
+	/**
+		An embedded workspace runs upstream's SearchIssues (EmbeddedIssueListReader.typedIssueIds).
+		The native facade has no such search; its list of the same filter finds the same issues.
+	**/
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String, global:Bool):StoreResult<Array<String>> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.typedIssueIds(beadsDir, databaseName, issueType, status);
+			if (embedded != null)
+				return embedded;
+		}
+		return listedIds(issueList(beadsDir, databaseName, IssueListRequests.typed(issueType, status), 0, global));
+	}
+
+	/** The IDs of a list read; a row cap cannot happen without one, so it reads as a failure. */
+	public static function listedIds(result:IssueListResult):StoreResult<Array<String>> {
+		return switch result {
+			case ListSuccess(page): Success([for (item in page.items) item.id]);
+			case ListFailure(message): Failure(message);
+			case ListRowLimitExceeded(found, _, cap): Failure('row cap: $found over $cap');
+		};
+	}
+
+	/**
+		An embedded workspace checks the selector as upstream does (EmbeddedIssueListReader.searchStatusRefusal).
+		The native facade checks it inside its search, so this searches and reports a failed search.
+	**/
+	public function searchStatusRefusal(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):Null<String> {
+		if (embeddedRoute(beadsDir, global)) {
+			final embedded = EmbeddedStoreAccess.searchStatusCheck(beadsDir, databaseName, request.status, listConfigLayers(beadsDir));
+			if (embedded != null)
+				return switch embedded {
+					case Failure(message): message;
+					case Success(_): null;
+				};
+		}
+		return switch issueSearch(beadsDir, databaseName, query, request, global) {
+			case ListFailure(message): message;
+			case ListRowLimitExceeded(_, _, _) | ListSuccess(_): null;
+		};
+	}
+
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>> {
 		if (embeddedRoute(beadsDir, global)) {
 			final embedded = EmbeddedStoreAccess.searchIssueIds(beadsDir, databaseName, query);
@@ -1770,9 +1824,12 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 		return GoReadonlyStore.projectCountOutcome(native.readCountOutcome(GoReadonlyStore.countOptions(request), GoReadonlyStore.countGroupWireValue(group)));
 	}
 
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, global:Bool):ReadyLoadResult {
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery, global:Bool):ReadyLoadResult {
 		return GoReadonlyStore.projectReadyOutcome(native.readReadyOutcome(GoReadonlyStore.readyOptions(request)));
 	}
+
+	/** A proxied server opens no embedded store. */
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int, global:Bool):Void {}
 
 	public function issueQuery(beadsDir:String, databaseName:String, request:QueryStorageRequest, global:Bool):QueryRowResult {
 		return GoReadonlyStore.readQueryRows(native, request);
@@ -1813,6 +1870,17 @@ private final class GoProxiedQuerySession implements IssueQueryPort {
 	public function assignedIssueId(beadsDir:String, databaseName:String, actor:String, status:IssueStatus, global:Bool):StoreResult<String> {
 		final result = native.findAssignedIssue(actor, GoReadonlyStore.issueStatusWireValue(status));
 		return result.isErr() ? Failure(GoReadonlyStore.errorMessage(result)) : Success(result.unwrap());
+	}
+
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String, global:Bool):StoreResult<Array<String>> {
+		return GoReadonlyStore.listedIds(issueList(beadsDir, databaseName, IssueListRequests.typed(issueType, status), 0, global));
+	}
+
+	public function searchStatusRefusal(beadsDir:String, databaseName:String, query:String, request:IssueListRequest, global:Bool):Null<String> {
+		return switch issueSearch(beadsDir, databaseName, query, request, global) {
+			case ListFailure(message): message;
+			case ListRowLimitExceeded(_, _, _) | ListSuccess(_): null;
+		};
 	}
 
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String, global:Bool):StoreResult<Array<String>> {

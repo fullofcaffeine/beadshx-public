@@ -1,0 +1,7 @@
+{
+  "description": "Drop an M02-01 command profile from the profile registry.",
+  "filter": ".profiles |= map(select(.id != \"prof:portable-nocgo\"))",
+  "expect": [
+    "incomplete registry: profiles is complete but has no record for inv:command-policy#profiles/portable-nocgo"
+  ]
+}

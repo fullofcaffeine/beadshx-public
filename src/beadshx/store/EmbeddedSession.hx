@@ -366,6 +366,46 @@ final class EmbeddedSession {
 		first read, which opens it again and reports the error in its words.
 	**/
 	public static function openForCommand(beadsDir:String, selectedDatabase:String):Void {
+		openAndClose(beadsDir, selectedDatabase);
+	}
+
+	/**
+		The store open of an upstream store call whose data this build takes
+		from another read, or does not need.
+
+		Why: Dolt warns at each store open about every unfinished database
+		directory beside the database, so a command prints those lines once for
+		each of upstream's store calls (`withConn`). Where a read of this build
+		carries the data of several upstream calls, or a call reads what this
+		build does not print, the command still opens the store for that call.
+		What: one open and close, as `openForCommand`; a store that does not
+		open is left to the command's own reads.
+	**/
+	public static function openForStoreCall(beadsDir:String, selectedDatabase:String):Void {
+		openAndClose(beadsDir, selectedDatabase);
+	}
+
+	/**
+		The store open of upstream's defer-wake sweep (embeddeddolt
+		wakeExpiredDefers), which runs in a write transaction of its own before
+		each ready read: GetReadyWork, GetReadyWorkWithCounts and CountReadyWork.
+
+		Why: the sweep opens the store, so Dolt warns once more. A strict
+		read-only store refuses the write before it opens (`withConn` returns
+		ErrReadOnly), so the sweep opens nothing there.
+		What: one open and close outside strict read-only mode. This build never
+		writes, so it does not wake an expired defer; it only opens the store as
+		the sweep does.
+	**/
+	public static function openForDeferWake(beadsDir:String, selectedDatabase:String):Void {
+		switch SchemaSkewBoundary.openIntent() {
+			case StrictReadOnlyOpen | NoEmbeddedOpen:
+			case ReadOnlyCommandOpen | PlainOpen:
+				openAndClose(beadsDir, selectedDatabase);
+		}
+	}
+
+	static function openAndClose(beadsDir:String, selectedDatabase:String):Void {
 		switch open(beadsDir, selectedDatabase) {
 			case EmbeddedSessionOpened(session):
 				session.close();
@@ -416,14 +456,17 @@ final class EmbeddedSession {
 }
 
 /**
-	The words that one reader puts before each session error.
+	The words that one reader puts before a session step that failed before
+	its body ran, and upstream's error after the body ran.
 
 	Why: before the shared session, each reader opened the store itself and
 	named each failed step in its own words. Commands print those words, so the
-	readers keep them.
-	What: one phrase per step, and the two orders in which the readers report a
-	failed release step. How: a reader builds its wording once and passes the
-	session's result through `cleanupFailureFirst` or `bodyFailureFirst`.
+	readers keep them for the steps before the body. After the body, upstream
+	`withConn` (internal/storage/embeddeddolt/store.go) names no step: it joins
+	the body's error, the rollback's and the closes' with `errors.Join`.
+	What: one phrase per step before the body, and that join after it.
+	How: a reader builds its wording once and passes the session's result
+	through `joinedResult`, or through `joinReadErrors` for its own result type.
 **/
 @:goBuildConstraint("cgo")
 @:goNative
@@ -431,31 +474,43 @@ final class EmbeddedReadWording {
 	final connector:String;
 	final ping:String;
 	final begin:String;
-	final rollback:String;
-	final closeDatabase:String;
-	final closeConnector:String;
 
-	public function new(connector:String, ping:String, begin:String, rollback:String, closeDatabase:String, closeConnector:String) {
+	public function new(connector:String, ping:String, begin:String) {
 		this.connector = connector;
 		this.ping = ping;
 		this.begin = begin;
-		this.rollback = rollback;
-		this.closeDatabase = closeDatabase;
-		this.closeConnector = closeConnector;
 	}
 
 	/**
-		`open embedded <noun> connector`, `begin embedded <noun> transaction`,
-		`roll back embedded <noun> transaction`, `close embedded <noun>
-		database` and `close embedded <noun> connector`. A reader that pinged
-		before says `ping embedded <noun> database`. A reader that did not ping
-		before uses its begin words for a failed ping: the ping meets the same
-		connection error that `BeginTx` met before.
+		`open embedded <noun> connector` and `begin embedded <noun>
+		transaction`. A reader that pinged before says `ping embedded <noun>
+		database`. A reader that did not ping before uses its begin words for a
+		failed ping: the ping meets the same connection error that `BeginTx`
+		met before.
 	**/
 	public static function forNoun(noun:String, pinged:Bool):EmbeddedReadWording {
 		final begin = 'begin embedded $noun transaction';
-		return new EmbeddedReadWording('open embedded $noun connector', pinged ? 'ping embedded $noun database' : begin, begin,
-			'roll back embedded $noun transaction', 'close embedded $noun database', 'close embedded $noun connector');
+		return new EmbeddedReadWording('open embedded $noun connector', pinged ? 'ping embedded $noun database' : begin, begin);
+	}
+
+	/**
+		Upstream `withConn`'s error after the body of a read ran: a failed body
+		gives `errors.Join(fnErr, tx.Rollback())` and a successful one the bare
+		`tx.Rollback()` error; the deferred cleanup then joins the errors of the
+		database close and of the connector close. `errors.Join` prints each
+		error that is not nil on its own line and adds no words. `cleanup` is in
+		upstream's order: rollback, database, connector. Null when the body and
+		every release step succeeded.
+	**/
+	public static function joinReadErrors(bodyError:Null<String>, cleanup:Array<EmbeddedSessionCleanupFailure>):Null<String> {
+		final lines = new Array<String>();
+		if (bodyError != null)
+			lines.push(bodyError);
+		for (failure in cleanup)
+			lines.push(switch failure {
+				case SessionRollbackFailed(error) | SessionCloseDatabaseFailed(error) | SessionCloseConnectorFailed(error): error.toString();
+			});
+		return lines.length == 0 ? null : lines.join("\n");
 	}
 
 	public function stageMessage(stage:EmbeddedSessionStage, error:go.Error):String {
@@ -469,28 +524,18 @@ final class EmbeddedReadWording {
 		return '$words: ${error.toString()}';
 	}
 
-	public function cleanupMessage(failure:EmbeddedSessionCleanupFailure):String {
-		return switch failure {
-			case SessionRollbackFailed(error): '$rollback: ${error.toString()}';
-			case SessionCloseDatabaseFailed(error): '$closeDatabase: ${error.toString()}';
-			case SessionCloseConnectorFailed(error): '$closeConnector: ${error.toString()}';
-		};
-	}
-
-	/** The first failed release step replaces the body's result, even a failed one. */
-	public function cleanupFailureFirst<T>(read:EmbeddedRead<StoreResult<T>>):StoreResult<T> {
+	/**
+		The store result of one read as upstream `withConn` returns it: this
+		reader's words for a step before the body; after the body, the body's
+		value, or `joinReadErrors` when the body or a release step failed.
+	**/
+	public function joinedResult<T>(read:EmbeddedRead<StoreResult<T>>):StoreResult<T> {
 		return switch read {
 			case EmbeddedReadNotStarted(stage, error, _): Failure(stageMessage(stage, error));
-			case EmbeddedReadFinished(value, cleanup): cleanup.length == 0 ? value : Failure(cleanupMessage(cleanup[0]));
-		};
-	}
-
-	/** A failed body wins over failed release steps; after a successful body, the first failed step replaces it. */
-	public function bodyFailureFirst<T>(read:EmbeddedRead<StoreResult<T>>):StoreResult<T> {
-		return switch read {
-			case EmbeddedReadNotStarted(stage, error, _): Failure(stageMessage(stage, error));
-			case EmbeddedReadFinished(Failure(message), _): Failure(message);
-			case EmbeddedReadFinished(value, cleanup): cleanup.length == 0 ? value : Failure(cleanupMessage(cleanup[0]));
+			case EmbeddedReadFinished(Failure(message), cleanup): Failure(joinReadErrors(message, cleanup));
+			case EmbeddedReadFinished(value, cleanup):
+				final released = joinReadErrors(null, cleanup);
+				released == null ? value : Failure(released);
 		};
 	}
 }

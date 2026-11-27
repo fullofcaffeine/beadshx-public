@@ -11,6 +11,6 @@ import beadshx.store.SqlCycleReader.readSqlCycles;
 final class EmbeddedCycleReader {
 	public static function read(beadsDir:String, databaseName:String):StoreResult<Array<DependencyCycle<RelatedIssue>>> {
 		return EmbeddedReadWording.forNoun("cycle", false)
-			.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlCycles(context, transaction)));
+			.joinedResult(EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readSqlCycles(context, transaction)));
 	}
 }

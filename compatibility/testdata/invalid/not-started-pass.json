@@ -1,0 +1,7 @@
+{
+  "description": "Pass a command that bdhx does not implement.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/create\") | .verification[] | select(.profile == \"prof:release-cgo\")) = {\"profile\": \"prof:release-cgo\", \"state\": \"pass\", \"coverage\": \"sampled\", \"evidence\": [\"ev:parity-smoke\"], \"scenarios\": [\"database/list-all-json\"]}",
+  "expect": [
+    "contradictory states: cmd:bd/create is not_started but prof:release-cgo verification is pass"
+  ]
+}

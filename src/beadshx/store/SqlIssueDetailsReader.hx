@@ -7,6 +7,7 @@ import beadshx.relation.RelatedIssue.relatedIssue;
 import beadshx.relation.RelationRead.RelationDirection;
 import beadshx.store.EpicProgress;
 import beadshx.store.OptionalIssueInteger;
+import beadshx.store.SqlCommentReader.SqlCommentDetails;
 import beadshx.store.SqlCommentReader.readSqlIssueCommentDetails;
 import beadshx.store.SqlIssueBatchReader.readIssuesByIds;
 import beadshx.store.SqlIssueRow.SqlIssueFields;
@@ -41,7 +42,8 @@ private typedef SqlDependencyEdge = {
 	(`GetDependenciesWithMetadata`), and the three counts. Those are best
 	effort, as upstream ignores their errors. The dependents and the comment
 	bodies are read only when the request asks for them, and their errors stop
-	the read. The parent is the first parent-child dependency. Dependents, and
+	the read, unless the request reads them as best effort, as the text views
+	of `show` do. The parent is the first parent-child dependency. Dependents, and
 	dependencies under `briefDependencies`, keep only the fields of upstream's
 	`shallowDep`; an epic's child progress counts its parent-child dependents.
 	How: each upstream store call opens its own connection; this reads them
@@ -93,9 +95,11 @@ final class SqlIssueDetailsReader {
 			"SELECT count(*) FROM wisp_dependencies WHERE issue_id = ?", id);
 		var dependents = new Array<IssueDependency>();
 		var epicProgress = NoEpicProgress;
-		// The requested rows are not best effort: a failed read stops the detail read.
+		// The requested rows are not best effort for IssueReader.Get: a failed read stops the detail read.
+		final bestEffort = request.bestEffortRelations == true;
 		if (request.includeDependents) {
 			switch readSqlDependencyRows(context, transaction, id, Incoming) {
+				case Failure(_) if (bestEffort):
 				case Failure(message):
 					return Failure('iter dependents $id: $message');
 				case Success(rows):
@@ -103,7 +107,9 @@ final class SqlIssueDetailsReader {
 			}
 			epicProgress = childProgress(issue.issueType, dependents);
 		}
+		final noComments:SqlCommentDetails = {comments: [], commentCount: NativeIntegers.fromInt(0), commentsOmitted: false};
 		final commentDetails = switch readSqlIssueCommentDetails(context, transaction, {id: id, includeComments: request.includeComments}) {
+			case Failure(_) if (bestEffort): noComments;
 			case Failure(message): return Failure(message);
 			case Success(value): value;
 		};

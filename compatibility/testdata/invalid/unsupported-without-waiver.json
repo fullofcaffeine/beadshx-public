@@ -1,0 +1,7 @@
+{
+  "description": "Drop a command from the required denominator without an approved waiver.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/send-metrics\") | .requirementState) = \"unsupported\"",
+  "expect": [
+    "requirement dropped without an approved waiver: cmd:bd/send-metrics is unsupported"
+  ]
+}

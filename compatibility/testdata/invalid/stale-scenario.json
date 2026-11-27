@@ -1,0 +1,7 @@
+{
+  "description": "Cite a parity scenario that the suite does not define.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/list\") | .verification[] | select(.profile == \"prof:release-cgo\") | .scenarios) |= (. + [\"database/no-such-scenario\"] | sort)",
+  "expect": [
+    "stale evidence: cmd:bd/list@release-cgo cites scenario database/no-such-scenario, which no cited differential suite defines"
+  ]
+}

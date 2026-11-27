@@ -1,0 +1,7 @@
+{
+  "description": "Add a command that the pinned inventory does not have.",
+  "filter": ".commands += [.commands[] | select(.id == \"cmd:bd/version\") | .id = \"cmd:bd/frobnicate\"] | .commands |= sort_by(.id)",
+  "expect": [
+    "manifest-only command not in inventory: cmd:bd/frobnicate"
+  ]
+}

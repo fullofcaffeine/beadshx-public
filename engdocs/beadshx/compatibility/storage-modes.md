@@ -61,7 +61,9 @@ fails without a write, and `bdhx` prints the same error:
   one with Dolt's in-progress marker, or with a `.dolt` directory without its
   `repo_state.json`. Like upstream, `bdhx` then first prints Dolt's
   `level=warning msg="skipping in-progress database directory"` line for
-  each marked directory, with the time of the run.
+  each marked directory, with the time of the run. Beside a database that
+  opens, Dolt prints the line at each store open (see
+  [Limits](limits.md#embedded-store-layouts)).
 
 ## Workspace without metadata.json
 
@@ -129,10 +131,10 @@ before the other checks of the command's arguments.
 
 `BD_IGNORE_SCHEMA_SKEW=1` or `--ignore-schema-skew` prints upstream's warning
 instead, and the command reads the database. Like upstream, the command
-prints the warning once, also when it reads the database more than once, as
-`children`, `ready --gated`, `ready --explain`, `count` with a `--by-*`
-flag, `search --status`, `show` with more than one issue ID,
-`show --thread`, `--refs` and `--children` do. `list --watch`,
+prints the warning once, also when it opens the store more than once, as
+`list`, `children`, `ready` (also `--gated` and `--explain`), `count` with a
+`--by-*` flag, `search`, `label list-all`, `show` with more than one issue
+ID, `show --thread`, `--refs` and `--children` do. `list --watch`,
 also with `--ready`, and `show --watch` print it once for the whole watch,
 not again at each refresh. A server-mode workspace can still print it again
 (see [Limits](limits.md#server-mode-proxied-and-shared-server-workspaces)).

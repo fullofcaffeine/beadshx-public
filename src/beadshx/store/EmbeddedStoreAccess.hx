@@ -68,8 +68,12 @@ final class EmbeddedStoreAccess {
 		return implementation.issueList(beadsDir, databaseName, request, limit, layers);
 	}
 
-	public static function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
-		return implementation.issueReady(beadsDir, databaseName, request);
+	public static function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):Null<ReadyLoadResult> {
+		return implementation.issueReady(beadsDir, databaseName, request, query);
+	}
+
+	public static function openForStoreCalls(beadsDir:String, databaseName:String, count:Int):Void {
+		implementation.openForStoreCalls(beadsDir, databaseName, count);
 	}
 
 	public static function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
@@ -86,7 +90,7 @@ final class EmbeddedStoreAccess {
 		return implementation.queryCandidates(beadsDir, databaseName);
 	}
 
-	public static function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+	public static function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>> {
 		return implementation.ping(beadsDir, databaseName);
 	}
 
@@ -154,6 +158,15 @@ final class EmbeddedStoreAccess {
 	public static function searchIssueIds(beadsDir:String, databaseName:String, query:String):Null<StoreResult<Array<String>>> {
 		return implementation.searchIssueIds(beadsDir, databaseName, query);
 	}
+
+	public static function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>> {
+		return implementation.typedIssueIds(beadsDir, databaseName, issueType, status);
+	}
+
+	public static function searchStatusCheck(beadsDir:String, databaseName:String, status:String,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>> {
+		return implementation.searchStatusCheck(beadsDir, databaseName, status, layers);
+	}
 }
 
 private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
@@ -206,9 +219,11 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 		return null;
 	}
 
-	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest):Null<ReadyLoadResult> {
+	public function issueReady(beadsDir:String, databaseName:String, request:ReadyRequest, query:ReadyQuery):Null<ReadyLoadResult> {
 		return null;
 	}
+
+	public function openForStoreCalls(beadsDir:String, databaseName:String, count:Int):Void {}
 
 	public function issueCount(beadsDir:String, databaseName:String, request:CountRequest, group:CountGroup,
 			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<CountResult>> {
@@ -224,7 +239,7 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 		return null;
 	}
 
-	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingSnapshot>> {
+	public function ping(beadsDir:String, databaseName:String):Null<StoreResult<PingOutcome>> {
 		return null;
 	}
 
@@ -290,6 +305,15 @@ private final class UnavailableEmbeddedStore implements EmbeddedStorePort {
 	}
 
 	public function searchIssueIds(beadsDir:String, databaseName:String, query:String):Null<StoreResult<Array<String>>> {
+		return null;
+	}
+
+	public function typedIssueIds(beadsDir:String, databaseName:String, issueType:String, status:String):Null<StoreResult<Array<String>>> {
+		return null;
+	}
+
+	public function searchStatusCheck(beadsDir:String, databaseName:String, status:String,
+			layers:SqlIssueFilter.IssueListConfigLayers):Null<StoreResult<Bool>> {
 		return null;
 	}
 }

@@ -1,0 +1,7 @@
+{
+  "description": "Claim complete coverage while the scenario denominators are pending.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/list\") | .verification[] | select(.profile == \"prof:release-cgo\") | .coverage) = \"complete\"",
+  "expect": [
+    "complete coverage without scenario denominators: cmd:bd/list@release-cgo"
+  ]
+}

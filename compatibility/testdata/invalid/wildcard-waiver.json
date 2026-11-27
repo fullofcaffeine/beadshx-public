@@ -1,0 +1,8 @@
+{
+  "description": "Let a waiver cover every command with a wildcard.",
+  "filter": "(.waivers[] | select(.id == \"waiver:snapshot-extension\") | .commands) = [\"cmd:bd/*\"]",
+  "expect": [
+    "wildcard waiver: waiver:snapshot-extension names cmd:bd/*",
+    "schema: /waivers/1/commands/0 (waiver:snapshot-extension)"
+  ]
+}

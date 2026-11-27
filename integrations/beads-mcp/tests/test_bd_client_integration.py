@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -21,7 +21,7 @@ from beads_mcp.models import (
     ShowIssueParams,
     UpdateIssueParams,
 )
-from tests.conftest import initialized_workspace
+from tests.conftest import init_marked_workspace, initialized_workspace
 
 
 def test_temp_workspace_is_disposable(monkeypatch, request, tmp_path: Path):
@@ -42,15 +42,43 @@ def test_temp_workspace_is_disposable(monkeypatch, request, tmp_path: Path):
     assert not any(name in os.environ for name in ("BEADS_DIR", "BEADS_DOLT_SERVER_HOST", "GIT_DIR"))
 
 
-@pytest.mark.asyncio
-async def test_database_setup_rejects_unmarked_workspace(temp_workspace: Path, bd_executable):
-    """A missing safety marker must fail before any real subprocess starts."""
+def test_temp_workspace_quiets_bd_like_the_parity_smoke(monkeypatch, request):
+    """bd runs with the parity smoke's telemetry and event-flush switches."""
+    monkeypatch.setenv("BEADS_NO_AUTO_FLUSH", "1")
+    request.getfixturevalue("temp_workspace")
+
+    assert os.environ["BEADS_TELEMETRY_DISABLED"] == "1"
+    assert os.environ["BD_DISABLE_EVENT_FLUSH"] == "1"
+    # The MCP server turns BEADS_NO_AUTO_FLUSH into --no-auto-flush, which bd no longer accepts.
+    assert "BEADS_NO_AUTO_FLUSH" not in os.environ
+
+
+def test_database_setup_rejects_unmarked_workspace(temp_workspace: Path, bd_executable, tmp_path: Path):
+    """A missing safety marker must fail before bd init starts or a database is copied in."""
     (temp_workspace / ".beadshx-disposable-fixture").unlink()
-    with patch("tests.conftest.asyncio.create_subprocess_exec", new_callable=AsyncMock) as start_process:
+    with patch("tests.conftest.subprocess.run") as run_process:
         with pytest.raises(pytest.fail.Exception, match="unmarked integration workspace"):
-            # Call the fixture body directly to observe its refusal before setup.
-            await initialized_workspace.__wrapped__(temp_workspace, bd_executable, None)
-        start_process.assert_not_called()
+            init_marked_workspace(temp_workspace, dict(os.environ), bd_executable)
+        run_process.assert_not_called()
+    with patch("tests.conftest.clone_tree") as clone:
+        with pytest.raises(pytest.fail.Exception, match="unmarked integration workspace"):
+            # Call the fixture body directly to observe its refusal before the copy.
+            initialized_workspace.__wrapped__(temp_workspace, tmp_path / "template")
+        clone.assert_not_called()
+
+
+def test_initialized_workspace_is_a_private_copy_of_the_session_template(
+    initialized_workspace: Path, workspace_template: Path
+):
+    """bd init runs once per session; each test gets its own copy of that database."""
+    assert initialized_workspace != workspace_template
+    for workspace in (workspace_template, initialized_workspace):
+        assert (workspace / ".beadshx-disposable-fixture").is_file()
+    metadata = (workspace_template / ".beads" / "metadata.json").read_text()
+    assert (initialized_workspace / ".beads" / "metadata.json").read_text() == metadata
+
+    (initialized_workspace / ".beads" / "test-only").touch()
+    assert not (workspace_template / ".beads" / "test-only").exists()
 
 
 @pytest.fixture

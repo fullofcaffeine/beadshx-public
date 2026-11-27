@@ -1,0 +1,7 @@
+{
+  "description": "Declare a command under a profile that the inventory does not build it in.",
+  "filter": "(.commands[] | select(.id == \"cmd:bd/federation/sync\") | .profiles) = [\"prof:portable-nocgo\", \"prof:release-cgo\"] | (.commands[] | select(.id == \"cmd:bd/federation/sync\") | .verification) = [{\"profile\": \"prof:portable-nocgo\", \"state\": \"unknown\"}, {\"profile\": \"prof:release-cgo\", \"state\": \"unknown\"}]",
+  "expect": [
+    "command-profile set differs: cmd:bd/federation/sync@portable-nocgo/normal is in the manifest but not the inventory"
+  ]
+}

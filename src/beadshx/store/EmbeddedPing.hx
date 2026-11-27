@@ -4,7 +4,11 @@ import beadshx.nativeextern.context.Context;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.nativeextern.time.Time;
 import beadshx.nativeextern.time.TimePkg;
+import beadshx.store.EmbeddedSession.EmbeddedRead;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
+import beadshx.store.SqlIssueFilter.IssueSearchFilter;
+import beadshx.store.SqlIssueListReader.IssueSearchFailure;
+import beadshx.store.SqlIssueSearch.SearchedIssues;
 
 /**
 	`bd ping` on an embedded workspace, with authored Haxe.
@@ -15,13 +19,13 @@ import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 	binary, so at a remote-migrate gate stop ping refused where upstream warns
 	and reads.
 	What: upstream's pre-run store open, whose first open checks the schema
-	and runs the gate; then, timed as upstream times its command body, one
-	store call that runs the query: the scalar count of an empty count
-	request (`SELECT COUNT(*) FROM issues`), "the issue count" of upstream's
-	help text, as the facade ran it. Discovery ran before, in the
-	application, and the store is open when the clock starts, so the resolve
-	and store times are zero or close to it. A failed query, or a failed
-	release of its session, fails the ping.
+	and runs the gate; then, timed as upstream times its command body, its
+	one store call: `SearchIssues` with an empty filter and a limit of one
+	(SqlIssueSearch). Discovery ran before, in the application, and the store
+	is open when the clock starts, so the resolve and store times are zero or
+	close to it. A failed search, or a failed release of its session, is
+	upstream's `query failed: ` reason (PingFailed). A session that does not
+	open fails as the store open of upstream's pre-run would.
 	How: Go's monotonic clock, through `time.Now` and `time.Until`, in whole
 	milliseconds as Go's `Duration.Milliseconds` truncates them.
 **/
@@ -30,57 +34,42 @@ import beadshx.store.EmbeddedSession.EmbeddedReadWording;
 final class EmbeddedPing {
 	static final WORDING = EmbeddedReadWording.forNoun("ping", false);
 
-	public static function check(beadsDir:String, databaseName:String):StoreResult<PingSnapshot> {
+	public static function check(beadsDir:String, databaseName:String):StoreResult<PingOutcome> {
 		EmbeddedSession.openForCommand(beadsDir, databaseName);
 		final start = TimePkg.now();
 		final storeMs = elapsedMilliseconds(start);
-		final counted = WORDING.cleanupFailureFirst(EmbeddedSession.withRead(beadsDir, databaseName, countIssues));
+		final read = EmbeddedSession.withRead(beadsDir, databaseName, searchOneIssue);
 		final totalMs = elapsedMilliseconds(start);
-		return switch counted {
-			case Failure(message): Failure(message);
-			case Success(_): Success({
+		return switch read {
+			case EmbeddedReadNotStarted(stage, error, _): Failure(WORDING.stageMessage(stage, error));
+			case EmbeddedReadFinished(searched, cleanup):
+				final failure = EmbeddedReadWording.joinReadErrors(switch searched {
+					case Failure(message): message;
+					case Success(_): null;
+				}, cleanup);
+				Success(failure != null ? PingFailed('query failed: $failure', totalMs) : PingAnswered({
 					resolveMs: 0,
 					storeMs: storeMs,
 					queryMs: totalMs - storeMs,
 					totalMs: totalMs
-				});
+				}));
 		};
 	}
 
-	/** The issue count of an empty count request. */
-	static function countIssues(context:Context, transaction:Tx):StoreResult<Int> {
-		return switch SqlIssueCountReader.buildCountFilter(emptyCountRequest(), []) {
-			case Failure(message): Failure(message);
-			case Success(filter): SqlIssueCountReader.countIssues(context, transaction, filter);
+	/** Upstream `SearchIssues(ctx, "", IssueFilter{Limit: 1})`. */
+	static function searchOneIssue(context:Context, transaction:Tx):StoreResult<Bool> {
+		final filter = new IssueSearchFilter();
+		filter.limit = 1;
+		return switch SqlIssueSearch.searchIssues(context, transaction, filter) {
+			case IssuesFound(_): Success(true);
+			case IssuesNotSearched(SearchFailed(message, _)): Failure(message);
+			// The filter sets no row cap, so this branch only completes the switch.
+			case IssuesNotSearched(SearchRowCap(found, _, cap)): Failure('row cap: $found over $cap');
 		};
 	}
 
 	/** Go's `time.Since(start).Milliseconds()`: the elapsed time, truncated to whole milliseconds. */
 	static function elapsedMilliseconds(start:Time):Int {
 		return Std.int(-TimePkg.until(start).seconds() * 1000);
-	}
-
-	/** Upstream's `issueops.CountRequest{}`: no filter, the issues table only. */
-	static function emptyCountRequest():CountRequest {
-		return {
-			status: "",
-			issueType: "",
-			assignee: "",
-			priority: IntAbsent,
-			priorityMin: IntAbsent,
-			priorityMax: IntAbsent,
-			labels: [],
-			labelsAny: [],
-			titleSearch: "",
-			idFilter: "",
-			titleContains: "",
-			descriptionContains: "",
-			notesContains: "",
-			timeFilters: [],
-			emptyDescription: false,
-			noAssignee: false,
-			noLabels: false,
-			includeInfra: false
-		};
 	}
 }

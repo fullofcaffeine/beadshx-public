@@ -1,0 +1,8 @@
+{
+  "description": "Waive a difference in a category that the exception policy never waives.",
+  "filter": "(.differences[] | select(.id == \"diff:snapshot-extension\") | .category) = \"recovery\"",
+  "expect": [
+    "non-waivable difference waived: diff:snapshot-extension is recovery",
+    "waiver covers a non-waivable requirement: waiver:snapshot-extension names diff:snapshot-extension (recovery)"
+  ]
+}

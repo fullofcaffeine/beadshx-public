@@ -1,10 +1,12 @@
 package beadshx.store;
 
 import beadshx.nativeextern.context.Context;
-import beadshx.nativeextern.database.sql.NullString;
 import beadshx.nativeextern.database.sql.Tx;
 import beadshx.store.EmbeddedDatabaseName.resolveEmbeddedDatabaseName;
 import beadshx.store.EmbeddedSession.EmbeddedReadWording;
+import beadshx.store.SqlIssueFilter.IssueSearchFilter;
+import beadshx.store.SqlIssueListReader.IssueSearchFailure;
+import beadshx.store.SqlIssueSearch.SearchedIssueIds;
 
 /** Result of one Haxe-owned partial-ID candidate scan. */
 enum EmbeddedIssueIdSearchResult {
@@ -12,15 +14,24 @@ enum EmbeddedIssueIdSearchResult {
 	EmbeddedIssueIdSearchFailure(message:String);
 }
 
-/** Supplies deduplicated issue and wisp IDs to Haxe abbreviation policy. */
+/**
+	The candidate IDs of a partial-ID lookup: upstream ResolvePartialID's
+	`SearchIssueIDs(ctx, searchPart, IssueFilter{})` (internal/utils/id_parser.go:137).
+
+	Why: a failed search must say what upstream's says ("search issues: search
+	issues: ..."), and Dolt words a failed query after its SQL.
+	What: SqlIssueSearch's ID search with the search part as its query text,
+	which matches the title and the ID as upstream's query does; the caller
+	keeps only the IDs whose hash matches. Haxe abbreviation policy picks the
+	issue.
+	How: one read of the shared `EmbeddedSession`; each failed release step
+	follows the read's error.
+**/
 @:goBuildConstraint("cgo")
 @:goNative
 final class EmbeddedIssueIdSearch {
-	static final READ_IDS = "SELECT id FROM (" + "SELECT id FROM issues WHERE LOWER(id) LIKE ? " + "UNION SELECT id FROM wisps WHERE LOWER(id) LIKE ?"
-		+ ") candidates ORDER BY id ASC";
-
 	static final WORDING = new EmbeddedReadWording("open embedded issue-ID connector", "ping embedded issue-ID database",
-		"begin embedded issue-ID transaction", "roll back embedded issue-ID search", "close embedded issue-ID database", "close embedded issue-ID connector");
+		"begin embedded issue-ID transaction");
 
 	final beadsDir:String;
 	final databaseName:String;
@@ -32,40 +43,20 @@ final class EmbeddedIssueIdSearch {
 
 	public function read(query:String):EmbeddedIssueIdSearchResult {
 		final read = EmbeddedSession.withRead(beadsDir, databaseName, (context, transaction) -> readIds(context, transaction, query));
-		return switch WORDING.bodyFailureFirst(read) {
+		return switch WORDING.joinedResult(read) {
 			case Failure(message): EmbeddedIssueIdSearchFailure(message);
 			case Success(ids): EmbeddedIssueIds(ids);
 		};
 	}
 
-	/** Every failure of the query or its rows wins over the session's release steps. */
 	static function readIds(context:Context, transaction:Tx, query:String):StoreResult<Array<String>> {
-		final pattern = "%" + query.toLowerCase() + "%";
-		final queried = transaction.queryContext(context, READ_IDS, pattern, pattern);
-		if (queried.value2 != null)
-			return Failure('search embedded issue IDs: ${queried.value2.toString()}');
-
-		final rows = queried.value1;
-		final ids = new Array<String>();
-		var failure = "";
-		while (failure == "" && rows.next()) {
-			final id = new NullString();
-			final scanError = rows.scan(id);
-			if (scanError != null)
-				failure = 'scan embedded issue ID: ${scanError.toString()}';
-			else if (!id.valid)
-				failure = "scan embedded issue ID: id is null";
-			else
-				ids.push(id.string);
-		}
-		final rowError = rows.err();
-		final closeRowsError = rows.close();
-		if (failure != "")
-			return Failure(failure);
-		if (rowError != null)
-			return Failure('finish embedded issue-ID search: ${rowError.toString()}');
-		if (closeRowsError != null)
-			return Failure('close embedded issue-ID search: ${closeRowsError.toString()}');
-		return Success(ids);
+		final filter = new IssueSearchFilter();
+		filter.queryText = query;
+		return switch SqlIssueSearch.searchIssueIds(context, transaction, filter) {
+			case IssueIdsFound(ids): Success(ids);
+			case IssueIdsNotSearched(SearchFailed(message, _)): Failure(message);
+			// The filter sets no row cap, so this branch only completes the switch.
+			case IssueIdsNotSearched(SearchRowCap(found, _, cap)): Failure('row cap: $found over $cap');
+		};
 	}
 }

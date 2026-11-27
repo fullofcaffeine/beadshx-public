@@ -28,6 +28,17 @@ final class SqlIssueBatchReader {
 			case Failure(message): return Failure('get issues by IDs: build wisp set: $message');
 			case Success(value): value;
 		};
+		return readPlanes(context, transaction, ids, wisps);
+	}
+
+	/** GetIssuesByIDsInTx with every ID in the wisp set: each record read from the wisps table (getWispIssuesByIDsInOrderInTx). */
+	public static function readIssuesFromWisps(context:Context, transaction:Tx, ids:Array<String>):StoreResult<Array<RelatedIssue>> {
+		if (ids.length == 0)
+			return Success([]);
+		return readPlanes(context, transaction, ids, [for (id in ids) id => true]);
+	}
+
+	static function readPlanes(context:Context, transaction:Tx, ids:Array<String>, wisps:Map<String, Bool>):StoreResult<Array<RelatedIssue>> {
 		final durableIds = [for (id in ids) if (!wisps.exists(id)) id];
 		final wispIds = [for (id in ids) if (wisps.exists(id)) id];
 		final issues = new Array<RelatedIssue>();

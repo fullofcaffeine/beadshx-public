@@ -23,9 +23,16 @@ query waits for lipgloss's own timeout. `--answer dark` and `--answer light`
 answer each query at once with a black or a white background and a DA1 reply.
 The answer is written while lipgloss holds the terminal in raw mode, so the
 terminal does not echo it. The window size stays unset, so the terminal
-reports 0 columns, as the `script`-based runners do. A command that runs
-longer than `--timeout` seconds is killed with its process group, and the
-script then exits 124. The script uses the Python standard library only.
+reports 0 columns, as the `script`-based runners do. The terminal runs at
+4800 baud, which no command here reads. At the default 9600 baud, the macOS
+driver lets a write fill its 1024-byte output queue, and when the queue fills
+right after the CR of a line feed, the driver sends that CR twice. That CR is
+no byte that the command wrote, and whether it comes depends on how soon this
+script reads, so it changed from run to run, for upstream bd too
+(beadshx-m06.6). At 4800 baud a write waits for the reader once more than
+768 bytes are queued, before the queue can fill. A command that runs longer
+than `--timeout` seconds is killed with its process group, and the script then
+exits 124. The script uses the Python standard library only.
 """
 
 from __future__ import annotations
@@ -36,6 +43,7 @@ import pty
 import select
 import signal
 import sys
+import termios
 import time
 
 QUERY = b"\x1b]11;?\x07\x1b[c"
@@ -70,6 +78,9 @@ def main() -> int:
     arguments = parse_arguments()
     pid, master = pty.fork()
     if pid == 0:
+        attributes = termios.tcgetattr(0)
+        attributes[4] = attributes[5] = termios.B4800
+        termios.tcsetattr(0, termios.TCSANOW, attributes)
         try:
             os.execvp(arguments.command[0], arguments.command)
         except OSError as error:

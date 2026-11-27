@@ -6,6 +6,8 @@ import beadshx.nativeextern.strconv.StrconvPkg;
 import beadshx.nativeextern.time.TimePkg;
 import beadshx.relation.DependencyRead.compareUtf8;
 import beadshx.store.CustomConfig.CustomStatus;
+import beadshx.store.CustomConfig.DatabaseCustomStatuses;
+import beadshx.store.CustomConfig.DatabaseCustomTypes;
 import beadshx.store.CustomConfig.effectiveCustomStatuses;
 import beadshx.store.CustomConfig.effectiveCustomTypes;
 import beadshx.store.CustomConfig.goTrimSpace;
@@ -161,14 +163,21 @@ final class SqlIssueFilter {
 	/**
 		Upstream LoadStoreListConfig on an embedded store: GetCustomStatusesDetailed,
 		GetCustomTypes, and GetInfraTypes (ResolveInfraTypesInTx: the database's
-		types.infra list, else the layered one, else the defaults).
+		types.infra list, else the layered one, else the defaults), in one
+		transaction. EmbeddedListConfig reads each in a session of its own.
 	**/
 	public static function loadListConfig(context:Context, transaction:Tx, layers:IssueListConfigLayers):IssueListConfig {
-		final statuses = effectiveCustomStatuses(SqlCustomConfigReader.readCustomStatuses(context, transaction), layers.customStatuses);
-		var customTypes = effectiveCustomTypes(SqlCustomConfigReader.readCustomTypes(context, transaction), layers.customTypes);
+		return listConfig(SqlCustomConfigReader.readCustomStatuses(context, transaction), SqlCustomConfigReader.readCustomTypes(context, transaction),
+			loadInfraTypes(context, transaction, layers), layers);
+	}
+
+	/** LoadListConfig over the three reads: the database's statuses and types, each over its layered list. */
+	public static function listConfig(statuses:DatabaseCustomStatuses, types:DatabaseCustomTypes, infraTypes:Array<String>,
+			layers:IssueListConfigLayers):IssueListConfig {
+		var customTypes = effectiveCustomTypes(types, layers.customTypes);
 		if (customTypes.length == 0)
 			customTypes = layers.customTypes;
-		return {customStatuses: statuses, customTypes: customTypes, infraTypes: loadInfraTypes(context, transaction, layers)};
+		return {customStatuses: effectiveCustomStatuses(statuses, layers.customStatuses), customTypes: customTypes, infraTypes: infraTypes};
 	}
 
 	/** Upstream GetInfraTypes (ResolveInfraTypesInTx): the database's types.infra list, else the layered one, else the defaults. */
@@ -370,8 +379,13 @@ final class SqlIssueFilter {
 			+ "so answering would return every ready issue rather than the ones asked for — drop --ready, or drop what it cannot carry";
 	}
 
-	/** Upstream BuildIssueFilterClauses: the query text first (`queryText`), then the filter. */
-	public static function buildFilterClauses(filter:IssueSearchFilter, tables:IssueFilterTables):IssueFilterClauses {
+	/**
+		Upstream sqlbuild.BuildIssueFilterClauses: the query text first
+		(`queryText`), then the filter. Without `labelSets`, the
+		filter's label and any-label sets add no clause: BuildLabelDrivenSearch
+		clears them, because they become joins (SqlIssueSearch).
+	**/
+	public static function buildFilterClauses(filter:IssueSearchFilter, tables:IssueFilterTables, labelSets:Bool = true):IssueFilterClauses {
 		final clauses = new Array<String>();
 		final arguments = new Array<Dynamic>();
 		if (filter.queryText != "") {
@@ -462,11 +476,12 @@ final class SqlIssueFilter {
 			clauses.push("wisp_type = ?");
 			arguments.push(filter.wispType);
 		}
-		for (label in filter.labels) {
-			clauses.push('id IN (SELECT issue_id FROM ${tables.labels} WHERE label = ?)');
-			arguments.push(label);
-		}
-		if (filter.labelsAny.length > 0) {
+		if (labelSets)
+			for (label in filter.labels) {
+				clauses.push('id IN (SELECT issue_id FROM ${tables.labels} WHERE label = ?)');
+				arguments.push(label);
+			}
+		if (labelSets && filter.labelsAny.length > 0) {
 			for (label in filter.labelsAny)
 				arguments.push(label);
 			clauses.push('id IN (SELECT issue_id FROM ${tables.labels} WHERE label IN (${[for (_ in filter.labelsAny) "?"].join(", ")}))');

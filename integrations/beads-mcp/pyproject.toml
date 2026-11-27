@@ -105,6 +105,8 @@ indent-style = "space"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# Fail a hanging test after 120 s, fixture setup included, under its own name.
+timeout = 120
 
 [dependency-groups]
 dev = [
@@ -113,6 +115,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.14.0",
     "types-requests>=2.31.0",
 ]

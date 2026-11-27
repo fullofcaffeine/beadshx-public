@@ -3,7 +3,8 @@
 This page lists every known difference between `bdhx` and upstream `bd`
 v1.2.1. The other pages in this folder describe what already matches. A task
 ID in parentheses names the Beads task that tracks a difference, where one
-exists.
+exists. Each item has a difference record in the
+[compatibility manifest](../../../compatibility/manifests/beads-v1.2.1.json).
 
 ## Writes and migration
 
@@ -47,6 +48,18 @@ exists.
   an automatic backup to `.beads/backup` after a command: the first time, and
   then at most every 15 minutes when the data changed. `bdhx` never writes a
   backup.
+- Without strict read-only mode, upstream's ready reads (`ready`, also
+  `--json`, and `list --ready`) first return every issue and wisp whose dated
+  defer has passed to `open`, record a `status_changed` event by
+  `bd-defer-wake`, and commit `bd: wake N expired defer(s)` when an issue
+  woke. Then they read. `bdhx` never writes, so such an issue stays deferred
+  and is missing from its ready list, where upstream lists it.
+- Without strict read-only mode, upstream's store open runs its schema
+  migration step. That step also fills an empty `custom_types` table from
+  `types.custom` and an empty `custom_statuses` table from a valid
+  `status.custom`, and commits `schema: apply migrations`. `bdhx` reads
+  these settings the same way, so `types` and `statuses` print the same
+  output, but it never writes, so the tables stay empty (beadshx-m06.3).
 - In a workspace that has a legacy `.beads/config.json` and no
   `.beads/metadata.json`, `where` and every command that reads the database
   stop with `Error: <command> is not available yet when the workspace has
@@ -212,10 +225,56 @@ exists.
 - Dolt prints `level=warning msg="skipping in-progress database directory"`
   each time the store opens, for each unfinished database directory beside
   the database. Upstream opens the store in its pre-run and again for each
-  store call. `count`, `query` and `ping` open it as often as upstream, so
-  they print these lines as often. `list`, `ready`, `search` and
-  `label list-all` open it fewer times, so they print fewer of these lines
-  (beadshx-m08.73).
+  store call. `list` (also `--ready` and the `--parent` tree), `ready`,
+  `search`, `label list-all`, `count`, `query` and `ping` open it as often
+  as upstream, so they print these lines as often. For a store call whose
+  data `bdhx` reads elsewhere, or that writes, such as the defer wake before
+  each ready read, `bdhx` opens and closes the store without that call.
+  Other reads, such as `show`, `ready --explain`, `--gated` and `--mol`, and
+  the commands outside upstream's `readOnlyCommands` (see the workspace
+  identity item below), open it fewer times, so they print fewer of these
+  lines. `children` opens it once less than upstream, and `list --watch`
+  can open it a different number of times (beadshx-m08.73).
+- After a read, the embedded store rolls back the read and closes. When one
+  of these steps fails, `bdhx` prints the errors as upstream does: the error
+  of the read, if there is one, and then the error of each failed step, one
+  on each line, with no added words. A row limit, a truncated `events`
+  window, `types` and `statuses` ignore the failed step, as upstream does.
+  Some differences stay, because one `bdhx` read can do the work of
+  upstream's earlier store calls too:
+  - When the store does not open, ping or begin the read, `bdhx` keeps its
+    own words, such as `begin embedded list transaction: `, and does not add
+    a failed close. Upstream prints `embeddeddolt: begin tx: ` and adds it.
+    `types` and `statuses` then fail, where upstream ignores the error.
+  - When only a step after the read fails, upstream can stop at an earlier
+    store call, with the words of that call: for example
+    `load custom types: ` for `list`, `count --include-infra` and
+    `search --status` when `types.custom` is not set, or
+    `failed to search issues: ` when it finds an issue from its ID. A
+    missing issue then stops `show`, `comments` and `dep` with the error,
+    where upstream tries its routes first.
+  - `dep tree` prints the error where upstream prints its row limit, and
+    `graph --all` prints the row limit of its `in_progress` or `blocked`
+    search where upstream prints `failed to search issues: ` and the error.
+    `ready --explain` shows no cycles, where upstream keeps them
+    (beadshx-83m4).
+- When a read fails after the store opened, some commands still stop at
+  another read than upstream's, or print other words, because one `bdhx`
+  read does the work of several upstream store calls (beadshx-h98f):
+  - `search` and `label list-all` read the issues with their counts in one
+    query. Upstream runs `SearchIssues` and then reads the labels and the
+    counts, so it prints `search issues: ` where `bdhx` prints
+    `search count issues: `.
+  - `ready --explain` reads the ready issues with their counts first;
+    upstream reads them without counts and then the blocked issues.
+    `ready --mol` reads the issues of the molecule as one list, where
+    upstream prints `failed to get dependents of <id>: ` or
+    `failed to get dependencies for <id>: `.
+  - A failed read of an exact issue ID stops `show`, `comments`,
+    `dep list`, `dep tree` and `graph` with that error. Upstream ignores it
+    and resolves the ID with its ID search, so it can print another error.
+  - In a server-mode workspace, `ping` counts the issues through the native
+    facade, where upstream searches for one issue.
 
 ## Commands and output
 
@@ -268,11 +327,23 @@ exists.
   issues before it (beadshx-m08.26).
 - `bdhx` refuses `ready --claim`, so it never prints upstream's colored
   claim lines.
-- `bdhx` reads the human `ready` output with the same query as
-  `ready --json`. Upstream's human route reads wisps with another query.
-  So with `--include-ephemeral`, upstream can list a wisp that
-  `--label-pattern` or `--label-regex` does not match, where `bdhx` leaves
-  it out (beadshx-m08.70).
+- `bdhx` does not check the workspace identity yet. Upstream's pre-run does
+  this for each command outside its `readOnlyCommands`, such as
+  `label list-all`, `types` or `dep tree`, unless in strict read-only mode or
+  with `--global` or `BEADS_SKIP_IDENTITY_CHECK=1`. It compares the
+  `project_id` of `.beads/metadata.json` with the database's `_project_id`
+  and stops when the two differ. `bdhx` reads on there (beadshx-m08.74).
+- In a server-mode or proxied workspace, `bdhx` reads the human `ready`
+  view through the native facade, with the query of `ready --json`.
+  Upstream's human view reads wisps with another query (see
+  [Read commands](read-commands.md#ready-views)). So with
+  `--include-ephemeral`, upstream can list a wisp that `--label-pattern` or
+  `--label-regex` does not match, where `bdhx` leaves it out. The facade may
+  only shrink, so this waits for Haxe-owned server reads (beadshx-m08.70).
+- `list --watch --ready` reads the query of `list --ready --json` in every
+  workspace. Upstream's watch reads the query of the human `ready` view,
+  which applies `--mol-type` and `--wisp-type` to the wisps and leaves out
+  `--label-pattern` and `--label-regex` for them.
 - `events tail --follow` and `events prune` report that they are not
   available yet.
 - `config get` of a user-global key (`metrics.*`, `node_id`) and
