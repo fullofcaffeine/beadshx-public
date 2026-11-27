@@ -29,7 +29,7 @@ gate="$work_root/compatibility-manifest"
 (
 	cd "$repository_root"
 	GOWORK=off GOTOOLCHAIN="$go_toolchain" GOFLAGS=-mod=readonly CGO_ENABLED=0 \
-		go build -o "$gate" ./scripts/beadshx/compatibility-manifest
+		go build -tags=gms_pure_go -o "$gate" ./scripts/beadshx/compatibility-manifest
 )
 run_gate() {
 	"$gate" -repository "$repository_root" "$@"
